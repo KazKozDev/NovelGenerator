@@ -348,16 +348,24 @@ ${styleGuidelines}
 ${dialogueGuidelines}
 
 **CORE WRITING PRINCIPLES:**
-1.  **Show, Don't Tell:** This is your most important rule. Do not state a character's emotions. Instead, convey them through their actions, dialogue, body language, and internal thoughts. Let the reader infer the feeling. Never write "she was angry" - instead show clenched fists, clipped words, or a slammed door.
-2.  **Economy of Language:** Every word must work. If a sentence can be shortened without losing meaning - shorten it. Redundancy kills tension. Cut adverbs ruthlessly. Choose stronger verbs instead of weak verb + adverb combinations. **CRITICAL: Use simple, clear language. Avoid fancy words when simple ones work better.**
-3.  **Metaphor Economy:** Maximum ONE metaphor per paragraph. Metaphors are spices, not the meal. Never stack metaphors. "Her heart pounded" beats "Her heart was a drum in the cage of her ribs."
-4.  **Adjective Limit:** Maximum 1-2 adjectives per noun. "The old door" not "The ancient, weathered, time-worn door."
-5.  **Narrative Rhythm & Pacing:** Consciously vary sentence and paragraph length. Short sentences create urgency. Long sentences immerse. Use this awareness. Single-word paragraphs can be powerful.
-6.  **Trust the Reader:** Do not explain everything explicitly. Leave space for interpretation. Your reader is intelligent. Let them connect dots, read subtext, and participate in discovery. Ambiguity creates engagement.
-7.  **Moral Complexity:** Characters should face genuine moral dilemmas with no easy answers. Good people make bad choices. Bad people have understandable motivations. Avoid black-and-white morality. Show the cost of every decision.
-8.  **Character Depth:** Every character believes they are the hero of their own story. Give antagonists valid reasons for their actions. Show internal contradictions. People are complex, not archetypes.
-9.  **Constant Conflict:** Every scene must contain tension. Not necessarily fights - internal struggles, moral dilemmas, competing desires, time pressure, or conflicting goals. Without conflict, readers lose interest. Make every page matter.
-10. **Purposeful Chapters:** Each chapter MUST advance the story meaningfully - through plot progression or significant character development. Avoid purely atmospheric chapters.
+
+**CRITICAL BALANCE (HIGHEST PRIORITY):**
+1.  **ACTION OVER DESCRIPTION (70/30 RULE):** 70% of your chapter should be ACTION and DIALOGUE. Only 30% description/atmosphere. Cut descriptions ruthlessly. Every paragraph should move the story forward through events or conversation.
+2.  **SECONDARY CHARACTERS MATTER:** Every secondary character needs real motives and conflicts. They're not props. Give them goals that clash with the protagonist. Show their perspective. Make them three-dimensional.
+3.  **CONCRETE WORLDBUILDING:** No vague mysticism. Be specific about how things work. "The magic requires blood sacrifice" beats "mysterious forces." Name places, explain systems, show rules. Readers need to understand the world.
+4.  **CLEAR STRUCTURE:** Each chapter needs: Opening hook → Rising action → Complication → Climax → Resolution/cliffhanger. Not just a collection of scenes. Build toward something.
+
+**FUNDAMENTAL PRINCIPLES:**
+5.  **Show, Don't Tell:** This is your most important rule. Do not state a character's emotions. Instead, convey them through their actions, dialogue, body language, and internal thoughts. Let the reader infer the feeling. Never write "she was angry" - instead show clenched fists, clipped words, or a slammed door.
+6.  **Economy of Language:** Every word must work. If a sentence can be shortened without losing meaning - shorten it. Redundancy kills tension. Cut adverbs ruthlessly. Choose stronger verbs instead of weak verb + adverb combinations. **CRITICAL: Use simple, clear language. Avoid fancy words when simple ones work better.**
+7.  **Metaphor Economy:** Maximum ONE metaphor per paragraph. Metaphors are spices, not the meal. Never stack metaphors. "Her heart pounded" beats "Her heart was a drum in the cage of her ribs."
+8.  **Adjective Limit:** Maximum 1-2 adjectives per noun. "The old door" not "The ancient, weathered, time-worn door."
+9.  **Narrative Rhythm & Pacing:** Consciously vary sentence and paragraph length. Short sentences create urgency. Long sentences immerse. Use this awareness. Single-word paragraphs can be powerful.
+10. **Trust the Reader:** Do not explain everything explicitly. Leave space for interpretation. Your reader is intelligent. Let them connect dots, read subtext, and participate in discovery. Ambiguity creates engagement.
+11. **Moral Complexity:** Characters should face genuine moral dilemmas with no easy answers. Good people make bad choices. Bad people have understandable motivations. Avoid black-and-white morality. Show the cost of every decision.
+12. **Character Depth:** Every character believes they are the hero of their own story. Give antagonists valid reasons for their actions. Show internal contradictions. People are complex, not archetypes.
+13. **Constant Conflict:** Every scene must contain tension. Not necessarily fights - internal struggles, moral dilemmas, competing desires, time pressure, or conflicting goals. Without conflict, readers lose interest. Make every page matter.
+14. **Purposeful Chapters:** Each chapter MUST advance the story meaningfully - through plot progression or significant character development. Avoid purely atmospheric chapters.
 
 **EXECUTION GUIDELINES:**
 *   **Dialogue:** Make each character's voice distinct. Dialogue should reveal character, advance plot, or increase tension. Avoid exposition dumps. People don't explain things they both know.
