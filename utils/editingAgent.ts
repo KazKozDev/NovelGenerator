@@ -289,6 +289,11 @@ ${context.critiqueNotes}
 - "fancy language" → Replace complex words with simple ones
 - "telling emotions" → Show through action/dialogue instead
 
+**CRITICAL WORD BANS:**
+- NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
+- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- This is ABSOLUTE - no exceptions
+
 ### SECOND-PASS RHYTHM & TEXTURE CHECKS:
 
 **1. RHYTHM VARIATION (check every page):**
@@ -440,6 +445,11 @@ ${context.critiqueNotes || 'No specific issues'}
 4. Fix any minor language issues
 5. Tighten any verbose passages
 6. Ensure strong chapter ending
+
+**CRITICAL WORD BANS:**
+- NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
+- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- This is ABSOLUTE - scan entire chapter and remove ALL instances
 
 ### CRITICAL SECOND-PASS CHECKS:
 

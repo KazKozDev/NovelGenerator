@@ -122,6 +122,11 @@ ${previousContext}${nextContext}
 
 **FINAL PASS CRITIQUE FOCUS:**
 
+**0. FORBIDDEN WORDS (ABSOLUTE PRIORITY):**
+   - NEVER allow "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
+   - Must be replaced with: "black stone", "dark walls", "stone", "dark rock"
+   - This is CRITICAL - flag ANY instance immediately
+
 1. **CONTINUITY ISSUES (CRITICAL):**
    - Does this chapter flow naturally from the previous one?
    - Are there jarring transitions or unexplained jumps?

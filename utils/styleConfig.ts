@@ -144,7 +144,7 @@ export function getStylePrompt(settings: StorySettings): string {
   prompt += `
 ### FORBIDDEN WORDS (NEVER USE):
 **BANNED OVERUSED LLM WORDS:**
-- obsidian → use "black stone" / "dark walls" / "stone"
+- obsidian (and ALL derivatives: obsidian-like, obsidian's, etc.) → use "black stone" / "dark walls" / "stone" / "dark rock"
 - crystalline → just describe the moment
 - gossamer → use concrete fabric names or "thin"
 - eldritch → use "strange" / "ancient" / "wrong"
