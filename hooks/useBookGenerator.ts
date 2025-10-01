@@ -181,6 +181,15 @@ const useBookGenerator = () => {
     
     STORY PREMISE: "${premise}"
     
+    **🚫 CRITICAL: FORBIDDEN WORDS - DO NOT USE AS CHARACTER NAMES OR IN ANY CONTEXT:**
+    NEVER use these words anywhere in the outline (including character names, place names, or descriptions):
+    - "obsidian" or any derivatives (obsidian-like, Obsidian as name)
+    - "thorn", "thorne", or any derivatives (thorns, thorny, Thorne as name, Thornfield, etc.)
+    - "crystalline", "gossamer", "eldritch", "ephemeral", "ethereal", "luminescent"
+    
+    Use alternative words: "black stone", "spike", "sharp point", "clear", "thin", "strange", "brief", "faint", "glowing"
+    This applies to ALL parts of the outline including character names and locations.
+    
     Please structure your response with the following sections clearly marked:
     1.  **LOGLINE:** A single sentence summarizing the core conflict.
     2.  **MAIN CHARACTERS:** A list of the main characters with a brief (2-3 sentence) description of their personality, motivation, and core conflict/arc.
@@ -386,6 +395,13 @@ You will receive a detailed plan for this chapter. You MUST implement every elem
 - **Scene Breakdown:** Follow the scene structure from the plan. Hit all planned beats.
 
 If the plan specifies a moral dilemma, it MUST appear in your chapter. If it describes character complexity, you MUST show it. The plan is not a suggestion - it is a blueprint you must follow.
+
+**🚫 ABSOLUTE WORD BANS (HIGHEST PRIORITY):**
+NEVER use these words in ANY context:
+- "obsidian" or derivatives (obsidian-like, obsidian's)
+- "thorn" or "thorne" or derivatives (thorns, thorny, Thorne as name)
+Replace with: "black stone", "spike", "sharp point", "barb" - be specific.
+This is CRITICAL and NON-NEGOTIABLE.
 
 ${genreGuidelines}
 
