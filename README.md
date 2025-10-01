@@ -2666,7 +2666,7 @@ Server runs on `http://localhost:3000`
 
 **AI/Backend:**
 - Google Gemini API 1.1.0 (`@google/genai`)
-- Model: `gemini-2.0-flash-exp`
+- Model: `gemini-2.5-flash`
 
 **Libraries:**
 - JSZip (EPUB generation via CDN)
@@ -2719,7 +2719,7 @@ generator/
 
 ```typescript
 export const GENERATION_PARAMS = {
-  model: 'gemini-2.0-flash-exp',
+  model: 'gemini-2.5-flash',
   temperature: 0.7,        // Creativity (0-1)
   maxTokens: 8000,         // Max output length
   topP: 0.95,
