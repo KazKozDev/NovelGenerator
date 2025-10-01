@@ -103,71 +103,76 @@ async function polishChapterProfessionally(
   totalChapters: number
 ): Promise<string> {
   
-  const polishPrompt = `Ты профессиональный редактор-стилист. Твоя задача — взять готовый текст главы и отшлифовать его так, чтобы он читался как профессиональный роман.
+  const polishPrompt = `You are a professional editor and stylist. Your task is to take a finished chapter and polish it so it reads like a professional novel.
 
-**ГЛАВА ${chapterNumber} из ${totalChapters}:**
+**CHAPTER ${chapterNumber} of ${totalChapters}:**
 
 ${content}
 
 ---
 
-**ТВОИ ИНСТРУКЦИИ ПО ШЛИФОВКЕ:**
+**YOUR POLISHING INSTRUCTIONS:**
 
-**1. ТЕМП И РИТМ**
-- Разбивай длинные абзацы (больше 5-6 предложений)
-- Чередуй описания с короткими эмоциональными ударами (1-2 предложения)
-- Варьируй длину предложений для создания ритма
-- Используй короткие абзацы для напряжённых моментов
+**1. PACE AND RHYTHM**
+- Break up long paragraphs (more than 5-6 sentences)
+- Alternate descriptions with short emotional beats (1-2 sentences)
+- Vary sentence length to create rhythm
+- Use short paragraphs for tense moments
 
-**2. ДИАЛОГИ С ПОДТЕКСТОМ**
-- Избавляйся от прямых объяснений в диалогах
-- Добавляй паузы, жесты, недосказанность
-- Пусть персонажи редко говорят всё прямо
-- Показывай невербальное: взгляды, молчание, тон
-- Убирай экспозицию из диалогов ("Как ты знаешь, Боб...")
+**2. DIALOGUE WITH SUBTEXT**
+- Eliminate direct explanations in dialogue
+- Add pauses, gestures, things left unsaid
+- Characters should rarely say everything directly
+- Show non-verbal cues: glances, silence, tone
+- Remove exposition from dialogue ("As you know, Bob...")
 
-**3. МОТИВАЦИЯ И СОМНЕНИЯ**
-- В ключевых решениях вставляй внутреннюю борьбу
-- Показывай сомнения, воспоминания, страх перед выбором
-- Не переходи мгновенно к действию — дай персонажу подумать
-- Покажи цену решения ДО того, как оно принято
+**3. MOTIVATION AND DOUBT**
+- Insert internal struggle in key decisions
+- Show doubts, memories, fear before choices
+- Don't jump instantly to action — let character think
+- Show the cost of decision BEFORE it's made
 
-**4. АНТИ-ПОВТОР**
-- Убирай одинаковые слова в соседних абзацах
-- Для повторяющихся понятий (мрак, тьма, огонь, страх) используй разнообразные метафоры
-- Варьируй синонимы
-- Не повторяй одну и ту же конструкцию предложений подряд
+**4. ANTI-REPETITION**
+- Remove identical words in adjacent paragraphs
+- For recurring concepts (darkness, fire, fear) use varied metaphors
+- Vary synonyms
+- Don't repeat the same sentence structure consecutively
 
-**5. ЭМОЦИОНАЛЬНЫЕ ЯКОРЯ**
-- В каждой важной сцене оставляй маленький "человеческий момент"
-- Воспоминание, запах, жест, деталь, которая связывает читателя с героем
-- Сенсорные детали: не только зрение, но и звук, запах, осязание
-- Один конкретный образ лучше трёх абстрактных
+**5. EMOTIONAL ANCHORS**
+- In each important scene, leave a small "human moment"
+- A memory, smell, gesture, detail that connects reader to character
+- Sensory details: not just sight, but sound, smell, touch
+- One concrete image is better than three abstract ones
 
-**6. СЛОИ ВОСПРИЯТИЯ**
-- Показывай разницу между тем, что персонаж видит и как он это интерпретирует
-- Лёгкий оттенок самообмана или предвзятости
-- Субъективность восприятия: один видит угрозу, другой — возможность
-- Внутренний монолог может противоречить действиям
+**6. LAYERS OF PERCEPTION**
+- Show difference between what character sees and how they interpret it
+- Light shade of self-deception or bias
+- Subjectivity of perception: one sees threat, another sees opportunity
+- Internal monologue can contradict actions
 
-**7. ФИНАЛЬНАЯ ШЛИФОВКА**
-- Подбирай более богатую и разнообразную лексику
-- Избегай клише и избитых фраз
-- Сохраняй единый стиль на протяжении всей главы
-- Делай текст плавным, без резких стыков между сценами
-- Проверь, что переходы между абзацами логичны
+**7. FINAL POLISH**
+- Choose richer and more varied vocabulary
+- Avoid clichés and overused phrases
+- Maintain consistent style throughout chapter
+- Make text flow smoothly, without jarring transitions between scenes
+- Check that transitions between paragraphs are logical
 
-**ВАЖНО:**
-- Сохраняй все сюжетные события и диалоги
-- Не меняй смысл сцен
-- Не добавляй новые сцены или персонажей
-- Фокусируйся на КАЧЕСТВЕ ПОДАЧИ, а не на содержании
-- Это финальная шлифовка, а не переписывание
+**CRITICAL WORD BANS:**
+- NEVER use the word "obsidian" or any derivatives (obsidian-like, obsidian's, etc.)
+- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- This is ABSOLUTE - scan entire text and remove ALL mentions
 
-**ВЕРНИ:**
-Отшлифованную версию главы. Только текст главы, без комментариев.`;
+**IMPORTANT:**
+- Preserve all plot events and dialogue
+- Don't change the meaning of scenes
+- Don't add new scenes or characters
+- Focus on QUALITY OF DELIVERY, not content
+- This is final polish, not rewriting
 
-  const systemPrompt = `Ты мастер-редактор, специализирующийся на финальной шлифовке художественных текстов. Твоя задача — превратить хороший текст в профессиональный роман через работу с ритмом, подтекстом, эмоциональными якорями и слоями восприятия.`;
+**RETURN:**
+Polished version of the chapter. Only chapter text, no comments.`;
+
+  const systemPrompt = `You are a master editor specializing in final polish of fiction. Your task is to transform good text into professional novel through work with rhythm, subtext, emotional anchors, and layers of perception.`;
 
   try {
     const polished = await generateGeminiText(
