@@ -2630,6 +2630,29 @@ Server runs on `http://localhost:3000`
 
 ## Features
 
+### AI Agent Architecture
+NovelGenerator uses an intelligent agent system for editing:
+
+**Agent Decision-Making:**
+- **Analyze:** Agent evaluates chapter quality and identifies issues
+- **Decide:** Chooses strategy (targeted-edit, regenerate, polish, or skip)
+- **Execute:** Applies chosen strategy with surgical precision
+- **Evaluate:** Scores result and logs changes
+
+**Available Strategies:**
+1. **Targeted Edit** - Surgical fixes for specific issues (<20% changes)
+2. **Regenerate** - Rewrite chapter when structure is broken (>30% changes)
+3. **Polish** - Light improvements and plan verification (<10% changes)
+4. **Skip** - Chapter is strong as-is, no changes needed
+
+**Agent Tools:**
+- Critique generation with issue identification
+- Diff tracking (before/after visualization)
+- Quality scoring (0-100)
+- Plan adherence verification
+- Forbidden word detection (16 banned LLM words)
+- Rhythm and texture analysis
+
 ### AI Generation
 - **Multi-pass editing:** 3 automated editing levels per chapter
 - **Genre-specific styles:** Tailored prompts for 7 genres
@@ -2637,6 +2660,7 @@ Server runs on `http://localhost:3000`
 - **Professional polish:** Final pass for rhythm, pacing, emotional depth
 - **Dialogue system:** Natural conversations with character voice consistency
 - **Scene breaks:** Automatic formatting with `***` markers
+- **Anti-LLM patterns:** 16 forbidden words + 8 core writing rules
 
 ### User Interface
 - **Progress tracking:** Real-time chapter completion with time estimates
