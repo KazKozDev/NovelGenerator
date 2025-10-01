@@ -46,7 +46,7 @@ const UserInput: React.FC<UserInputProps> = ({
           id="storyPremise"
           value={storyPremise}
           onChange={(e) => setStoryPremise(e.target.value)}
-          placeholder="Enter a paragraph describing your story idea (e.g., A young wizard discovers a hidden prophecy that could save or destroy their magical world...)"
+          placeholder="Enter a paragraph describing your story idea (e.g., A detective uncovers a conspiracy that threatens everything they believe in...)"
           rows={5}
           required
           maxLength={1200} 

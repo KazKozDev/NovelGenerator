@@ -194,7 +194,7 @@ export function getStylePrompt(settings: StorySettings): string {
 
 6. **MAKE ABSTRACTIONS CONCRETE:**
    - Instead of: "cold sensation spreading" → "Her fingers went numb. She couldn't feel the knife."
-   - Instead of: "ancient magic pressed in" → "The air tasted like copper. Her ears popped."
+   - Instead of: "pressure building around her" → "The air tasted like copper. Her ears popped."
 
 7. **COMPLICATE MORALITY:**
    - Remove convenient justifications
