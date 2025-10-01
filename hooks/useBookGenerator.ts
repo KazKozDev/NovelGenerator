@@ -352,7 +352,7 @@ ${dialogueGuidelines}
 **CRITICAL BALANCE (HIGHEST PRIORITY):**
 1.  **ACTION OVER DESCRIPTION (70/30 RULE):** 70% of your chapter should be ACTION and DIALOGUE. Only 30% description/atmosphere. Cut descriptions ruthlessly. Every paragraph should move the story forward through events or conversation.
 2.  **SECONDARY CHARACTERS MATTER:** Every secondary character needs real motives and conflicts. They're not props. Give them goals that clash with the protagonist. Show their perspective. Make them three-dimensional.
-3.  **CONCRETE WORLDBUILDING:** No vague mysticism. Be specific about how things work. "The magic requires blood sacrifice" beats "mysterious forces." Name places, explain systems, show rules. Readers need to understand the world.
+3.  **CONCRETE WORLDBUILDING:** No vague mysticism. Be specific about how things work in your world. Give concrete details instead of abstract concepts. Name places, explain systems, show rules. Readers need to understand the world's logic.
 4.  **CLEAR STRUCTURE:** Each chapter needs: Opening hook → Rising action → Complication → Climax → Resolution/cliffhanger. Not just a collection of scenes. Build toward something.
 
 **FUNDAMENTAL PRINCIPLES:**
