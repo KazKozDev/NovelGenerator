@@ -293,6 +293,52 @@ const useBookGenerator = () => {
 - **Show character complexity - contradictions and flaws**
 - **Map consequences of choices - show weight of decisions**
 
+**ADVANCED NARRATIVE ARCHITECTURE:**
+
+**TEMPORAL STRUCTURE:**
+- Use concrete time markers in 'timelineIndicators' ("Three days later", "By evening", "A week passed")
+- Show time passage through physical changes (stubble, fatigue, healing wounds)
+- Create internal deadlines ("We have 48 hours until...")
+
+**SUBPLOTS & LAYERS:**
+- Plan B-plots that intersect with main plot but have own trajectory
+- Give secondary characters goals that clash with protagonist's
+- Create personal conflicts parallel to external conflict (romance, family drama, internal choice)
+
+**ANTAGONIST DEVELOPMENT:**
+- Plan scenes where antagonist acts WITHOUT protagonist present
+- Antagonist must be right about SOMETHING - creates moral complexity
+- Personal connection to hero (shared past, mirror motivations)
+- Antagonist ACTS, doesn't just react - drives plot actively
+
+**CHAPTER STRUCTURE:**
+- Each chapter = ONE major event + ONE important character change
+- Alternate tempo: after action → reflection, after revelation → consequences
+- End chapters with question or threat, NOT resolution
+- Show info through action, not dialogue-exposition
+
+**CHARACTER VOICES:**
+- Plan distinct speech patterns (sentence length, vocabulary, habits)
+- Social background affects speech (street slang vs academic vs corporate)
+- Each character has verbal tics or recurring metaphors
+
+**WORLDBUILDING DEPTH:**
+- Show how ordinary people live with this world's rules (not just victims/heroes)
+- Society/government/media reactions make conflict dimensional
+- Small daily details create reality (food, transport, entertainment, ads)
+
+**STAKES ESCALATION:**
+- Personalize threats (not "world ends" but "THIS person dies")
+- Raise stakes gradually: personal → local → global
+- Show consequences of small failures to justify fear of big failure
+- Give characters something concrete to lose at each stage
+
+**EMOTIONAL ARCS:**
+- Establish internal problem at start (not just external goal)
+- Show gradual change through decisions (what they couldn't do before, now can)
+- Key scenes transform character, not just advance plot
+- Finale reflects internal change as clearly as external victory/defeat
+
 STORY OUTLINE:
 ${currentStoryOutline}`;
           const jsonString = await generateGeminiText(chapterPlanPrompt, systemPromptPlan, chapterPlanSchema, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
