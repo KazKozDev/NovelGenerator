@@ -158,8 +158,10 @@ ${content}
 - Check that transitions between paragraphs are logical
 
 **CRITICAL WORD BANS:**
-- NEVER use the word "obsidian" or any derivatives (obsidian-like, obsidian's, etc.)
-- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- NEVER use "obsidian" or any derivatives (obsidian-like, obsidian's, etc.)
+- NEVER use "thorn" or "thorne" or any derivatives (thorns, thorny, etc.)
+- Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
+- Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
 - This is ABSOLUTE - scan entire text and remove ALL mentions
 
 **IMPORTANT:**

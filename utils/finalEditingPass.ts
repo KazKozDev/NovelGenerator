@@ -124,7 +124,9 @@ ${previousContext}${nextContext}
 
 **0. FORBIDDEN WORDS (ABSOLUTE PRIORITY):**
    - NEVER allow "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
-   - Must be replaced with: "black stone", "dark walls", "stone", "dark rock"
+   - NEVER allow "thorn" or "thorne" or any derivative (thorns, thorny, etc.)
+   - Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
+   - Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
    - This is CRITICAL - flag ANY instance immediately
 
 1. **CONTINUITY ISSUES (CRITICAL):**

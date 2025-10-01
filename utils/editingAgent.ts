@@ -291,7 +291,9 @@ ${context.critiqueNotes}
 
 **CRITICAL WORD BANS:**
 - NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
-- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- NEVER use "thorn" or "thorne" or any derivative (thorns, thorny, etc.)
+- Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
+- Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
 - This is ABSOLUTE - no exceptions
 
 ### SECOND-PASS RHYTHM & TEXTURE CHECKS:
@@ -448,7 +450,9 @@ ${context.critiqueNotes || 'No specific issues'}
 
 **CRITICAL WORD BANS:**
 - NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
-- Replace with: "black stone", "dark walls", "stone", "dark rock"
+- NEVER use "thorn" or "thorne" or any derivative (thorns, thorny, etc.)
+- Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
+- Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
 - This is ABSOLUTE - scan entire chapter and remove ALL instances
 
 ### CRITICAL SECOND-PASS CHECKS:

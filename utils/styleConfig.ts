@@ -159,7 +159,7 @@ export function getStylePrompt(settings: StorySettings): string {
 - tapestry (metaphorical) → be specific
 - symphony (metaphorical) → be specific
 - dance (of shadows/light) → just describe movement
-- thorn → use "spike" / "sharp point" / "barb" / be specific
+- thorn / thorne (and ALL variations) → use "spike" / "sharp point" / "barb" / be specific
 
 ### CORE WRITING RULES:
 1. **SIMPLIFY RUTHLESSLY:**
