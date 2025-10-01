@@ -119,6 +119,14 @@ const App: React.FC = () => {
           </>
         )}
         
+        {currentStep === GenerationStep.GeneratingOutline && isLoading && (
+          <div className="text-center py-12">
+            <LoadingSpinner />
+            <p className="mt-4 text-sky-300 text-lg">Generating story outline...</p>
+            <p className="mt-2 text-slate-400 text-sm">This may take 10-30 seconds</p>
+          </div>
+        )}
+
         {currentStep === GenerationStep.WaitingForOutlineApproval && !isLoading && (
             <ApprovalView
               title="Review & Edit Story Outline"
