@@ -1151,7 +1151,7 @@ NovelGenerator enables writers, storytellers, and LLM enthusiasts to produce com
 </details>
 
 <details>
-   <summary>Ean Protocol. The body of an MI6 intelligence agent believed to have died eight years ago in Syria has been found in Budapest. But forensic experts say the death occurred just three days ago. The case is assigned to Europol analyst Ingrid Steiner, a specialist in “dead” operatives who unexpectedly return to the game. In the course of the investigation, Ingrid encounters shadowy structures in the intelligence services, double agents and a strange series of terrorist attacks disguised as domestic accidents in major European cities. Soon she realizes: someone is launching a dormant Cold War project - and dead agents don't seem to be the only ones being brought back to life.</summary>
+   <summary>Ean Protocol. The body of an MI6 intelligence agent believed to have died eight years ago in Syria has been found in Budapest. But forensic experts say the death occurred just three days ago. The case is assigned to Europol analyst Ingrid Steiner, a specialist in “dead” operatives who unexpectedly return to the game. In the course of the investigation, Ingrid encounters shadowy structures in the intelligence services, double agents and a strange series of terrorist attacks disguised as domestic accidents in major European cities. Soon she realizes: someone is launching a dormant Cold War project - and dead agents don't seem to be the only ones being brought back to life. 🎧 <a href="https://www.youtube.com/watch?v=WUKQ16bo2gg">Audiobook version</a></summary>
    
    # The Unexpected Summons
    
