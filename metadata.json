@@ -1,0 +1,5 @@
+{
+  "name": "Generator",
+  "description": "A web application that uses the Gemini API to collaboratively write a book based on a user's premise and desired chapter structure. It generates detailed outlines, character profiles, chapter plans, and full chapter content with integrated consistency checks.",
+  "requestFramePermissions": []
+}
