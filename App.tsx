@@ -126,8 +126,8 @@ const App: React.FC = () => {
         )}
         
         {(() => {
-          const shouldShow = currentStep === GenerationStep.GeneratingOutline && isLoading;
-          console.log('🔍 Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, isLoading, 'shouldShow:', shouldShow);
+          const shouldShow = currentStep === GenerationStep.GeneratingOutline;
+          console.log('🔍 Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
           return shouldShow;
         })() && (
           <div className="text-center py-12">
