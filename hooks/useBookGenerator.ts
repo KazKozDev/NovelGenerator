@@ -811,6 +811,9 @@ Respond with: "APPROVED" if the chapter meets standards, or "NEEDS REVISION: [sp
     console.log('⏳ Setting step to GeneratingOutline');
     setCurrentStep(GenerationStep.GeneratingOutline);
     
+    // Give React time to render the loading UI before starting heavy computation
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     try {
       if (!currentStoryOutline) {
           console.log('📖 Calling _generateOutline...');
