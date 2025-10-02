@@ -9,10 +9,13 @@
 </div>
 <br><br>
 NovelGenerator enables writers, storytellers, and LLM enthusiasts to produce complete fiction. The entire generation process runs autonomously while maintaining narrative coherence. Just provide your story premise and desired number of chapters. 
+
 <br>
 <br>
 
 ![Screenshot 2025-05-28 at 07 59 30](https://github.com/user-attachments/assets/854e630c-e902-410a-b789-9706189e3abc)
+
+The pipeline generates multi-threaded narratives. It tracks multiple character perspectives across different timelines while maintaining what each character knows at any given moment, develops emotional arcs where psychological changes follow logically from story events, and synchronizes independent plot threads that run in parallel but converge at key moments with consistent chronology.
 
 ### Examples:
 
