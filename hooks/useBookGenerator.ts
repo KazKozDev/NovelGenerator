@@ -319,6 +319,12 @@ const useBookGenerator = () => {
 - Antagonist must be right about SOMETHING - creates moral complexity
 - Personal connection to hero (shared past, mirror motivations)
 - Antagonist ACTS, doesn't just react - drives plot actively
+- Show internal conflict through action: hesitation before critical choices, visible effort in decisions
+- Add contradicting details: care for something living, suppressed reactions to others' pain, kept mementos
+- Give logically consistent motivation that sounds almost convincing from their perspective
+- Show visible cost of their path: physical exhaustion, lost connections, emotional emptiness
+- Include rejected alternatives (flashback/mention) - show they chose this path consciously
+- After reveal, plan scene from antagonist's POV showing fatigue/doubts, not triumph - creates tragedy without justification
 
 **CHAPTER STRUCTURE:**
 - Each chapter = ONE major event + ONE important character change
