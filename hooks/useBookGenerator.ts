@@ -803,6 +803,7 @@ Respond with: "APPROVED" if the chapter meets standards, or "NEEDS REVISION: [sp
       setStoryPremise(premise);
       setNumChapters(chaptersCount);
       setTotalChaptersToProcess(chaptersCount);
+      setCurrentStep(GenerationStep.GeneratingOutline); // Set step immediately for UI feedback
     }
     
     try {
