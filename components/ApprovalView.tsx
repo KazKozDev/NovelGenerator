@@ -30,8 +30,8 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
         <TextArea
           value={content}
           onChange={(e) => onContentChange(e.target.value)}
-          rows={18}
-          className="bg-slate-900/50 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
+          rows={30}
+          className="bg-slate-900/50 border-slate-600 focus:ring-sky-500 focus:border-sky-500 min-h-[600px]"
           disabled={isLoading}
         />
       </div>
