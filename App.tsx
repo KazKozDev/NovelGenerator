@@ -41,6 +41,9 @@ const App: React.FC = () => {
     agentLogs,
   } = useBookGenerator();
 
+  // Debug logging
+  console.log('🎨 App render - currentStep:', currentStep, 'isLoading:', isLoading);
+
   const handleStartGeneration = () => {
     if (storyPremise && numChapters >= 3) {
       startGeneration(storyPremise, numChapters);
@@ -101,7 +104,10 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable &&(
+        {(() => {
+          console.log('🔍 Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
+          return currentStep === GenerationStep.Idle && !finalBookContent && !isResumable;
+        })() &&(
           <>
             <UserInput
               storyPremise={storyPremise}
@@ -119,7 +125,11 @@ const App: React.FC = () => {
           </>
         )}
         
-        {currentStep === GenerationStep.GeneratingOutline && isLoading && (
+        {(() => {
+          const shouldShow = currentStep === GenerationStep.GeneratingOutline && isLoading;
+          console.log('🔍 Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, isLoading, 'shouldShow:', shouldShow);
+          return shouldShow;
+        })() && (
           <div className="text-center py-12">
             <LoadingSpinner />
             <p className="mt-4 text-sky-300 text-lg">Generating story outline...</p>
