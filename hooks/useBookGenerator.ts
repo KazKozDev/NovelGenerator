@@ -795,10 +795,12 @@ Respond with: "APPROVED" if the chapter meets standards, or "NEEDS REVISION: [sp
   ]);
 
   const startGeneration = useCallback(async (premise: string, chaptersCount: number) => {
+    console.log('🚀 startGeneration called, currentStep:', currentStep);
     setIsLoading(true);
     setError(null);
     
     if (currentStep === GenerationStep.Idle) {
+      console.log('📝 Resetting generator...');
       resetGenerator(); 
       setStoryPremise(premise);
       setNumChapters(chaptersCount);
@@ -806,10 +808,12 @@ Respond with: "APPROVED" if the chapter meets standards, or "NEEDS REVISION: [sp
     }
     
     // Set step AFTER reset to ensure it's not overwritten
+    console.log('⏳ Setting step to GeneratingOutline');
     setCurrentStep(GenerationStep.GeneratingOutline);
     
     try {
       if (!currentStoryOutline) {
+          console.log('📖 Calling _generateOutline...');
           await _generateOutline(premise, chaptersCount);
       } else {
         if (currentStep === GenerationStep.WaitingForOutlineApproval) {
