@@ -319,9 +319,21 @@ const useBookGenerator = () => {
 - Antagonist must be right about SOMETHING - creates moral complexity
 - Personal connection to hero (shared past, mirror motivations)
 - Antagonist ACTS, doesn't just react - drives plot actively
+- **CHARACTER CONSISTENCY (CRITICAL):**
+  * Smart villain stays smart - no sudden stupidity for plot convenience
+  * If methodical, they take countermeasures against resistance
+  * If mad, show this from the start, not just when convenient
+  * Their competence level must remain consistent throughout
+- **CONCRETE MOTIVES (CRITICAL):**
+  * "Revenge" is skeleton - add flesh: what exactly do they want to prove, to whom, why this way
+  * Specific grievances, not abstract hatred
+  * Their logic should be almost convincing from their perspective
+- **ORGANIC VULNERABILITY:**
+  * All-powerful enemy makes conflict boring
+  * Weakness must be organic: pride, dependence on stolen power, ignorance of something crucial
+  * Flaw should be extension of their strength (methodical → inflexible, passionate → reckless)
 - Show internal conflict through action: hesitation before critical choices, visible effort in decisions
 - Add contradicting details: care for something living, suppressed reactions to others' pain, kept mementos
-- Give logically consistent motivation that sounds almost convincing from their perspective
 - Show visible cost of their path: physical exhaustion, lost connections, emotional emptiness
 - Include rejected alternatives (flashback/mention) - show they chose this path consciously
 - After reveal, plan scene from antagonist's POV showing fatigue/doubts, not triumph - creates tragedy without justification
@@ -331,6 +343,12 @@ const useBookGenerator = () => {
 - Alternate tempo: after action → reflection, after revelation → consequences
 - End chapters with question or threat, NOT resolution
 - Show info through action, not dialogue-exposition
+- **MIDDLE CHAPTERS (ACT II) ANTI-SAG RULES:**
+  * Vary chapter patterns deliberately - no two consecutive chapters with same structure
+  * Introduce new complications, don't just repeat established conflicts
+  * Escalate stakes progressively - each chapter raises what's at risk
+  * Shift locations, introduce new characters, reveal new information
+  * Avoid "another chase", "another fight", "another betrayal" - make each unique
 
 **CHARACTER VOICES:**
 - Plan distinct speech patterns (sentence length, vocabulary, habits)
@@ -353,6 +371,12 @@ const useBookGenerator = () => {
 - Show gradual change through decisions (what they couldn't do before, now can)
 - Key scenes transform character, not just advance plot
 - Finale reflects internal change as clearly as external victory/defeat
+
+**FINALE REQUIREMENTS (FINAL CHAPTERS):**
+- **Resolve Established Conflicts:** If you introduced threat of city destruction - show if it happened or not. Don't leave major stakes hanging.
+- **Cost of Victory (CRITICAL):** Hero must change. Scars (physical or psychological) make triumph real. No character returns unchanged from serious trials.
+- **Avoid Complete Restoration:** If everything returns to "as it was" after brutal trials - it devalues the journey. Something must remain different.
+- **Purpose Over Spectacle:** Every element must serve the story. Cruelty for cruelty's sake, magic for pretty effects, suffering for drama - readers feel and reject this. Make it meaningful.
 
 STORY OUTLINE:
 ${currentStoryOutline}`;
@@ -428,8 +452,8 @@ ${dialogueGuidelines}
 6.  **Economy of Language:** Every word must work. If a sentence can be shortened without losing meaning - shorten it. Redundancy kills tension. Cut adverbs ruthlessly. Choose stronger verbs instead of weak verb + adverb combinations. **CRITICAL: Use simple, clear language. Avoid fancy words when simple ones work better.**
 7.  **Metaphor Economy:** Maximum ONE metaphor per paragraph. Metaphors are spices, not the meal. Never stack metaphors. "Her heart pounded" beats "Her heart was a drum in the cage of her ribs."
 8.  **Adjective Limit:** Maximum 1-2 adjectives per noun. "The old door" not "The ancient, weathered, time-worn door."
-9.  **Narrative Rhythm & Pacing:** Consciously vary sentence and paragraph length. Short sentences create urgency. Long sentences immerse. Use this awareness. Single-word paragraphs can be powerful.
-10. **Trust the Reader:** Do not explain everything explicitly. Leave space for interpretation. Your reader is intelligent. Let them connect dots, read subtext, and participate in discovery. Ambiguity creates engagement.
+9.  **Narrative Rhythm & Pacing (CRITICAL):** Consciously vary sentence and paragraph length. Short sentences create urgency. Long sentences immerse. Use this awareness. Single-word paragraphs can be powerful. **Mix short (under 5 words), medium (5-15 words), and long (15+ words) sentences in every page. Monotonous rhythm kills engagement.**
+10. **Trust the Reader (CRITICAL):** Do not explain everything explicitly. **One strong detail beats three metaphors describing the same thing.** "Her voice shook" is stronger than "her voice shook like an autumn leaf on the wind of fate." Leave space for interpretation. Your reader is intelligent. Let them connect dots, read subtext, and participate in discovery. Ambiguity creates engagement.
 11. **Moral Complexity:** Characters should face genuine moral dilemmas with no easy answers. Good people make bad choices. Bad people have understandable motivations. Avoid black-and-white morality. Show the cost of every decision.
 12. **Character Depth:** Every character believes they are the hero of their own story. Give antagonists valid reasons for their actions. Show internal contradictions. People are complex, not archetypes.
 13. **Constant Conflict:** Every scene must contain tension. Not necessarily fights - internal struggles, moral dilemmas, competing desires, time pressure, or conflicting goals. Without conflict, readers lose interest. Make every page matter.
