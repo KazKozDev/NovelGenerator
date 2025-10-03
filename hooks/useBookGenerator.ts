@@ -175,7 +175,7 @@ const useBookGenerator = () => {
   }, []);
 
   const _generateOutline = useCallback(async (premise: string, chaptersCount: number) => {
-    setCurrentStep(GenerationStep.GeneratingOutline);
+    // Note: currentStep is already set to GeneratingOutline by startGeneration()
     const systemPromptOutline = `You are a professional novelist and editor who creates compelling, structured, and detailed story outlines.`;
     const promptOutline = `Based on the following story premise, create a detailed story outline for a ${chaptersCount}-chapter book. The outline should be comprehensive, covering main plot points, character arcs, subplots, and key events for each part of the story (beginning, middle, and end).
     
@@ -426,7 +426,14 @@ You will receive a detailed plan for this chapter. You MUST implement every elem
 
 If the plan specifies a moral dilemma, it MUST appear in your chapter. If it describes character complexity, you MUST show it. The plan is not a suggestion - it is a blueprint you must follow.
 
-**🚫 ABSOLUTE WORD BANS (HIGHEST PRIORITY):**
+${i >= Math.floor(numChapters * 0.75) ? `**⚠️ FINALE CHAPTER REQUIREMENTS (THIS IS A FINAL CHAPTER):**
+- **Resolve Established Conflicts:** If earlier chapters introduced major threats (city destruction, character death, etc.) - show the outcome. Don't leave major stakes unresolved.
+- **Cost of Victory (CRITICAL):** Hero must be changed by their journey. Show scars (physical or psychological). Victory without cost feels hollow.
+- **No Complete Restoration:** If everything returns to "as it was" after brutal trials - it devalues the journey. Something permanent must change.
+- **Purpose Over Spectacle:** Every element must serve the story. Make cruelty, magic, suffering meaningful - not just dramatic.
+- **Emotional Resolution:** Address the internal problem established at the start, not just external goal.
+
+` : ''}**🚫 ABSOLUTE WORD BANS (HIGHEST PRIORITY):**
 NEVER use these words in ANY context:
 - "obsidian" or derivatives (obsidian-like, obsidian's)
 - "thorn" or "thorne" or derivatives (thorns, thorny, Thorne as name)
@@ -445,7 +452,8 @@ ${dialogueGuidelines}
 1.  **ACTION OVER DESCRIPTION (70/30 RULE):** 70% of your chapter should be ACTION and DIALOGUE. Only 30% description/atmosphere. Cut descriptions ruthlessly. Every paragraph should move the story forward through events or conversation.
 2.  **SECONDARY CHARACTERS MATTER:** Every secondary character needs real motives and conflicts. They're not props. Give them goals that clash with the protagonist. Show their perspective. Make them three-dimensional.
 3.  **CONCRETE WORLDBUILDING:** No vague mysticism. Be specific about how things work in your world. Give concrete details instead of abstract concepts. Name places, explain systems, show rules. Readers need to understand the world's logic.
-4.  **CLEAR STRUCTURE:** Each chapter needs: Opening hook → Rising action → Complication → Climax → Resolution/cliffhanger. Not just a collection of scenes. Build toward something.
+4.  **CLEAR CHAPTER STRUCTURE:** Opening hook → Rising action → Complication → Climax → Resolution/cliffhanger. Each chapter = ONE major event + ONE important character change. Not just a collection of scenes. Build toward something.${i >= Math.floor(numChapters * 0.33) && i < Math.floor(numChapters * 0.75) ? `
+5.  **MIDDLE CHAPTER VARIATION (ACT II):** Vary patterns - no two consecutive chapters with same structure. Introduce new complications, escalate stakes, shift locations. Avoid "another chase/fight/betrayal" - make each unique.` : ''}
 
 **FUNDAMENTAL PRINCIPLES:**
 5.  **Show, Don't Tell:** This is your most important rule. Do not state a character's emotions. Instead, convey them through their actions, dialogue, body language, and internal thoughts. Let the reader infer the feeling. Never write "she was angry" - instead show clenched fists, clipped words, or a slammed door.
@@ -455,9 +463,10 @@ ${dialogueGuidelines}
 9.  **Narrative Rhythm & Pacing (CRITICAL):** Consciously vary sentence and paragraph length. Short sentences create urgency. Long sentences immerse. Use this awareness. Single-word paragraphs can be powerful. **Mix short (under 5 words), medium (5-15 words), and long (15+ words) sentences in every page. Monotonous rhythm kills engagement.**
 10. **Trust the Reader (CRITICAL):** Do not explain everything explicitly. **One strong detail beats three metaphors describing the same thing.** "Her voice shook" is stronger than "her voice shook like an autumn leaf on the wind of fate." Leave space for interpretation. Your reader is intelligent. Let them connect dots, read subtext, and participate in discovery. Ambiguity creates engagement.
 11. **Moral Complexity:** Characters should face genuine moral dilemmas with no easy answers. Good people make bad choices. Bad people have understandable motivations. Avoid black-and-white morality. Show the cost of every decision.
-12. **Character Depth:** Every character believes they are the hero of their own story. Give antagonists valid reasons for their actions. Show internal contradictions. People are complex, not archetypes.
-13. **Constant Conflict:** Every scene must contain tension. Not necessarily fights - internal struggles, moral dilemmas, competing desires, time pressure, or conflicting goals. Without conflict, readers lose interest. Make every page matter.
-14. **Purposeful Chapters:** Each chapter MUST advance the story meaningfully - through plot progression or significant character development. Avoid purely atmospheric chapters.
+12. **Character Depth:** Every character believes they are the hero of their own story. Show internal contradictions. People are complex, not archetypes.
+13. **Antagonist Consistency (CRITICAL):** Smart villains stay smart - no sudden stupidity for plot convenience. If methodical, they take countermeasures. If mad, show this consistently. Give them concrete motives (not just "revenge" - what exactly do they want to prove, to whom, why this way). Show organic vulnerability (pride, dependence, ignorance of something crucial). Their flaw should extend from their strength.
+14. **Constant Conflict:** Every scene must contain tension. Not necessarily fights - internal struggles, moral dilemmas, competing desires, time pressure, or conflicting goals. Without conflict, readers lose interest. Make every page matter.
+15. **Purposeful Chapters:** Each chapter MUST advance the story meaningfully - through plot progression or significant character development. Avoid purely atmospheric chapters.
 
 **EXECUTION GUIDELINES:**
 *   **Dialogue:** Make each character's voice distinct. Dialogue should reveal character, advance plot, or increase tension. Avoid exposition dumps. People don't explain things they both know.
@@ -625,36 +634,7 @@ Focus on craft issues, not plot (plot follows the plan).`;
             console.warn(`Could not perform consistency check for chapter ${i}. Error:`, e);
         }
 
-        // Conflict and Tension Verification - final quality check
-        try {
-            const conflictCheckPrompt = `You are a narrative analyst specializing in story tension and conflict. Analyze the provided chapter to verify it meets core storytelling requirements.
-
-**ANALYSIS REQUIREMENTS:**
-1. **Conflict Presence:** Identify the main conflict in this chapter. Every chapter must contain meaningful tension.
-2. **Tension Level Assessment:** Rate the tension level (1-10) and verify it matches the planned level: ${thisChapterPlanObject.tensionLevel || 'not specified'}.
-3. **Pacing Check:** Confirm the pacing matches the plan: ${thisChapterPlanObject.rhythmPacing || 'not specified'}.
-4. **Purpose Verification:** Ensure the chapter advances plot OR develops character significantly.
-
-If the chapter lacks sufficient conflict or tension, provide specific suggestions for improvement. If it meets standards, confirm it's ready.
-
-**PLANNED CONFLICT TYPE:** ${thisChapterPlanObject.conflictType || 'not specified'}
-**PLANNED TENSION LEVEL:** ${thisChapterPlanObject.tensionLevel || 'not specified'}/10
-
-CHAPTER TO ANALYZE:
-${refinedChapterContent}
-
-Respond with: "APPROVED" if the chapter meets standards, or "NEEDS REVISION: [specific issues]" if improvements are needed.`;
-
-            const systemPromptConflictChecker = "You are an expert story analyst focused on narrative tension and conflict.";
-            const conflictAnalysis = await generateGeminiText(conflictCheckPrompt, systemPromptConflictChecker, undefined, ANALYSIS_PARAMS.temperature, ANALYSIS_PARAMS.topP, ANALYSIS_PARAMS.topK);
-
-            if (conflictAnalysis && conflictAnalysis.includes("NEEDS REVISION")) {
-                console.warn(`Chapter ${i} conflict check flagged issues: ${conflictAnalysis}`);
-                // Note: In production, you might want to actually revise the chapter here
-            }
-        } catch (e) {
-            console.warn(`Could not perform conflict verification for chapter ${i}, proceeding with chapter. Error:`, e);
-        }
+        // Note: Conflict verification removed - agent editing already handles this comprehensively
 
         // Update character states for consistency
         const characterUpdateSchema = { type: Type.OBJECT, properties: { character_updates: { type: Type.ARRAY, description: "An array of objects, each representing an update to a single character's state.", items: { type: Type.OBJECT, properties: { name: { type: Type.STRING, description: "The full name of the character being updated, must match a name from the provided list." }, status: { type: Type.STRING, description: "The character's new status (e.g., 'alive', 'injured', 'captured')." }, location: { type: Type.STRING, description: "The character's new location at the end of the chapter." }, emotional_state: { type: Type.STRING, description: "The character's dominant emotional state at the end of the chapter." }, }, required: ["name"] } } }, required: ["character_updates"] };
