@@ -3,34 +3,34 @@ import React from 'react';
 const FeatureGrid: React.FC = () => {
   const features = [
     {
-      icon: '🤖',
-      title: 'AI-Powered Editing',
-      description: 'Intelligent agents analyze and refine each chapter with targeted edits, regeneration, and professional polish.'
+      icon: '01',
+      title: 'Crafted by specialists',
+      description: 'Three LLM agents. Structure. Character. Scene. Each perfecting their art.'
     },
     {
-      icon: '📝',
-      title: 'Visual Diff Viewer',
-      description: 'See exactly what changed in real-time with side-by-side or unified diff views of all edits.'
+      icon: '02',
+      title: 'Precision architecture',
+      description: 'Every element placed with purpose. Dialogue, action, atmosphere flow as one.'
     },
     {
-      icon: '🎯',
-      title: 'Multi-Pass Refinement',
-      description: 'Three-level editing: individual chapters, continuity check, and professional polish for publication-ready quality.'
+      icon: '03',
+      title: 'Flawless execution',
+      description: 'Real-time quality checks. Tone consistency. Perfect balance. Zero compromise.'
     },
     {
-      icon: '📊',
-      title: 'Agent Activity Logs',
-      description: 'Track every decision, execution, and evaluation made by the AI agents during the writing process.'
+      icon: '04',
+      title: 'Infinite memory',
+      description: 'Every character. Every thread. Every detail. Remembered. Always.'
     },
     {
-      icon: '✨',
-      title: 'Professional Polish',
-      description: 'Final pass focused on rhythm, subtext, emotional anchors, and perception layers for professional-level prose.'
+      icon: '05',
+      title: 'Seamless integration',
+      description: 'No rough edges. No jarring transitions. Just smooth, natural storytelling.'
     },
     {
-      icon: '🔄',
-      title: 'Continuity Checking',
-      description: 'Automated verification of character states, plot consistency, and smooth transitions between chapters.'
+      icon: '06',
+      title: 'Refined to perfection',
+      description: 'Layer by layer. Pass by pass. Until every word feels exactly right.'
     }
   ];
 

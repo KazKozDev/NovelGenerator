@@ -164,6 +164,15 @@ ${content}
 - Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
 - This is ABSOLUTE - scan entire text and remove ALL mentions
 
+**🔧 CRITICAL: UNFILLED SLOT CLEANUP:**
+If you see any unfilled markers like [SLOT_NAME], [DESCRIPTION_X], [DIALOGUE_X], [ACTION_X], [INTERNAL_X] in the text:
+- These are ERRORS from the generation process
+- You MUST either:
+  a) Remove them completely if the text flows fine without them
+  b) Replace them with appropriate brief content that fits the context
+- DO NOT leave any [BRACKET_MARKERS] in the final text
+- This is MANDATORY - scan the entire chapter for any remaining markers
+
 **IMPORTANT:**
 - Preserve all plot events and dialogue
 - Don't change the meaning of scenes

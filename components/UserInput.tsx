@@ -52,7 +52,7 @@ const UserInput: React.FC<UserInputProps> = ({
           maxLength={1200} 
           className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
         />
-        <p className="text-xs text-slate-400 mt-1">Max 1200 characters. Be descriptive!</p>
+        <p className="text-xs text-slate-400 mt-1">Max 1200 characters. Be descriptive</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -88,7 +88,7 @@ const UserInput: React.FC<UserInputProps> = ({
             required
             className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           />
-           <p className="text-xs text-slate-400 mt-1">Minimum {MIN_CHAPTERS} chapters.</p>
+           <p className="text-xs text-slate-400 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
         </div>
       </div>
 
@@ -97,21 +97,63 @@ const UserInput: React.FC<UserInputProps> = ({
           {isLoading ? 'Weaving Your Tale...' : 'Start Weaving'}
         </Button>
       </div>
-       <div className="mt-4 p-4 border border-sky-700 bg-sky-900/30 rounded-md text-sm text-slate-300">
-        <h4 className="font-semibold text-sky-400 mb-2">How it Works:</h4>
-        <ol className="list-decimal list-inside space-y-1.5">
-            <li><strong>Story Planning:</strong> Enter your story idea, choose genre, and set desired chapter count.</li>
-            <li><strong>Outline Generation:</strong> AI generates a detailed story outline and chapter-by-chapter plan.</li>
-            <li><strong>Review & Approve:</strong> You review and can edit the outline before proceeding.</li>
-            <li><strong>Chapter Writing:</strong> Each chapter is written with individual editing and consistency checks.</li>
-            <li><strong>Final Editing Pass:</strong> All chapters are reviewed together for continuity and flow.</li>
-            <li><strong>Professional Polish:</strong> Final refinement focused on rhythm, subtext, and emotional depth.</li>
-            <li><strong>Book Compilation:</strong> Your complete, publication-ready book draft is presented!</li>
-        </ol>
-        <p className="mt-3 text-xs text-slate-400">
-          <strong>⏱️ Time estimate:</strong> Generation can take several minutes, especially for more chapters. 
-          Each chapter goes through multiple AI editing passes for professional quality. Please be patient.
-        </p>
+       <div className="mt-12 pt-12 border-t border-slate-700 space-y-8 text-slate-300">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300 mb-2">
+            How to begin
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">01. Start with your vision</h3>
+            <p className="text-sm text-slate-400">
+              Choose your genre. Set your chapter count. Share your story idea. That's all we need.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">02. Intelligence meets creativity</h3>
+            <p className="text-sm text-slate-400">
+              Our AI builds a complete story architecture — plot progression, character arcs, emotional beats. Every detail mapped before the first word is written.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">03. You stay in control</h3>
+            <p className="text-sm text-slate-400">
+              Review the outline. Refine it. Approve when it feels right. This is your story. We're just here to help bring it to life.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">04. Three specialists. One masterpiece</h3>
+            <p className="text-sm text-slate-400">
+              Structure. Character. Scene. Each specialized AI agent focuses on what it does best, collaborating in real-time to craft every chapter with precision.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">05. Quality built in</h3>
+            <p className="text-sm text-slate-400">
+              Every chapter undergoes multiple editing passes. Consistency checks. Narrative flow analysis. We catch what humans miss.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">06. The final polish</h3>
+            <p className="text-sm text-slate-400">
+              Rhythm. Subtext. Emotional resonance. Our pipeline refines every sentence until your story doesn't just read well — it feels right.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-sky-300">07. In your format</h3>
+            <p className="text-sm text-slate-400">
+              Download your manuscript in PDF, TXT, or EPUB format. Ready for sharing or further editing.
+            </p>
+          </div>
+        </div>
       </div>
     </form>
   );

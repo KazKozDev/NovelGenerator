@@ -6,6 +6,7 @@
 
 import { generateGeminiText } from '../services/geminiService';
 import { ParsedChapterPlan, AgentLogEntry } from '../types';
+import { getFormattedPrompt, PromptNames } from './promptLoader';
 
 export interface EditingContext {
   chapterContent: string;
@@ -66,49 +67,12 @@ function log(context: EditingContext, type: AgentLogEntry['type'], message: stri
  * Step 1: Agent analyzes the situation and decides on strategy
  */
 export async function analyzeAndDecide(context: EditingContext): Promise<AgentDecision> {
-  const analysisPrompt = `You are an intelligent editing agent. Analyze this chapter and decide the best editing strategy.
-
-**CHAPTER ${context.chapterNumber} ANALYSIS:**
-
-**CRITIQUE NOTES:**
-${context.critiqueNotes || 'No issues identified'}
-
-**CHAPTER PLAN:**
-${context.chapterPlanText}
-
-**CHAPTER LENGTH:** ${context.chapterContent.length} characters
-
-**YOUR TASK:**
-Analyze the critique and decide on the best strategy:
-
-1. **TARGETED-EDIT** - Use when:
-   - Issues are language-level (metaphors, adjectives, verbs)
-   - Structure and plot are solid
-   - Changes needed are < 20% of text
-   
-2. **REGENERATE** - Use when:
-   - Missing critical plan elements (moral dilemma, character complexity)
-   - Structural problems (flat characters, no conflict)
-   - Changes needed are > 30% of text
-   
-3. **POLISH** - Use when:
-   - No major issues
-   - Just needs minor improvements
-   - Changes needed are < 10% of text
-   
-4. **SKIP** - Use when:
-   - Chapter is strong as-is
-   - Critique says "CHAPTER IS STRONG"
-
-**RESPOND IN JSON:**
-{
-  "strategy": "targeted-edit|regenerate|polish|skip",
-  "reasoning": "Brief explanation of why this strategy",
-  "priority": "high|medium|low",
-  "estimatedChanges": "Percentage or description of changes needed"
-}`;
-
-  const systemPrompt = "You are an intelligent editing agent that makes strategic decisions about how to improve text.";
+  const { systemPrompt, userPrompt: analysisPrompt } = getFormattedPrompt(PromptNames.EDITING_AGENT_ANALYSIS, {
+    chapter_number: context.chapterNumber,
+    critique_notes: context.critiqueNotes || 'No issues identified',
+    chapter_plan_text: context.chapterPlanText,
+    chapter_length: context.chapterContent.length
+  });
   
   try {
     const responseSchema = {
@@ -270,104 +234,10 @@ async function executeTargetedEdit(
   generateText: typeof generateGeminiText
 ): Promise<string> {
   
-  const prompt = `You are a precision editor making SURGICAL edits to fix specific issues.
-
-**ISSUES TO FIX:**
-${context.critiqueNotes}
-
-**EDITING PROTOCOL:**
-1. Identify each issue mentioned in critique
-2. Make MINIMAL change to fix that specific issue
-3. Preserve everything else exactly as-is
-4. Do NOT rewrite sentences unless the issue is in that sentence
-
-**SPECIFIC FIXES:**
-- "stacked metaphors" → Keep ONE metaphor per paragraph, remove extras
-- "too many adjectives" → Reduce to 1-2 adjectives per noun
-- "weak verb + adverb" → Replace with single strong verb (e.g., "ran quickly" → "sprinted")
-- "filtering" → Remove "she saw", "he felt", "she heard" constructions
-- "fancy language" → Replace complex words with simple ones
-- "telling emotions" → Show through action/dialogue instead
-
-**CRITICAL WORD BANS:**
-- NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
-- NEVER use "thorn" or "thorne" or any derivative (thorns, thorny, etc.)
-- Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
-- Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
-- This is ABSOLUTE - no exceptions
-
-### SECOND-PASS RHYTHM & TEXTURE CHECKS:
-
-**1. RHYTHM VARIATION (check every page):**
-- Add at least one sentence under 5 words
-- Add at least one sentence over 25 words
-- Vary paragraph lengths from 1 line to 8+ lines
-- Create tonal shifts (tense → calm → tense)
-
-**2. HUNT REMAINING LLM PATTERNS:**
-- Parallel structure 3+ times ("She saw X. She felt Y. She knew Z.") → break it
-- "-ing" clause overuse ("Walking to the door, she noticed...") → rephrase
-- Consistent action beat placement in dialogue → vary it
-- Every paragraph ending with insight/emotion → some should trail off
-
-**3. CONCRETE VS ABSTRACT RATIO:**
-- Max 2 abstract emotions per paragraph
-- At least 1 concrete physical detail per paragraph
-- If describing feeling, add what character DOES
-
-**4. DIALOGUE NATURALNESS:**
-- People shouldn't always say exactly what they mean
-- Add interruptions, topic changes, non-sequiturs
-- Vary speech patterns between characters
-- Include uncomfortable silences
-
-**5. REMOVE FILTERS:**
-Cut or replace: "she felt that...", "she realized...", "she noticed...", "it seemed..."
-Just state the observation directly.
-
-**6. ADD TEXTURE (every 2-3 pages):**
-- One mundane detail (weather, background sound, bodily discomfort)
-- One moment of character distraction
-- One unresolved minor element (smell they can't place, sound they ignore)
-
-**7. EMOTIONAL PACING:**
-- If intensity stays high for 3+ paragraphs → add breathing room
-- Not every scene should end on emotional peak → some trail off
-- Add physical needs: bored, hungry, cold
-
-**SENTENCE-LEVEL CHECKS:**
-- If 3 sentences in a row start with subject → vary structure
-- If 2 consecutive sentences use same verb tense → mix it up
-- If adjectives cluster (3+ in one sentence) → cut to 1
-
-**PARAGRAPH-LEVEL:**
-- If paragraph is only internal thought → add physical action
-- If paragraph is only action → maybe add one brief thought
-- If paragraph is perfectly shaped → break it awkwardly
-
-**ANTI-POLISH DIRECTIVE:**
-If a passage feels too smooth, too polished, too balanced:
-- Break a sentence awkwardly
-- Add a sentence fragment
-- Let a character trail off mid-thought
-- Include an observation that goes nowhere
-
-**REMEMBER:** Perfect prose is LLM prose. Human prose has wrinkles. Some clutter is human.
-
-**CONSTRAINTS:**
-- Change < 20% of text
-- Preserve all plot points
-- Keep all dialogue content (can adjust wording)
-- Maintain character voices
-- Do not add new scenes or remove existing ones
-
-**CHAPTER TO EDIT:**
-${context.chapterContent}
-
-**OUTPUT:**
-Return the edited chapter. Make only the necessary surgical fixes.`;
-
-  const systemPrompt = "You are a precision editor who makes minimal, targeted changes to fix specific issues.";
+  const { systemPrompt, userPrompt: prompt } = getFormattedPrompt(PromptNames.EDITING_AGENT_TARGETED, {
+    critique_notes: context.critiqueNotes,
+    chapter_content: context.chapterContent
+  });
   
   return await generateText(prompt, systemPrompt, undefined, 0.5, 0.8, 40);
 }
@@ -380,44 +250,16 @@ async function executeRegeneration(
   generateText: typeof generateGeminiText
 ): Promise<string> {
   
-  const prompt = `You are regenerating a chapter that has serious structural issues. Follow the plan exactly.
-
-**CHAPTER PLAN (MUST IMPLEMENT EVERY ELEMENT):**
-${context.chapterPlanText}
-
-**CRITICAL PLAN ELEMENTS TO INCLUDE:**
-- Moral Dilemma: ${context.chapterPlan.moralDilemma || 'Not specified'}
-- Character Complexity: ${context.chapterPlan.characterComplexity || 'Not specified'}
-- Consequences: ${context.chapterPlan.consequencesOfChoices || 'Not specified'}
-- Conflict Type: ${context.chapterPlan.conflictType || 'Not specified'}
-- Tension Level: ${context.chapterPlan.tensionLevel || 5}/10
-
-**ORIGINAL CHAPTER (reference for events/structure):**
-${context.chapterContent.substring(0, 8000)}${context.chapterContent.length > 8000 ? '...(truncated)' : ''}
-
-**PROBLEMS IN ORIGINAL:**
-${context.critiqueNotes}
-
-**REGENERATION PROTOCOL:**
-1. Follow the chapter plan exactly - every element must appear
-2. Fix all identified problems from critique
-3. Keep the same events and plot progression from original
-4. Preserve good dialogue and descriptions from original where possible
-5. Ensure moral dilemma is CENTRAL to the chapter
-6. Show character complexity through contradictions and choices
-7. Demonstrate consequences of decisions clearly
-
-**WRITING PRINCIPLES:**
-- Show, don't tell
-- Maximum ONE metaphor per paragraph
-- Maximum 1-2 adjectives per noun
-- Simple, clear language
-- Strong verbs, minimal adverbs
-
-**OUTPUT:**
-Generate the improved chapter. This is a regeneration, so you can rewrite significantly, but you MUST implement all plan elements.`;
-
-  const systemPrompt = "You are a story architect who regenerates chapters to perfectly match their plans while fixing structural issues.";
+  const { systemPrompt, userPrompt: prompt } = getFormattedPrompt(PromptNames.EDITING_AGENT_REGENERATE, {
+    chapter_plan_text: context.chapterPlanText,
+    moral_dilemma: context.chapterPlan.moralDilemma || 'Not specified',
+    character_complexity: context.chapterPlan.characterComplexity || 'Not specified',
+    consequences_of_choices: context.chapterPlan.consequencesOfChoices || 'Not specified',
+    conflict_type: context.chapterPlan.conflictType || 'Not specified',
+    tension_level: context.chapterPlan.tensionLevel || 5,
+    chapter_content_preview: context.chapterContent.substring(0, 8000) + (context.chapterContent.length > 8000 ? '...(truncated)' : ''),
+    critique_notes: context.critiqueNotes
+  });
   
   return await generateText(prompt, systemPrompt, undefined, 0.7, 0.9, 60);
 }
@@ -430,91 +272,13 @@ async function executePolish(
   generateText: typeof generateGeminiText
 ): Promise<string> {
   
-  const prompt = `You are polishing a solid chapter. Make light improvements and verify plan elements.
-
-**CHAPTER PLAN (verify these are present and clear):**
-- Moral Dilemma: ${context.chapterPlan.moralDilemma || 'Not specified'}
-- Character Complexity: ${context.chapterPlan.characterComplexity || 'Not specified'}
-- Consequences: ${context.chapterPlan.consequencesOfChoices || 'Not specified'}
-
-**MINOR ISSUES (if any):**
-${context.critiqueNotes || 'No specific issues'}
-
-**POLISHING PROTOCOL:**
-1. Verify plan elements are present and clear
-2. If moral dilemma is weak or missing, strengthen it subtly
-3. If character complexity is weak, add a moment of contradiction
-4. Fix any minor language issues
-5. Tighten any verbose passages
-6. Ensure strong chapter ending
-
-**CRITICAL WORD BANS:**
-- NEVER use "obsidian" or any derivative (obsidian-like, obsidian's, etc.)
-- NEVER use "thorn" or "thorne" or any derivative (thorns, thorny, etc.)
-- Replace obsidian with: "black stone", "dark walls", "stone", "dark rock"
-- Replace thorn/thorne with: "spike", "sharp point", "barb", be specific
-- This is ABSOLUTE - scan entire chapter and remove ALL instances
-
-### CRITICAL SECOND-PASS CHECKS:
-
-**RHYTHM VARIATION:**
-- Ensure at least one sentence under 5 words per page
-- Ensure at least one sentence over 25 words per page
-- Vary paragraph lengths (1 line to 8+ lines)
-- Create tonal shifts (tense → calm → tense)
-
-**HUNT LLM PATTERNS:**
-- Break parallel structures ("She saw X. She felt Y. She knew Z.")
-- Reduce "-ing" clause overuse
-- Vary action beat placement in dialogue
-- Not every paragraph should end with insight
-
-**CONCRETE VS ABSTRACT:**
-- Max 2 abstract emotions per paragraph
-- At least 1 concrete physical detail per paragraph
-- Show what character DOES when feeling something
-
-**DIALOGUE NATURALNESS:**
-- Add interruptions, topic changes, non-sequiturs
-- Vary speech patterns between characters
-- Include uncomfortable silences
-- People don't always say what they mean
-
-**REMOVE FILTERS:**
-Cut: "she felt that...", "she realized...", "she noticed...", "it seemed..."
-
-**ADD TEXTURE:**
-- Mundane details (weather, sounds, discomfort)
-- Character distractions
-- Unresolved minor elements
-
-**EMOTIONAL PACING:**
-- Add breathing room after high intensity
-- Some scenes should trail off, not peak
-- Add physical needs (hunger, cold, boredom)
-
-**ANTI-POLISH:**
-If too smooth:
-- Break a sentence awkwardly
-- Add sentence fragments
-- Let character trail off mid-thought
-- Include observations that go nowhere
-
-**REMEMBER:** Perfect prose is LLM prose. Human prose has wrinkles.
-
-**CONSTRAINTS:**
-- Change < 10% of text
-- Preserve all good elements
-- Make improvements feel natural, not forced
-- Do not add unnecessary content
-
-**CHAPTER TO POLISH:**
-${context.chapterContent}
-
-**OUTPUT:**
-Return the polished chapter with light improvements.`;
-
-  const systemPrompt = "You are a master editor who makes subtle improvements that elevate good writing to great.";
+  const { systemPrompt, userPrompt: prompt } = getFormattedPrompt(PromptNames.EDITING_AGENT_POLISH, {
+    moral_dilemma: context.chapterPlan.moralDilemma || 'Not specified',
+    character_complexity: context.chapterPlan.characterComplexity || 'Not specified',
+    consequences_of_choices: context.chapterPlan.consequencesOfChoices || 'Not specified',
+    critique_notes: context.critiqueNotes || 'No specific issues',
+    chapter_content: context.chapterContent
+  });
   
   return await generateText(prompt, systemPrompt, undefined, 0.4, 0.8, 30);
 }
@@ -529,25 +293,13 @@ export async function evaluateResult(
   generateText: typeof generateGeminiText
 ): Promise<{ qualityScore: number; changesApplied: string[] }> {
   
-  const evaluationPrompt = `You are evaluating the quality of an edited chapter.
-
-**ORIGINAL LENGTH:** ${original.length} characters
-**REFINED LENGTH:** ${refined.length} characters
-
-**CHAPTER PLAN REQUIREMENTS:**
-- Moral Dilemma: ${context.chapterPlan.moralDilemma || 'Not specified'}
-- Character Complexity: ${context.chapterPlan.characterComplexity || 'Not specified'}
-
-**REFINED CHAPTER (first 3000 chars):**
-${refined.substring(0, 3000)}...
-
-**EVALUATE:**
-1. Are plan elements (moral dilemma, character complexity) present? (0-30 points)
-2. Is prose quality high (show don't tell, economy)? (0-30 points)
-3. Is pacing appropriate? (0-20 points)
-4. Are characters compelling? (0-20 points)
-
-Provide quality score (0-100) and list of changes applied.`;
+  const { systemPrompt: evaluationSystemPrompt, userPrompt: evaluationPrompt } = getFormattedPrompt(PromptNames.EDITING_AGENT_EVALUATION, {
+    original_length: original.length,
+    refined_length: refined.length,
+    moral_dilemma: context.chapterPlan.moralDilemma || 'Not specified',
+    character_complexity: context.chapterPlan.characterComplexity || 'Not specified',
+    refined_chapter_preview: refined.substring(0, 3000) + '...'
+  });
 
   try {
     const evaluationSchema = {
@@ -561,7 +313,7 @@ Provide quality score (0-100) and list of changes applied.`;
       required: ['qualityScore', 'changesApplied', 'planElementsPresent', 'remainingIssues']
     };
     
-    const response = await generateText(evaluationPrompt, "You are a quality evaluator.", evaluationSchema, 0.3, 0.7, 20);
+    const response = await generateText(evaluationPrompt, evaluationSystemPrompt, evaluationSchema, 0.3, 0.7, 20);
     const evaluation = JSON.parse(response);
     
     log(context, 'evaluation', `Quality Score: ${evaluation.qualityScore}/100`, {
