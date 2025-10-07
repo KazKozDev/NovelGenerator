@@ -1,4 +1,5 @@
 import { Character } from '../types';
+import { getFormattedPrompt, PromptNames } from './promptLoader';
 
 /**
  * Consistency checker for maintaining story coherence across chapters
@@ -34,35 +35,13 @@ export async function checkChapterConsistency(
     `${c.name}: ${c.description.substring(0, 200)}`
   ).join('\n');
 
-  const consistencyPrompt = `You are a meticulous story continuity checker. Analyze the provided chapter for consistency issues.
-
-**ESTABLISHED FACTS:**
-- **World Name:** ${worldName}
-- **Known Characters:** ${characterNames.join(', ')}
-- **Character Details:**
-${characterDescriptions}
-
-**PREVIOUS CHAPTERS CONTEXT:**
-${previousChaptersSummaries || 'This is the first chapter.'}
-
-**CHAPTER ${chapterNumber} TO CHECK:**
-${chapterContent.substring(0, 5000)} ${chapterContent.length > 5000 ? '...(truncated)' : ''}
-
-**CHECK FOR THESE CONSISTENCY ISSUES:**
-1. **Character Names:** Are all character names spelled consistently? Do new characters appear without introduction?
-2. **Character Traits:** Do characters act consistently with their established personality?
-3. **Locations:** Are location names consistent? Do characters teleport without explanation?
-4. **Timeline:** Does the timeline make sense? Are there temporal contradictions?
-5. **World Rules:** Are established world rules (magic systems, technology, etc.) maintained?
-
-**RESPOND WITH:**
-- List any consistency issues found (be specific with quotes if possible)
-- Classify each issue as: MINOR (stylistic), MAJOR (noticeable error), or CRITICAL (breaks story logic)
-- If no issues found, respond with "CONSISTENCY CHECK PASSED"
-
-Be thorough but fair. Minor stylistic variations are acceptable. Focus on factual contradictions.`;
-
-  const systemPrompt = "You are an expert story editor specializing in continuity and consistency.";
+  const { systemPrompt, userPrompt: consistencyPrompt } = getFormattedPrompt(PromptNames.CONSISTENCY_CHECKER, {
+    chapter_number: chapterNumber,
+    chapter_content: chapterContent.substring(0, 5000) + (chapterContent.length > 5000 ? ' ...(truncated)' : ''),
+    characters_json: JSON.stringify(characters, null, 2),
+    previous_chapters_summary: previousChaptersSummaries || 'This is the first chapter.',
+    world_name: worldName
+  });
 
   try {
     const response = await llmFunction(consistencyPrompt, systemPrompt, undefined, 0.2, 0.6, 10);

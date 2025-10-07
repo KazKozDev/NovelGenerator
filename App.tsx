@@ -82,7 +82,7 @@ const App: React.FC = () => {
             NovelGenerator
           </h1>
           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg animate-pulse">
-            v4.0
+            v4.1
           </span>
         </div>
         <p className="text-slate-400 mt-2 text-sm md:text-base">
@@ -119,8 +119,19 @@ const App: React.FC = () => {
               onSubmit={handleStartGeneration}
               isLoading={isLoading}
             />
-            <div className="mt-8">
-              <FeatureGrid />
+            <div className="mt-12 border-t border-slate-700 pt-6">
+              <p className="text-[10px] text-slate-500 mb-4 text-left leading-relaxed">
+                * Time to create: Several minutes to several hours, depending on length. Each chapter receives multiple AI passes for professional quality. Patience creates perfection.
+              </p>
+              <p className="text-[10px] text-slate-500 mb-2 text-left">** Technical Process:</p>
+              <div className="text-[10px] text-slate-500 leading-relaxed text-left space-y-1">
+                <p>Specialist Coordination: Three LLM agents (Structure, Character, Scene) work sequentially, each receiving full context and previous outputs.</p>
+                <p>Slot-Based Architecture: Structure agent creates prose framework with embedded slots, specialists fill them with dialogue, action, descriptions.</p>
+                <p>Real-Time Validation: Automatic checks for repetition patterns, tone consistency, content balance during generation.</p>
+                <p>Persistent Context: Story Context Database tracks character states, plot threads, world facts across all chapters for coherence.</p>
+                <p>Synthesis Integration: Advanced merging engine resolves conflicts, generates transitions, performs slot replacement with fallback handling.</p>
+                <p>Multi-Pass Refinement: Light polish → repetition fixes → continuity checks → professional polish for publication-ready quality.</p>
+              </div>
             </div>
           </>
         )}
@@ -224,7 +235,7 @@ const App: React.FC = () => {
         )}
       </main>
       <footer className="w-full max-w-4xl mt-8">
-        <div className="text-center text-slate-500 text-xs">
+        <div className="text-center text-slate-500 text-[10px]">
           <p>
             &copy; {new Date().getFullYear()}{' '}
             <a 
