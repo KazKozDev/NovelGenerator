@@ -1312,6 +1312,51 @@ Server runs on `http://localhost:3000`
 ### AI Agent Architecture
 NovelGenerator v4.1 uses a coordinated multi-agent system:
 
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      GENERATION PIPELINE                         │
+└─────────────────────────────────────────────────────────────────┘
+
+INPUT: Story Premise + Chapter Outline
+   ↓
+┌──────────────────────┐
+│  STRUCTURE AGENT     │ → Creates prose framework with slots
+│  (LLM #1)            │   Output: "She walked [ACTION_SLOT] 
+└──────────────────────┘   while thinking [DIALOGUE_SLOT]..."
+   ↓
+┌──────────────────────┐
+│  CHARACTER AGENT     │ → Fills dialogue & emotion slots
+│  (LLM #2)            │   [DIALOGUE_SLOT] → "I can't believe this"
+└──────────────────────┘   [EMOTION_SLOT] → "her hands trembled"
+   ↓
+┌──────────────────────┐
+│  SCENE AGENT         │ → Adds atmosphere & sensory details
+│  (LLM #3)            │   [ACTION_SLOT] → "through the rain-soaked street"
+└──────────────────────┘   [DESCRIPTION_SLOT] → "neon lights reflected..."
+   ↓
+┌──────────────────────┐
+│  SYNTHESIS AGENT     │ → Integrates all outputs
+│  (Integration)       │   • Replaces slots with content
+└──────────────────────┘   • Resolves conflicts
+   ↓                       • Generates transitions
+┌──────────────────────┐
+│  QUALITY CONTROLLER  │ → Real-time validation
+│  (Validation)        │   • Repetition check
+└──────────────────────┘   • Tone consistency
+   ↓                       • Content balance
+┌──────────────────────┐
+│  STORY CONTEXT DB    │ → Updates persistent memory
+│  (Memory)            │   • Character states
+└──────────────────────┘   • Plot threads
+   ↓                       • World facts
+┌──────────────────────┐
+│  POLISH AGENT        │ → Final refinement
+│  (Refinement)        │   • Rhythm & pacing
+└──────────────────────┘   • Emotional depth
+   ↓
+OUTPUT: Polished Chapter Text
+```
+
 **Three Specialized LLM Agents:**
 - **Structure Agent:** Creates narrative framework with embedded content slots
 - **Character Agent:** Fills slots with dialogue, character development, emotional depth
