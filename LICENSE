@@ -1,21 +1,61 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2025 KazKozDev
+License text © 2017 MariaDB Corporation Ab, modified for the NovelGenerator project.
+All rights reserved by Artem Kazakov Kozlov (KazKozDev).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Parameters
+===========
+Licensor:             Artem Kazakov Kozlov
+Licensed Work:        NovelGenerator — AI-powered Novel Generation System
+License Version:      1.1
+Additional Use Grant: You may use this Licensed Work for any non-production purpose,
+                      including personal projects, research, testing, education,
+                      or internal evaluation.
+Change Date:          2029-01-01
+Change License:       Apache License, Version 2.0
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Terms
+=====
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. **Grant of Rights**
+   Until the Change Date, you may copy, modify, create derivative works,
+   and redistribute the Licensed Work solely for non-production purposes.
+
+   "Non-production" means use that is not intended for or directed toward
+   generating revenue, commercial distribution, or offering services to
+   external third parties.
+
+2. **Production Use**
+   To use the Licensed Work in production, you must obtain a separate
+   commercial license from the Licensor (Artem Kazakov Kozlov).
+
+3. **Change Date**
+   On or after the Change Date specified above, this Licensed Work will
+   automatically be made available under the Change License (Apache 2.0),
+   granting you full rights for commercial and production use.
+
+4. **Derivative Works**
+   You may create derivative works of this Licensed Work for non-production
+   purposes. Such works must include the following notice:
+
+       "Derived from NovelGenerator under the Business Source License 1.1,
+        © Artem Kazakov Kozlov."
+
+5. **No Warranty**
+   The Licensed Work is provided "AS IS", without warranty of any kind,
+   express or implied, including but not limited to warranties of
+   merchantability, fitness for a particular purpose, or noninfringement.
+
+6. **Limitation of Liability**
+   In no event shall the Licensor be liable for any claim, damages,
+   or other liability arising from the use or inability to use
+   the Licensed Work or derivative works.
+
+7. **Termination**
+   If you violate the terms of this license, your rights under it terminate
+   immediately and automatically.
+
+---
+
+For full details about the Business Source License 1.1, see:
+https://mariadb.com/bsl11/
