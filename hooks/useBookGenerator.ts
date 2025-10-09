@@ -15,7 +15,7 @@ import { playSuccessSound, playNotificationSound } from '../utils/soundUtils';
 import { getFormattedPrompt, PromptNames, formatPrompt } from '../utils/promptLoader';
 import { GEMINI_MODEL_NAME } from '../constants';
 import { OUTLINE_PARAMS, CHAPTER_CONTENT_PARAMS, ANALYSIS_PARAMS, EDITING_PARAMS, EXTRACTION_PARAMS, TITLE_PARAMS } from '../constants/generationParams';
-import { Type } from '@google/genai';
+import { SchemaType } from '@google/generative-ai';
 
 const STORAGE_KEY = 'novelGeneratorState';
 
@@ -25,74 +25,74 @@ const STORAGE_KEY = 'novelGeneratorState';
  */
 const createExpandedChapterPlanSchema = (numChapters: number): object => {
   return {
-    type: Type.OBJECT,
+    type: SchemaType.OBJECT,
     properties: {
       chapters: {
-        type: Type.ARRAY,
+        type: SchemaType.ARRAY,
         description: `An array of chapter plan objects, one for each of the ${numChapters} chapters.`,
         items: {
-          type: Type.OBJECT,
+          type: SchemaType.OBJECT,
           properties: {
             // CORE EXISTING FIELDS
-            title: { type: Type.STRING, description: "Chapter title" },
-            summary: { type: Type.STRING, description: "Brief chapter summary" },
-            sceneBreakdown: { type: Type.STRING, description: "Overview of scenes in the chapter" },
-            characterDevelopmentFocus: { type: Type.STRING, description: "Which characters develop and how" },
-            plotAdvancement: { type: Type.STRING, description: "How the plot moves forward" },
-            timelineIndicators: { type: Type.STRING, description: "Time passage and chronological markers" },
-            emotionalToneTension: { type: Type.STRING, description: "Emotional atmosphere and tension level" },
-            connectionToNextChapter: { type: Type.STRING, description: "How this chapter leads to the next" },
+            title: { type: SchemaType.STRING, description: "Chapter title" },
+            summary: { type: SchemaType.STRING, description: "Brief chapter summary" },
+            sceneBreakdown: { type: SchemaType.STRING, description: "Overview of scenes in the chapter" },
+            characterDevelopmentFocus: { type: SchemaType.STRING, description: "Which characters develop and how" },
+            plotAdvancement: { type: SchemaType.STRING, description: "How the plot moves forward" },
+            timelineIndicators: { type: SchemaType.STRING, description: "Time passage and chronological markers" },
+            emotionalToneTension: { type: SchemaType.STRING, description: "Emotional atmosphere and tension level" },
+            connectionToNextChapter: { type: SchemaType.STRING, description: "How this chapter leads to the next" },
             conflictType: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "Type of conflict in this chapter: external, internal, interpersonal, or societal"
             },
             tensionLevel: {
-              type: Type.INTEGER,
+              type: SchemaType.INTEGER,
               description: "Tension level from 1-10, where 1 is calm and 10 is peak intensity"
             },
             rhythmPacing: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "Chapter pacing: fast (action-heavy), medium (balanced), or slow (introspective)"
             },
             wordEconomyFocus: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "Specific economy focus: dialogue-heavy, action-focused, or atmosphere-light"
             },
             moralDilemma: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "The moral dilemma or ethical question this chapter explores. What difficult choice must be made? What are the costs?"
             },
             characterComplexity: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "How this chapter reveals character contradictions, flaws, or unexpected depths. Show that people are complex, not archetypes."
             },
             consequencesOfChoices: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "What are the consequences (positive and negative) of decisions made in this chapter? Show that choices have weight."
             },
 
             // DETAILED SCENE PLANNING
             detailedScenes: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               description: "3-5 detailed scenes that make up the chapter",
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  sceneId: { type: Type.STRING, description: "Unique identifier for the scene" },
-                  location: { type: Type.STRING, description: "Where the scene takes place" },
+                  sceneId: { type: SchemaType.STRING, description: "Unique identifier for the scene" },
+                  location: { type: SchemaType.STRING, description: "Where the scene takes place" },
                   participants: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Characters involved in this scene"
                   },
-                  objective: { type: Type.STRING, description: "What the scene is trying to accomplish" },
-                  conflict: { type: Type.STRING, description: "Main tension or obstacle in the scene" },
-                  outcome: { type: Type.STRING, description: "How the scene resolves" },
-                  duration: { type: Type.STRING, description: "Estimated time span (e.g., '10 minutes', 'several hours')" },
-                  mood: { type: Type.STRING, description: "Emotional atmosphere of the scene" },
+                  objective: { type: SchemaType.STRING, description: "What the scene is trying to accomplish" },
+                  conflict: { type: SchemaType.STRING, description: "Main tension or obstacle in the scene" },
+                  outcome: { type: SchemaType.STRING, description: "How the scene resolves" },
+                  duration: { type: SchemaType.STRING, description: "Estimated time span (e.g., '10 minutes', 'several hours')" },
+                  mood: { type: SchemaType.STRING, description: "Emotional atmosphere of the scene" },
                   keyMoments: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Specific beats or events within the scene"
                   }
                 },
@@ -102,33 +102,33 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
 
             // NARRATIVE EVENTS
             chapterEvents: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               description: "Specific events that drive the narrative forward",
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  eventId: { type: Type.STRING, description: "Unique identifier" },
+                  eventId: { type: SchemaType.STRING, description: "Unique identifier" },
                   eventType: {
-                    type: Type.STRING,
+                    type: SchemaType.STRING,
                     description: "Type of event: dialogue, action, revelation, conflict, internal, or transition"
                   },
-                  description: { type: Type.STRING, description: "What happens in this event" },
+                  description: { type: SchemaType.STRING, description: "What happens in this event" },
                   participants: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Who is involved"
                   },
                   consequences: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "What this event leads to"
                   },
                   emotionalImpact: {
-                    type: Type.INTEGER,
+                    type: SchemaType.INTEGER,
                     description: "1-10 scale of emotional intensity"
                   },
-                  plotSignificance: { type: Type.STRING, description: "How this advances the overall story" },
-                  sceneId: { type: Type.STRING, description: "Which scene this event belongs to" }
+                  plotSignificance: { type: SchemaType.STRING, description: "How this advances the overall story" },
+                  sceneId: { type: SchemaType.STRING, description: "Which scene this event belongs to" }
                 },
                 required: ["eventId", "eventType", "description", "participants", "consequences", "emotionalImpact", "plotSignificance"]
               }
@@ -136,35 +136,35 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
 
             // DIALOGUE PLANNING
             dialogueBeats: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               description: "Planned dialogue moments with subtext and purpose",
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  beatId: { type: Type.STRING, description: "Unique identifier" },
-                  purpose: { type: Type.STRING, description: "What this dialogue accomplishes" },
+                  beatId: { type: SchemaType.STRING, description: "Unique identifier" },
+                  purpose: { type: SchemaType.STRING, description: "What this dialogue accomplishes" },
                   participants: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Who is speaking"
                   },
-                  subtext: { type: Type.STRING, description: "What's really being communicated beneath the words" },
+                  subtext: { type: SchemaType.STRING, description: "What's really being communicated beneath the words" },
                   revelations: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Information revealed through this dialogue"
                   },
                   tensions: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Conflicts or tensions exposed"
                   },
                   emotionalShifts: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "How characters' feelings change"
                   },
-                  sceneId: { type: Type.STRING, description: "Which scene this belongs to" }
+                  sceneId: { type: SchemaType.STRING, description: "Which scene this belongs to" }
                 },
                 required: ["beatId", "purpose", "participants", "subtext", "revelations", "tensions", "emotionalShifts"]
               }
@@ -172,27 +172,27 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
 
             // CHARACTER EMOTIONAL ARCS
             characterArcs: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               description: "Character emotional journeys through the chapter",
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  character: { type: Type.STRING, description: "Character name" },
-                  startState: { type: Type.STRING, description: "Emotional state at chapter beginning" },
+                  character: { type: SchemaType.STRING, description: "Character name" },
+                  startState: { type: SchemaType.STRING, description: "Emotional state at chapter beginning" },
                   keyMoments: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Specific moments that affect this character"
                   },
-                  endState: { type: Type.STRING, description: "Emotional state at chapter end" },
+                  endState: { type: SchemaType.STRING, description: "Emotional state at chapter end" },
                   internalConflicts: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Inner struggles the character faces"
                   },
-                  growth: { type: Type.STRING, description: "How the character changes or develops" },
+                  growth: { type: SchemaType.STRING, description: "How the character changes or develops" },
                   relationships: {
-                    type: Type.STRING,
+                    type: SchemaType.STRING,
                     description: "How relationships with other characters evolve (comma-separated list)"
                   }
                 },
@@ -202,25 +202,25 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
 
             // ACTION SEQUENCES
             actionSequences: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               description: "Physical action and movement sequences",
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  sequenceId: { type: Type.STRING, description: "Unique identifier" },
-                  description: { type: Type.STRING, description: "What physical action occurs" },
+                  sequenceId: { type: SchemaType.STRING, description: "Unique identifier" },
+                  description: { type: SchemaType.STRING, description: "What physical action occurs" },
                   participants: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
                     description: "Who is involved in the action"
                   },
-                  stakes: { type: Type.STRING, description: "What's at risk during this action" },
-                  outcome: { type: Type.STRING, description: "How the action resolves" },
+                  stakes: { type: SchemaType.STRING, description: "What's at risk during this action" },
+                  outcome: { type: SchemaType.STRING, description: "How the action resolves" },
                   pacing: {
-                    type: Type.STRING,
+                    type: SchemaType.STRING,
                     description: "Speed of the action: slow, medium, fast, or frantic"
                   },
-                  sceneId: { type: Type.STRING, description: "Which scene this belongs to" }
+                  sceneId: { type: SchemaType.STRING, description: "Which scene this belongs to" }
                 },
                 required: ["sequenceId", "description", "participants", "stakes", "outcome", "pacing"]
               }
@@ -228,46 +228,46 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
 
             // PACING AND STRUCTURE
             targetWordCount: {
-              type: Type.INTEGER,
+              type: SchemaType.INTEGER,
               description: "Estimated word count for this chapter (typically 4000-8000)"
             },
             climaxMoment: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "The peak emotional/tension moment of the chapter"
             },
             openingHook: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "How the chapter begins to engage readers"
             },
             chapterEnding: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "How the chapter concludes and leads to the next"
             },
 
             // THEMATIC ELEMENTS
             symbolism: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING },
               description: "Symbolic elements to weave through the chapter"
             },
             foreshadowing: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING },
               description: "Elements that hint at future events"
             },
             callbacks: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING },
               description: "References to earlier events or chapters"
             },
 
             // TECHNICAL REQUIREMENTS
             complexityLevel: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "Chapter complexity: simple, moderate, complex, or intricate"
             },
             generationPriority: {
-              type: Type.STRING,
+              type: SchemaType.STRING,
               description: "How much attention this chapter needs: standard, high, or critical"
             }
           },
@@ -742,21 +742,21 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         });
 
         const analysisSchema = { 
-          type: Type.OBJECT, 
+          type: SchemaType.OBJECT, 
           properties: { 
-            summary: { type: Type.STRING, description: "A concise summary of the chapter's events" }, 
-            timeElapsed: { type: Type.STRING, description: "How much time passed during this chapter" }, 
-            endTimeOfChapter: { type: Type.STRING, description: "The time/date at the end of the chapter" }, 
-            specificMarkers: { type: Type.STRING, description: "Specific time markers mentioned in the chapter" }, 
-            primaryEmotion: { type: Type.STRING, description: "The dominant emotional tone of the chapter" }, 
-            tensionLevel: { type: Type.INTEGER, description: "Tension level from 1-10" }, 
-            unresolvedHook: { type: Type.STRING, description: "The unresolved question or tension that propels the reader forward" },
-            pacingScore: { type: Type.INTEGER, description: "Pacing score from 1-10, where 1 is very slow and 10 is very fast" },
-            dialogueRatio: { type: Type.INTEGER, description: "Estimated percentage of dialogue vs narration (0-100)" },
-            wordCount: { type: Type.INTEGER, description: "Approximate word count of the chapter" },
-            keyEvents: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of 3-5 key events that occurred in this chapter" },
-            characterMoments: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of significant character development moments" },
-            foreshadowing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Elements that foreshadow future events (if any)" },
+            summary: { type: SchemaType.STRING, description: "A concise summary of the chapter's events" }, 
+            timeElapsed: { type: SchemaType.STRING, description: "How much time passed during this chapter" }, 
+            endTimeOfChapter: { type: SchemaType.STRING, description: "The time/date at the end of the chapter" }, 
+            specificMarkers: { type: SchemaType.STRING, description: "Specific time markers mentioned in the chapter" }, 
+            primaryEmotion: { type: SchemaType.STRING, description: "The dominant emotional tone of the chapter" }, 
+            tensionLevel: { type: SchemaType.INTEGER, description: "Tension level from 1-10" }, 
+            unresolvedHook: { type: SchemaType.STRING, description: "The unresolved question or tension that propels the reader forward" },
+            pacingScore: { type: SchemaType.INTEGER, description: "Pacing score from 1-10, where 1 is very slow and 10 is very fast" },
+            dialogueRatio: { type: SchemaType.INTEGER, description: "Estimated percentage of dialogue vs narration (0-100)" },
+            wordCount: { type: SchemaType.INTEGER, description: "Approximate word count of the chapter" },
+            keyEvents: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of 3-5 key events that occurred in this chapter" },
+            characterMoments: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of significant character development moments" },
+            foreshadowing: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "Elements that foreshadow future events (if any)" },
           }, 
           required: ["summary", "timeElapsed", "endTimeOfChapter", "specificMarkers", "primaryEmotion", "tensionLevel", "unresolvedHook", "pacingScore", "dialogueRatio", "wordCount", "keyEvents", "characterMoments", "foreshadowing"] 
         };
@@ -857,7 +857,7 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         // Note: Conflict verification removed - agent editing already handles this comprehensively
 
         // Update character states for consistency
-        const characterUpdateSchema = { type: Type.OBJECT, properties: { character_updates: { type: Type.ARRAY, description: "An array of objects, each representing an update to a single character's state.", items: { type: Type.OBJECT, properties: { name: { type: Type.STRING, description: "The full name of the character being updated, must match a name from the provided list." }, status: { type: Type.STRING, description: "The character's new status (e.g., 'alive', 'injured', 'captured')." }, location: { type: Type.STRING, description: "The character's new location at the end of the chapter." }, emotional_state: { type: Type.STRING, description: "The character's dominant emotional state at the end of the chapter." }, }, required: ["name"] } } }, required: ["character_updates"] };
+        const characterUpdateSchema = { type: SchemaType.OBJECT, properties: { character_updates: { type: SchemaType.ARRAY, description: "An array of objects, each representing an update to a single character's state.", items: { type: SchemaType.OBJECT, properties: { name: { type: SchemaType.STRING, description: "The full name of the character being updated, must match a name from the provided list." }, status: { type: SchemaType.STRING, description: "The character's new status (e.g., 'alive', 'injured', 'captured')." }, location: { type: SchemaType.STRING, description: "The character's new location at the end of the chapter." }, emotional_state: { type: SchemaType.STRING, description: "The character's dominant emotional state at the end of the chapter." }, }, required: ["name"] } } }, required: ["character_updates"] };
         const { systemPrompt: systemPromptUpdater, userPrompt: characterUpdatePrompt } = getFormattedPrompt(PromptNames.CHARACTER_UPDATES, {
           character_list: Object.keys(charactersRef.current).join(', '),
           previous_character_states: JSON.stringify(charactersRef.current, null, 2),

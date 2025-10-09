@@ -1,15 +1,15 @@
 
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { GEMINI_MODEL_NAME } from '../constants';
 import { withResilienceTracking, apiResilienceManager } from '../utils/apiResilienceUtils';
 
 const API_KEY = process.env.API_KEY;
 
-let ai: GoogleGenAI | null = null;
+let ai: GoogleGenerativeAI | null = null;
 
 if (API_KEY) {
-  ai = new GoogleGenAI({ apiKey: API_KEY });
+  ai = new GoogleGenerativeAI(API_KEY);
 } else {
   console.error("CRITICAL: API_KEY environment variable is not set. Gemini API calls will fail.");
 }
@@ -102,30 +102,30 @@ export async function generateGeminiText(
 
   return withResilienceTracking(() => retryWithBackoff(async () => {
     try {
-      const config: any = {};
-      if (systemInstruction) {
-          config.systemInstruction = systemInstruction;
-      }
-      if (responseSchema) {
-          config.responseMimeType = "application/json";
-          config.responseSchema = responseSchema;
-      }
+      const generationConfig: any = {};
       if (temperature !== undefined) {
-          config.temperature = temperature;
+          generationConfig.temperature = temperature;
       }
       if (topP !== undefined) {
-          config.topP = topP;
+          generationConfig.topP = topP;
       }
       if (topK !== undefined) {
-          config.topK = topK;
+          generationConfig.topK = topK;
+      }
+      if (responseSchema) {
+          generationConfig.responseMimeType = "application/json";
+          generationConfig.responseSchema = responseSchema;
       }
 
-      const result = await ai!.models.generateContent({
+      const model = ai!.getGenerativeModel({
         model: GEMINI_MODEL_NAME,
-        contents: prompt,
-        ...(Object.keys(config).length > 0 && { config }),
+        generationConfig,
+        ...(systemInstruction && { systemInstruction })
       });
-      return result.text;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text();
     } catch (error) {
       throw handleApiError(error);
     }
@@ -146,30 +146,28 @@ export async function generateGeminiTextStream(
 
   return retryWithBackoff(async () => {
     try {
-      const config: any = {};
-      if (systemInstruction) {
-          config.systemInstruction = systemInstruction;
-      }
+      const generationConfig: any = {};
       if (temperature !== undefined) {
-          config.temperature = temperature;
+          generationConfig.temperature = temperature;
       }
       if (topP !== undefined) {
-          config.topP = topP;
+          generationConfig.topP = topP;
       }
       if (topK !== undefined) {
-          config.topK = topK;
+          generationConfig.topK = topK;
       }
 
-      const stream = await ai!.models.generateContentStream({
+      const model = ai!.getGenerativeModel({
         model: GEMINI_MODEL_NAME,
-        contents: prompt,
-        ...(Object.keys(config).length > 0 && { config }),
+        generationConfig,
+        ...(systemInstruction && { systemInstruction })
       });
 
+      const result = await model.generateContentStream(prompt);
+
       let fullText = '';
-      for await (const chunk of stream) {
-        // Use chunk.text as per Gemini guidance for streaming
-        const chunkText = chunk.text;
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
         if (chunkText) {
           fullText += chunkText;
           onChunk(chunkText);
