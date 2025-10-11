@@ -1375,7 +1375,7 @@ OUTPUT: Polished Chapter Text
 
 ### AI Generation
 - **Multi-pass editing:** 6+ coordinated phases per chapter (structure → character → scene → synthesis → validation → polish)
-- **Genre-specific styles:** Tailored prompts for 7 genres
+- **Genre adaptation:** All specialist agents dynamically adjust to 6 genres (Fantasy, Sci-Fi, Thriller/Mystery, Romance, Horror, Literary Fiction)
 - **Consistency checking:** Character names, plot points, timeline validation
 - **Professional polish:** Final pass for rhythm, pacing, emotional depth
 - **Dialogue system:** Natural conversations with character voice consistency
@@ -1384,6 +1384,8 @@ OUTPUT: Polished Chapter Text
 
 ### User Interface
 - **Progress tracking:** Real-time chapter completion with time estimates
+- **Auto-save indicator:** Visual status showing generation progress with timestamps
+- **Draft versioning:** Complete history of each chapter's evolution through generation stages
 - **Diff viewer:** Visual comparison of before/after edits
 - **Agent logs:** Detailed activity feed of AI decisions
 - **Statistics:** Word count, reading time, chapter analysis
@@ -1396,9 +1398,13 @@ OUTPUT: Polished Chapter Text
 - **Metadata:** JSON with generation parameters and statistics
 
 ### Technical
-- **Retry logic:** Automatic retry with exponential backoff on API errors
+- **Retry logic:** Automatic retry with exponential backoff on API errors (up to 7 attempts for complex requests)
 - **Streaming:** Real-time chapter display as they generate
-- **Local storage:** Resume interrupted generations
+- **Auto-save system:** Persistent localStorage with multi-stage checkpoints (FirstDraft → LightPolish → ConsistencyCheck → Complete)
+- **Draft versioning:** Each chapter saves complete version history with timestamps
+- **Resume capability:** Safe to refresh browser at any time - generation continues from last saved stage
+- **Optimized schemas:** Adaptive JSON schemas with automatic fallback for reliability
+- **Genre adaptation:** All specialist agents dynamically adjust writing style to match selected genre
 - **Markdown support:** Bold, italic, scene breaks in exports
 
 ## Tech Stack
@@ -1430,6 +1436,7 @@ generator/
 │   ├── DiffViewer.tsx          # Before/after comparison
 │   ├── FeatureGrid.tsx         # Landing page features
 │   ├── ProgressBar.tsx         # Generation progress
+│   ├── SaveStatusIndicator.tsx # Auto-save status & draft versions
 │   ├── StreamingContentView.tsx # Real-time chapter display
 │   └── UserInput.tsx           # Story input form
 │

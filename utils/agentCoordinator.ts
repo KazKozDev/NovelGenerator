@@ -19,6 +19,7 @@ export interface ChapterGenerationInput {
   previousChapterEnd?: string;
   storyOutline: string;
   targetLength: number;
+  genre?: string; // User's selected genre
 }
 
 export interface GenerationPhaseResult {
@@ -314,7 +315,8 @@ export class AgentCoordinator {
         constraints: context.constraints,
         structureSlots: { dialogueSlots: [], actionSlots: [], internalSlots: [], descriptionSlots: [] }, // Will be filled after structure
         dialogueRequirements: this.generateDialogueRequirements(input.chapterPlan, input.characters),
-        storyOutline: input.storyOutline
+        storyOutline: input.storyOutline,
+        genre: input.genre
       }),
       sceneAgent.generate({
         chapterPlan: input.chapterPlan,
@@ -322,7 +324,8 @@ export class AgentCoordinator {
         context: context.scene,
         constraints: context.constraints,
         structureSlots: { dialogueSlots: [], actionSlots: [], internalSlots: [], descriptionSlots: [] }, // Will be filled after structure
-        storyOutline: input.storyOutline
+        storyOutline: input.storyOutline,
+        genre: input.genre
       })
     ]);
 
@@ -379,7 +382,8 @@ export class AgentCoordinator {
       constraints: context.constraints,
       structureSlots: structureOutput.slots,
       dialogueRequirements: this.generateDialogueRequirements(input.chapterPlan, input.characters),
-      storyOutline: input.storyOutline
+      storyOutline: input.storyOutline,
+      genre: input.genre
     });
 
     // Finally: Scene Agent (with structure slots)
@@ -389,7 +393,8 @@ export class AgentCoordinator {
       context: context.scene,
       constraints: context.constraints,
       structureSlots: structureOutput.slots,
-      storyOutline: input.storyOutline
+      storyOutline: input.storyOutline,
+      genre: input.genre
     });
 
     return {
@@ -753,7 +758,8 @@ Consequences: ${plan.consequencesOfChoices}`;
             emotionalTone: input.chapterPlan.emotionalToneTension || 'neutral'
           }
         ],
-        storyOutline: input.storyOutline
+        storyOutline: input.storyOutline,
+        genre: input.genre
       });
 
       const content = result.content.characterContent || '';
@@ -841,7 +847,8 @@ Consequences: ${plan.consequencesOfChoices}`;
           internalSlots: ['INTERNAL_1'],
           descriptionSlots: ['DESCRIPTION_1']
         },
-        storyOutline: input.storyOutline
+        storyOutline: input.storyOutline,
+        genre: input.genre
       });
 
       return {

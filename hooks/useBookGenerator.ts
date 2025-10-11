@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry } from '../types';
+import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry, ChapterGenerationStage } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from '../services/geminiService';
 import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString } from '../utils/parserUtils';
 import { getWritingExamplesPrompt } from '../utils/writingExamples';
@@ -18,6 +18,58 @@ import { OUTLINE_PARAMS, CHAPTER_CONTENT_PARAMS, ANALYSIS_PARAMS, EDITING_PARAMS
 import { SchemaType } from '@google/generative-ai';
 
 const STORAGE_KEY = 'novelGeneratorState';
+
+/**
+ * Creates an optimized chapter planning schema - focusing on essential fields
+ * that directly impact generation, while trusting specialist agents for detailed planning
+ */
+const createOptimizedChapterPlanSchema = (numChapters: number): object => {
+  return {
+    type: SchemaType.OBJECT,
+    properties: {
+      chapters: {
+        type: SchemaType.ARRAY,
+        description: `An array of chapter plan objects, one for each of the ${numChapters} chapters.`,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            // Core essentials
+            title: { type: SchemaType.STRING, description: "Chapter title" },
+            summary: { type: SchemaType.STRING, description: "2-3 sentence chapter summary covering key events" },
+            
+            // Narrative direction
+            sceneBreakdown: { type: SchemaType.STRING, description: "Brief overview of 2-4 main scenes" },
+            characterDevelopmentFocus: { type: SchemaType.STRING, description: "Which characters develop and how" },
+            plotAdvancement: { type: SchemaType.STRING, description: "How the plot moves forward" },
+            
+            // Structure & pacing (critical for generation)
+            conflictType: { type: SchemaType.STRING, description: "Type of conflict: external, internal, interpersonal, or societal" },
+            tensionLevel: { type: SchemaType.INTEGER, description: "Tension level from 1-10" },
+            rhythmPacing: { type: SchemaType.STRING, description: "Chapter pacing: fast, medium, or slow" },
+            targetWordCount: { type: SchemaType.INTEGER, description: "Target word count (typically 4000-8000)" },
+            
+            // Emotional & thematic
+            emotionalToneTension: { type: SchemaType.STRING, description: "Emotional atmosphere and tension level" },
+            moralDilemma: { type: SchemaType.STRING, description: "The moral dilemma or ethical question explored" },
+            
+            // Chapter hooks
+            openingHook: { type: SchemaType.STRING, description: "How the chapter begins to engage readers" },
+            climaxMoment: { type: SchemaType.STRING, description: "The peak moment of the chapter" },
+            chapterEnding: { type: SchemaType.STRING, description: "How the chapter concludes" },
+            connectionToNextChapter: { type: SchemaType.STRING, description: "How this chapter leads to the next" }
+          },
+          required: [
+            "title", "summary", "sceneBreakdown", "characterDevelopmentFocus",
+            "plotAdvancement", "conflictType", "tensionLevel", "rhythmPacing",
+            "targetWordCount", "emotionalToneTension", "moralDilemma",
+            "openingHook", "climaxMoment", "chapterEnding", "connectionToNextChapter"
+          ]
+        }
+      }
+    },
+    required: ["chapters"]
+  };
+};
 
 /**
  * Creates an expanded chapter planning schema with detailed narrative elements
@@ -276,11 +328,9 @@ const createExpandedChapterPlanSchema = (numChapters: number): object => {
             "plotAdvancement", "timelineIndicators", "emotionalToneTension",
             "connectionToNextChapter", "conflictType", "tensionLevel",
             "rhythmPacing", "wordEconomyFocus", "moralDilemma",
-            "characterComplexity", "consequencesOfChoices", "detailedScenes",
-            "chapterEvents", "dialogueBeats", "characterArcs", "actionSequences",
+            "characterComplexity", "consequencesOfChoices",
             "targetWordCount", "climaxMoment", "openingHook", "chapterEnding",
-            "symbolism", "foreshadowing", "callbacks", "complexityLevel",
-            "generationPriority"
+            "complexityLevel", "generationPriority"
           ]
         }
       }
@@ -321,6 +371,7 @@ const useBookGenerator = () => {
 
   const [finalBookContent, setFinalBookContent] = useState<string | null>(null);
   const [finalMetadataJson, setFinalMetadataJson] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | undefined>(undefined);
 
   // Use refs for mutable data that doesn't need to trigger re-renders on every change during generation
   const charactersRef = useRef<Record<string, Character>>({});
@@ -347,13 +398,59 @@ const useBookGenerator = () => {
       timeline: timelineRef.current,
       emotionalArc: emotionalArcRef.current,
       transitions: transitionsRef.current,
+      savedAt: Date.now(), // Track when state was saved
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+    setLastSavedAt(Date.now());
+    console.log(`💾 State saved to localStorage at ${new Date().toLocaleTimeString()}`);
   }, [
       storyPremise, numChapters, currentStep, currentStoryOutline, parsedChapterPlans,
       worldName, recurringMotifs, generatedChapters, totalChaptersToProcess,
       finalBookContent, finalMetadataJson
   ]);
+
+  // Save intermediate chapter draft during generation
+  const _saveChapterDraft = useCallback((
+    chapterIndex: number,
+    content: string,
+    stage: ChapterGenerationStage,
+    additionalData?: Partial<ChapterData>
+  ) => {
+    setGeneratedChapters(prev => {
+      const updated = [...prev];
+      const existingChapter = updated[chapterIndex] || {
+        content: '',
+        generationStage: ChapterGenerationStage.NotStarted,
+        draftVersions: []
+      };
+      
+      // Save this version to draft history
+      const newDraftVersion = {
+        stage,
+        content,
+        timestamp: Date.now()
+      };
+      
+      updated[chapterIndex] = {
+        ...existingChapter,
+        ...additionalData,
+        content,
+        generationStage: stage,
+        draftVersions: [
+          ...(existingChapter.draftVersions || []),
+          newDraftVersion
+        ],
+        lastSavedAt: Date.now()
+      };
+      
+      return updated;
+    });
+    
+    // Trigger localStorage save
+    setTimeout(() => _saveStateToLocalStorage(), 100);
+    
+    console.log(`💾 Chapter ${chapterIndex + 1} saved at stage: ${stage}`);
+  }, [_saveStateToLocalStorage]);
   
   // Effect to save state whenever a key dependency changes
   useEffect(() => {
@@ -527,21 +624,108 @@ const useBookGenerator = () => {
       let planArray = parsedChapterPlans;
       if (planArray.length === 0) {
           setCurrentStep(GenerationStep.GeneratingChapterPlan);
-          const chapterPlanSchema: object = createExpandedChapterPlanSchema(numChapters);
+          
           const { systemPrompt: systemPromptPlan, userPrompt: chapterPlanPrompt } = getFormattedPrompt(PromptNames.CHAPTER_PLANNING, {
             num_chapters: numChapters,
             story_outline: currentStoryOutline
           });
-          const jsonString = await generateGeminiText(chapterPlanPrompt, systemPromptPlan, chapterPlanSchema, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
+          
+          console.log('🔄 Starting chapter plan generation...');
+          console.log(`📊 Requesting plan for ${numChapters} chapters`);
+          
+          let jsonString: string = '';
+          let schemaUsed = 'optimized';
+          let parsedJson: any = null;
+          
+          // Retry up to 3 times to get correct number of chapters
+          const maxPlanRetries = 3;
+          for (let attempt = 1; attempt <= maxPlanRetries; attempt++) {
+            try {
+              // Use optimized schema by default - faster and more reliable
+              console.log(`📝 Generating chapter plan with optimized schema (attempt ${attempt}/${maxPlanRetries})...`);
+              const chapterPlanSchema: object = createOptimizedChapterPlanSchema(numChapters);
+              jsonString = await generateGeminiText(chapterPlanPrompt, systemPromptPlan, chapterPlanSchema, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
+              console.log('✅ Received chapter plan response with optimized schema');
+              
+              // Try to parse and validate
+              console.log('🔍 Parsing chapter plan JSON...');
+              parsedJson = JSON.parse(jsonString);
+              
+              if (!parsedJson.chapters || !Array.isArray(parsedJson.chapters) || parsedJson.chapters.length === 0) { 
+                throw new Error("Generated JSON is valid but does not contain the expected 'chapters' array."); 
+              }
+              
+              // Validate we got the right number of chapters
+              console.log(`📊 Validating chapter count: received ${parsedJson.chapters.length}, expected ${numChapters}`);
+              
+              if (parsedJson.chapters.length < numChapters) {
+                throw new Error(`AI generated only ${parsedJson.chapters.length} chapters instead of ${numChapters}. Need complete plan.`);
+              }
+              
+              // Success! Got all chapters
+              console.log(`✅ Successfully generated plan for all ${numChapters} chapters`);
+              break;
+              
+            } catch (attemptError: any) {
+              console.warn(`⚠️ Attempt ${attempt} failed:`, attemptError.message);
+              
+              // If this was the last attempt, try expanded schema as last resort
+              if (attempt === maxPlanRetries) {
+                console.log('📝 Final attempt with full expanded schema...');
+                try {
+                  const expandedSchema: object = createExpandedChapterPlanSchema(numChapters);
+                  jsonString = await generateGeminiText(chapterPlanPrompt, systemPromptPlan, expandedSchema, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
+                  schemaUsed = 'expanded';
+                  console.log('✅ Received chapter plan response with expanded schema');
+                  
+                  parsedJson = JSON.parse(jsonString);
+                  if (!parsedJson.chapters || parsedJson.chapters.length < numChapters) {
+                    throw new Error(`Even expanded schema failed to generate all ${numChapters} chapters. Got ${parsedJson?.chapters?.length || 0}.`);
+                  }
+                  console.log(`✅ Expanded schema successfully generated all ${numChapters} chapters`);
+                } catch (expandedError: any) {
+                  console.error('❌ All attempts failed');
+                  throw new Error(`Failed to generate complete chapter plan after ${maxPlanRetries} attempts. Try reducing the number of chapters or regenerating the outline. Last error: ${expandedError.message}`);
+                }
+              } else {
+                // Wait a bit before retry
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              }
+            }
+          }
+          
           try {
-              const parsedJson = JSON.parse(jsonString);
-              if (!parsedJson.chapters || !Array.isArray(parsedJson.chapters) || parsedJson.chapters.length === 0) { throw new Error("Generated JSON is valid but does not contain the expected 'chapters' array."); }
-              planArray = parsedJson.chapters;
-              setParsedChapterPlans(planArray);
-              setCurrentChapterPlan(JSON.stringify(planArray, null, 2));
-              _saveStateToLocalStorage();
+            if (!parsedJson || !parsedJson.chapters) {
+              throw new Error("Failed to generate valid chapter plan");
+            }
+            
+            // Fill in default values for fields that might be missing in optimized schema
+            planArray = parsedJson.chapters.map((chapter: any) => ({
+              ...chapter,
+              // Ensure all fields exist with defaults
+              detailedScenes: chapter.detailedScenes || [],
+              chapterEvents: chapter.chapterEvents || [],
+              dialogueBeats: chapter.dialogueBeats || [],
+              characterArcs: chapter.characterArcs || [],
+              actionSequences: chapter.actionSequences || [],
+              symbolism: chapter.symbolism || [],
+              foreshadowing: chapter.foreshadowing || [],
+              callbacks: chapter.callbacks || [],
+              timelineIndicators: chapter.timelineIndicators || 'Present time',
+              wordEconomyFocus: chapter.wordEconomyFocus || 'balanced',
+              characterComplexity: chapter.characterComplexity || 'Standard character development',
+              consequencesOfChoices: chapter.consequencesOfChoices || 'To be determined during writing',
+              complexityLevel: chapter.complexityLevel || 'moderate',
+              generationPriority: chapter.generationPriority || 'standard'
+            }));
+            
+            setParsedChapterPlans(planArray);
+            setCurrentChapterPlan(JSON.stringify(planArray, null, 2));
+            console.log(`✅ Successfully parsed ${planArray.length} chapter plans (${schemaUsed} schema)`);
+            _saveStateToLocalStorage();
           } catch (e: any) {
-               console.error("Failed to parse chapter plan JSON:", e, "Raw response:", jsonString);
+               console.error("❌ Failed to parse chapter plan JSON:", e);
+               console.error("Raw response preview:", jsonString ? jsonString.substring(0, 500) : 'No response');
                throw new Error(`Failed to generate a valid and parseable chapter plan. The AI's response was not valid JSON. Details: ${e.message}`);
           }
       }
@@ -710,7 +894,8 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
           previousChapterEnd: i > 1 && chaptersForCompilation[i - 2]?.content ?
             chaptersForCompilation[i - 2].content.slice(-500) : undefined,
           storyOutline: currentStoryOutline,
-          targetLength: thisChapterPlanObject.targetWordCount || 5000 // Use expanded schema field
+          targetLength: thisChapterPlanObject.targetWordCount || 5000, // Use expanded schema field
+          genre: storySettings.genre // Pass user's selected genre to agents
         };
 
         // Update UI during hybrid generation
@@ -733,6 +918,12 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
 
         const chapterContent = hybridResult.chapterData.content;
         if (!chapterContent) throw new Error(`Failed to generate content for Chapter ${i}.`);
+
+        // ✅ SAVE: First draft after hybrid generation
+        _saveChapterDraft(i - 1, chapterContent, ChapterGenerationStage.FirstDraft, {
+          title: plannedTitle,
+          plan: thisChapterPlanText
+        });
 
         // Log hybrid system performance
         console.log(`✅ Hybrid generation complete for Chapter ${i}:`, {
@@ -809,6 +1000,11 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
 
             refinedChapterContent = agentResult.refinedContent;
 
+            // ✅ SAVE: After light polish
+            _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
+              title: plannedTitle
+            });
+
             // Log light polish results
             const confidenceEmoji = agentResult.decision.confidence >= 80 ? '✅' :
                                    agentResult.decision.confidence >= 60 ? '⚠️' : '❌';
@@ -841,6 +1037,11 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
                 worldName,
                 generateGeminiText
             );
+            
+            // ✅ SAVE: After consistency check
+            _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.ConsistencyCheck, {
+              title: plannedTitle
+            });
             
             if (!consistencyResult.passed) {
                 console.warn(`Chapter ${i} has consistency issues:`, consistencyResult.issues);
@@ -894,7 +1095,13 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
           keyEvents: analysisResult.keyEvents || [],
           characterMoments: analysisResult.characterMoments || [],
           foreshadowing: analysisResult.foreshadowing || [],
+          // Mark as complete
+          generationStage: ChapterGenerationStage.Complete,
+          lastSavedAt: Date.now()
         };
+        
+        // ✅ SAVE: Final complete chapter
+        _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.Complete, completedChapterData);
         
         // Add the completed chapter to our local array for final compilation.
         if (chaptersForCompilation[i - 1]) { chaptersForCompilation[i - 1] = completedChapterData; } else { chaptersForCompilation.push(completedChapterData); }
@@ -1114,6 +1321,7 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
     agentLogs,
     setCurrentStoryOutline,
     currentChapterPlan,
+    lastSavedAt,
   };
 };
 

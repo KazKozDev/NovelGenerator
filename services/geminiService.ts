@@ -15,7 +15,7 @@ if (API_KEY) {
 }
 
 const handleApiError = (error: unknown): Error => {
-  console.error("Error calling Gemini API:", error);
+  console.error("❌ Error calling Gemini API:", error);
   if (error instanceof Error) {
     let message = `Gemini API Error: ${error.message}`;
     if (error.message.includes("API key not valid")) {
@@ -26,6 +26,14 @@ const handleApiError = (error: unknown): Error => {
       message = "Gemini API Error: Service is temporarily overloaded. Retrying...";
     } else if (error.message.includes("RESOURCE_EXHAUSTED") || error.message.includes("429")) {
       message = "Gemini API Error: Rate limit exceeded. Waiting before retry...";
+    } else if (error.message.includes("RECITATION") || error.message.includes("blocked")) {
+      message = "Gemini API Error: Content was blocked due to safety filters or copyright concerns. Try adjusting your prompt.";
+      console.error("⚠️ Content blocked - this may indicate the prompt triggered safety filters");
+    } else if (error.message.includes("timeout") || error.message.includes("DEADLINE_EXCEEDED")) {
+      message = "Gemini API Error: Request timed out. The generation may be too complex. Retrying...";
+    } else if (error.message.includes("invalid") && error.message.includes("schema")) {
+      message = "Gemini API Error: The response schema is invalid or too complex. Simplifying request...";
+      console.error("⚠️ Schema validation error - the model couldn't generate valid JSON for the requested schema");
     }
     return new Error(message);
   }
@@ -100,6 +108,10 @@ export async function generateGeminiText(
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
   }
 
+  // Use more retries for complex schema requests
+  const maxRetries = responseSchema ? 7 : 5;
+  const baseDelay = responseSchema ? 3000 : 2000;
+
   return withResilienceTracking(() => retryWithBackoff(async () => {
     try {
       const generationConfig: any = {};
@@ -123,13 +135,16 @@ export async function generateGeminiText(
         ...(systemInstruction && { systemInstruction })
       });
 
+      console.log(`🔄 Sending request to Gemini API (model: ${GEMINI_MODEL_NAME})...`);
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      return response.text();
+      const text = response.text();
+      console.log(`✅ Received response from Gemini API (${text.length} chars)`);
+      return text;
     } catch (error) {
       throw handleApiError(error);
     }
-  }));
+  }, maxRetries, baseDelay));
 }
 
 export async function generateGeminiTextStream(

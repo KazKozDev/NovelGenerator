@@ -10,6 +10,19 @@ export interface Character {
   emotional_state: string;
 }
 
+export enum ChapterGenerationStage {
+  NotStarted = "not_started",
+  StructureGeneration = "structure_generation",
+  CharacterGeneration = "character_generation", 
+  SceneGeneration = "scene_generation",
+  Synthesis = "synthesis",
+  FirstDraft = "first_draft",
+  LightPolish = "light_polish",
+  ConsistencyCheck = "consistency_check",
+  FinalDraft = "final_draft",
+  Complete = "complete"
+}
+
 export interface ChapterData {
   title?: string; 
   content: string;
@@ -24,6 +37,14 @@ export interface ChapterData {
   keyEvents?: string[];
   characterMoments?: string[];
   foreshadowing?: string[];
+  // Generation progress tracking
+  generationStage?: ChapterGenerationStage;
+  draftVersions?: {
+    stage: ChapterGenerationStage;
+    content: string;
+    timestamp: number;
+  }[];
+  lastSavedAt?: number; // Unix timestamp
 }
 
 export enum GenerationStep {

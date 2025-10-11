@@ -7,6 +7,7 @@ import { generateGeminiText } from '../services/geminiService';
 import { ParsedChapterPlan } from '../types';
 import { StructureContext, CharacterContext, SceneContext, CoherenceConstraints } from './coherenceManager';
 import { getFormattedPrompt, PromptNames, formatPrompt } from './promptLoader';
+import { getGenreGuidelines } from './genrePrompts';
 
 // =================== SHARED INTERFACES ===================
 
@@ -338,6 +339,7 @@ export interface CharacterAgentInput {
   structureSlots: StructureAgentOutput['slots'];
   dialogueRequirements: DialogueRequirement[];
   storyOutline: string;
+  genre?: string; // User's selected genre for style adaptation
 }
 
 export interface DialogueRequirement {
@@ -383,9 +385,17 @@ export class CharacterAgent {
   }
 
   private buildCharacterPrompt(input: CharacterAgentInput): { systemPrompt: string; userPrompt: string } {
-    const systemPrompt = `You are a character development specialist and dialogue expert. Your job is to write authentic, emotionally resonant dialogue and internal character moments in the style of epic fantasy masters.
+    // Get genre-specific guidelines
+    const genreGuidelines = input.genre ? getGenreGuidelines(input.genre) : '';
+    const genreNote = input.genre ? `Writing in ${input.genre.toUpperCase()} genre` : 'Using general fiction techniques';
+    
+    const systemPrompt = `You are a character development specialist and dialogue expert. Your job is to write authentic, emotionally resonant dialogue and internal character moments.
 
-MARTIN-INSPIRED WRITING STYLE:
+${genreNote}
+
+${genreGuidelines ? `**GENRE-SPECIFIC GUIDELINES:**\n${genreGuidelines}\n` : ''}
+
+**UNIVERSAL DIALOGUE PRINCIPLES:**
 
 **DIALOGUE WITH SUBTEXT:**
 Every line should carry weight beyond its literal meaning. Characters speak in layers - what they say, what they mean, and what they hide.
@@ -875,6 +885,7 @@ export interface SceneAgentInput {
   constraints: CoherenceConstraints;
   structureSlots: StructureAgentOutput['slots'];
   storyOutline: string;
+  genre?: string; // User's selected genre for atmosphere adaptation
 }
 
 export interface SceneAgentOutput extends AgentOutput {
@@ -912,12 +923,20 @@ export class SceneAgent {
   }
 
   private buildScenePrompt(input: SceneAgentInput): { systemPrompt: string; userPrompt: string } {
-    const systemPrompt = `You are a master of atmospheric writing and action sequences in the tradition of epic fantasy masters. Your specialty is creating vivid, immersive scenes that engage all the senses and make readers feel present in the story.
+    // Get genre-specific guidelines
+    const genreGuidelines = input.genre ? getGenreGuidelines(input.genre) : '';
+    const genreNote = input.genre ? `Writing in ${input.genre.toUpperCase()} genre` : 'Using general fiction techniques';
+    
+    const systemPrompt = `You are a master of atmospheric writing and action sequences. Your specialty is creating vivid, immersive scenes that engage all the senses and make readers feel present in the story.
 
-MARTIN-INSPIRED ATMOSPHERIC TECHNIQUES:
+${genreNote}
 
-**ENVIRONMENTAL FORESHADOWING:**
-Weather and atmosphere should hint at emotional or narrative developments. The world reflects the story's mood.
+${genreGuidelines ? `**GENRE-SPECIFIC GUIDELINES:**\n${genreGuidelines}\n` : ''}
+
+**UNIVERSAL ATMOSPHERIC TECHNIQUES:**
+
+**ENVIRONMENTAL STORYTELLING:**
+Setting and atmosphere should enhance mood and hint at narrative developments. The environment reflects the story's emotional state.
 
 Example:
 The evening hung like tarnished copper above the battlements, pregnant with unshed rain. Along the ramparts, torches wavered, their flames pulled eastward by wind that tasted of iron and distant storms. The sea beyond churned restless as a sleeper's dream, its waves the color of old blood.

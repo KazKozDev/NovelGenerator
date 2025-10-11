@@ -13,6 +13,7 @@ import ApprovalView from './components/ApprovalView';
 import StreamingContentView from './components/StreamingContentView';
 import AgentActivityLog from './components/AgentActivityLog';
 import FeatureGrid from './components/FeatureGrid';
+import SaveStatusIndicator from './components/SaveStatusIndicator';
 
 const App: React.FC = () => {
   const {
@@ -39,6 +40,7 @@ const App: React.FC = () => {
     currentChapterPlan,
     isResumable,
     agentLogs,
+    lastSavedAt,
   } = useBookGenerator();
 
   // Debug logging
@@ -178,6 +180,14 @@ const App: React.FC = () => {
               currentChapterProcessing={currentChapterProcessing}
               totalChaptersToProcess={totalChaptersToProcess}
             />
+            
+            {/* Save status indicator */}
+            {generatedChapters.length > 0 && (
+              <SaveStatusIndicator 
+                generatedChapters={generatedChapters}
+                savedAt={lastSavedAt}
+              />
+            )}
             
             {currentStep === GenerationStep.GeneratingChapters && generatedChapters.length > 0 && currentChapterProcessing > 0 ? (
                 <StreamingContentView
