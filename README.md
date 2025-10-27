@@ -1285,7 +1285,7 @@ Server runs on `http://localhost:3000`
 ### Step 1: Input
 - **Story Premise:** Describe your story (max 1200 characters)
 - **Genre:** Select from 7 options (Fantasy, Sci-Fi, Mystery, Romance, Horror, Thriller, Historical)
-- **Chapters:** Set count (minimum 3, recommended 5-10)
+- **Chapters:** Set count (minimum 3, recommended 10-15)
 
 ### Step 2: Outline Review
 - AI generates detailed chapter-by-chapter outline
