@@ -1299,7 +1299,7 @@ Server runs on `http://localhost:3000`
   2. Editing agent refinement
   3. Professional polish
 - Final consistency pass across all chapters
-- Time: ~2-3 minutes per chapter
+- Time: ~5-10 minutes per chapter
 
 ### Step 4: Export
 - **EPUB:** Proper e-book format with metadata, TOC, styling
