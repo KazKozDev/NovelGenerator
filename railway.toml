@@ -1,0 +1,16 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npx serve -s dist -l $PORT"
+```
+
+4. **Commit changes**
+
+Или создайте `Procfile`:
+
+1. **"Add file" → "Create new file"**
+2. **Имя файла:** `Procfile`
+3. **Содержимое:**
+```
+web: npx serve -s dist -l $PORT
