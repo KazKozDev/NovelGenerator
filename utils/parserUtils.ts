@@ -175,6 +175,183 @@ export function safeJsonParse<T>(raw: string, fallback: T): T {
 }
 
 /**
+ * Safely parse a JSON string from LLMs with automatic recovery from:
+ * - Markdown code fences surrounded by conversational text
+ * - Trailing commentary, notes, or explanations after valid JSON
+ * - Multiple sequential JSON objects (NDJSON / concatenated objects)
+ */
+export function parseLenientJson<T = any>(raw: string): T {
+  if (!raw || typeof raw !== 'string') {
+    throw new Error("Cannot parse empty JSON response");
+  }
+
+  // 1. Strip reasoning / think blocks
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 2. Extract markdown code blocks anywhere in text
+  const codeBlockRegex = /```(?:json)?\s*\n?([\s\S]*?)\n?```/gi;
+  const candidates: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match[1] && match[1].trim()) {
+      candidates.push(match[1].trim());
+    }
+  }
+  candidates.push(text);
+
+  const tryParseSingleOrMulti = (str: string): any => {
+    let s = str.trim();
+    if (!s) return null;
+
+    // Direct JSON.parse
+    try {
+      return JSON.parse(s);
+    } catch (err: any) {
+      // Check for position-based syntax error (e.g. "at position 219 (line 11 column 1)")
+      const posMatch = err.message.match(/at position (\d+)/i);
+      if (posMatch) {
+        const firstPos = parseInt(posMatch[1], 10);
+        const firstChunk = s.slice(0, firstPos).trim();
+        const remaining = s.slice(firstPos).trim();
+
+        try {
+          const firstParsed = JSON.parse(firstChunk);
+          const multiObjects: any[] = [firstParsed];
+          let rest = remaining;
+
+          while (rest.length > 0) {
+            rest = rest.trim();
+            const nextStart = rest.search(/[\{\[]/);
+            if (nextStart === -1) break;
+            rest = rest.slice(nextStart);
+
+            try {
+              const nextParsed = JSON.parse(rest);
+              multiObjects.push(nextParsed);
+              break;
+            } catch (nextErr: any) {
+              const nextPosMatch = nextErr.message.match(/at position (\d+)/i);
+              if (nextPosMatch) {
+                const subPos = parseInt(nextPosMatch[1], 10);
+                const subChunk = rest.slice(0, subPos).trim();
+                try {
+                  multiObjects.push(JSON.parse(subChunk));
+                  rest = rest.slice(subPos).trim();
+                } catch {
+                  break;
+                }
+              } else {
+                break;
+              }
+            }
+          }
+
+          if (multiObjects.length > 1) {
+            return multiObjects;
+          }
+          return firstParsed;
+        } catch {
+          // Fall through
+        }
+      }
+    }
+
+    // Bracket scanner: find outermost matching { ... } or [ ... ]
+    const firstBrace = s.search(/[\{\[]/);
+    if (firstBrace !== -1) {
+      const isArray = s[firstBrace] === '[';
+      const closingChar = isArray ? ']' : '}';
+      const lastBrace = s.lastIndexOf(closingChar);
+      if (lastBrace > firstBrace) {
+        const slice = s.slice(firstBrace, lastBrace + 1);
+        try {
+          return JSON.parse(slice);
+        } catch {
+          // Fall through
+        }
+      }
+    }
+
+    return null;
+  };
+
+  for (const candidate of candidates) {
+    const parsed = tryParseSingleOrMulti(candidate);
+    if (parsed !== null && parsed !== undefined) {
+      return parsed as T;
+    }
+  }
+
+  // Fallback to existing cleanJsonString
+  const cleaned = cleanJsonString(raw);
+  return JSON.parse(cleaned) as T;
+}
+
+export interface ChapterPlanParseResult {
+  chapters: any[];
+  parsedJson: { chapters: any[] };
+}
+
+/**
+ * Parses and normalizes chapter plan output from any LLM into a standard `{ chapters: any[] }` structure.
+ */
+export function parseChapterPlanJson(raw: string): ChapterPlanParseResult {
+  const parsed = parseLenientJson<any>(raw);
+
+  if (!parsed) {
+    throw new Error("Failed to parse chapter plan: empty response.");
+  }
+
+  let chapters: any[] = [];
+
+  if (Array.isArray(parsed)) {
+    if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+      if (Array.isArray(parsed[0].chapters)) {
+        chapters = parsed[0].chapters;
+      } else {
+        chapters = parsed;
+      }
+    } else {
+      chapters = parsed;
+    }
+  } else if (typeof parsed === 'object' && parsed !== null) {
+    if (Array.isArray(parsed.chapters)) {
+      chapters = parsed.chapters;
+    } else if (Array.isArray(parsed.chapterList)) {
+      chapters = parsed.chapterList;
+    } else if (Array.isArray(parsed.plan)) {
+      chapters = parsed.plan;
+    } else if (Array.isArray(parsed.items)) {
+      chapters = parsed.items;
+    } else if (Array.isArray(parsed.data)) {
+      chapters = parsed.data;
+    } else {
+      const potentialChapters = Object.values(parsed).filter(
+        (v: any) => typeof v === 'object' && v !== null && (('title' in v) || ('summary' in v) || ('sceneBreakdown' in v))
+      );
+      if (potentialChapters.length > 0) {
+        chapters = potentialChapters;
+      } else {
+        const arrayKey = Object.keys(parsed).find(k => Array.isArray((parsed as any)[k]));
+        if (arrayKey && (parsed as any)[arrayKey].length > 0) {
+          chapters = (parsed as any)[arrayKey];
+        }
+      }
+    }
+  }
+
+  if (!Array.isArray(chapters) || chapters.length === 0) {
+    throw new Error("Generated JSON does not contain a recognizable list of chapters.");
+  }
+
+  return {
+    chapters,
+    parsedJson: { chapters }
+  };
+}
+
+
+/**
  * Clean scaffolding, meta-notes, and leftover bracket slot markers from generated prose.
  */
 export function cleanProseArtifacts(prose: string): string {

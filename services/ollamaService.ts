@@ -100,15 +100,22 @@ export async function generateOllamaText(
   const cleanEndpoint = endpoint.replace(/\/+$/, '');
   const url = `${cleanEndpoint}/api/generate`;
 
+  let effectiveSystem = systemInstruction;
+  if (schema) {
+    const schemaInstruction = `Output must be a single valid JSON object strictly conforming to this schema:\n${JSON.stringify(schema, null, 2)}\nDo not output multiple objects or extra text.`;
+    effectiveSystem = effectiveSystem ? `${effectiveSystem}\n\n${schemaInstruction}` : schemaInstruction;
+  }
+
   const payload = buildOllamaGeneratePayload({
     model,
     prompt,
-    system: systemInstruction,
+    system: effectiveSystem,
     temperature,
     isJson: Boolean(schema),
     stream: false,
     think: false
   });
+
 
   const response = await fetch(url, {
     method: 'POST',

@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry, ChapterGenerationStage } from '../types';
 import { generateText as generateGeminiText, generateTextStream as generateGeminiTextStream } from '../services/llmService';
-import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString } from '../utils/parserUtils';
+import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString, parseChapterPlanJson } from '../utils/parserUtils';
+
 import { getWritingExamplesPrompt } from '../utils/writingExamples';
 import { checkChapterConsistency } from '../utils/consistencyChecker';
 import { getGenreGuidelines } from '../utils/genrePrompts';
@@ -635,10 +636,38 @@ const useBookGenerator = () => {
           setCurrentStep(GenerationStep.GeneratingChapterPlan);
           logToTerminal(`Generating structured chapter plans for ${numChapters} chapters...`, 'Planning', 'stage');
           
-          const { systemPrompt: systemPromptPlan, userPrompt: chapterPlanPrompt } = getFormattedPrompt(PromptNames.CHAPTER_PLANNING, {
+          const { systemPrompt: systemPromptPlan, userPrompt: basePlanPrompt } = getFormattedPrompt(PromptNames.CHAPTER_PLANNING, {
             num_chapters: numChapters,
             story_outline: currentStoryOutline
           });
+
+          const chapterPlanPrompt = `${basePlanPrompt}
+
+**MANDATORY FORMAT REQUIREMENT:**
+You MUST respond with a SINGLE valid JSON object containing a "chapters" array with exactly ${numChapters} chapter objects.
+Do NOT output multiple JSON objects. Do NOT include markdown explanations outside the JSON.
+Example structure:
+{
+  "chapters": [
+    {
+      "title": "Chapter 1 Title",
+      "summary": "2-3 sentence summary covering key events.",
+      "sceneBreakdown": "Brief overview of main scenes",
+      "characterDevelopmentFocus": "Which characters develop and how",
+      "plotAdvancement": "How the plot moves forward",
+      "conflictType": "external",
+      "tensionLevel": 6,
+      "rhythmPacing": "medium",
+      "targetWordCount": 5000,
+      "emotionalToneTension": "Atmosphere and tension",
+      "moralDilemma": "The moral dilemma explored",
+      "openingHook": "Opening hook description",
+      "climaxMoment": "Peak moment description",
+      "chapterEnding": "Ending description",
+      "connectionToNextChapter": "Connection to next chapter"
+    }
+  ]
+}`;
           
           console.log('🔄 Starting chapter plan generation...');
           console.log(`📊 Requesting plan for ${numChapters} chapters`);
@@ -658,19 +687,44 @@ const useBookGenerator = () => {
               jsonString = await generateGeminiText(chapterPlanPrompt, systemPromptPlan, chapterPlanSchema, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
               console.log('✅ Received chapter plan response with optimized schema');
               
-              // Try to parse and validate
-              console.log('🔍 Parsing chapter plan JSON...');
-              parsedJson = JSON.parse(cleanJsonString(jsonString));
+              // Try to parse and validate using resilient parser
+              console.log('🔍 Parsing chapter plan JSON with resilient parser...');
+              const parsedResult = parseChapterPlanJson(jsonString);
+              parsedJson = parsedResult.parsedJson;
               
               if (!parsedJson.chapters || !Array.isArray(parsedJson.chapters) || parsedJson.chapters.length === 0) { 
                 throw new Error("Generated JSON is valid but does not contain the expected 'chapters' array."); 
               }
               
-              // Validate we got the right number of chapters
+              // Validate chapter count
               console.log(`📊 Validating chapter count: received ${parsedJson.chapters.length}, expected ${numChapters}`);
               
               if (parsedJson.chapters.length < numChapters) {
-                throw new Error(`AI generated only ${parsedJson.chapters.length} chapters instead of ${numChapters}. Need complete plan.`);
+                if (attempt < maxPlanRetries) {
+                  throw new Error(`AI generated only ${parsedJson.chapters.length} chapters instead of ${numChapters}. Retrying...`);
+                } else {
+                  console.warn(`Padding missing chapters: got ${parsedJson.chapters.length}/${numChapters}, extrapolating remaining...`);
+                  while (parsedJson.chapters.length < numChapters) {
+                    const nextNum = parsedJson.chapters.length + 1;
+                    parsedJson.chapters.push({
+                      title: `Chapter ${nextNum}: Continuation`,
+                      summary: `Continuation of the narrative following events of chapter ${nextNum - 1}.`,
+                      sceneBreakdown: `Advance core character arcs and conflict.`,
+                      characterDevelopmentFocus: "Protagonist development and escalation",
+                      plotAdvancement: "Escalation toward resolution",
+                      conflictType: "interpersonal",
+                      tensionLevel: Math.min(9, nextNum + 2),
+                      rhythmPacing: "medium",
+                      targetWordCount: 5000,
+                      emotionalToneTension: "Tense and focused",
+                      moralDilemma: "Cost of forward momentum",
+                      openingHook: "Immediate continuation of previous scene",
+                      climaxMoment: "Decisive turn of events",
+                      chapterEnding: nextNum === numChapters ? "Final resolution" : "Cliffhanger hook",
+                      connectionToNextChapter: nextNum === numChapters ? "Story climax" : `Leads into chapter ${nextNum + 1}`
+                    });
+                  }
+                }
               }
               
               // Success! Got all chapters
@@ -689,7 +743,8 @@ const useBookGenerator = () => {
                   schemaUsed = 'expanded';
                   console.log('✅ Received chapter plan response with expanded schema');
                   
-                  parsedJson = JSON.parse(cleanJsonString(jsonString));
+                  const expandedResult = parseChapterPlanJson(jsonString);
+                  parsedJson = expandedResult.parsedJson;
                   if (!parsedJson.chapters || parsedJson.chapters.length < numChapters) {
                     throw new Error(`Even expanded schema failed to generate all ${numChapters} chapters. Got ${parsedJson?.chapters?.length || 0}.`);
                   }
@@ -700,10 +755,11 @@ const useBookGenerator = () => {
                 }
               } else {
                 // Wait a bit before retry
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 1500));
               }
             }
           }
+
           
           try {
             if (!parsedJson || !parsedJson.chapters) {
