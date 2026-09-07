@@ -496,12 +496,14 @@ Return polished chapter that feels human-written, not AI-generated.`
 - Dialogue too polished/literary
 - Uses forbidden words (obsidian, thorn, ethereal, etc.)
 
-**RESPOND WITH:**
-- Quality Score: X/100
-- Human-like Score: HUMAN/AI-LIKE/MIXED
-- Major strengths (2-3 bullet points)
-- Areas needing improvement (if any)
-- AI patterns detected (if any)`
+**RESPOND WITH JSON:**
+Return a JSON object with this exact structure:
+{
+  "qualityScore": 85,
+  "changesApplied": ["Specific improvements made"],
+  "planElementsPresent": true,
+  "remainingIssues": []
+}`
   });
 
   // Chapter writing prompt (large, separated into its own file)

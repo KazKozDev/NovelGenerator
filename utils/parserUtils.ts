@@ -173,3 +173,109 @@ export function safeJsonParse<T>(raw: string, fallback: T): T {
   }
 }
 
+/**
+ * Clean scaffolding, meta-notes, and leftover bracket slot markers from generated prose.
+ */
+export function cleanProseArtifacts(prose: string): string {
+  if (!prose) return '';
+  let cleaned = prose.trim();
+
+  // Strip conversational/scaffolding preambles from LLM
+  cleaned = cleaned.replace(
+    /^(?:Here is the (?:integrated |polished |rewritten )?chapter.*|Every slot marker is resolved below.*|Below is the (?:integrated |polished |rewritten )?chapter.*|## slot Chapter marker.*)\n+/im,
+    ''
+  );
+
+  // Remove lingering slot tags like [SLOT_NAME], [ACTION_SLOT], [DESCRIPTION_1], etc.
+  cleaned = cleaned.replace(/\[(?:SLOT|ACTION|DIALOGUE|DESCRIPTION|INTERNAL|TRANSITION)[^\]]*\]/gi, '');
+
+  return cleaned.trim();
+}
+
+export interface ParsedEvaluation {
+  qualityScore: number;
+  changesApplied: string[];
+  planElementsPresent: boolean;
+  remainingIssues: string[];
+}
+
+/**
+ * Robust evaluation response parser. Handles pure JSON, code fences, and markdown/bullet points.
+ */
+export function parseEvaluationResponse(raw: string): ParsedEvaluation {
+  // 1. Try standard JSON parsing with cleanJsonString
+  try {
+    const cleaned = cleanJsonString(raw);
+    if (cleaned) {
+      const parsed = JSON.parse(cleaned);
+      if (typeof parsed === 'object' && parsed !== null) {
+        const rawScore = parsed.qualityScore ?? parsed.score;
+        const qualityScore = typeof rawScore === 'number'
+          ? rawScore
+          : parseInt(String(rawScore || '75'), 10) || 75;
+
+        let changesApplied: string[] = [];
+        if (Array.isArray(parsed.changesApplied)) {
+          changesApplied = parsed.changesApplied.map(String);
+        } else if (parsed.changesApplied) {
+          changesApplied = [String(parsed.changesApplied)];
+        } else {
+          changesApplied = ['Edits applied'];
+        }
+
+        const remainingIssues = Array.isArray(parsed.remainingIssues)
+          ? parsed.remainingIssues.map(String)
+          : [];
+
+        return {
+          qualityScore: Math.min(100, Math.max(0, qualityScore)),
+          changesApplied: changesApplied.length > 0 ? changesApplied : ['Edits applied'],
+          planElementsPresent: Boolean(parsed.planElementsPresent ?? true),
+          remainingIssues
+        };
+      }
+    }
+  } catch {
+    // Fall back to text extraction below
+  }
+
+  // 2. Markdown / text extraction fallback (e.g. "**Quality Score**: 85/100")
+  let score = 75;
+  const scoreMatch = raw.match(/(?:\*\*|#)?(?:quality\s*score|score)(?:\*\*|#)?\s*[:=]\s*(\d+)/i);
+  if (scoreMatch && scoreMatch[1]) {
+    score = parseInt(scoreMatch[1], 10);
+    if (isNaN(score)) score = 75;
+  }
+
+  const changes: string[] = [];
+  const changesSectionMatch = raw.match(
+    /(?:\*\*|#)?(?:changes\s*applied|improvements|changes|major\s*strengths)(?:\*\*|#)?\s*[:=]?\s*([\s\S]*?)(?=(?:\*\*|#)?(?:plan\s*elements|remaining\s*issues|areas\s*needing|$))/i
+  );
+  if (changesSectionMatch && changesSectionMatch[1]) {
+    const lines = changesSectionMatch[1].split('\n')
+      .map(line => line.trim().replace(/^[-*•\d.]+\s*/, ''))
+      .filter(line => line.length > 0 && !/^(none|n\/a)$/i.test(line));
+    changes.push(...lines);
+  }
+
+  const issues: string[] = [];
+  const issuesSectionMatch = raw.match(
+    /(?:\*\*|#)?(?:remaining\s*issues|issues|problems|areas\s*needing\s*improvement|ai\s*patterns)(?:\*\*|#)?\s*[:=]?\s*([\s\S]*?)$/i
+  );
+  if (issuesSectionMatch && issuesSectionMatch[1]) {
+    const lines = issuesSectionMatch[1].split('\n')
+      .map(line => line.trim().replace(/^[-*•\d.]+\s*/, ''))
+      .filter(line => line.length > 0 && !/^(none|no issues|n\/a)$/i.test(line));
+    issues.push(...lines);
+  }
+
+  const planElementsPresent = !/plan\s*elements\s*(?:present)?\s*[:=]?\s*(?:no|false)/i.test(raw);
+
+  return {
+    qualityScore: Math.min(100, Math.max(0, score)),
+    changesApplied: changes.length > 0 ? changes : ['Edits applied'],
+    planElementsPresent,
+    remainingIssues: issues
+  };
+}
+

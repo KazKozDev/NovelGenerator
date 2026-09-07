@@ -4,6 +4,7 @@
 
 import { generateText as generateGeminiText } from '../services/llmService';
 import { StructureAgentOutput, CharacterAgentOutput, SceneAgentOutput } from './specialistAgents';
+import { cleanProseArtifacts } from './parserUtils';
 
 // =================== INTERFACES ===================
 
@@ -335,7 +336,7 @@ Generate transitions now:`;
         20
       );
 
-      return integratedContent;
+      return cleanProseArtifacts(integratedContent);
     } catch (error) {
       console.warn('AI integration failed, using simple slot replacement:', error);
       return this.performSimpleIntegration(structureTemplate, mappings, transitions);
@@ -358,11 +359,13 @@ DO NOT:
 - Add new plot elements or descriptions
 - Change the tone or style of existing content
 - Create new dialogue or action
+- Include conversational preambles, greetings, or meta-notes (e.g. "Every slot marker is resolved below", "Here is the chapter")
 
 ONLY:
 - Fill slots with exact provided content
 - Add minimal connecting words for flow
-- Ensure proper punctuation and formatting`;
+- Ensure proper punctuation and formatting
+- Return ONLY the final chapter prose`;
 
     const userPrompt = `Integrate the following content:
 
@@ -383,6 +386,7 @@ ${transitions.join('\n')}
 3. Maintain natural paragraph breaks
 4. Preserve all specialist content exactly as provided
 5. Only add minimal connecting words if absolutely necessary
+6. Output ONLY the story chapter prose without meta-commentary or introductory notes
 
 Perform the integration now:`;
 
@@ -441,7 +445,7 @@ Perform the integration now:`;
 
     console.log(`📊 Integration summary: ${filledSlots.size} slots filled, ${unfilledSlots.length} unfilled`);
 
-    return integrated.trim();
+    return cleanProseArtifacts(integrated.trim());
   }
 
   // =================== HELPER METHODS ===================
