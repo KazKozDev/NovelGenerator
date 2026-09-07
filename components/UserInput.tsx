@@ -46,7 +46,7 @@ const UserInput: React.FC<UserInputProps> = ({
       const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
       setOllamaModels(models);
       if (models.length > 0) {
-        setFetchStatus({ success: true, message: `Найдено моделей в Ollama: ${models.length}` });
+        setFetchStatus({ success: true, message: `Found ${models.length} models in Ollama` });
         if (!models.includes(providerConfig.ollamaModel)) {
           const updated = { ...providerConfig, ollamaModel: models[0] };
           setProviderConfig(updated);
@@ -55,13 +55,13 @@ const UserInput: React.FC<UserInputProps> = ({
       } else {
         setFetchStatus({
           success: false,
-          message: 'Ollama отвечает, но список моделей пуст. Загрузите модель командой `ollama pull llama3.1`.'
+          message: 'Ollama is reachable, but model list is empty. Pull a model via `ollama pull llama3.1`.'
         });
       }
     } catch (err: any) {
       setFetchStatus({
         success: false,
-        message: err.message || 'Не удалось подключиться к Ollama. Проверьте, что ollama запущена.'
+        message: err.message || 'Cannot connect to Ollama. Make sure Ollama server is running.'
       });
     } finally {
       setIsFetchingModels(false);
@@ -86,7 +86,7 @@ const UserInput: React.FC<UserInputProps> = ({
             <h3 className="text-sm font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
               <span>🤖 AI Provider</span>
             </h3>
-            <p className="text-xs text-slate-400">Выберите источник инференса (Google Gemini или локальная Ollama)</p>
+            <p className="text-xs text-slate-400">Choose inference provider (Google Gemini or Local Ollama)</p>
           </div>
           
           <div className="inline-flex rounded-lg bg-slate-800 p-1 border border-slate-700 self-start sm:self-auto">
@@ -143,14 +143,14 @@ const UserInput: React.FC<UserInputProps> = ({
                   className="bg-slate-800 border-slate-600 text-xs py-1.5"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  По умолчанию <code className="text-sky-300">/api/ollama</code> (проксирует через Vite без CORS)
+                  Default <code className="text-sky-300">/api/ollama</code> (proxied via Vite without CORS)
                 </p>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-medium text-slate-300">
-                    Модель Ollama
+                    Ollama Model
                   </label>
                   <button
                     type="button"
@@ -158,7 +158,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     disabled={isFetchingModels}
                     className="text-[11px] text-sky-400 hover:text-sky-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
                   >
-                    {isFetchingModels ? '⏳ Загрузка...' : '🔄 Загрузить модели из Ollama'}
+                    {isFetchingModels ? '⏳ Loading...' : '🔄 Load models from Ollama'}
                   </button>
                 </div>
 
@@ -193,8 +193,8 @@ const UserInput: React.FC<UserInputProps> = ({
                 )}
                 <p className="text-[11px] text-slate-400 mt-1">
                   {ollamaModels.length > 0
-                    ? `Выбрано из ${ollamaModels.length} локально установленных моделей`
-                    : `Нажмите "Загрузить модели", чтобы получить список с локального сервера`}
+                    ? `Selected from ${ollamaModels.length} locally installed models`
+                    : `Click "Load models" to retrieve models from local Ollama instance`}
                 </p>
               </div>
             </div>
@@ -268,7 +268,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
         <div className="md:col-span-2">
           <label htmlFor="speedMode" className="block text-sm font-medium text-sky-300 mb-1">
-            ⚡ Режим скорости генерации
+            ⚡ Generation Speed Mode
           </label>
           <Select
             id="speedMode"
@@ -276,13 +276,13 @@ const UserInput: React.FC<UserInputProps> = ({
             onChange={(e) => setGenerationSpeedMode(e.target.value as GenerationSpeedMode)}
             className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           >
-            <option value="fast">⚡ Быстрый (1 проход — без повторного переписывания главы, в 2 раза быстрее для Ollama)</option>
-            <option value="thorough">🔍 Тщательный (2 прохода — с глубокой вычиткой и полировкой)</option>
+            <option value="fast">⚡ Fast (Single-pass — skips redundant chapter rewrite, 2x faster for Ollama)</option>
+            <option value="thorough">🔍 Thorough (Dual-pass — full secondary polish and rewrite)</option>
           </Select>
           <p className="text-xs text-slate-400 mt-1">
             {generationSpeedMode === 'fast'
-              ? 'Синтезирует структуру, персонажей и сцену в готовый текст за 1 проход. Экономит тысячи токенов и ускоряет генерацию в 2 раза.'
-              : 'Каждая глава собирается, а затем второй раз переписывается полировочным агентом целиком.'}
+              ? 'Synthesizes structure, character arcs, and scene details into prose in a single pass. Saves thousands of tokens and doubles generation speed.'
+              : 'Each chapter is synthesized, then rewritten and polished a second time from scratch.'}
           </p>
         </div>
       </div>
