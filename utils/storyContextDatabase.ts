@@ -317,7 +317,7 @@ export class StoryContextDatabase {
     };
   }
 
-  private isFactEstablished(fact: string): boolean {
+  public isFactEstablished(fact: string): boolean {
     return this.readerKnowledge.establishedFacts.some(f => f.fact === fact);
   }
 
@@ -449,6 +449,19 @@ export class StoryContextDatabase {
 
   addForeshadowingHint(hint: ForeshadowingHint): void {
     this.foreshadowingHints.set(hint.id, hint);
+  }
+
+  resetDatabase(): void {
+    this.readerKnowledge = {
+      establishedFacts: [],
+      receivedHints: [],
+      currentExpectations: [],
+      unansweredQuestions: []
+    };
+    this.characterKnowledge = new Map();
+    this.plannedRevelations = new Map();
+    this.foreshadowingHints = new Map();
+    this.currentChapterState = this.initializeChapterState(1);
   }
 }
 

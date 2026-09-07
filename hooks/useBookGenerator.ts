@@ -11,6 +11,7 @@ import { agentEditChapter } from '../utils/editingAgent';
 import { performFinalEditingPass, shouldPerformFinalPass } from '../utils/finalEditingPass';
 import { applyProfessionalPolish } from '../utils/professionalPolishAgent';
 import { agentCoordinator, ChapterGenerationInput } from '../utils/agentCoordinator';
+import { storyContextDB } from '../utils/storyContextDatabase';
 import { playSuccessSound, playNotificationSound } from '../utils/soundUtils';
 import { getFormattedPrompt, PromptNames, formatPrompt } from '../utils/promptLoader';
 import { GEMINI_MODEL_NAME } from '../constants';
@@ -540,6 +541,7 @@ const useBookGenerator = () => {
     emotionalArcRef.current = {};
     transitionsRef.current = {};
     
+    storyContextDB.resetDatabase();
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
