@@ -1,7 +1,7 @@
 
 
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
@@ -10,6 +10,7 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 import ApprovalView from './components/ApprovalView';
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
+import { installConsoleBridge, logToTerminal } from './utils/terminalLogger';
 
 const App: React.FC = () => {
   const {
@@ -39,8 +40,11 @@ const App: React.FC = () => {
     lastSavedAt,
   } = useBookGenerator();
 
-  // Debug logging
-  console.log('[App] render - currentStep:', currentStep, 'isLoading:', isLoading);
+  useEffect(() => {
+    installConsoleBridge();
+    logToTerminal('Client interface connected & ready', 'System', 'info');
+  }, []);
+
 
   const handleStartGeneration = () => {
     if (storyPremise && numChapters >= 3) {

@@ -131,12 +131,30 @@ echo ""
 echo -e "${YELLOW}💡 Tips:${NC}"
 echo -e "   • The browser should open automatically"
 echo -e "   • If not, open: ${BLUE}$SERVER_URL${NC}"
+echo -e "   • Keep this window open to monitor real-time agent & generation logs"
 echo -e "   • Press ${RED}Ctrl+C${NC} to stop the server"
-echo -e "   • You can close this window after the browser opens"
-echo -e "   • Log file: ${BLUE}$LOG_FILE${NC}"
+echo -e "   • Full log saved to: ${BLUE}$LOG_FILE${NC}"
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════${NC}"
+echo -e "${CYAN}  Live Activity Log (Real-time Stream)${NC}"
+echo -e "${GRAY}  Time     │ Level   │ Agent              Message${NC}"
+echo -e "${CYAN}───────────────────────────────────────${NC}"
 echo ""
+
+# Stream logs in real-time to this terminal window
+tail -n 0 -f "$LOG_FILE" &
+TAIL_PID=$!
+
+# Clean up processes on exit or Ctrl+C
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}Stopping NovelGenerator server...${NC}"
+    kill $SERVER_PID 2>/dev/null
+    kill $TAIL_PID 2>/dev/null
+    exit 0
+}
+trap cleanup INT TERM EXIT
 
 # Keep the server running
 wait $SERVER_PID
+

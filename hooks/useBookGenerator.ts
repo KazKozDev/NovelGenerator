@@ -17,8 +17,10 @@ import { getFormattedPrompt, PromptNames, formatPrompt } from '../utils/promptLo
 import { GEMINI_MODEL_NAME } from '../constants';
 import { OUTLINE_PARAMS, CHAPTER_CONTENT_PARAMS, ANALYSIS_PARAMS, EDITING_PARAMS, EXTRACTION_PARAMS, TITLE_PARAMS } from '../constants/generationParams';
 import { SchemaType } from '@google/generative-ai';
+import { logToTerminal, logStreamProgress } from '../utils/terminalLogger';
 
 const STORAGE_KEY = 'novelGeneratorState';
+
 
 /**
  * Creates an optimized chapter planning schema - focusing on essential fields
@@ -548,12 +550,14 @@ const useBookGenerator = () => {
 
   const _generateOutline = useCallback(async (premise: string, chaptersCount: number) => {
     // Note: currentStep is already set to GeneratingOutline by startGeneration()
+    logToTerminal(`Generating story outline for ${chaptersCount} chapters...`, 'Outline', 'stage');
     const { systemPrompt, userPrompt } = getFormattedPrompt(PromptNames.STORY_OUTLINE, {
       chapters_count: chaptersCount,
       story_premise: premise
     });
     const outlineText = await generateGeminiText(userPrompt, systemPrompt, undefined, OUTLINE_PARAMS.temperature, OUTLINE_PARAMS.topP, OUTLINE_PARAMS.topK);
     if (!outlineText) throw new Error("Failed to generate story outline.");
+    logToTerminal(`Story outline generated successfully (~${outlineText.split(/\s+/).filter(Boolean).length} words)`, 'Outline', 'success');
     setCurrentStoryOutline(outlineText);
     setCurrentStep(GenerationStep.WaitingForOutlineApproval);
     _saveStateToLocalStorage();
@@ -579,6 +583,7 @@ const useBookGenerator = () => {
 
       if (needsCharacters || needsWorldName || needsMotifs) {
         setCurrentStep(GenerationStep.ExtractingCharacters); // Show first extraction step
+        logToTerminal('Extracting characters, world lore, and recurring motifs...', 'Extraction', 'stage');
         
         const extractionPromises = [];
         
@@ -621,12 +626,14 @@ const useBookGenerator = () => {
           }
         }
         
+        logToTerminal(`Extraction complete: ${Object.keys(charactersRef.current).length} characters identified`, 'Extraction', 'success');
         _saveStateToLocalStorage();
       }
 
       let planArray = parsedChapterPlans;
       if (planArray.length === 0) {
           setCurrentStep(GenerationStep.GeneratingChapterPlan);
+          logToTerminal(`Generating structured chapter plans for ${numChapters} chapters...`, 'Planning', 'stage');
           
           const { systemPrompt: systemPromptPlan, userPrompt: chapterPlanPrompt } = getFormattedPrompt(PromptNames.CHAPTER_PLANNING, {
             num_chapters: numChapters,
@@ -635,6 +642,7 @@ const useBookGenerator = () => {
           
           console.log('🔄 Starting chapter plan generation...');
           console.log(`📊 Requesting plan for ${numChapters} chapters`);
+
           
           let jsonString: string = '';
           let schemaUsed = 'optimized';
@@ -797,10 +805,22 @@ ${formatArrayField(thisChapterPlanObject.foreshadowing, 'Foreshadowing')}
 ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
 `.trim();
         const plannedTitle = thisChapterPlanObject.title || `Chapter ${i}`;
+        logToTerminal(`Starting Chapter ${i}/${numChapters}: "${plannedTitle}"`, 'Coordinator', 'stage');
 
         setGeneratedChapters(prev => [...prev, { title: plannedTitle, content: '', plan: thisChapterPlanText }]);
 
-        const onChunk = (chunkText: string) => { setGeneratedChapters(prev => { const updatedChapters = [...prev]; if (updatedChapters.length > 0) { updatedChapters[updatedChapters.length - 1].content += chunkText; } return updatedChapters; }); };
+        const onChunk = (chunkText: string) => {
+          setGeneratedChapters(prev => {
+            const updatedChapters = [...prev];
+            if (updatedChapters.length > 0) {
+              updatedChapters[updatedChapters.length - 1].content += chunkText;
+              const curWords = updatedChapters[updatedChapters.length - 1].content.split(/\s+/).filter(Boolean).length;
+              logStreamProgress(`Chapter ${i} ("${plannedTitle}")`, curWords, 'Synthesis');
+            }
+            return updatedChapters;
+          });
+        };
+
         
         const genreGuidelines = storySettings.genre ? getGenreGuidelines(storySettings.genre) : '';
         const styleGuidelines = getStylePrompt(storySettings);
@@ -1060,8 +1080,11 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
             refinedChapterContent = chapterContent; // Use hybrid content as-is
           }
         }
+
+        logToTerminal(`Chapter ${i} ("${plannedTitle}") generation pass complete (~${refinedChapterContent.split(/\s+/).filter(Boolean).length} words, coherence: ${synthesisScore}/100)`, 'Coordinator', 'success');
         
         // Note: Specialized editing passes (dialogue, action, description) are available in utils/specializedEditors.ts
+
         // They can be enabled for deeper editing but add significant generation time
         // For now, the general economy pass covers most needs
 
@@ -1260,8 +1283,10 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         const metadata = { title: bookTitle, story_premise: storyPremise, characters: charactersRef.current, chapter_summaries: chapterSummariesRef.current, timeline_data_by_chapter: timelineRef.current, emotional_arc_by_chapter: emotionalArcRef.current, };
         setFinalMetadataJson(JSON.stringify(metadata, null, 2));
         setCurrentStep(GenerationStep.Done);
+        logToTerminal(`Novel complete! "${bookTitle}" generated with ${chaptersForCompilation.length} chapters.`, 'Coordinator', 'success');
         
         // Play success sound when book is complete
+
         playSuccessSound();
       }
 

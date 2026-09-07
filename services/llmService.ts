@@ -6,6 +6,7 @@
 import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
+import { logToTerminal } from '../utils/terminalLogger';
 
 const LLM_STORAGE_KEY = 'novelGenerator_llm_config';
 
@@ -53,9 +54,18 @@ export async function generateText(
   overrideConfig?: LLMProviderConfig
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
+  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const startTime = Date.now();
 
+  logToTerminal(
+    `Dispatching request to ${providerTag} (temp: ${temperature}, JSON: ${Boolean(schema)})`,
+    'LLM',
+    'llm'
+  );
+
+  let result: string;
   if (config.provider === 'ollama') {
-    return generateOllamaText(
+    result = await generateOllamaText(
       prompt,
       systemInstruction,
       schema,
@@ -63,10 +73,19 @@ export async function generateText(
       config.ollamaModel,
       config.ollamaEndpoint
     );
+  } else {
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK);
   }
 
-  // Default to Gemini
-  return generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK);
+  const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+  const words = result.split(/\s+/).filter(Boolean).length;
+  logToTerminal(
+    `${providerTag} completed in ${durationSec}s (~${words} words)`,
+    'LLM',
+    'success'
+  );
+
+  return result;
 }
 
 /**
@@ -80,17 +99,42 @@ export async function generateTextStream(
   overrideConfig?: LLMProviderConfig
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
+  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const startTime = Date.now();
 
+  logToTerminal(
+    `Starting stream generation via ${providerTag} (temp: ${temperature})`,
+    'LLM',
+    'llm'
+  );
+
+  let chunkCount = 0;
+  const wrappedOnChunk = (chunk: string) => {
+    chunkCount++;
+    onChunk(chunk);
+  };
+
+  let result: string;
   if (config.provider === 'ollama') {
-    return generateOllamaTextStream(
+    result = await generateOllamaTextStream(
       prompt,
-      onChunk,
+      wrappedOnChunk,
       systemInstruction,
       config.ollamaModel,
       config.ollamaEndpoint
     );
+  } else {
+    result = await generateGeminiTextStream(prompt, wrappedOnChunk, systemInstruction, temperature);
   }
 
-  // Default to Gemini
-  return generateGeminiTextStream(prompt, onChunk, systemInstruction, temperature);
+  const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+  const words = result.split(/\s+/).filter(Boolean).length;
+  logToTerminal(
+    `${providerTag} stream complete in ${durationSec}s (~${words} words, ${chunkCount} chunks)`,
+    'LLM',
+    'success'
+  );
+
+  return result;
 }
+
