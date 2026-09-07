@@ -20,8 +20,8 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   return (
     <div className={`p-4 md:p-6 bg-slate-900/70 rounded-xl border border-slate-700/80 shadow-xl flex flex-col ${fullHeight ? 'h-full' : 'mt-6'}`}>
       <div className="flex items-center justify-between border-b border-slate-700/80 pb-3 mb-3">
-        <h3 className="font-semibold text-sky-400 text-base md:text-lg flex items-center gap-2">
-          <span>📖</span>
+        <h3 className="font-semibold text-sky-400 text-sm md:text-base flex items-center gap-2 tracking-wide font-sans">
+          <span className="w-2 h-2 rounded-full bg-sky-400" />
           <span>{title}</span>
         </h3>
         <span className="text-xs bg-slate-800 text-sky-300 px-2.5 py-1 rounded-full font-mono border border-slate-700">

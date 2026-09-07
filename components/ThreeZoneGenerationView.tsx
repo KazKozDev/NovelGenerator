@@ -124,19 +124,19 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         >
           <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
             <div className="flex items-center gap-2">
-              <span className="text-sky-400 text-lg">🗺️</span>
-              <h3 className="font-semibold text-slate-100 text-sm md:text-base">
+              <span className="w-2 h-2 rounded-full bg-sky-400" />
+              <h3 className="font-semibold text-slate-100 text-xs tracking-wider uppercase">
                 Pipeline & Chapters
               </h3>
             </div>
-            <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full border border-slate-700">
+            <span className="text-[11px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
           </div>
 
           {/* Chapter List Navigation */}
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 block">
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
               Chapter Navigation
             </label>
             <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
@@ -167,14 +167,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isProcessing ? (
-                        <span className="flex items-center gap-1 text-[11px] text-amber-400 font-semibold">
+                        <span className="flex items-center gap-1 text-[11px] text-amber-400 font-semibold font-mono">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                           Live
                         </span>
                       ) : isCompleted ? (
-                        <span className="text-emerald-400 text-[11px]">✓ Done</span>
+                        <span className="text-emerald-400 text-[11px] font-medium font-mono">Done</span>
                       ) : (
-                        <span className="text-slate-500 text-[11px]">Pending</span>
+                        <span className="text-slate-500 text-[11px] font-mono">Pending</span>
                       )}
                     </div>
                   </button>
@@ -186,7 +186,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           {/* Active Chapter Plan */}
           <div className="border-t border-slate-700/80 pt-4 flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Active Chapter Plan
               </span>
               <span className="text-[11px] text-sky-400 font-mono">
@@ -205,13 +205,13 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <button
               type="button"
               onClick={() => setShowOutline(!showOutline)}
-              className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
+              className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors"
             >
               <div className="flex items-center gap-1.5">
-                <span>📚 Story Outline</span>
+                <span>Story Outline</span>
                 <span className="text-[10px] text-slate-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
               </div>
-              <span>{showOutline ? '▼' : '▶'}</span>
+              <span className="text-[10px] font-mono">{showOutline ? '[-]' : '[+]'}</span>
             </button>
 
             {showOutline && (
@@ -231,21 +231,23 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         >
           {isWritingProse || activeContent ? (
             <StreamingContentView
-              title={`Writing Chapter ${activeChapterNum}: ${activeTitle}`}
+              title={`Chapter ${activeChapterNum}: ${activeTitle}`}
               content={activeContent}
               fullHeight={true}
             />
           ) : (
             <div className="p-8 bg-slate-900/80 backdrop-blur rounded-2xl border border-slate-700/80 shadow-xl flex flex-col items-center justify-center text-center h-full min-h-[500px]">
-              <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center text-3xl mb-4">
-                ✍️
+              <div className="w-14 h-14 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mb-4">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Narrative Pre-production in Progress</h3>
-              <p className="text-sm text-slate-300 max-w-md mb-6 leading-relaxed">
+              <h3 className="text-base font-bold text-white mb-2">Narrative Pre-production</h3>
+              <p className="text-xs text-slate-300 max-w-md mb-6 leading-relaxed">
                 Specialist agents are formulating character arcs, world mechanics, and scene breakdowns. Full manuscript prose streaming will commence automatically.
               </p>
-              <div className="flex items-center gap-3 text-xs text-sky-400 bg-sky-950/40 px-4 py-2 rounded-xl border border-sky-800/50">
-                <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+              <div className="flex items-center gap-2.5 text-xs text-sky-400 bg-sky-950/40 px-3.5 py-1.5 rounded-lg border border-sky-800/50 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
                 <span>{currentStep}</span>
               </div>
             </div>
@@ -261,18 +263,18 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         >
           <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400 text-lg">🧠</span>
-              <h3 className="font-semibold text-slate-100 text-sm md:text-base">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <h3 className="font-semibold text-slate-100 text-xs tracking-wider uppercase">
                 Agent Inspector
               </h3>
             </div>
-            <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full border border-slate-700 font-mono">
+            <span className="text-[11px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
               {agentLogs.length} events
             </span>
           </div>
 
           {/* Quick Agent Status Telemetry */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
             <div className="p-2.5 bg-slate-950/50 rounded-xl border border-slate-800">
               <div className="text-slate-400 text-[10px] uppercase font-semibold">Specialists</div>
               <div className="text-emerald-400 font-medium mt-0.5 flex items-center gap-1.5">
@@ -294,9 +296,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               <AgentActivityLog logs={agentLogs} />
             </div>
           ) : (
-            <div className="text-center py-12 text-slate-400 text-xs flex flex-col items-center gap-2">
-              <span className="text-2xl opacity-40">🤖</span>
-              <span>Waiting for agent telemetry...</span>
+            <div className="text-center py-12 text-slate-400 text-xs flex flex-col items-center gap-2 font-mono">
+              <span>Awaiting agent telemetry...</span>
             </div>
           )}
         </div>

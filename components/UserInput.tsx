@@ -83,8 +83,9 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="bg-slate-900/50 border border-slate-700/80 rounded-xl p-4 md:p-5 shadow-inner">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
-              <span>🤖 AI Provider</span>
+            <h3 className="text-xs font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-sky-400" />
+              <span>AI Provider</span>
             </h3>
             <p className="text-xs text-slate-400">Choose inference provider (Google Gemini or Local Ollama)</p>
           </div>
@@ -158,7 +159,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     disabled={isFetchingModels}
                     className="text-[11px] text-sky-400 hover:text-sky-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
                   >
-                    {isFetchingModels ? '⏳ Loading...' : '🔄 Load models from Ollama'}
+                    {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
                   </button>
                 </div>
 
@@ -267,8 +268,8 @@ const UserInput: React.FC<UserInputProps> = ({
         </div>
 
         <div className="md:col-span-2">
-          <label htmlFor="speedMode" className="block text-sm font-medium text-sky-300 mb-1">
-            ⚡ Generation Speed Mode
+          <label htmlFor="speedMode" className="block text-xs font-semibold uppercase tracking-wider text-sky-300 mb-1">
+            Generation Speed Mode
           </label>
           <Select
             id="speedMode"
@@ -276,8 +277,8 @@ const UserInput: React.FC<UserInputProps> = ({
             onChange={(e) => setGenerationSpeedMode(e.target.value as GenerationSpeedMode)}
             className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           >
-            <option value="fast">⚡ Fast (Single-pass — skips redundant chapter rewrite, 2x faster for Ollama)</option>
-            <option value="thorough">🔍 Thorough (Dual-pass — full secondary polish and rewrite)</option>
+            <option value="fast">Fast (Single-pass — skips redundant chapter rewrite, 2x faster)</option>
+            <option value="thorough">Thorough (Dual-pass — full secondary polish and rewrite)</option>
           </Select>
           <p className="text-xs text-slate-400 mt-1">
             {generationSpeedMode === 'fast'

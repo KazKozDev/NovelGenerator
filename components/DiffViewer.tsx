@@ -204,10 +204,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
         marginBottom: '15px'
       }}>
         <div>
-          <h4 style={{ color: '#f3f4f6', margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-            📝 Chapter {chapterNumber} - Text Changes ({strategy})
+          <h4 style={{ color: '#f3f4f6', margin: 0, fontSize: '15px', fontWeight: '600', letterSpacing: '-0.01em' }}>
+            Chapter {chapterNumber} — Text Modifications ({strategy})
           </h4>
-          <div style={{ color: '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
+          <div style={{ color: '#9ca3af', fontSize: '12px', marginTop: '4px', fontFamily: 'monospace' }}>
             <span style={{ color: '#86efac' }}>+{stats.added} added</span>
             {' • '}
             <span style={{ color: '#fca5a5' }}>-{stats.removed} removed</span>
@@ -221,32 +221,34 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
             onClick={() => setViewMode(viewMode === 'unified' ? 'split' : 'unified')}
             style={{
               padding: '6px 12px',
-              backgroundColor: '#4b5563',
+              backgroundColor: '#374151',
               color: '#f3f4f6',
-              border: 'none',
-              borderRadius: '4px',
+              border: '1px solid #4b5563',
+              borderRadius: '6px',
               cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500'
+              fontSize: '11px',
+              fontWeight: '600',
+              fontFamily: 'monospace'
             }}
           >
-            {viewMode === 'unified' ? '📊 Split View' : '📄 Unified View'}
+            {viewMode === 'unified' ? 'Split View' : 'Unified View'}
           </button>
           
           <button
             onClick={() => setShowFullText(!showFullText)}
             style={{
               padding: '6px 12px',
-              backgroundColor: '#4b5563',
+              backgroundColor: '#374151',
               color: '#f3f4f6',
-              border: 'none',
-              borderRadius: '4px',
+              border: '1px solid #4b5563',
+              borderRadius: '6px',
               cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500'
+              fontSize: '11px',
+              fontWeight: '600',
+              fontFamily: 'monospace'
             }}
           >
-            {showFullText ? '📉 Show Less' : '📈 Show Full Text'}
+            {showFullText ? 'Show Less' : 'Show Full Text'}
           </button>
         </div>
       </div>

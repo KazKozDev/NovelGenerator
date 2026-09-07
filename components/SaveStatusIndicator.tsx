@@ -85,8 +85,8 @@ const SaveStatusIndicator: React.FC<SaveStatusIndicatorProps> = ({ generatedChap
 
       {completedCount > 0 && (
         <div className="mt-2 pt-2 border-t border-slate-600">
-          <span className="text-xs text-green-400">
-            ✅ {completedCount} / {generatedChapters.length} chapters completed
+          <span className="text-xs text-emerald-400 font-mono">
+            {completedCount} of {generatedChapters.length} chapters completed
           </span>
         </div>
       )}

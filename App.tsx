@@ -40,7 +40,7 @@ const App: React.FC = () => {
   } = useBookGenerator();
 
   // Debug logging
-  console.log('🎨 App render - currentStep:', currentStep, 'isLoading:', isLoading);
+  console.log('[App] render - currentStep:', currentStep, 'isLoading:', isLoading);
 
   const handleStartGeneration = () => {
     if (storyPremise && numChapters >= 3) {
@@ -105,7 +105,7 @@ const App: React.FC = () => {
         )}
 
         {(() => {
-          console.log('🔍 Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
+          console.log('[App] Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
           return currentStep === GenerationStep.Idle && !finalBookContent && !isResumable;
         })() &&(
           <>
@@ -140,7 +140,7 @@ const App: React.FC = () => {
         
         {(() => {
           const shouldShow = currentStep === GenerationStep.GeneratingOutline;
-          console.log('🔍 Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
+          console.log('[App] Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
           return shouldShow;
         })() && (
           <div className="text-center py-12">
