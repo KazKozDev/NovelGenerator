@@ -112,8 +112,28 @@ Generate complete chapter plans (1 to {{num_chapters}}) with all required fields
   });
 
   registerPromptTemplate(PromptNames.CHAPTER_ANALYSIS, {
-    systemPrompt: `You are a meticulous literary analyst. Your task is to analyze chapter content and extract key information, conforming strictly to the provided JSON schema.`,
-    userPrompt: `Analyze the provided content for Chapter {{chapter_number}} ("{{chapter_title}}"). Extract the required information and provide it in the specified JSON format.
+    systemPrompt: `You are a meticulous literary analyst. Your task is to analyze chapter content and extract key information in strictly valid JSON format.`,
+    userPrompt: `Analyze the provided content for Chapter {{chapter_number}} ("{{chapter_title}}").
+
+Output ONLY a single valid JSON object strictly conforming to these fields:
+- "summary": A concise 2-3 sentence summary of the chapter's events.
+- "timeElapsed": Estimated time passed during the chapter (e.g., "3 hours", "1 day").
+- "endTimeOfChapter": The time or setting moment at chapter end.
+- "specificMarkers": Time markers or dates mentioned (or "None").
+- "primaryEmotion": Dominant emotional tone.
+- "tensionLevel": Integer from 1 to 10.
+- "unresolvedHook": The main cliffhanger or question that propels the reader forward.
+- "pacingScore": Integer from 1 to 10.
+- "dialogueRatio": Estimated percentage of dialogue (integer 0 to 100).
+- "wordCount": Approximate word count (integer).
+- "keyEvents": Array of 2 to 5 short strings describing key events.
+- "characterMoments": Array of strings describing character development beats.
+- "foreshadowing": Array of strings describing clues or hints.
+
+CRITICAL:
+- Output ONLY valid JSON starting with { and ending with }.
+- DO NOT use placeholder ellipses like [...] or {...}. If an array has no items, output [].
+- Never write commentary or explanations outside the JSON object.
 
 CHAPTER CONTENT:
 {{chapter_content}}`

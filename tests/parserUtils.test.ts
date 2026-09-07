@@ -9,7 +9,9 @@ import {
   cleanCharacterCandidateName,
   isValidCharacterName,
   findCharacterMatches,
-  extractCharactersFromString
+  extractCharactersFromString,
+  sanitizeJsonPlaceholders,
+  parseChapterAnalysisJson
 } from '../utils/parserUtils';
 
 
@@ -272,5 +274,76 @@ I hope this character list helps with the story!`;
     expect(names.length).toBe(2);
   });
 });
+
+describe('parserUtils - Chapter Analysis Parsing & Pseudo-JSON Recovery', () => {
+  it('sanitizes placeholder ellipses [...] and {...} that crash standard JSON.parse', () => {
+    // Simulates the exact user bug:
+    // AI outputs "Events": [...] or "characterMoments": [ ... ]
+    const rawAiResponse = `{
+      "summary": "Elena confronts the perimeter security and escapes into the underbelly.",
+      "timeElapsed": "2 hours",
+      "endTimeOfChapter": "Dusk",
+      "specificMarkers": "6:00 PM bells",
+      "primaryEmotion": "Suspense",
+      "tensionLevel": 7,
+      "unresolvedHook": "Who sent the warning cipher?",
+      "pacingScore": 8,
+      "dialogueRatio": 40,
+      "wordCount": 4200,
+      "keyEvents": [...],
+      "Events": [ ... ],
+      "characterMoments": [...],
+      "foreshadowing": ["The broken seal", ...]
+    }`;
+
+    const sanitized = sanitizeJsonPlaceholders(rawAiResponse);
+    expect(() => JSON.parse(sanitized)).not.toThrow();
+
+    const parsed = JSON.parse(sanitized);
+    expect(parsed.keyEvents).toEqual([]);
+    expect(parsed.Events).toEqual([]);
+    expect(parsed.characterMoments).toEqual([]);
+    expect(parsed.foreshadowing).toEqual(['The broken seal']);
+  });
+
+  it('parseChapterAnalysisJson successfully recovers analysis even with malformed [...] arrays', () => {
+    const rawAiResponse = `{
+      "summary": "Elena enters the forbidden archives.",
+      "tensionLevel": 8,
+      "pacingScore": 7,
+      "Events": [...],
+      "characterMoments": [...]
+    }`;
+
+    const result = parseChapterAnalysisJson(rawAiResponse, {
+      chapterNumber: 2,
+      plannedTitle: "The Forbidden Archives",
+      chapterContent: "Elena stepped through the archway...",
+      plannedSummary: "Elena searches the archives."
+    });
+
+    expect(result.summary).toBe("Elena enters the forbidden archives.");
+    expect(result.tensionLevel).toBe(8);
+    expect(result.pacingScore).toBe(7);
+    expect(result.keyEvents).toEqual([]);
+  });
+
+  it('parseChapterAnalysisJson gracefully falls back when response is total gibberish without crashing', () => {
+    const gibberish = "I cannot analyze this right now. Please try again.";
+
+    const result = parseChapterAnalysisJson(gibberish, {
+      chapterNumber: 2,
+      plannedTitle: "The Forbidden Archives",
+      chapterContent: "Elena walked slowly into the darkness. She held her breath.",
+      plannedSummary: "Elena enters the archives."
+    });
+
+    expect(result.summary).toBe("Elena enters the archives.");
+    expect(result.tensionLevel).toBe(6);
+    expect(result.wordCount).toBe(10);
+    expect(result.keyEvents).toEqual([]);
+  });
+});
+
 
 

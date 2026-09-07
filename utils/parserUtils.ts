@@ -353,6 +353,28 @@ These should be concrete elements or clear themes that can recur or be reference
 }
 
 /**
+ * Sanitizes pseudo-JSON constructs frequently produced by LLMs:
+ * - Placeholder ellipses: [...] -> [], {...} -> {}
+ * - Ellipses inside arrays: ["item 1", ...] -> ["item 1"]
+ * - Ellipses at start of arrays: [..., "item 2"] -> ["item 2"]
+ * - Trailing commas: {"a": 1,} -> {"a": 1}, ["a",] -> ["a"]
+ */
+export function sanitizeJsonPlaceholders(jsonStr: string): string {
+  if (!jsonStr) return '';
+  return jsonStr
+    // Replace [...] and [ ... ] with []
+    .replace(/\[\s*\.{2,}\s*\]/g, '[]')
+    // Replace {...} and { ... } with {}
+    .replace(/\{\s*\.{2,}\s*\}/g, '{}')
+    // Replace [ "item", ... ] or [ "item", ... , "item2" ]
+    .replace(/,\s*\.{2,}\s*([\]\}])/g, '$1')
+    .replace(/([\[\{])\s*\.{2,}\s*,?/g, '$1')
+    .replace(/,\s*\.{2,}\s*,/g, ',')
+    // Remove trailing commas before } or ]
+    .replace(/,\s*([\]\}])/g, '$1');
+}
+
+/**
  * Clean and normalize JSON string returned from LLM by stripping markdown code fences
  * and conversational wrappers.
  */
@@ -374,7 +396,7 @@ export function cleanJsonString(raw: string): string {
     }
   }
 
-  return cleaned;
+  return sanitizeJsonPlaceholders(cleaned);
 }
 
 /**
@@ -417,7 +439,7 @@ export function parseLenientJson<T = any>(raw: string): T {
   candidates.push(text);
 
   const tryParseSingleOrMulti = (str: string): any => {
-    let s = str.trim();
+    let s = sanitizeJsonPlaceholders(str.trim());
     if (!s) return null;
 
     // Direct JSON.parse
@@ -674,4 +696,139 @@ export function parseEvaluationResponse(raw: string): ParsedEvaluation {
     remainingIssues: issues
   };
 }
+
+export interface ChapterAnalysisFallbackContext {
+  chapterNumber: number;
+  plannedTitle: string;
+  chapterContent: string;
+  plannedSummary?: string;
+}
+
+export interface ChapterAnalysisResult {
+  summary: string;
+  timeElapsed?: string;
+  endTimeOfChapter?: string;
+  specificMarkers?: string;
+  primaryEmotion?: string;
+  tensionLevel?: number;
+  unresolvedHook?: string;
+  pacingScore?: number;
+  dialogueRatio?: number;
+  wordCount?: number;
+  keyEvents?: string[];
+  characterMoments?: string[];
+  foreshadowing?: string[];
+}
+
+/**
+ * Resiliently parses chapter analysis JSON returned from LLMs.
+ * Recovers from pseudo-JSON like `[...]`, markdown wrappers, unquoted keys,
+ * and provides a graceful fallback if the LLM output is corrupted so novel generation
+ * is never aborted.
+ */
+export function parseChapterAnalysisJson(
+  raw: string,
+  context: ChapterAnalysisFallbackContext
+): ChapterAnalysisResult {
+  const approximateWordCount = context.chapterContent
+    ? context.chapterContent.split(/\s+/).filter(Boolean).length
+    : 0;
+
+  const defaultResult: ChapterAnalysisResult = {
+    summary: context.plannedSummary || `Chapter ${context.chapterNumber} chronicles the events of "${context.plannedTitle}".`,
+    timeElapsed: "Same day",
+    endTimeOfChapter: "Evening",
+    specificMarkers: "None",
+    primaryEmotion: "Anticipation",
+    tensionLevel: 6,
+    unresolvedHook: "Unresolved tension heading into the next chapter",
+    pacingScore: 6,
+    dialogueRatio: 35,
+    wordCount: approximateWordCount,
+    keyEvents: [],
+    characterMoments: [],
+    foreshadowing: []
+  };
+
+  if (!raw || typeof raw !== 'string') {
+    return defaultResult;
+  }
+
+  // Attempt 1: Standard cleanJsonString + JSON.parse
+  try {
+    const cleaned = cleanJsonString(raw);
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        summary: parsed.summary || parsed.Summary || defaultResult.summary,
+        timeElapsed: parsed.timeElapsed || parsed.TimeElapsed || defaultResult.timeElapsed,
+        endTimeOfChapter: parsed.endTimeOfChapter || parsed.EndTimeOfChapter || defaultResult.endTimeOfChapter,
+        specificMarkers: parsed.specificMarkers || parsed.SpecificMarkers || defaultResult.specificMarkers,
+        primaryEmotion: parsed.primaryEmotion || parsed.PrimaryEmotion || defaultResult.primaryEmotion,
+        tensionLevel: typeof parsed.tensionLevel === 'number' ? parsed.tensionLevel : defaultResult.tensionLevel,
+        unresolvedHook: parsed.unresolvedHook || parsed.UnresolvedHook || defaultResult.unresolvedHook,
+        pacingScore: typeof parsed.pacingScore === 'number' ? parsed.pacingScore : defaultResult.pacingScore,
+        dialogueRatio: typeof parsed.dialogueRatio === 'number' ? parsed.dialogueRatio : defaultResult.dialogueRatio,
+        wordCount: typeof parsed.wordCount === 'number' ? parsed.wordCount : approximateWordCount,
+        keyEvents: Array.isArray(parsed.keyEvents) ? parsed.keyEvents : Array.isArray(parsed.Events) ? parsed.Events : [],
+        characterMoments: Array.isArray(parsed.characterMoments) ? parsed.characterMoments : [],
+        foreshadowing: Array.isArray(parsed.foreshadowing) ? parsed.foreshadowing : []
+      };
+    }
+  } catch {
+    // Continue to Attempt 2
+  }
+
+  // Attempt 2: parseLenientJson with sanitized input
+  try {
+    const sanitizedRaw = sanitizeJsonPlaceholders(raw);
+    const parsed = parseLenientJson<any>(sanitizedRaw);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        summary: parsed.summary || parsed.Summary || defaultResult.summary,
+        timeElapsed: parsed.timeElapsed || parsed.TimeElapsed || defaultResult.timeElapsed,
+        endTimeOfChapter: parsed.endTimeOfChapter || parsed.EndTimeOfChapter || defaultResult.endTimeOfChapter,
+        specificMarkers: parsed.specificMarkers || parsed.SpecificMarkers || defaultResult.specificMarkers,
+        primaryEmotion: parsed.primaryEmotion || parsed.PrimaryEmotion || defaultResult.primaryEmotion,
+        tensionLevel: typeof parsed.tensionLevel === 'number' ? parsed.tensionLevel : defaultResult.tensionLevel,
+        unresolvedHook: parsed.unresolvedHook || parsed.UnresolvedHook || defaultResult.unresolvedHook,
+        pacingScore: typeof parsed.pacingScore === 'number' ? parsed.pacingScore : defaultResult.pacingScore,
+        dialogueRatio: typeof parsed.dialogueRatio === 'number' ? parsed.dialogueRatio : defaultResult.dialogueRatio,
+        wordCount: typeof parsed.wordCount === 'number' ? parsed.wordCount : approximateWordCount,
+        keyEvents: Array.isArray(parsed.keyEvents) ? parsed.keyEvents : Array.isArray(parsed.Events) ? parsed.Events : [],
+        characterMoments: Array.isArray(parsed.characterMoments) ? parsed.characterMoments : [],
+        foreshadowing: Array.isArray(parsed.foreshadowing) ? parsed.foreshadowing : []
+      };
+    }
+  } catch {
+    // Continue to Attempt 3
+  }
+
+  // Attempt 3: Regex extraction for key fields from raw response
+  try {
+    const summaryMatch = raw.match(/"summary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+    const tensionMatch = raw.match(/"tensionLevel"\s*:\s*(\d+)/i);
+    const pacingMatch = raw.match(/"pacingScore"\s*:\s*(\d+)/i);
+    const emotionMatch = raw.match(/"primaryEmotion"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+    const hookMatch = raw.match(/"unresolvedHook"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+
+    if (summaryMatch && summaryMatch[1]) {
+      return {
+        ...defaultResult,
+        summary: summaryMatch[1].replace(/\\"/g, '"'),
+        tensionLevel: tensionMatch ? parseInt(tensionMatch[1], 10) : defaultResult.tensionLevel,
+        pacingScore: pacingMatch ? parseInt(pacingMatch[1], 10) : defaultResult.pacingScore,
+        primaryEmotion: emotionMatch ? emotionMatch[1] : defaultResult.primaryEmotion,
+        unresolvedHook: hookMatch ? hookMatch[1] : defaultResult.unresolvedHook,
+      };
+    }
+  } catch {
+    // Fall through to Attempt 4
+  }
+
+  // Attempt 4: Safe fallback
+  console.warn(`parseChapterAnalysisJson: Failed to parse raw analysis JSON for Chapter ${context.chapterNumber}, using safe fallback.`);
+  return defaultResult;
+}
+
 

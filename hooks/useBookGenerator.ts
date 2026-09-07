@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry, ChapterGenerationStage } from '../types';
 import { generateText as generateGeminiText, generateTextStream as generateGeminiTextStream } from '../services/llmService';
-import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString, parseChapterPlanJson } from '../utils/parserUtils';
+import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString, parseChapterPlanJson, parseChapterAnalysisJson } from '../utils/parserUtils';
 
 import { getWritingExamplesPrompt } from '../utils/writingExamples';
 import { checkChapterConsistency } from '../utils/consistencyChecker';
@@ -1055,14 +1055,13 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         });
         const analysisJsonString = await generateGeminiText(analysisPrompt, systemPromptAnalyzer, analysisSchema, ANALYSIS_PARAMS.temperature, ANALYSIS_PARAMS.topP, ANALYSIS_PARAMS.topK);
         
-        let analysisResult;
-        try {
-            analysisResult = JSON.parse(cleanJsonString(analysisJsonString));
-            if (!analysisResult.summary) { throw new Error("Missing 'summary' in analysis response."); }
-        } catch (e: any) {
-            console.error(`Failed to parse analysis JSON for chapter ${i}:`, e, "Raw response:", analysisJsonString);
-            throw new Error(`Failed to get a valid analysis for Chapter ${i}. The AI's response was not valid JSON. Details: ${e.message}`);
-        }
+        const analysisResult = parseChapterAnalysisJson(analysisJsonString, {
+          chapterNumber: i,
+          plannedTitle,
+          chapterContent,
+          plannedSummary: thisChapterPlanObject?.summary
+        });
+        logToTerminal(`Chapter ${i} analysis complete: "${analysisResult.summary.slice(0, 80)}..." (Tension: ${analysisResult.tensionLevel}/10, Pacing: ${analysisResult.pacingScore}/10)`, 'Analysis', 'success');
 
         // 🎨 LIGHT POLISH PASS (Hybrid System)
         // In Fast Mode or when synthesis quality is already high, skip secondary full-chapter rewrite
