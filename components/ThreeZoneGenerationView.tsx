@@ -6,6 +6,7 @@ import AgentActivityLog from './AgentActivityLog';
 import SaveStatusIndicator from './SaveStatusIndicator';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Button } from './common/Button';
+import { MarkdownView } from './common/MarkdownView';
 
 export interface ThreeZoneGenerationViewProps {
   currentStep: GenerationStep;
@@ -193,10 +194,13 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Ch #{activeChapterNum}
               </span>
             </div>
-            <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs text-zinc-400 max-h-56 overflow-y-auto leading-relaxed whitespace-pre-wrap font-mono rounded-lg">
-              {(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
-                ? currentChapterPlan 
-                : (activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...')}
+            <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 max-h-56 overflow-y-auto leading-relaxed rounded-lg">
+              <MarkdownView
+                content={(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
+                  ? currentChapterPlan 
+                  : (activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...')}
+                className="text-xs"
+              />
             </div>
           </div>
 
@@ -215,8 +219,11 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </button>
 
             {showOutline && (
-              <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs text-zinc-400 max-h-64 overflow-y-auto leading-relaxed whitespace-pre-wrap font-mono rounded-lg animate-fade-in">
-                {currentStoryOutline || 'No outline generated yet.'}
+              <div className="p-3 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 max-h-64 overflow-y-auto leading-relaxed rounded-lg animate-fade-in">
+                <MarkdownView
+                  content={currentStoryOutline || 'No outline generated yet.'}
+                  className="text-xs"
+                />
               </div>
             )}
           </div>

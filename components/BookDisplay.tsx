@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
 import AuthorPromptModal from './AuthorPromptModal';
+import { MarkdownView } from './common/MarkdownView';
 import { exportAsEpub, exportAsPdf, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
 
 interface BookDisplayProps {
@@ -15,6 +16,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   const [isAuthorModalOpen, setIsAuthorModalOpen] = useState(false);
   const [exportType, setExportType] = useState<'epub' | 'pdf'>('epub');
+  const [bookViewMode, setBookViewMode] = useState<'rendered' | 'raw'>('rendered');
 
   const metadata = useMemo(() => {
     try {
@@ -87,45 +89,72 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
 
       {activeTab === 'book' && (
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm">
-          <div className="flex justify-end mb-3 space-x-2">
-            <Button 
-              onClick={() => handleCopyToClipboard(bookContent, 'book')}
-              variant="secondary"
-              size="sm"
-            >
-              {copiedStates['book'] ? 'Copied' : 'Copy Markdown'}
-            </Button>
-            <Button 
-              onClick={() => downloadFile(bookContent, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}.md`, 'text/markdown;charset=utf-8')}
-              variant="secondary"
-              size="sm"
-            >
-              Download .md
-            </Button>
-            <Button 
-              onClick={() => {
-                setExportType('epub');
-                setIsAuthorModalOpen(true);
-              }}
-              variant="secondary"
-              size="sm"
-            >
-              Export EPUB
-            </Button>
-            <Button 
-              onClick={() => {
-                setExportType('pdf');
-                setIsAuthorModalOpen(true);
-              }}
-              variant="secondary"
-              size="sm"
-            >
-              Export PDF
-            </Button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-zinc-800/80 pb-3">
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => setBookViewMode('rendered')}
+                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                Rendered Markdown
+              </button>
+              <button
+                type="button"
+                onClick={() => setBookViewMode('raw')}
+                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                Raw Source
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button 
+                onClick={() => handleCopyToClipboard(bookContent, 'book')}
+                variant="secondary"
+                size="sm"
+              >
+                {copiedStates['book'] ? 'Copied' : 'Copy Markdown'}
+              </Button>
+              <Button 
+                onClick={() => downloadFile(bookContent, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}.md`, 'text/markdown;charset=utf-8')}
+                variant="secondary"
+                size="sm"
+              >
+                Download .md
+              </Button>
+              <Button 
+                onClick={() => {
+                  setExportType('epub');
+                  setIsAuthorModalOpen(true);
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                Export EPUB
+              </Button>
+              <Button 
+                onClick={() => {
+                  setExportType('pdf');
+                  setIsAuthorModalOpen(true);
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                Export PDF
+              </Button>
+            </div>
           </div>
-          <pre className="whitespace-pre-wrap text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded-lg max-h-[60vh] overflow-y-auto font-serif leading-relaxed">
-            {bookContent}
-          </pre>
+          {bookViewMode === 'rendered' ? (
+            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg max-h-[65vh] overflow-y-auto text-left">
+              <MarkdownView 
+                content={bookContent} 
+                className="font-serif leading-relaxed text-sm md:text-base" 
+              />
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap text-xs md:text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded-lg max-h-[65vh] overflow-y-auto font-mono leading-relaxed text-left">
+              {bookContent}
+            </pre>
+          )}
         </div>
       )}
 
