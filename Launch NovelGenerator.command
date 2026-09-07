@@ -86,7 +86,7 @@ LOG_FILE="/tmp/novelgenerator-vite.log"
 
 # Start the development server using direct node call
 # We need to use the vite JS file directly, not the shell wrapper
-/usr/local/bin/node node_modules/vite/bin/vite.js > "$LOG_FILE" 2>&1 &
+"$NODE_BIN" node_modules/vite/bin/vite.js > "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to be ready

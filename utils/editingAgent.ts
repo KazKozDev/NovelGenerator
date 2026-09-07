@@ -7,6 +7,7 @@
 import { generateGeminiText } from '../services/geminiService';
 import { ParsedChapterPlan, AgentLogEntry } from '../types';
 import { getFormattedPrompt, PromptNames } from './promptLoader';
+import { cleanJsonString } from './parserUtils';
 
 export interface EditingContext {
   chapterContent: string;
@@ -88,7 +89,7 @@ export async function analyzeAndDecide(context: EditingContext): Promise<AgentDe
     };
     
     const response = await generateGeminiText(analysisPrompt, systemPrompt, responseSchema, 0.3, 0.7, 20);
-    const decision = JSON.parse(response);
+    const decision = JSON.parse(cleanJsonString(response));
     
     // Log decision
     log(context, 'decision', `Strategy: ${decision.strategy} - ${decision.reasoning}`, {
@@ -314,7 +315,7 @@ export async function evaluateResult(
     };
     
     const response = await generateText(evaluationPrompt, evaluationSystemPrompt, evaluationSchema, 0.3, 0.7, 20);
-    const evaluation = JSON.parse(response);
+    const evaluation = JSON.parse(cleanJsonString(response));
     
     log(context, 'evaluation', `Quality Score: ${evaluation.qualityScore}/100`, {
       qualityScore: evaluation.qualityScore,

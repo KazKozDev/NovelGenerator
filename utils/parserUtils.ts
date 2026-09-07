@@ -134,3 +134,42 @@ These should be concrete elements or clear themes that can recur or be reference
   }
   return [];
 }
+
+/**
+ * Clean and normalize JSON string returned from LLM by stripping markdown code fences
+ * and conversational wrappers.
+ */
+export function cleanJsonString(raw: string): string {
+  if (!raw) return '';
+  let cleaned = raw.trim();
+
+  // Strip markdown code block fences (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
+  if (codeBlockMatch) {
+    cleaned = codeBlockMatch[1].trim();
+  } else {
+    // If not a pure code block, look for first { or [ to last } or ]
+    const firstBrace = cleaned.search(/[\{\[]/);
+    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1).trim();
+    }
+  }
+
+  return cleaned;
+}
+
+/**
+ * Safely parse JSON string with markdown stripping and fallback value on error.
+ */
+export function safeJsonParse<T>(raw: string, fallback: T): T {
+  try {
+    const cleaned = cleanJsonString(raw);
+    if (!cleaned) return fallback;
+    return JSON.parse(cleaned) as T;
+  } catch (err) {
+    console.warn('safeJsonParse failed to parse JSON, returning fallback:', err);
+    return fallback;
+  }
+}
+

@@ -373,9 +373,11 @@ export class StoryContextDatabase {
   private extractInternalWords(text: string): number {
     // Extract words from internal monologue sections
     const internalSections = text.match(/\[INTERNAL[^\]]*\]([^[]*)/g) || [];
-    return internalSections.reduce((total, section) =>
-      total + this.countWords(section), 0
-    );
+    let total = 0;
+    for (const section of internalSections) {
+      total += this.countWords(section);
+    }
+    return total;
   }
 
   private countSensoryDetails(text: string): number {

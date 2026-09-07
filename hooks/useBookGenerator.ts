@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry, ChapterGenerationStage } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from '../services/geminiService';
-import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString } from '../utils/parserUtils';
+import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString } from '../utils/parserUtils';
 import { getWritingExamplesPrompt } from '../utils/writingExamples';
 import { checkChapterConsistency } from '../utils/consistencyChecker';
 import { getGenreGuidelines } from '../utils/genrePrompts';
@@ -649,7 +649,7 @@ const useBookGenerator = () => {
               
               // Try to parse and validate
               console.log('🔍 Parsing chapter plan JSON...');
-              parsedJson = JSON.parse(jsonString);
+              parsedJson = JSON.parse(cleanJsonString(jsonString));
               
               if (!parsedJson.chapters || !Array.isArray(parsedJson.chapters) || parsedJson.chapters.length === 0) { 
                 throw new Error("Generated JSON is valid but does not contain the expected 'chapters' array."); 
@@ -678,7 +678,7 @@ const useBookGenerator = () => {
                   schemaUsed = 'expanded';
                   console.log('✅ Received chapter plan response with expanded schema');
                   
-                  parsedJson = JSON.parse(jsonString);
+                  parsedJson = JSON.parse(cleanJsonString(jsonString));
                   if (!parsedJson.chapters || parsedJson.chapters.length < numChapters) {
                     throw new Error(`Even expanded schema failed to generate all ${numChapters} chapters. Got ${parsedJson?.chapters?.length || 0}.`);
                   }
@@ -960,7 +960,7 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         
         let analysisResult;
         try {
-            analysisResult = JSON.parse(analysisJsonString);
+            analysisResult = JSON.parse(cleanJsonString(analysisJsonString));
             if (!analysisResult.summary) { throw new Error("Missing 'summary' in analysis response."); }
         } catch (e: any) {
             console.error(`Failed to parse analysis JSON for chapter ${i}:`, e, "Raw response:", analysisJsonString);
@@ -1069,7 +1069,7 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
 
         try {
             const characterUpdateJsonString = await generateGeminiText(characterUpdatePrompt, systemPromptUpdater, characterUpdateSchema, ANALYSIS_PARAMS.temperature, ANALYSIS_PARAMS.topP, ANALYSIS_PARAMS.topK);
-            const characterUpdateData = JSON.parse(characterUpdateJsonString);
+            const characterUpdateData = JSON.parse(cleanJsonString(characterUpdateJsonString));
             if (characterUpdateData && characterUpdateData.character_updates) {
                 for (const update of characterUpdateData.character_updates) {
                     if (charactersRef.current[update.name]) {

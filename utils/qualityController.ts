@@ -267,20 +267,20 @@ export class QualityController {
 
   private analyzeRepetition(content: string): RepetitionAnalysis {
     const words = content.toLowerCase().match(/\b\w+\b/g) || [];
-    const wordCounts = words.reduce((acc, word) => {
-      acc[word] = (acc[word] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const wordCounts: Record<string, number> = {};
+    for (const word of words) {
+      wordCounts[word] = (wordCounts[word] || 0) + 1;
+    }
 
     // Find overused words
-    const overusedWords = Object.entries(wordCounts)
-      .filter(([word, count]) => count >= this.OVERUSED_THRESHOLD && word.length > 3)
-      .map(([word, count]) => ({
-        word,
-        count,
-        severity: count >= 8 ? 'high' : count >= 5 ? 'medium' : 'low' as const
-      }))
-      .sort((a, b) => b.count - a.count);
+    const overusedWords: RepetitionAnalysis['overusedWords'] = [];
+    for (const [word, count] of Object.entries(wordCounts)) {
+      if (count >= this.OVERUSED_THRESHOLD && word.length > 3) {
+        const severity: 'low' | 'medium' | 'high' = count >= 8 ? 'high' : count >= 5 ? 'medium' : 'low';
+        overusedWords.push({ word, count, severity });
+      }
+    }
+    overusedWords.sort((a, b) => b.count - a.count);
 
     // Check for cliches
     const cliches = this.CLICHE_DATABASE.filter(cliche =>
