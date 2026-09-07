@@ -20,6 +20,7 @@ export interface ChapterGenerationInput {
   storyOutline: string;
   targetLength: number;
   genre?: string; // User's selected genre
+  onDraftReady?: (content: string) => void; // Immediate UI update when synthesis produces draft
 }
 
 export interface GenerationPhaseResult {
@@ -61,7 +62,7 @@ export class AgentCoordinator {
 
   constructor(options: Partial<GenerationOptions> = {}) {
     this.options = {
-      enableLightPolish: true,
+      enableLightPolish: false, // Default to false in coordinated system to protect rich synthesis
       enableConsistencyCheck: true,
       enableFallbackToOldSystem: false, // Disable fallback to force coordinated system
       parallelProcessing: false, // Use sequential coordinated generation
@@ -130,8 +131,10 @@ export class AgentCoordinator {
       let finalContent = synthesisResult.integratedChapter;
 
       console.log(`🔗 Content synthesis completed with high-quality agent coordination`);
+      // Immediately notify UI of the full draft as soon as synthesis completes
+      input.onDraftReady?.(finalContent);
 
-      // Phase 4: Light Polish (Optional)
+      // Phase 4: Light Polish (Optional - skipped in Fast Mode to preserve full synthesized prose)
       if (this.options.enableLightPolish) {
         const polishPhase = await this.executePhase('Light Polish', async () => {
           return await this.applyLightPolish(finalContent, input);
@@ -140,6 +143,7 @@ export class AgentCoordinator {
 
         if (polishPhase.success && polishPhase.output) {
           finalContent = polishPhase.output;
+          input.onDraftReady?.(finalContent);
         }
       }
 
@@ -488,7 +492,18 @@ export class AgentCoordinator {
         generateGeminiText
       );
 
-      return editingResult.refinedContent;
+      const refined = editingResult.refinedContent;
+
+      // Protection: Never accept a polish that truncated the chapter or contains meta contamination
+      const isTruncated = (refined.length < content.length * 0.75) || refined.trim().endsWith('...(truncated)');
+      const hasMetaArtifacts = /Edit \d+|CHARACTER NAME|I understand the task|I'll return|first_appearance/i.test(refined);
+
+      if (isTruncated || hasMetaArtifacts) {
+        console.warn(`⚠️ Rejected polished content for Chapter ${input.chapterNumber}: truncated (${refined.length} vs original ${content.length}) or contains meta artifacts. Preserving original synthesis.`);
+        return content;
+      }
+
+      return refined;
     } catch (error) {
       console.warn('Light polish failed, returning original content:', error);
       return content;

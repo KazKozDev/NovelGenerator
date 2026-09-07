@@ -965,6 +965,11 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
           sensory_focus: "Visual and auditory" // Keep as fallback
         });
         
+        const isFastMode = storySettings.generationSpeedMode !== 'thorough';
+        agentCoordinator.updateOptions({
+          enableLightPolish: !isFastMode
+        });
+
         // 🚀 HYBRID MULTI-AGENT CHAPTER GENERATION
         const hybridInput: ChapterGenerationInput = {
           chapterNumber: i,
@@ -974,21 +979,22 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
             chaptersForCompilation[i - 2].content.slice(-500) : undefined,
           storyOutline: currentStoryOutline,
           targetLength: thisChapterPlanObject.targetWordCount || 5000, // Use expanded schema field
-          genre: storySettings.genre // Pass user's selected genre to agents
+          genre: storySettings.genre, // Pass user's selected genre to agents
+          onDraftReady: (draftText: string) => {
+            setGeneratedChapters(prev => {
+              const updatedChapters = [...prev];
+              if (updatedChapters[i - 1]) {
+                updatedChapters[i - 1] = {
+                  ...updatedChapters[i - 1],
+                  content: draftText
+                };
+              }
+              return updatedChapters;
+            });
+          }
         };
 
-        // Update UI during hybrid generation
-        const onHybridChunk = (chunkText: string) => {
-          setGeneratedChapters(prev => {
-            const updatedChapters = [...prev];
-            if (updatedChapters.length > 0) {
-              updatedChapters[updatedChapters.length - 1].content += chunkText;
-            }
-            return updatedChapters;
-          });
-        };
-
-        console.log(`🚀 Starting hybrid generation for Chapter ${i}: "${plannedTitle}"`);
+        console.log(`🚀 Starting hybrid generation for Chapter ${i}: "${plannedTitle}" (FastMode: ${isFastMode})`);
         const hybridResult = await agentCoordinator.generateChapter(hybridInput);
 
         if (!hybridResult.success) {
@@ -997,6 +1003,18 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
 
         const chapterContent = hybridResult.chapterData.content;
         if (!chapterContent) throw new Error(`Failed to generate content for Chapter ${i}.`);
+
+        // Ensure UI state has the full content right away
+        setGeneratedChapters(prev => {
+          const updatedChapters = [...prev];
+          if (updatedChapters[i - 1]) {
+            updatedChapters[i - 1] = {
+              ...updatedChapters[i - 1],
+              content: chapterContent
+            };
+          }
+          return updatedChapters;
+        });
 
         // ✅ SAVE: First draft after hybrid generation
         _saveChapterDraft(i - 1, chapterContent, ChapterGenerationStage.FirstDraft, {
@@ -1051,7 +1069,6 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         let refinedChapterContent = chapterContent;
         let critiqueNotes = "";
 
-        const isFastMode = storySettings.generationSpeedMode !== 'thorough';
         const synthesisScore = hybridResult.metadata.qualityMetrics.coherenceScore;
 
         if (isFastMode) {
@@ -1111,7 +1128,16 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
                 generateGeminiText
               );
 
-              refinedChapterContent = agentResult.refinedContent;
+              const candidate = agentResult.refinedContent;
+              const isTruncated = (candidate.length < chapterContent.length * 0.75) || candidate.trim().endsWith('...(truncated)');
+              const hasMetaArtifacts = /Edit \d+|CHARACTER NAME|I understand the task|I'll return|first_appearance/i.test(candidate);
+
+              if (isTruncated || hasMetaArtifacts) {
+                console.warn(`⚠️ Rejected secondary polish for Chapter ${i}: truncated (${candidate.length} vs original ${chapterContent.length}) or contains meta artifacts. Preserving synthesis.`);
+                refinedChapterContent = chapterContent;
+              } else {
+                refinedChapterContent = candidate;
+              }
 
               // ✅ SAVE: After light polish
               _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
