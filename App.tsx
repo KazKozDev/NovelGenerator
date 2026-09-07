@@ -5,15 +5,11 @@ import React from 'react';
 import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
-import ProgressBar from './components/ProgressBar';
 import BookDisplay from './components/BookDisplay';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
-import { Button } from './components/common/Button';
 import ApprovalView from './components/ApprovalView';
-import StreamingContentView from './components/StreamingContentView';
 import AgentActivityLog from './components/AgentActivityLog';
-import FeatureGrid from './components/FeatureGrid';
-import SaveStatusIndicator from './components/SaveStatusIndicator';
+import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
 
 const App: React.FC = () => {
   const {
@@ -76,9 +72,11 @@ const App: React.FC = () => {
                        currentStep !== GenerationStep.Error &&
                        currentStep !== GenerationStep.WaitingForOutlineApproval;
 
+  const isStudioLayout = showProgress;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-sky-900 text-slate-100 flex flex-col items-center p-4 md:p-8 selection:bg-sky-500 selection:text-white">
-      <header className="w-full max-w-4xl mb-8 text-center">
+      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-8 text-center transition-all duration-300`}>
         <div className="flex items-center justify-center gap-3 mb-2">
           <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-400 py-2">
             NovelGenerator
@@ -92,7 +90,7 @@ const App: React.FC = () => {
         </p>
       </header>
 
-      <main className="w-full max-w-4xl bg-slate-800 shadow-2xl rounded-lg p-6 md:p-8 animate-fade-in">
+      <main className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} bg-slate-800 shadow-2xl rounded-2xl p-4 md:p-8 animate-fade-in transition-all duration-300`}>
         {error && (
           <div className="mb-4 p-4 bg-red-700 border border-red-500 text-white rounded-md">
             <p className="font-semibold">Error:</p>
@@ -165,69 +163,19 @@ const App: React.FC = () => {
 
 
         {showProgress && (
-           <div className="text-center">
-            {isLoading && <LoadingSpinner />}
-            
-            {isResumable && !isLoading && (
-              <div className="my-6 p-4 border border-sky-700 bg-sky-900/30 rounded-md">
-                  <p className="text-lg text-sky-300 mb-4">You have a book in progress.</p>
-                  <Button onClick={handleStartGeneration} variant="primary">
-                      Resume Generation
-                  </Button>
-              </div>
-            )}
-            
-            <ProgressBar
-              currentStep={currentStep}
-              currentChapterProcessing={currentChapterProcessing}
-              totalChaptersToProcess={totalChaptersToProcess}
-            />
-            
-            {/* Save status indicator */}
-            {generatedChapters.length > 0 && (
-              <SaveStatusIndicator 
-                generatedChapters={generatedChapters}
-                savedAt={lastSavedAt}
-              />
-            )}
-            
-            {currentStep === GenerationStep.GeneratingChapters && generatedChapters.length > 0 && currentChapterProcessing > 0 ? (
-                <StreamingContentView
-                    title={`Writing Chapter ${currentChapterProcessing}: ${generatedChapters[currentChapterProcessing - 1]?.title || '...'}`}
-                    content={generatedChapters[currentChapterProcessing - 1]?.content || ''}
-                />
-            ) : (
-              <>
-                {currentStoryOutline && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Story Outline (In Progress):</h3>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300">{currentStoryOutline.slice(0,1000)}...</pre>
-                  </div>
-                )}
-                {currentChapterPlan && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Chapter Plan (In Progress):</h3>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300">{currentChapterPlan.slice(0,1000)}...</pre>
-                  </div>
-                )}
-                {generatedChapters.length > 0 && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Generated Chapters Progress:</h3>
-                    <ul className="list-disc list-inside text-sm text-slate-300">
-                      {generatedChapters.map((ch, idx) => (
-                        <li key={idx}>Chapter {idx + 1}: {ch.title || `Generating...`} ({(ch.content?.length || 0) > 0 ? 'Content generated' : 'Pending'})</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Agent Activity Log */}
-            {agentLogs.length > 0 && (
-              <AgentActivityLog logs={agentLogs} />
-            )}
-          </div>
+          <ThreeZoneGenerationView
+            currentStep={currentStep}
+            currentChapterProcessing={currentChapterProcessing}
+            totalChaptersToProcess={totalChaptersToProcess}
+            currentStoryOutline={currentStoryOutline}
+            currentChapterPlan={currentChapterPlan}
+            generatedChapters={generatedChapters}
+            agentLogs={agentLogs}
+            lastSavedAt={lastSavedAt}
+            isResumable={isResumable}
+            isLoading={isLoading}
+            onResumeGeneration={handleStartGeneration}
+          />
         )}
 
 
@@ -246,7 +194,7 @@ const App: React.FC = () => {
           </>
         )}
       </main>
-      <footer className="w-full max-w-4xl mt-8">
+      <footer className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mt-8 transition-all duration-300`}>
         <div className="text-center text-slate-500 text-[10px]">
           <p>
             &copy; {new Date().getFullYear()}{' '}

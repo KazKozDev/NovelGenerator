@@ -13,7 +13,7 @@ interface DiffViewerProps {
  */
 const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, strategy }) => {
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
-  const [showFullText, setShowFullText] = useState(false);
+  const [showFullText, setShowFullText] = useState(true);
 
   // Simple word-level diff algorithm
   const computeWordDiff = (oldText: string, newText: string) => {
@@ -62,14 +62,14 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
   const totalChanges = stats.added + stats.removed;
   const changePercentage = ((totalChanges / (stats.added + stats.removed + stats.unchanged)) * 100).toFixed(1);
 
-  // Truncate for preview
-  const previewLength = 1000;
+  // Preview lengths
+  const previewLength = 1500;
   const beforePreview = before.substring(0, previewLength);
   const afterPreview = after.substring(0, previewLength);
   const isTruncated = before.length > previewLength || after.length > previewLength;
 
   const renderUnifiedDiff = () => {
-    const displayDiff = showFullText ? diff : diff.slice(0, 200);
+    const displayDiff = showFullText ? diff : diff.slice(0, 500);
     
     return (
       <div style={{
@@ -80,7 +80,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
         fontSize: '13px',
         lineHeight: '1.6',
         overflowX: 'auto',
-        maxHeight: showFullText ? 'none' : '400px',
+        maxHeight: showFullText ? '650px' : '400px',
         overflowY: 'auto'
       }}>
         {displayDiff.map((change, idx) => {
