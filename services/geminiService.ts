@@ -112,9 +112,13 @@ export async function generateGeminiText(
   const maxRetries = responseSchema ? 7 : 5;
   const baseDelay = responseSchema ? 3000 : 2000;
 
+  const NO_THINKING_DIRECTIVE = "Do not output thinking, inner monologue, reasoning steps, or <think> tags. Provide direct final output only.";
+
   return withResilienceTracking(() => retryWithBackoff(async () => {
     try {
-      const generationConfig: any = {};
+      const generationConfig: any = {
+        thinkingConfig: { thinkingBudget: 0 }
+      };
       if (temperature !== undefined) {
           generationConfig.temperature = temperature;
       }
@@ -129,16 +133,21 @@ export async function generateGeminiText(
           generationConfig.responseSchema = responseSchema;
       }
 
+      const finalSystemInstruction = systemInstruction 
+        ? `${systemInstruction}\n\n${NO_THINKING_DIRECTIVE}` 
+        : NO_THINKING_DIRECTIVE;
+
       const model = ai!.getGenerativeModel({
         model: GEMINI_MODEL_NAME,
         generationConfig,
-        ...(systemInstruction && { systemInstruction })
+        systemInstruction: finalSystemInstruction
       });
 
       console.log(`🔄 Sending request to Gemini API (model: ${GEMINI_MODEL_NAME})...`);
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      const rawText = response.text();
+      const text = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       console.log(`✅ Received response from Gemini API (${text.length} chars)`);
       return text;
     } catch (error) {
@@ -159,9 +168,13 @@ export async function generateGeminiTextStream(
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
   }
 
+  const NO_THINKING_DIRECTIVE = "Do not output thinking, inner monologue, reasoning steps, or <think> tags. Provide direct final output only.";
+
   return retryWithBackoff(async () => {
     try {
-      const generationConfig: any = {};
+      const generationConfig: any = {
+        thinkingConfig: { thinkingBudget: 0 }
+      };
       if (temperature !== undefined) {
           generationConfig.temperature = temperature;
       }
@@ -172,23 +185,58 @@ export async function generateGeminiTextStream(
           generationConfig.topK = topK;
       }
 
+      const finalSystemInstruction = systemInstruction 
+        ? `${systemInstruction}\n\n${NO_THINKING_DIRECTIVE}` 
+        : NO_THINKING_DIRECTIVE;
+
       const model = ai!.getGenerativeModel({
         model: GEMINI_MODEL_NAME,
         generationConfig,
-        ...(systemInstruction && { systemInstruction })
+        systemInstruction: finalSystemInstruction
       });
 
       const result = await model.generateContentStream(prompt);
 
       let fullText = '';
+      let insideThinkTag = false;
+
+      const processChunk = (chunkText: string) => {
+        let current = chunkText;
+        while (current.length > 0) {
+          if (insideThinkTag) {
+            const closeIdx = current.indexOf('</think>');
+            if (closeIdx !== -1) {
+              insideThinkTag = false;
+              current = current.slice(closeIdx + 8);
+            } else {
+              break;
+            }
+          } else {
+            const openIdx = current.indexOf('<think>');
+            if (openIdx !== -1) {
+              const before = current.slice(0, openIdx);
+              if (before) {
+                fullText += before;
+                onChunk(before);
+              }
+              insideThinkTag = true;
+              current = current.slice(openIdx + 7);
+            } else {
+              fullText += current;
+              onChunk(current);
+              break;
+            }
+          }
+        }
+      };
+
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
         if (chunkText) {
-          fullText += chunkText;
-          onChunk(chunkText);
+          processChunk(chunkText);
         }
       }
-      return fullText;
+      return fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     } catch (error) {
       throw handleApiError(error);
     }
