@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Character, ChapterData, GenerationStep, ParsedChapterPlan, TimelineEntry, EmotionalArcEntry, StorySettings, AgentLogEntry, ChapterGenerationStage } from '../types';
-import { generateGeminiText, generateGeminiTextStream } from '../services/geminiService';
+import { generateText as generateGeminiText, generateTextStream as generateGeminiTextStream } from '../services/llmService';
 import { extractCharactersFromString, extractWorldNameFromString, extractMotifsFromString, cleanJsonString } from '../utils/parserUtils';
 import { getWritingExamplesPrompt } from '../utils/writingExamples';
 import { checkChapterConsistency } from '../utils/consistencyChecker';

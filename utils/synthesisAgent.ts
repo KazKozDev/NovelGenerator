@@ -2,7 +2,7 @@
  * Synthesis Agent - Integration specialist for combining specialist agent outputs
  */
 
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { StructureAgentOutput, CharacterAgentOutput, SceneAgentOutput } from './specialistAgents';
 
 // =================== INTERFACES ===================

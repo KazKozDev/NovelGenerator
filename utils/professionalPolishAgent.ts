@@ -3,7 +3,7 @@
  * This is the last editing step before compilation
  */
 
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { ChapterData, AgentLogEntry } from '../types';
 
 export interface ProfessionalPolishResult {

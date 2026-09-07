@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
+import { getStoredProviderConfig, saveStoredProviderConfig } from '../services/llmService';
+import { fetchOllamaModels } from '../services/ollamaService';
+import { LLMProviderConfig } from '../types';
 
 interface UserInputProps {
   storyPremise: string;
@@ -27,6 +30,40 @@ const UserInput: React.FC<UserInputProps> = ({
   onSubmit,
   isLoading,
 }) => {
+  const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
+  const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleFetchOllamaModels = async () => {
+    setIsFetchingModels(true);
+    setFetchStatus(null);
+    try {
+      const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
+      setOllamaModels(models);
+      if (models.length > 0) {
+        setFetchStatus({ success: true, message: `Найдено моделей в Ollama: ${models.length}` });
+        if (!models.includes(providerConfig.ollamaModel)) {
+          const updated = { ...providerConfig, ollamaModel: models[0] };
+          setProviderConfig(updated);
+          saveStoredProviderConfig(updated);
+        }
+      } else {
+        setFetchStatus({
+          success: false,
+          message: 'Ollama отвечает, но список моделей пуст. Загрузите модель командой `ollama pull llama3.1`.'
+        });
+      }
+    } catch (err: any) {
+      setFetchStatus({
+        success: false,
+        message: err.message || 'Не удалось подключиться к Ollama. Проверьте, что ollama запущена.'
+      });
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (numChapters >= MIN_CHAPTERS) {
@@ -38,6 +75,140 @@ const UserInput: React.FC<UserInputProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI Model Provider Section */}
+      <div className="bg-slate-900/50 border border-slate-700/80 rounded-xl p-4 md:p-5 shadow-inner">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
+              <span>🤖 AI Provider</span>
+            </h3>
+            <p className="text-xs text-slate-400">Выберите источник инференса (Google Gemini или локальная Ollama)</p>
+          </div>
+          
+          <div className="inline-flex rounded-lg bg-slate-800 p-1 border border-slate-700 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...providerConfig, provider: 'gemini' as const };
+                setProviderConfig(updated);
+                saveStoredProviderConfig(updated);
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                providerConfig.provider === 'gemini'
+                  ? 'bg-sky-500 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Google Gemini
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...providerConfig, provider: 'ollama' as const };
+                setProviderConfig(updated);
+                saveStoredProviderConfig(updated);
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                providerConfig.provider === 'ollama'
+                  ? 'bg-sky-500 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Ollama (Local)
+            </button>
+          </div>
+        </div>
+
+        {/* Ollama Details */}
+        {providerConfig.provider === 'ollama' && (
+          <div className="mt-4 pt-3 border-t border-slate-700/80 space-y-3 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Ollama Endpoint / Proxy
+                </label>
+                <Input
+                  type="text"
+                  value={providerConfig.ollamaEndpoint}
+                  onChange={(e) => {
+                    const updated = { ...providerConfig, ollamaEndpoint: e.target.value };
+                    setProviderConfig(updated);
+                    saveStoredProviderConfig(updated);
+                  }}
+                  placeholder="/api/ollama"
+                  className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  По умолчанию <code className="text-sky-300">/api/ollama</code> (проксирует через Vite без CORS)
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-300">
+                    Модель Ollama
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFetchOllamaModels}
+                    disabled={isFetchingModels}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {isFetchingModels ? '⏳ Загрузка...' : '🔄 Загрузить модели из Ollama'}
+                  </button>
+                </div>
+
+                {ollamaModels.length > 0 ? (
+                  <Select
+                    value={providerConfig.ollamaModel}
+                    onChange={(e) => {
+                      const updated = { ...providerConfig, ollamaModel: e.target.value };
+                      setProviderConfig(updated);
+                      saveStoredProviderConfig(updated);
+                    }}
+                    className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                  >
+                    {ollamaModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    type="text"
+                    value={providerConfig.ollamaModel}
+                    onChange={(e) => {
+                      const updated = { ...providerConfig, ollamaModel: e.target.value };
+                      setProviderConfig(updated);
+                      saveStoredProviderConfig(updated);
+                    }}
+                    placeholder="llama3.1"
+                    className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                  />
+                )}
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {ollamaModels.length > 0
+                    ? `Выбрано из ${ollamaModels.length} локально установленных моделей`
+                    : `Нажмите "Загрузить модели", чтобы получить список с локального сервера`}
+                </p>
+              </div>
+            </div>
+
+            {fetchStatus && (
+              <div
+                className={`text-xs px-3 py-2 rounded-md ${
+                  fetchStatus.success
+                    ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800'
+                    : 'bg-rose-950/60 text-rose-300 border border-rose-800'
+                }`}
+              >
+                {fetchStatus.message}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div>
         <label htmlFor="storyPremise" className="block text-sm font-medium text-sky-300 mb-1">
           Story Premise

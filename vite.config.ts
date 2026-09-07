@@ -9,6 +9,13 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/api/ollama': {
+            target: env.OLLAMA_HOST || 'http://127.0.0.1:11434',
+            rewrite: (p) => p.replace(/^\/api\/ollama/, ''),
+            changeOrigin: true,
+          }
+        }
       },
       plugins: [react()],
       define: {

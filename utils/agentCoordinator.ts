@@ -7,7 +7,7 @@ import { coherenceManager, ChapterContext, RepetitionReport, RepetitionConstrain
 import { structureAgent, characterAgent, sceneAgent, DialogueRequirement } from './specialistAgents';
 import { synthesisAgent } from './synthesisAgent';
 import { agentEditChapter } from './editingAgent';
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { storyContextDB, SharedChapterState, RevelationValidation, ContentLimitCheck, ToneGuidance, BalanceReport } from './storyContextDatabase';
 
 // =================== INTERFACES ===================

@@ -202,3 +202,12 @@ export interface AgentLogEntry {
   afterText?: string;
   strategy?: string;
 }
+
+export type LLMProviderType = 'gemini' | 'ollama';
+
+export interface LLMProviderConfig {
+  provider: LLMProviderType;
+  ollamaEndpoint: string;
+  ollamaModel: string;
+}
+

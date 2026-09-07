@@ -1,5 +1,5 @@
 import { Character } from '../types';
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 
 
 // Helper for Python-like re.findall for specific character pattern
