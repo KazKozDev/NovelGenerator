@@ -102,7 +102,8 @@ export async function generateGeminiText(
   responseSchema?: object,
   temperature?: number,
   topP?: number,
-  topK?: number
+  topK?: number,
+  maxOutputTokens?: number
 ): Promise<string> {
   if (!ai) {
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
@@ -127,6 +128,9 @@ export async function generateGeminiText(
       }
       if (topK !== undefined) {
           generationConfig.topK = topK;
+      }
+      if (maxOutputTokens !== undefined) {
+          generationConfig.maxOutputTokens = maxOutputTokens;
       }
       if (responseSchema) {
           generationConfig.responseMimeType = "application/json";

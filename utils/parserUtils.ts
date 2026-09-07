@@ -2,14 +2,186 @@ import { Character } from '../types';
 import { generateText as generateGeminiText } from '../services/llmService';
 
 
-// Helper for Python-like re.findall for specific character pattern
-function findCharacterMatches(text: string): Array<[string, string]> {
-  const pattern = /([A-Z][A-Za-z\s\-'.]+):\s+([^\n]+)/g;
-  const matches: Array<[string, string]> = [];
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    matches.push([match[1].trim(), match[2].trim()]);
+const INVALID_CHARACTER_KEYWORDS = new Set([
+  'i understand',
+  'i understand the task',
+  'i will',
+  'i will extract',
+  "i'll",
+  'here is',
+  'here are',
+  'character',
+  'characters',
+  'character name',
+  'character names',
+  'main character',
+  'main characters',
+  'supporting character',
+  'supporting characters',
+  'protagonist',
+  'antagonist',
+  'role',
+  'note',
+  'notes',
+  'description',
+  'physical description',
+  'personality',
+  'personality traits',
+  'motivation',
+  'character arc',
+  'arc',
+  'relationships',
+  'connections',
+  'chapter',
+  'chapters',
+  'summary',
+  'setting',
+  'world',
+  'story',
+  'outline',
+  'based on',
+  'sure',
+  'certainly',
+  'format',
+  'example',
+  'status',
+  'details',
+  'active characters',
+  'output',
+  'name',
+]);
+
+/**
+ * Strips leading bullets, numbers, markdown formatting (*, _, `, #) and trailing colons/dashes.
+ */
+export function cleanCharacterCandidateName(rawName: string): string {
+  if (!rawName) return '';
+  let cleaned = rawName
+    .replace(/^[\s*\-#\d.]+/, '')
+    .replace(/[*_`#]/g, '')
+    .trim();
+
+  // If name ends with colon or dash, strip it
+  cleaned = cleaned.replace(/[:\-–—]+$/, '').trim();
+  return cleaned;
+}
+
+/**
+ * Validates whether a candidate string is genuinely a character name,
+ * rejecting AI conversational filler ("I understand the task", "Here are the characters"),
+ * markdown headers, instructions, or template placeholders ("CHARACTER NAME").
+ */
+export function isValidCharacterName(rawName: string): boolean {
+  if (!rawName) return false;
+  const cleaned = cleanCharacterCandidateName(rawName);
+  if (cleaned.length < 2 || cleaned.length > 40) return false;
+
+  const lower = cleaned.toLowerCase().trim();
+
+  // Check exact blacklist
+  if (INVALID_CHARACTER_KEYWORDS.has(lower)) return false;
+
+  // Check conversational and instructional prefixes
+  const metaPrefixes = [
+    'i understand',
+    "i'll",
+    'i will',
+    'here is',
+    'here are',
+    'note',
+    'character name',
+    'main character',
+    'please',
+    'based on',
+    'sure',
+    'certainly',
+    'as an ai',
+    'below is',
+    'below are',
+    'the following',
+  ];
+  if (metaPrefixes.some(prefix => lower.startsWith(prefix))) return false;
+
+  // Words count check: fictional character names rarely exceed 4 words
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length > 4) return false;
+
+  // Check for forbidden conversational/instructional words inside name
+  const forbiddenTokens = [
+    'understand',
+    'extract',
+    'task',
+    'prompt',
+    'assistant',
+    'output',
+    'guideline',
+    'instruction',
+    'format',
+    'template',
+    'provide',
+    'generate',
+    'return',
+  ];
+  for (const word of words) {
+    const cleanWord = word.replace(/[^a-z]/g, '');
+    if (forbiddenTokens.includes(cleanWord)) {
+      return false;
+    }
   }
+
+  // Must contain at least one letter (Latin, Cyrillic, etc.)
+  if (!/[A-Za-zÀ-ÿА-я]/.test(cleaned)) return false;
+
+  // Cannot end with sentence punctuation if multiple words (indicates a sentence, not a name)
+  if (/[.!?]$/.test(cleaned) && words.length > 1) return false;
+
+  return true;
+}
+
+/**
+ * Extracts character name and description pairs from text, rejecting filler and template markers.
+ */
+export function findCharacterMatches(text: string): Array<[string, string]> {
+  if (!text) return [];
+  const lines = text.split('\n');
+  const matches: Array<[string, string]> = [];
+  const seenNames = new Set<string>();
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Pattern 1: Split at first colon: e.g. "Name: Description" or "- **Name**: Description"
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const candidateKey = line.substring(0, colonIndex);
+      const candidateValue = line.substring(colonIndex + 1).trim();
+      const cleanedName = cleanCharacterCandidateName(candidateKey);
+
+      if (isValidCharacterName(cleanedName) && candidateValue.length > 5) {
+        const lowerName = cleanedName.toLowerCase();
+        if (!seenNames.has(lowerName)) {
+          seenNames.add(lowerName);
+          matches.push([cleanedName, candidateValue]);
+        }
+      }
+    } else {
+      // Pattern 2: Dash-separated e.g. "- John Doe – description"
+      const dashMatch = line.match(/^[-*•]\s*([A-Z][A-Za-z\s.'-]+?)\s*[-–—]\s*(.+)$/);
+      if (dashMatch) {
+        const cleanedName = cleanCharacterCandidateName(dashMatch[1]);
+        const candidateValue = dashMatch[2].trim();
+        if (isValidCharacterName(cleanedName) && candidateValue.length > 5) {
+          const lowerName = cleanedName.toLowerCase();
+          if (!seenNames.has(lowerName)) {
+            seenNames.add(lowerName);
+            matches.push([cleanedName, candidateValue]);
+          }
+        }
+      }
+    }
+  }
+
   return matches;
 }
 
@@ -20,30 +192,57 @@ export async function extractCharactersFromString(
   const characters: Record<string, Character> = {};
   
   const charSectionMatch = outlineText.match(/MAIN CHARACTERS\s*\n(.*?)(?=\n\n[A-Z\s]+:|$)/is);
-  let characterDetailsText = "";
+  const characterTextFromOutline = charSectionMatch && charSectionMatch[1] ? charSectionMatch[1] : '';
 
-  if (charSectionMatch && charSectionMatch[1]) {
-    const characterTextFromOutline = charSectionMatch[1];
-    const charPrompt = `From the 'MAIN CHARACTERS' section below, extract each character's details.
+  // 1. First attempt: check if outline text already contains clean character definitions
+  if (characterTextFromOutline) {
+    const directMatches = findCharacterMatches(characterTextFromOutline);
+    if (directMatches.length >= 2) {
+      for (const [name, description] of directMatches) {
+        characters[name] = {
+          name,
+          description,
+          first_appearance: 0,
+          status: "unknown",
+          development: [],
+          relationships: {},
+          location: "unknown",
+          emotional_state: "unknown",
+        };
+      }
+      return characters;
+    }
+  }
+
+  // 2. LLM Extraction with strict anti-filler prompt
+  let characterDetailsText = "";
+  if (characterTextFromOutline) {
+    const charPrompt = `Extract the characters and their descriptions from this outline section:
 
 ${characterTextFromOutline}
 
-For EACH character, format as:
-CHARACTER NAME: Detailed physical description, core personality traits, primary motivation, overall character arc, role, connections.
-
-Include all characters mentioned (protagonist, antagonist, supporting).`;
-    characterDetailsText = await llmFallback(charPrompt, "You are a data extraction assistant.");
+OUTPUT RULES:
+- Output ONLY characters in this exact format:
+Name: Detailed physical description, personality, motivation, role.
+- One character per line.
+- DO NOT write introductions, conclusions, or conversational text like "I understand the task" or "Here is the list".
+- DO NOT use placeholders like "CHARACTER NAME".
+- Include protagonist, antagonist, and key supporting characters.`;
+    characterDetailsText = await llmFallback(charPrompt, "You are a precise data extraction assistant. Return only Name: Description lines.");
   } else {
-     // Fallback: Try to extract from the whole outline if section is missing
-    const charPromptFallback = `Based on this story outline, create a detailed character guide:
+    // Fallback: Try to extract from the whole outline if section is missing
+    const charPromptFallback = `Based on this story outline, extract the key characters:
 
 ${outlineText}
 
-For EACH character clearly mentioned with a description, format as:
-CHARACTER NAME: Brief description, role in story, key personality traits, motivation, background (if available in outline).
-
-Include protagonist, antagonist, and key supporting characters.`;
-    characterDetailsText = await llmFallback(charPromptFallback, "You are a data extraction assistant.");
+OUTPUT RULES:
+- Output ONLY characters in this exact format:
+Name: Brief description, role in story, key personality traits, motivation.
+- One character per line.
+- DO NOT write any introductions like "I understand the task" or "Here are the characters".
+- DO NOT use placeholders like "CHARACTER NAME".
+- Include protagonist, antagonist, and key supporting characters.`;
+    characterDetailsText = await llmFallback(charPromptFallback, "You are a precise data extraction assistant. Return only Name: Description lines.");
   }
 
   if (characterDetailsText) {
@@ -63,6 +262,24 @@ Include protagonist, antagonist, and key supporting characters.`;
       };
     }
   }
+
+  // 3. Fallback: if LLM extraction returned 0 characters, try direct parse of outline
+  if (Object.keys(characters).length === 0) {
+    const fallbackMatches = findCharacterMatches(characterTextFromOutline || outlineText);
+    for (const [name, description] of fallbackMatches) {
+      characters[name] = {
+        name,
+        description,
+        first_appearance: 0,
+        status: "unknown",
+        development: [],
+        relationships: {},
+        location: "unknown",
+        emotional_state: "unknown",
+      };
+    }
+  }
+
   return characters;
 }
 

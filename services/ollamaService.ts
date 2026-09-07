@@ -16,6 +16,7 @@ export interface OllamaGeneratePayload {
     temperature?: number;
     top_p?: number;
     top_k?: number;
+    num_predict?: number;
   };
 }
 
@@ -34,6 +35,9 @@ export function buildOllamaGeneratePayload(params: {
   isJson?: boolean;
   stream?: boolean;
   think?: boolean;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
 }): OllamaGeneratePayload {
   const payload: OllamaGeneratePayload = {
     model: params.model || DEFAULT_OLLAMA_MODEL,
@@ -41,7 +45,10 @@ export function buildOllamaGeneratePayload(params: {
     stream: params.stream ?? false,
     think: params.think ?? false, // Explicitly disable thinking mode for all models
     options: {
-      temperature: params.temperature ?? 0.7
+      temperature: params.temperature ?? 0.7,
+      ...(params.maxTokens !== undefined ? { num_predict: params.maxTokens } : {}),
+      ...(params.topP !== undefined ? { top_p: params.topP } : {}),
+      ...(params.topK !== undefined ? { top_k: params.topK } : {})
     }
   };
 
@@ -95,7 +102,10 @@ export async function generateOllamaText(
   schema?: object,
   temperature: number = 0.7,
   model: string = DEFAULT_OLLAMA_MODEL,
-  endpoint: string = DEFAULT_OLLAMA_ENDPOINT
+  endpoint: string = DEFAULT_OLLAMA_ENDPOINT,
+  maxTokens?: number,
+  topP?: number,
+  topK?: number
 ): Promise<string> {
   const cleanEndpoint = endpoint.replace(/\/+$/, '');
   const url = `${cleanEndpoint}/api/generate`;
@@ -113,7 +123,10 @@ export async function generateOllamaText(
     temperature,
     isJson: Boolean(schema),
     stream: false,
-    think: false
+    think: false,
+    maxTokens,
+    topP,
+    topK
   });
 
 

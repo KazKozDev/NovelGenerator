@@ -51,14 +51,15 @@ export async function generateText(
   temperature: number = 0.7,
   topP?: number,
   topK?: number,
-  overrideConfig?: LLMProviderConfig
+  overrideConfig?: LLMProviderConfig,
+  maxTokens?: number
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
   const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
-    `Dispatching request to ${providerTag} (temp: ${temperature}, JSON: ${Boolean(schema)})`,
+    `Dispatching request to ${providerTag} (temp: ${temperature}, JSON: ${Boolean(schema)}${maxTokens ? `, limit: ${maxTokens} tok` : ''})`,
     'LLM',
     'llm'
   );
@@ -71,10 +72,13 @@ export async function generateText(
       schema,
       temperature,
       config.ollamaModel,
-      config.ollamaEndpoint
+      config.ollamaEndpoint,
+      maxTokens,
+      topP,
+      topK
     );
   } else {
-    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK);
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens);
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);

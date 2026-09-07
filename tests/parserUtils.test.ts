@@ -5,7 +5,11 @@ import {
   cleanProseArtifacts,
   parseEvaluationResponse,
   parseLenientJson,
-  parseChapterPlanJson
+  parseChapterPlanJson,
+  cleanCharacterCandidateName,
+  isValidCharacterName,
+  findCharacterMatches,
+  extractCharactersFromString
 } from '../utils/parserUtils';
 
 
@@ -193,4 +197,80 @@ Let me know if you would like me to adjust any scene!`;
     expect(result.chapters[0].title).toBe('Chapter 1');
   });
 });
+
+describe('parserUtils - Character Name Validation and Cleansing', () => {
+  it('identifies and rejects conversational filler, meta prompts, and placeholders', () => {
+    expect(isValidCharacterName('I understand the task')).toBe(false);
+    expect(isValidCharacterName('I understand')).toBe(false);
+    expect(isValidCharacterName('I will extract')).toBe(false);
+    expect(isValidCharacterName("I'll return the characters")).toBe(false);
+    expect(isValidCharacterName('CHARACTER NAME')).toBe(false);
+    expect(isValidCharacterName('Character Name:')).toBe(false);
+    expect(isValidCharacterName('Main Characters')).toBe(false);
+    expect(isValidCharacterName('Protagonist')).toBe(false);
+    expect(isValidCharacterName('Note')).toBe(false);
+    expect(isValidCharacterName('Here is the list of characters')).toBe(false);
+    expect(isValidCharacterName('Please provide')).toBe(false);
+    expect(isValidCharacterName('I understand the task and will now extract each character from the outline')).toBe(false);
+  });
+
+  it('accepts valid fictional character names in diverse formats', () => {
+    expect(isValidCharacterName('Delilah Vance')).toBe(true);
+    expect(isValidCharacterName('Marcus')).toBe(true);
+    expect(isValidCharacterName('Dr. Jekyll')).toBe(true);
+    expect(isValidCharacterName('The Blind Monk')).toBe(true);
+    expect(isValidCharacterName('Jean-Luc Picard')).toBe(true);
+    expect(isValidCharacterName('Алексей')).toBe(true);
+  });
+
+  it('cleans candidate names from markdown and list numbering', () => {
+    expect(cleanCharacterCandidateName('1. **Delilah Vance**')).toBe('Delilah Vance');
+    expect(cleanCharacterCandidateName('- *Marcus* :')).toBe('Marcus');
+    expect(cleanCharacterCandidateName('### Elena:')).toBe('Elena');
+  });
+
+  it('extracts character pairs while skipping conversational filler', () => {
+    const rawLlmOutput = `I understand the task: Here is the character extraction from the outline.
+CHARACTER NAME: Detailed physical description, core personality traits.
+
+Delilah Vance: A former detective turned rogue investigator with a sharp mind.
+- **Marcus**: The stoic barkeep who knows the secrets of the underground.
+Note: These characters represent the core conflict.
+`;
+
+    const matches = findCharacterMatches(rawLlmOutput);
+    expect(matches).toHaveLength(2);
+    expect(matches[0][0]).toBe('Delilah Vance');
+    expect(matches[0][1]).toContain('former detective');
+    expect(matches[1][0]).toBe('Marcus');
+    expect(matches[1][1]).toContain('stoic barkeep');
+  });
+
+  it('extractCharactersFromString gracefully filters out meta-filler from LLM responses', async () => {
+    const mockOutline = `STORY PREMISE: Sci-fi noir.
+MAIN CHARACTERS
+Delilah Vance: Cybernetic investigator searching for her brother.
+Marcus Kane: Underworld fixer with conflicting loyalties.
+
+CHAPTER BREAKDOWN:
+Chapter 1: The Alley`;
+
+    const mockLlmFallback = async () => `I understand the task: Here are the characters.
+CHARACTER NAME: Prototype description.
+Delilah Vance: Cybernetic investigator searching for her brother.
+Marcus Kane: Underworld fixer with conflicting loyalties.
+I hope this character list helps with the story!`;
+
+    const characters = await extractCharactersFromString(mockOutline, mockLlmFallback);
+    const names = Object.keys(characters);
+
+    expect(names).toContain('Delilah Vance');
+    expect(names).toContain('Marcus Kane');
+    expect(names).not.toContain('I understand the task');
+    expect(names).not.toContain('CHARACTER NAME');
+    expect(names).not.toContain('Note');
+    expect(names.length).toBe(2);
+  });
+});
+
 

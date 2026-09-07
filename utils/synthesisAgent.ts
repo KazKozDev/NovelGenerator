@@ -225,7 +225,9 @@ export class SynthesisAgent {
         undefined,
         0.6, // Lower creativity for transitions - should be subtle
         0.8,
-        30
+        30,
+        undefined,
+        1500
       );
 
       return this.parseTransitions(transitionsContent);
@@ -333,7 +335,9 @@ Generate transitions now:`;
         undefined,
         0.3, // Very low creativity - this is assembly, not creation
         0.7,
-        20
+        20,
+        undefined,
+        8192
       );
 
       return cleanProseArtifacts(integratedContent);
