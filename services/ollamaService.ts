@@ -11,6 +11,7 @@ export interface OllamaGeneratePayload {
   system?: string;
   stream?: boolean;
   format?: 'json';
+  think?: boolean;
   options?: {
     temperature?: number;
     top_p?: number;
@@ -32,18 +33,23 @@ export function buildOllamaGeneratePayload(params: {
   temperature?: number;
   isJson?: boolean;
   stream?: boolean;
+  think?: boolean;
 }): OllamaGeneratePayload {
   const payload: OllamaGeneratePayload = {
     model: params.model || DEFAULT_OLLAMA_MODEL,
     prompt: params.prompt,
     stream: params.stream ?? false,
+    think: params.think ?? false, // Explicitly disable thinking mode for all models
     options: {
       temperature: params.temperature ?? 0.7
     }
   };
 
+  const antiThinkingPrompt = "Do not output thinking, inner monologue, reasoning steps, or <think> tags. Output only direct final response.";
   if (params.system) {
-    payload.system = params.system;
+    payload.system = `${params.system}\n\n${antiThinkingPrompt}`;
+  } else {
+    payload.system = antiThinkingPrompt;
   }
 
   if (params.isJson) {
@@ -100,7 +106,8 @@ export async function generateOllamaText(
     system: systemInstruction,
     temperature,
     isJson: Boolean(schema),
-    stream: false
+    stream: false,
+    think: false
   });
 
   const response = await fetch(url, {
@@ -117,11 +124,12 @@ export async function generateOllamaText(
   }
 
   const result = await response.json();
-  return result.response || '';
+  const raw = result.response || '';
+  return raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
 /**
- * Stream text generation using local Ollama model
+ * Stream text generation using local Ollama model with thinking suppressed
  */
 export async function generateOllamaTextStream(
   prompt: string,
@@ -137,7 +145,8 @@ export async function generateOllamaTextStream(
     model,
     prompt,
     system: systemInstruction,
-    stream: true
+    stream: true,
+    think: false
   });
 
   const response = await fetch(url, {
@@ -157,6 +166,37 @@ export async function generateOllamaTextStream(
   const decoder = new TextDecoder('utf-8');
   let fullText = '';
   let buffer = '';
+  let insideThinkTag = false;
+
+  const processChunk = (text: string) => {
+    let current = text;
+    while (current.length > 0) {
+      if (insideThinkTag) {
+        const closeIdx = current.indexOf('</think>');
+        if (closeIdx !== -1) {
+          insideThinkTag = false;
+          current = current.slice(closeIdx + 8);
+        } else {
+          break;
+        }
+      } else {
+        const openIdx = current.indexOf('<think>');
+        if (openIdx !== -1) {
+          const before = current.slice(0, openIdx);
+          if (before) {
+            fullText += before;
+            onChunk(before);
+          }
+          insideThinkTag = true;
+          current = current.slice(openIdx + 7);
+        } else {
+          fullText += current;
+          onChunk(current);
+          break;
+        }
+      }
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -172,8 +212,7 @@ export async function generateOllamaTextStream(
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed.response) {
-          fullText += parsed.response;
-          onChunk(parsed.response);
+          processChunk(parsed.response);
         }
       } catch {
         // Skip malformed chunk
@@ -185,13 +224,12 @@ export async function generateOllamaTextStream(
     try {
       const parsed = JSON.parse(buffer.trim());
       if (parsed.response) {
-        fullText += parsed.response;
-        onChunk(parsed.response);
+        processChunk(parsed.response);
       }
     } catch {
       // Ignore
     }
   }
 
-  return fullText;
+  return fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }

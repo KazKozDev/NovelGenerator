@@ -141,7 +141,8 @@ These should be concrete elements or clear themes that can recur or be reference
  */
 export function cleanJsonString(raw: string): string {
   if (!raw) return '';
-  let cleaned = raw.trim();
+  // Strip any reasoning / think blocks from thinking models
+  let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   // Strip markdown code block fences (```json ... ``` or ``` ... ```)
   const codeBlockMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
@@ -178,7 +179,8 @@ export function safeJsonParse<T>(raw: string, fallback: T): T {
  */
 export function cleanProseArtifacts(prose: string): string {
   if (!prose) return '';
-  let cleaned = prose.trim();
+  // Strip any reasoning / think blocks
+  let cleaned = prose.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   // Strip conversational/scaffolding preambles from LLM
   cleaned = cleaned.replace(

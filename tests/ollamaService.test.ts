@@ -36,8 +36,9 @@ describe('ollamaService', () => {
 
     expect(payload.model).toBe('llama3.1');
     expect(payload.prompt).toBe('Write a chapter outline');
-    expect(payload.system).toBe('You are a master novelist');
+    expect(payload.system).toContain('You are a master novelist');
     expect(payload.stream).toBe(false);
+    expect(payload.think).toBe(false);
     expect(payload.format).toBe('json');
     expect(payload.options?.temperature).toBe(0.5);
   });
