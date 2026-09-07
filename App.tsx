@@ -79,8 +79,8 @@ const App: React.FC = () => {
   const isStudioLayout = showProgress;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200 flex flex-col items-center p-4 md:p-8 selection:bg-zinc-700 selection:text-white">
-      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-6 transition-all duration-300`}>
+    <div className={`w-full bg-zinc-950 text-zinc-200 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
+      <header className={`w-full ${isStudioLayout ? 'max-w-[1920px] mb-2 shrink-0' : 'max-w-4xl mb-6'} transition-all duration-300`}>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
@@ -104,7 +104,7 @@ const App: React.FC = () => {
         </p>
       </header>
 
-      <main className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} bg-zinc-900/90 border border-zinc-800 shadow-2xl rounded-2xl p-4 md:p-8 animate-fade-in transition-all duration-300`}>
+      <main className={`w-full ${isStudioLayout ? 'max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} bg-zinc-900/90 border border-zinc-800 shadow-2xl rounded-2xl animate-fade-in transition-all duration-300`}>
         {error && (
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded-lg text-sm">
             <p className="font-semibold mb-1">Error:</p>
@@ -206,7 +206,7 @@ const App: React.FC = () => {
           </>
         )}
       </main>
-      <footer className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mt-8 transition-all duration-300`}>
+      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
         <div className="text-center text-zinc-500 text-[10px] font-mono">
           <p>
             &copy; {new Date().getFullYear()}{' '}

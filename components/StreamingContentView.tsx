@@ -19,8 +19,8 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   const wordCount = content ? content.trim().split(/\s+/).filter(Boolean).length : 0;
 
   return (
-    <div className={`p-4 md:p-6 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm flex flex-col ${fullHeight ? 'h-full' : 'mt-6'}`}>
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-3 mb-3">
+    <div className={`p-3 md:p-4 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
+      <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2.5 mb-2.5">
         <h3 className="font-semibold text-zinc-200 text-xs md:text-sm flex items-center gap-2 tracking-wide font-sans uppercase">
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
           <span>{title}</span>
@@ -47,7 +47,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
           </span>
         </div>
       </div>
-      <div className={`overflow-y-auto text-left pr-2 flex-1 ${fullHeight ? 'min-h-[450px] max-h-[75vh]' : 'max-h-[600px]'}`}>
+      <div className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
         {viewMode === 'markdown' ? (
           <MarkdownView 
             content={content} 
