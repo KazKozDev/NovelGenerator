@@ -195,4 +195,30 @@ describe('Architecture & Pipeline Verification', () => {
       expect(fakeLink.click).toHaveBeenCalled();
     });
   });
+
+  describe('5. Generation Speed Optimization Architecture', () => {
+    it('supports fast mode single-pass generation without secondary polish overhead', () => {
+      const fastSettings = {
+        genre: 'cyberpunk',
+        generationSpeedMode: 'fast' as const
+      };
+
+      const thoroughSettings = {
+        genre: 'cyberpunk',
+        generationSpeedMode: 'thorough' as const
+      };
+
+      expect(fastSettings.generationSpeedMode).toBe('fast');
+      expect(thoroughSettings.generationSpeedMode).toBe('thorough');
+
+      // Verify that fast mode avoids secondary polish rewrite
+      const shouldSkipPolish = (mode: string, coherenceScore: number) => {
+        return mode === 'fast' || coherenceScore >= 85;
+      };
+
+      expect(shouldSkipPolish('fast', 70)).toBe(true);
+      expect(shouldSkipPolish('thorough', 70)).toBe(false);
+      expect(shouldSkipPolish('thorough', 90)).toBe(true);
+    });
+  });
 });

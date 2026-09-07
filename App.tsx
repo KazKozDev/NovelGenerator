@@ -118,6 +118,8 @@ const App: React.FC = () => {
               setNumChapters={setNumChapters}
               genre={storySettings.genre || 'fantasy'}
               setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
+              generationSpeedMode={storySettings.generationSpeedMode || 'fast'}
+              setGenerationSpeedMode={(generationSpeedMode) => setStorySettings({ ...storySettings, generationSpeedMode })}
               onSubmit={handleStartGeneration}
               isLoading={isLoading}
             />

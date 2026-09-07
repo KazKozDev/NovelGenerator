@@ -181,6 +181,8 @@ export interface EmotionalArcEntry {
   unresolvedHook: string;
 }
 
+export type GenerationSpeedMode = 'fast' | 'thorough';
+
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
   genre?: string;
@@ -188,6 +190,7 @@ export interface StorySettings {
   tone?: string;
   targetAudience?: string;
   writingStyle?: string;
+  generationSpeedMode?: GenerationSpeedMode;
 }
 
 // Agent activity log for UI display

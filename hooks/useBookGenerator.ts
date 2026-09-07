@@ -348,7 +348,8 @@ const useBookGenerator = () => {
     narrativeVoice: 'third-limited',
     tone: 'serious',
     targetAudience: 'adult',
-    writingStyle: 'descriptive'
+    writingStyle: 'descriptive',
+    generationSpeedMode: 'fast'
   });
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -970,59 +971,94 @@ ${formatArrayField(thisChapterPlanObject.callbacks, 'Callbacks')}
         }
 
         // 🎨 LIGHT POLISH PASS (Hybrid System)
-        // Since specialist agents already created quality content, we only need minimal refinement
+        // In Fast Mode or when synthesis quality is already high, skip secondary full-chapter rewrite
         let refinedChapterContent = chapterContent;
         let critiqueNotes = "";
 
-        try {
-            console.log(`🎨 Starting light polish for Chapter ${i} (Hybrid-generated content)`);
+        const isFastMode = storySettings.generationSpeedMode !== 'thorough';
+        const synthesisScore = hybridResult.metadata.qualityMetrics.coherenceScore;
 
-            // Light critique - only look for minor integration issues
-            const { systemPrompt: systemPromptCritic, userPrompt: selfCritiquePrompt } = getFormattedPrompt(PromptNames.SELF_CRITIQUE, {
-              chapter_number: i,
-              chapter_title: plannedTitle,
-              chapter_content_preview: chapterContent.substring(0, 6000) + (chapterContent.length > 6000 ? '...(content continues)' : '')
-            });
-            critiqueNotes = await generateGeminiText(selfCritiquePrompt, systemPromptCritic, undefined, 0.4, 0.7, 20);
+        if (isFastMode) {
+          console.log(`⚡ Fast Mode: Chapter ${i} single-pass synthesis accepted (Coherence: ${synthesisScore}/100). Skipping secondary polish rewrite pass.`);
+          setAgentLogs(prev => [
+            ...prev,
+            {
+              timestamp: Date.now(),
+              chapterNumber: i,
+              type: 'success',
+              message: `⚡ Fast Mode: Single-pass synthesis accepted (Coherence: ${synthesisScore}/100). Skipped full-text polish pass to save generation time.`
+            }
+          ]);
+          _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
+            title: plannedTitle
+          });
+        } else {
+          try {
+            console.log(`🎨 Starting light polish for Chapter ${i} (Thorough Dual-Pass Mode)`);
 
-            // Light polish using existing editing agent in light mode
-            const agentResult = await agentEditChapter(
+            // If quality is already exceptional (>=85), skip full polish rewrite
+            if (synthesisScore >= 85) {
+              console.log(`🌟 Coherence score is excellent (${synthesisScore}/100). Skipping full rewrite in thorough mode.`);
+              setAgentLogs(prev => [
+                ...prev,
                 {
-                    chapterContent,
-                    chapterPlan: thisChapterPlanObject,
-                    chapterPlanText: thisChapterPlanText,
-                    critiqueNotes: `HYBRID SYSTEM LIGHT POLISH: Specialist agents already created this content. Only apply minimal improvements. ${critiqueNotes}`,
-                    chapterNumber: i,
-                    onLog: (entry) => {
-                        setAgentLogs(prev => [...prev, entry]);
-                    }
+                  timestamp: Date.now(),
+                  chapterNumber: i,
+                  type: 'success',
+                  message: `🌟 Excellent quality detected (${synthesisScore}/100). Skipped rewrite pass.`
+                }
+              ]);
+              _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
+                title: plannedTitle
+              });
+            } else {
+              // Light critique - only look for minor integration issues
+              const { systemPrompt: systemPromptCritic, userPrompt: selfCritiquePrompt } = getFormattedPrompt(PromptNames.SELF_CRITIQUE, {
+                chapter_number: i,
+                chapter_title: plannedTitle,
+                chapter_content_preview: chapterContent.substring(0, 6000) + (chapterContent.length > 6000 ? '...(content continues)' : '')
+              });
+              critiqueNotes = await generateGeminiText(selfCritiquePrompt, systemPromptCritic, undefined, 0.4, 0.7, 20);
+
+              // Light polish using existing editing agent in light mode
+              const agentResult = await agentEditChapter(
+                {
+                  chapterContent,
+                  chapterPlan: thisChapterPlanObject,
+                  chapterPlanText: thisChapterPlanText,
+                  critiqueNotes: `HYBRID SYSTEM LIGHT POLISH: Specialist agents already created this content. Only apply minimal improvements. ${critiqueNotes}`,
+                  chapterNumber: i,
+                  onLog: (entry) => {
+                    setAgentLogs(prev => [...prev, entry]);
+                  }
                 },
                 generateGeminiText
-            );
+              );
 
-            refinedChapterContent = agentResult.refinedContent;
+              refinedChapterContent = agentResult.refinedContent;
 
-            // ✅ SAVE: After light polish
-            _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
-              title: plannedTitle
-            });
+              // ✅ SAVE: After light polish
+              _saveChapterDraft(i - 1, refinedChapterContent, ChapterGenerationStage.LightPolish, {
+                title: plannedTitle
+              });
 
-            // Log light polish results
-            const confidenceEmoji = agentResult.decision.confidence >= 80 ? '✅' :
-                                   agentResult.decision.confidence >= 60 ? '⚠️' : '❌';
+              // Log light polish results
+              const confidenceEmoji = agentResult.decision.confidence >= 80 ? '✅' :
+                                     agentResult.decision.confidence >= 60 ? '⚠️' : '❌';
 
-            console.log(`🎨 Chapter ${i} Light Polish Report:`, {
+              console.log(`🎨 Chapter ${i} Light Polish Report:`, {
                 strategy: agentResult.decision.strategy,
                 confidence: `${confidenceEmoji} ${agentResult.decision.confidence}%`,
                 reasoning: agentResult.decision.reasoning,
                 qualityScore: `${agentResult.qualityScore}/100`,
                 lightChanges: agentResult.changesApplied.length,
                 hybridQuality: `${hybridResult.metadata.qualityMetrics.coherenceScore}/100`
-            });
-
-        } catch (e) {
+              });
+            }
+          } catch (e) {
             console.warn(`Light polish failed for chapter ${i}, using hybrid content. Error:`, e);
             refinedChapterContent = chapterContent; // Use hybrid content as-is
+          }
         }
         
         // Note: Specialized editing passes (dialogue, action, description) are available in utils/specializedEditors.ts

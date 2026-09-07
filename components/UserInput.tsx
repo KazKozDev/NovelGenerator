@@ -7,7 +7,7 @@ import { MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
 import { getStoredProviderConfig, saveStoredProviderConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
-import { LLMProviderConfig } from '../types';
+import { LLMProviderConfig, GenerationSpeedMode } from '../types';
 
 interface UserInputProps {
   storyPremise: string;
@@ -16,6 +16,8 @@ interface UserInputProps {
   setNumChapters: (value: number) => void;
   genre: string;
   setGenre: (value: string) => void;
+  generationSpeedMode: GenerationSpeedMode;
+  setGenerationSpeedMode: (mode: GenerationSpeedMode) => void;
   onSubmit: () => void;
   isLoading: boolean;
 }
@@ -27,6 +29,8 @@ const UserInput: React.FC<UserInputProps> = ({
   setNumChapters,
   genre,
   setGenre,
+  generationSpeedMode,
+  setGenerationSpeedMode,
   onSubmit,
   isLoading,
 }) => {
@@ -260,6 +264,26 @@ const UserInput: React.FC<UserInputProps> = ({
             className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           />
            <p className="text-xs text-slate-400 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
+        </div>
+
+        <div className="md:col-span-2">
+          <label htmlFor="speedMode" className="block text-sm font-medium text-sky-300 mb-1">
+            ⚡ Режим скорости генерации
+          </label>
+          <Select
+            id="speedMode"
+            value={generationSpeedMode}
+            onChange={(e) => setGenerationSpeedMode(e.target.value as GenerationSpeedMode)}
+            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
+          >
+            <option value="fast">⚡ Быстрый (1 проход — без повторного переписывания главы, в 2 раза быстрее для Ollama)</option>
+            <option value="thorough">🔍 Тщательный (2 прохода — с глубокой вычиткой и полировкой)</option>
+          </Select>
+          <p className="text-xs text-slate-400 mt-1">
+            {generationSpeedMode === 'fast'
+              ? 'Синтезирует структуру, персонажей и сцену в готовый текст за 1 проход. Экономит тысячи токенов и ускоряет генерацию в 2 раза.'
+              : 'Каждая глава собирается, а затем второй раз переписывается полировочным агентом целиком.'}
+          </p>
         </div>
       </div>
 
