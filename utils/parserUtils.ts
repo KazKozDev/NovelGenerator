@@ -595,16 +595,42 @@ export function parseChapterPlanJson(raw: string): ChapterPlanParseResult {
  */
 export function cleanProseArtifacts(prose: string): string {
   if (!prose) return '';
-  // Strip any reasoning / think blocks
+  // 1. Strip any explicit reasoning / think blocks
   let cleaned = prose.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  // Strip conversational/scaffolding preambles from LLM
+  // 2. Strip plaintext reasoning/deliberation if a chapter header appears later
+  const chapterHeaderRegex = /(#{1,3}\s*(?:Chapter|Prologue|Epilogue)\b[^\n]*|\bChapter\s+(?:\d+|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty)\b[^\n]*)/i;
+  const chapterHeaderMatch = cleaned.match(chapterHeaderRegex);
+  if (chapterHeaderMatch && chapterHeaderMatch.index !== undefined) {
+    const preamble = cleaned.slice(0, chapterHeaderMatch.index).trim();
+    if (
+      /let me |the user has|my role|so what should i|options:|given the|pragmatic|also important|the system prompt|i'm a text integration|the slot content|perform the integration|thinking process/i.test(preamble)
+    ) {
+      cleaned = cleaned.slice(chapterHeaderMatch.index).trim();
+    }
+  }
+
+  // 3. Strip any opening reasoning block even if there is no explicit # Chapter header
+  if (/^(?:Let me look|Let me analyze|Thinking Process:|The user has given me|My role per the system prompt)/i.test(cleaned)) {
+    const promptEchoIndex = cleaned.search(/(?:Also important:.*?(?:#|\n\n)|Do not output.*?(?:#|\n\n))/i);
+    if (promptEchoIndex !== -1) {
+      const afterEcho = cleaned.slice(promptEchoIndex).replace(/^[^\n]*\n+/i, '').trim();
+      if (afterEcho.length > 100) {
+        cleaned = afterEcho;
+      }
+    }
+  }
+
+  // 4. Strip prompt echo leftovers
+  cleaned = cleaned.replace(/^(?:Also important|Note|CRITICAL):\s*"?Do not output[^\n]*\n+/im, '');
+
+  // 5. Strip conversational/scaffolding preambles from LLM
   cleaned = cleaned.replace(
     /^(?:Here is the (?:integrated |polished |rewritten )?chapter.*|Every slot marker is resolved below.*|Below is the (?:integrated |polished |rewritten )?chapter.*|## slot Chapter marker.*)\n+/im,
     ''
   );
 
-  // Remove lingering slot tags like [SLOT_NAME], [ACTION_SLOT], [DESCRIPTION_1], etc.
+  // 6. Remove lingering slot tags like [SLOT_NAME], [ACTION_SLOT], [DESCRIPTION_1], etc.
   cleaned = cleaned.replace(/\[(?:SLOT|ACTION|DIALOGUE|DESCRIPTION|INTERNAL|TRANSITION)[^\]]*\]/gi, '');
 
   return cleaned.trim();

@@ -352,47 +352,43 @@ Generate transitions now:`;
     mappings: Record<string, SlotMapping>,
     transitions: string[]
   ): { systemPrompt: string; userPrompt: string } {
-    const systemPrompt = `You are a text integration specialist. Your ONLY job is to:
+    const hasSpecialistSlots = Object.keys(mappings).length > 0;
 
-1. Replace [SLOT] markers with provided content
-2. Add smooth transitions between different content types
-3. Ensure natural flow and readability
+    const systemPrompt = `You are a master fiction author and chapter synthesis specialist. Your job is to transform narrative frameworks into complete, immersive, publication-quality chapter prose.
 
-DO NOT:
-- Rewrite or modify the specialist content
-- Add new plot elements or descriptions
-- Change the tone or style of existing content
-- Create new dialogue or action
-- Include conversational preambles, greetings, or meta-notes (e.g. "Every slot marker is resolved below", "Here is the chapter")
+CRITICAL INSTRUCTIONS:
+- Start immediately with the chapter title (e.g. "# Chapter 1") or narrative prose.
+- Output ONLY the story chapter prose.
+- NEVER output reasoning steps, inner monologue, prompt analysis, options, or meta-commentary (such as "Let me look at this carefully", "The user has given me a task", "My role is...", etc.).`;
 
-ONLY:
-- Fill slots with exact provided content
-- Add minimal connecting words for flow
-- Ensure proper punctuation and formatting
-- Return ONLY the final chapter prose`;
-
-    const userPrompt = `Integrate the following content:
+    const userPrompt = hasSpecialistSlots
+      ? `Synthesize the complete chapter prose by integrating the structure template and specialist slot content:
 
 **STRUCTURE TEMPLATE:**
 ${structureTemplate}
 
-**SLOT CONTENT:**
+**SLOT CONTENT TO INTEGRATE:**
 ${Object.entries(mappings)
   .map(([slotId, mapping]) => `[${slotId}]: ${mapping.content}`)
   .join('\n\n')}
 
-**AVAILABLE TRANSITIONS:**
-${transitions.join('\n')}
-
+${transitions.length > 0 ? `**AVAILABLE TRANSITIONS:**\n${transitions.join('\n')}\n` : ''}
 **INTEGRATION RULES:**
-1. Replace each [SLOT] marker with its corresponding content
-2. Add transitions where content feels disconnected
-3. Maintain natural paragraph breaks
-4. Preserve all specialist content exactly as provided
-5. Only add minimal connecting words if absolutely necessary
-6. Output ONLY the story chapter prose without meta-commentary or introductory notes
+1. Replace each [SLOT] marker with its corresponding specialist content.
+2. Weave specialist content into natural, immersive paragraph flow.
+3. Start directly with the story narrative (e.g. "# Chapter 1" or opening sentence).
+4. Output ONLY the story chapter prose.`
+      : `Write the complete, immersive chapter prose based on the narrative structure template below:
 
-Perform the integration now:`;
+**STRUCTURE TEMPLATE:**
+${structureTemplate}
+
+${transitions.length > 0 ? `**AVAILABLE TRANSITIONS:**\n${transitions.join('\n')}\n` : ''}
+**WRITING RULES:**
+1. Expand and develop the structure template into a full, atmospheric, emotionally resonant chapter.
+2. Resolve any slot descriptions into vivid narrative, authentic dialogue, and sensory details.
+3. Start directly with the story narrative (e.g. "# Chapter 1" or opening sentence).
+4. Output ONLY the story chapter prose without any introductory notes or meta-deliberations.`;
 
     return { systemPrompt, userPrompt };
   }

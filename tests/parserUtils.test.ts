@@ -70,6 +70,22 @@ Harry walked into the room.`;
     const cleaned = cleanProseArtifacts(raw);
     expect(cleaned).toBe('Harry walked into the room.');
   });
+
+  it('strips model thinking and deliberation preambles before chapter title', () => {
+    const raw = `Let me look at this carefully. The user has given me a task that is somewhat garbled.
+My role per the system prompt: I'm a text integration specialist.
+So what should I do? Options: Write the chapter myself.
+Also important: "Do not output thinking, inner monologue, reasoning steps, or # Chapter One: The Light Across the Yard
+
+The kettle had gone cold an hour ago, but Marina still sat at the kitchen table with her back to the window.`;
+
+    const cleaned = cleanProseArtifacts(raw);
+    expect(cleaned).toContain('# Chapter One: The Light Across the Yard');
+    expect(cleaned).toContain('The kettle had gone cold an hour ago');
+    expect(cleaned).not.toContain('Let me look at this carefully');
+    expect(cleaned).not.toContain('My role per the system prompt');
+    expect(cleaned).not.toContain('So what should I do');
+  });
 });
 
 describe('parserUtils - parseEvaluationResponse', () => {

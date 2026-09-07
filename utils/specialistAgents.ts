@@ -303,10 +303,16 @@ Chapter Ending: ${plan.chapterEnding || 'Not specified'}`;
   }
 
   private extractSlots(content: string): StructureAgentOutput['slots'] {
-    const dialogueSlots = (content.match(/\[DIALOGUE_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const actionSlots = (content.match(/\[ACTION_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const internalSlots = (content.match(/\[INTERNAL_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const descriptionSlots = (content.match(/\[DESCRIPTION_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
+    const cleanSlotTag = (s: string) => {
+      const inner = s.slice(1, -1).trim();
+      const match = inner.match(/^([A-Za-z0-9_]+)/);
+      return match ? match[1] : inner;
+    };
+
+    const dialogueSlots = (content.match(/\[DIALOGUE_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const actionSlots = (content.match(/\[ACTION_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const internalSlots = (content.match(/\[INTERNAL_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const descriptionSlots = (content.match(/\[DESCRIPTION_[^\]]+\]/gi) || []).map(cleanSlotTag);
 
     return {
       dialogueSlots,
