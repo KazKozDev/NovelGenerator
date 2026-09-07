@@ -21,17 +21,17 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
 }) => {
   return (
     <div className="space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-semibold text-center text-sky-400">{title}</h2>
+      <h2 className="text-base font-semibold text-center text-zinc-100 uppercase tracking-wide">{title}</h2>
       
-      <div className="p-4 bg-slate-700 rounded-md shadow">
-        <p className="text-sm text-slate-300 mb-4">
-          The AI has generated the following outline for your story. Please review it carefully. You can edit the text directly in the box below to make any changes you see fit. When you are satisfied with the outline, click "Approve & Continue" to proceed with character and chapter generation.
+      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm">
+        <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
+          The outline defines the narrative arc and chapter milestones. You may edit the structure directly below before approving generation.
         </p>
         <TextArea
           value={content}
           onChange={(e) => onContentChange(e.target.value)}
           rows={30}
-          className="bg-slate-900/50 border-slate-600 focus:ring-sky-500 focus:border-sky-500 min-h-[600px]"
+          className="min-h-[550px] font-mono text-xs text-zinc-200"
           disabled={isLoading}
         />
       </div>

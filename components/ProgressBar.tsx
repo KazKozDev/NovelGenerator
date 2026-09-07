@@ -86,23 +86,23 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
   };
 
   return (
-    <div className="my-6 w-full">
-      <div className="flex justify-between items-center mb-2">
-        <p className="text-sky-300 text-lg animate-pulse">{progressMessage}</p>
+    <div className="my-4 w-full">
+      <div className="flex justify-between items-center mb-1.5">
+        <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase">{progressMessage}</p>
         {percentage > 0 && percentage < 100 && (
-          <p className="text-slate-400 text-sm">{estimateRemainingTime()}</p>
+          <p className="text-zinc-400 text-[11px] font-mono">{estimateRemainingTime()}</p>
         )}
       </div>
       {currentStep !== GenerationStep.Idle && currentStep !== GenerationStep.UserInput && currentStep !== GenerationStep.Error && (
-        <div className="w-full bg-slate-700 rounded-full h-4 overflow-hidden shadow-inner">
+        <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden border border-zinc-700/40">
           <div
-            className="bg-gradient-to-r from-sky-500 to-teal-400 h-4 rounded-full transition-all duration-500 ease-out"
+            className="bg-zinc-300 h-1.5 rounded-full transition-all duration-300 ease-out"
             style={{ width: `${percentage}%` }}
           ></div>
         </div>
       )}
        {currentStep === GenerationStep.Error && (
-         <p className="text-red-400 text-center mt-2">An error occurred. Please check the message above.</p>
+         <p className="text-red-400 text-xs text-center mt-2 font-mono">An error occurred. Please check the message above.</p>
        )}
     </div>
   );

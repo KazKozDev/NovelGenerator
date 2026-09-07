@@ -35,19 +35,19 @@ const FeatureGrid: React.FC = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
       {features.map((feature, index) => (
         <div
           key={index}
-          className="bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-lg p-5 hover:border-sky-500/50 hover:bg-slate-700/70 transition-all duration-300 group"
+          className="bg-zinc-900 border border-zinc-800 rounded-md p-4 transition-colors"
         >
-          <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300">
+          <div className="text-xs font-mono text-zinc-500 mb-2 uppercase tracking-wider">
             {feature.icon}
           </div>
-          <h3 className="text-sky-300 font-semibold text-base mb-2">
+          <h3 className="text-zinc-200 font-medium text-sm mb-1.5">
             {feature.title}
           </h3>
-          <p className="text-slate-400 text-sm leading-relaxed">
+          <p className="text-zinc-400 text-xs leading-relaxed">
             {feature.description}
           </p>
         </div>

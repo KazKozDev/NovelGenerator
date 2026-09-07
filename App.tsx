@@ -75,29 +75,29 @@ const App: React.FC = () => {
   const isStudioLayout = showProgress;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-sky-900 text-slate-100 flex flex-col items-center p-4 md:p-8 selection:bg-sky-500 selection:text-white">
-      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-8 text-center transition-all duration-300`}>
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-400 py-2">
+    <div className="min-h-screen bg-zinc-950 text-zinc-200 flex flex-col items-center p-4 md:p-8 selection:bg-zinc-700 selection:text-white">
+      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-6 text-center transition-all duration-300`}>
+        <div className="flex items-center justify-center gap-3 mb-1.5">
+          <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
             NovelGenerator
           </h1>
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg animate-pulse">
+          <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 font-mono text-[10px]">
             v4.1
           </span>
         </div>
-        <p className="text-slate-400 mt-2 text-sm md:text-base">
-          Become an author. Before your coffee gets cold. <br />Turn ideas into books. With one prompt.
+        <p className="text-zinc-500 text-xs md:text-sm">
+          Autonomous multi-agent architecture for structured manuscript generation.
         </p>
       </header>
 
-      <main className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} bg-slate-800 shadow-2xl rounded-2xl p-4 md:p-8 animate-fade-in transition-all duration-300`}>
+      <main className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} bg-zinc-900/90 border border-zinc-800 shadow-2xl rounded-2xl p-4 md:p-8 animate-fade-in transition-all duration-300`}>
         {error && (
-          <div className="mb-4 p-4 bg-red-700 border border-red-500 text-white rounded-md">
-            <p className="font-semibold">Error:</p>
+          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded-lg text-sm">
+            <p className="font-semibold mb-1">Error:</p>
             <p>{error}</p>
             <button
               onClick={handleReset}
-              className="mt-2 px-3 py-1 bg-red-500 hover:bg-red-400 rounded text-sm"
+              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs transition-colors"
             >
               Try Again
             </button>
@@ -121,18 +121,16 @@ const App: React.FC = () => {
               onSubmit={handleStartGeneration}
               isLoading={isLoading}
             />
-            <div className="mt-12 border-t border-slate-700 pt-6">
-              <p className="text-[10px] text-slate-500 mb-4 text-left leading-relaxed">
-                * Time to create: Several minutes to several hours, depending on length. Each chapter receives multiple AI passes for professional quality. Patience creates perfection.
+            <div className="mt-10 border-t border-zinc-800 pt-6">
+              <p className="text-[11px] text-zinc-500 mb-3 text-left leading-relaxed">
+                * Estimated generation time: Several minutes depending on chapter count and specialist iterations.
               </p>
-              <p className="text-[10px] text-slate-500 mb-2 text-left">** Technical Process:</p>
-              <div className="text-[10px] text-slate-500 leading-relaxed text-left space-y-1">
-                <p>Specialist Coordination: Three LLM agents (Structure, Character, Scene) work sequentially, each receiving full context and previous outputs.</p>
-                <p>Slot-Based Architecture: Structure agent creates prose framework with embedded slots, specialists fill them with dialogue, action, descriptions.</p>
-                <p>Real-Time Validation: Automatic checks for repetition patterns, tone consistency, content balance during generation.</p>
-                <p>Persistent Context: Story Context Database tracks character states, plot threads, world facts across all chapters for coherence.</p>
-                <p>Synthesis Integration: Advanced merging engine resolves conflicts, generates transitions, performs slot replacement with fallback handling.</p>
-                <p>Multi-Pass Refinement: Light polish → repetition fixes → continuity checks → professional polish for publication-ready quality.</p>
+              <p className="text-[11px] text-zinc-500 mb-2 text-left font-medium">Technical Pipeline:</p>
+              <div className="text-[11px] text-zinc-500 leading-relaxed text-left space-y-1">
+                <p>Specialist Coordination: Sequential agents (Structure, Character, Scene) feed structured contributions into the context database.</p>
+                <p>Slot-Based Architecture: Structure framework maps slots filled by dialogue, atmosphere, and action modules.</p>
+                <p>Synthesis Engine: Merges agent inputs, generates connective prose, and validates narrative continuity.</p>
+                <p>Coherence Tracking: Persistent state database maintains character arcs, timelines, and world rules across chapters.</p>
               </div>
             </div>
           </>
@@ -145,8 +143,8 @@ const App: React.FC = () => {
         })() && (
           <div className="text-center py-12">
             <LoadingSpinner />
-            <p className="mt-4 text-sky-300 text-lg">Generating story outline...</p>
-            <p className="mt-2 text-slate-400 text-sm">This may take 10-30 seconds</p>
+            <p className="mt-4 text-zinc-300 text-sm font-medium">Generating story outline...</p>
+            <p className="mt-1 text-zinc-500 text-xs">Formulating narrative arc and chapter milestones</p>
           </div>
         )}
 
@@ -195,14 +193,14 @@ const App: React.FC = () => {
         )}
       </main>
       <footer className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mt-8 transition-all duration-300`}>
-        <div className="text-center text-slate-500 text-[10px]">
+        <div className="text-center text-zinc-500 text-[10px] font-mono">
           <p>
             &copy; {new Date().getFullYear()}{' '}
             <a 
               href="https://github.com/KazKozDev" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-sky-400 hover:text-sky-300 transition-colors duration-200 underline decoration-dotted"
+              className="text-zinc-400 hover:text-zinc-200 transition-colors duration-200 underline decoration-dotted"
             >
               KazKozDev
             </a>

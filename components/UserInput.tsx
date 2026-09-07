@@ -80,17 +80,17 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="bg-slate-900/50 border border-slate-700/80 rounded-xl p-4 md:p-5 shadow-inner">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 md:p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
-            <h3 className="text-xs font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-sky-400" />
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-zinc-400" />
               <span>AI Provider</span>
             </h3>
-            <p className="text-xs text-slate-400">Choose inference provider (Google Gemini or Local Ollama)</p>
+            <p className="text-xs text-zinc-500">Choose inference provider (Google Gemini or Local Ollama)</p>
           </div>
           
-          <div className="inline-flex rounded-lg bg-slate-800 p-1 border border-slate-700 self-start sm:self-auto">
+          <div className="inline-flex rounded-lg bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
             <button
               type="button"
               onClick={() => {
@@ -100,8 +100,8 @@ const UserInput: React.FC<UserInputProps> = ({
               }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 providerConfig.provider === 'gemini'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               Google Gemini
@@ -115,8 +115,8 @@ const UserInput: React.FC<UserInputProps> = ({
               }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 providerConfig.provider === 'ollama'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               Ollama (Local)
@@ -126,10 +126,10 @@ const UserInput: React.FC<UserInputProps> = ({
 
         {/* Ollama Details */}
         {providerConfig.provider === 'ollama' && (
-          <div className="mt-4 pt-3 border-t border-slate-700/80 space-y-3 animate-fade-in">
+          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-zinc-300 mb-1">
                   Ollama Endpoint / Proxy
                 </label>
                 <Input
@@ -141,23 +141,23 @@ const UserInput: React.FC<UserInputProps> = ({
                     saveStoredProviderConfig(updated);
                   }}
                   placeholder="/api/ollama"
-                  className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                  className="text-xs py-1.5"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Default <code className="text-sky-300">/api/ollama</code> (proxied via Vite without CORS)
+                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
+                  Default /api/ollama (proxied via Vite without CORS)
                 </p>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-slate-300">
+                  <label className="block text-xs font-medium text-zinc-300">
                     Ollama Model
                   </label>
                   <button
                     type="button"
                     onClick={handleFetchOllamaModels}
                     disabled={isFetchingModels}
-                    className="text-[11px] text-sky-400 hover:text-sky-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
+                    className="text-[11px] text-zinc-400 hover:text-zinc-200 underline font-mono font-medium flex items-center gap-1 disabled:opacity-50"
                   >
                     {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
                   </button>
@@ -171,7 +171,7 @@ const UserInput: React.FC<UserInputProps> = ({
                       setProviderConfig(updated);
                       saveStoredProviderConfig(updated);
                     }}
-                    className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                    className="text-xs py-1.5"
                   >
                     {ollamaModels.map((m) => (
                       <option key={m} value={m}>
@@ -189,23 +189,23 @@ const UserInput: React.FC<UserInputProps> = ({
                       saveStoredProviderConfig(updated);
                     }}
                     placeholder="llama3.1"
-                    className="bg-slate-800 border-slate-600 text-xs py-1.5"
+                    className="text-xs py-1.5"
                   />
                 )}
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
                   {ollamaModels.length > 0
                     ? `Selected from ${ollamaModels.length} locally installed models`
-                    : `Click "Load models" to retrieve models from local Ollama instance`}
+                    : `Click "Fetch Ollama Models" to retrieve models`}
                 </p>
               </div>
             </div>
 
             {fetchStatus && (
               <div
-                className={`text-xs px-3 py-2 rounded-md ${
+                className={`text-xs px-3 py-2 rounded-lg font-mono ${
                   fetchStatus.success
-                    ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800'
-                    : 'bg-rose-950/60 text-rose-300 border border-rose-800'
+                    ? 'bg-emerald-950/40 text-emerald-300/90 border border-emerald-900/60'
+                    : 'bg-red-950/40 text-red-300/90 border border-red-900/60'
                 }`}
               >
                 {fetchStatus.message}
@@ -214,45 +214,43 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
         )}
       </div>
+
       <div>
-        <label htmlFor="storyPremise" className="block text-sm font-medium text-sky-300 mb-1">
+        <label htmlFor="storyPremise" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
           Story Premise
         </label>
         <TextArea
           id="storyPremise"
           value={storyPremise}
           onChange={(e) => setStoryPremise(e.target.value)}
-          placeholder="Enter a paragraph describing your story idea (e.g., A detective uncovers a conspiracy that threatens everything they believe in...)"
+          placeholder="Describe your story idea (core conflict, protagonist goals, setting)..."
           rows={5}
           required
           maxLength={1200} 
-          className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
         />
-        <p className="text-xs text-slate-400 mt-1">Max 1200 characters. Be descriptive</p>
+        <p className="text-xs text-zinc-500 mt-1">Maximum 1200 characters.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="genre" className="block text-sm font-medium text-sky-300 mb-1">
+          <label htmlFor="genre" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
             Genre
           </label>
           <Select
             id="genre"
             value={genre}
             onChange={(e) => setGenre(e.target.value)}
-            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           >
             {Object.entries(GENRE_CONFIGS).map(([key, config]) => (
               <option key={key} value={key}>
-                {config.name} - {config.description}
+                {config.name} — {config.description}
               </option>
             ))}
           </Select>
-          <p className="text-xs text-slate-400 mt-1">Choose your story genre</p>
         </div>
 
         <div>
-          <label htmlFor="numChapters" className="block text-sm font-medium text-sky-300 mb-1">
+          <label htmlFor="numChapters" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
             Number of Chapters
           </label>
           <Input
@@ -262,91 +260,69 @@ const UserInput: React.FC<UserInputProps> = ({
             onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
             min={MIN_CHAPTERS}
             required
-            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           />
-           <p className="text-xs text-slate-400 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
+           <p className="text-xs text-zinc-500 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
         </div>
 
         <div className="md:col-span-2">
-          <label htmlFor="speedMode" className="block text-xs font-semibold uppercase tracking-wider text-sky-300 mb-1">
+          <label htmlFor="speedMode" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
             Generation Speed Mode
           </label>
           <Select
             id="speedMode"
             value={generationSpeedMode}
             onChange={(e) => setGenerationSpeedMode(e.target.value as GenerationSpeedMode)}
-            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           >
             <option value="fast">Fast (Single-pass — skips redundant chapter rewrite, 2x faster)</option>
             <option value="thorough">Thorough (Dual-pass — full secondary polish and rewrite)</option>
           </Select>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-zinc-500 mt-1">
             {generationSpeedMode === 'fast'
-              ? 'Synthesizes structure, character arcs, and scene details into prose in a single pass. Saves thousands of tokens and doubles generation speed.'
-              : 'Each chapter is synthesized, then rewritten and polished a second time from scratch.'}
+              ? 'Single-pass synthesis: merges structure, character, and scene directly into prose. Saves ~4,000 tokens per chapter.'
+              : 'Dual-pass synthesis: full chapter rewrite and secondary polish pass.'}
           </p>
         </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end pt-2">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
-          {isLoading ? 'Weaving Your Tale...' : 'Start Weaving'}
+          {isLoading ? 'Generating Outline...' : 'Start Generation'}
         </Button>
       </div>
-       <div className="mt-12 pt-12 border-t border-slate-700 space-y-8 text-slate-300">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300 mb-2">
-            How to begin
+
+      <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
+        <div>
+          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+            Pipeline Architecture
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">01. Start with your vision</h3>
-            <p className="text-sm text-slate-400">
-              Choose your genre. Set your chapter count. Share your story idea. That's all we need.
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. Master Story Outline</h3>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Establishes premise, characters, central conflicts, recurring motifs, and comprehensive chapter-by-chapter plans.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">02. Intelligence meets creativity</h3>
-            <p className="text-sm text-slate-400">
-              Our AI builds a complete story architecture — plot progression, character arcs, emotional beats. Every detail mapped before the first word is written.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Multi-Agent Specialization</h3>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Sequential specialist agents generate narrative structure, character dialogue, and scene sensory details into distinct slots.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">03. You stay in control</h3>
-            <p className="text-sm text-slate-400">
-              Review the outline. Refine it. Approve when it feels right. This is your story. We're just here to help bring it to life.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Synthesis & Coherence</h3>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Merges specialist modules, generates connective transitions, and updates persistent story memory across chapters.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">04. Three specialists. One masterpiece</h3>
-            <p className="text-sm text-slate-400">
-              Structure. Character. Scene. Each specialized AI agent focuses on what it does best, collaborating in real-time to craft every chapter with precision.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">05. Quality built in</h3>
-            <p className="text-sm text-slate-400">
-              Every chapter undergoes multiple editing passes. Consistency checks. Narrative flow analysis. We catch what humans miss.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">06. The final polish</h3>
-            <p className="text-sm text-slate-400">
-              Rhythm. Subtext. Emotional resonance. Our pipeline refines every sentence until your story doesn't just read well — it feels right.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">07. In your format</h3>
-            <p className="text-sm text-slate-400">
-              Download your manuscript in PDF, TXT, or EPUB format. Ready for sharing or further editing.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Quality & Export</h3>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Automated coherence and repetition verification followed by one-click export into EPUB, TXT, or PDF format.
             </p>
           </div>
         </div>

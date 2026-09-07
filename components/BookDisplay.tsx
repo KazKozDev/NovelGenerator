@@ -55,45 +55,45 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-3xl font-semibold text-sky-400 mb-4">Your Book is Ready!</h2>
+        <h2 className="text-xl font-semibold text-zinc-100 uppercase tracking-wide mb-4">Generation Complete</h2>
         
         {/* Book Statistics */}
         <BookStatistics bookContent={bookContent} metadata={metadata} />
       </div>
       
-      <div className="flex border-b border-slate-700">
+      <div className="flex border-b border-zinc-800">
         <button
           onClick={() => setActiveTab('book')}
-          className={`py-2 px-4 text-sm font-medium transition-colors duration-150
-            ${activeTab === 'book' ? 'border-b-2 border-sky-500 text-sky-400' : 'text-slate-400 hover:text-sky-300'}`}
+          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+            ${activeTab === 'book' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Book Content
         </button>
         <button
           onClick={() => setActiveTab('timeline')}
-          className={`py-2 px-4 text-sm font-medium transition-colors duration-150
-            ${activeTab === 'timeline' ? 'border-b-2 border-sky-500 text-sky-400' : 'text-slate-400 hover:text-sky-300'}`}
+          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+            ${activeTab === 'timeline' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Timeline
         </button>
         <button
           onClick={() => setActiveTab('metadata')}
-          className={`py-2 px-4 text-sm font-medium transition-colors duration-150
-            ${activeTab === 'metadata' ? 'border-b-2 border-sky-500 text-sky-400' : 'text-slate-400 hover:text-sky-300'}`}
+          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+            ${activeTab === 'metadata' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
-          Metadata (JSON)
+          Metadata
         </button>
       </div>
 
       {activeTab === 'book' && (
-        <div className="p-4 bg-slate-700 rounded-md shadow">
-          <div className="flex justify-end mb-2 space-x-2">
+        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm">
+          <div className="flex justify-end mb-3 space-x-2">
             <Button 
               onClick={() => handleCopyToClipboard(bookContent, 'book')}
               variant="secondary"
               size="sm"
             >
-              {copiedStates['book'] ? 'Copied!' : 'Copy Markdown'}
+              {copiedStates['book'] ? 'Copied' : 'Copy Markdown'}
             </Button>
             <Button 
               onClick={() => downloadFile(bookContent, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}.md`, 'text/markdown;charset=utf-8')}
@@ -110,7 +110,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               variant="secondary"
               size="sm"
             >
-              Export Epub
+              Export EPUB
             </Button>
             <Button 
               onClick={() => {
@@ -120,54 +120,54 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               variant="secondary"
               size="sm"
             >
-              Save PDF
+              Export PDF
             </Button>
           </div>
-          <pre className="whitespace-pre-wrap text-sm text-slate-200 bg-slate-900/50 p-4 rounded-md max-h-[60vh] overflow-y-auto">
+          <pre className="whitespace-pre-wrap text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded-lg max-h-[60vh] overflow-y-auto font-serif leading-relaxed">
             {bookContent}
           </pre>
         </div>
       )}
 
       {activeTab === 'timeline' && (
-        <div className="p-4 bg-slate-700 rounded-md shadow max-h-[60vh] overflow-y-auto">
-          <h3 className="text-2xl font-semibold text-sky-400 mb-6 text-center">Story Timeline</h3>
+        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm max-h-[60vh] overflow-y-auto">
+          <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wide mb-6 text-center">Narrative Timeline</h3>
           {timelineData && chapterSummaries ? (
-              <div className="relative pl-8 border-l-2 border-slate-600">
+              <div className="relative pl-8 border-l-2 border-zinc-700">
                   {Object.entries(timelineData).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([chapterNum, rawTimelineEntry]) => {
-                      const timelineEntry = rawTimelineEntry as any; // Cast to access properties
+                      const timelineEntry = rawTimelineEntry as any;
                       const chapterInfo = chapterSummaries[chapterNum];
 
                       return (
                           <div key={chapterNum} className="mb-8 relative">
-                              <div className="absolute -left-[39px] top-1 h-5 w-5 bg-sky-500 rounded-full border-4 border-slate-700" aria-hidden="true"></div>
-                              <p className="text-sm text-slate-400 font-mono">{timelineEntry.endTimeOfChapter}</p>
-                              <h4 className="text-xl font-bold text-sky-300 mt-1">
+                              <div className="absolute -left-[39px] top-1 h-4 w-4 bg-zinc-400 rounded-full border-4 border-zinc-950" aria-hidden="true"></div>
+                              <p className="text-xs text-zinc-500 font-mono">{timelineEntry.endTimeOfChapter}</p>
+                              <h4 className="text-sm font-semibold text-zinc-200 mt-1 uppercase tracking-wide">
                                   Chapter {chapterNum}: {chapterInfo?.title || 'Untitled'}
                               </h4>
-                              <div className="mt-2 text-slate-300 text-sm space-y-1 pl-2 border-l-2 border-slate-600/50 ml-1">
-                                  <p><strong className="font-semibold text-slate-200">Time Elapsed:</strong> {timelineEntry.timeElapsed}</p>
-                                  {timelineEntry.specificMarkers && timelineEntry.specificMarkers !== 'None' && <p><strong className="font-semibold text-slate-200">Key Markers:</strong> {timelineEntry.specificMarkers}</p>}
+                              <div className="mt-2 text-zinc-400 text-xs space-y-1 pl-2 border-l-2 border-zinc-800 ml-1">
+                                  <p><strong className="font-medium text-zinc-300">Time Elapsed:</strong> {timelineEntry.timeElapsed}</p>
+                                  {timelineEntry.specificMarkers && timelineEntry.specificMarkers !== 'None' && <p><strong className="font-medium text-zinc-300">Key Markers:</strong> {timelineEntry.specificMarkers}</p>}
                               </div>
                           </div>
                       );
                   })}
               </div>
           ) : (
-              <p className="text-center text-slate-400">Timeline data is not available in the metadata.</p>
+              <p className="text-center text-zinc-500 text-xs">Timeline metadata is not available.</p>
           )}
         </div>
       )}
 
       {activeTab === 'metadata' && (
-        <div className="p-4 bg-slate-700 rounded-md shadow">
-          <div className="flex justify-end mb-2 space-x-2">
+        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm">
+          <div className="flex justify-end mb-3 space-x-2">
             <Button 
               onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
               variant="secondary"
               size="sm"
             >
-              {copiedStates['metadata'] ? 'Copied!' : 'Copy JSON'}
+              {copiedStates['metadata'] ? 'Copied' : 'Copy JSON'}
             </Button>
              <Button 
               onClick={() => downloadFile(metadataJson, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}_metadata.json`, 'application/json;charset=utf-8')}
@@ -177,7 +177,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               Download .json
             </Button>
           </div>
-          <pre className="whitespace-pre-wrap text-sm text-slate-200 bg-slate-900/50 p-4 rounded-md max-h-[60vh] overflow-y-auto">
+          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded-lg max-h-[60vh] overflow-y-auto font-mono">
             {metadataJson}
           </pre>
         </div>
