@@ -76,16 +76,26 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-200 flex flex-col items-center p-4 md:p-8 selection:bg-zinc-700 selection:text-white">
-      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-6 text-center transition-all duration-300`}>
-        <div className="flex items-center justify-center gap-3 mb-1.5">
-          <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
-            NovelGenerator
-          </h1>
-          <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 font-mono text-[10px]">
-            v4.1
-          </span>
+      <header className={`w-full ${isStudioLayout ? 'max-w-[1800px]' : 'max-w-4xl'} mb-6 transition-all duration-300`}>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
+              NovelGenerator
+            </h1>
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 font-mono text-[10px]">
+              v4.1
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            title="Wipe all temporary generation state and start from clean slate"
+            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
+          >
+            Clean Slate
+          </button>
         </div>
-        <p className="text-zinc-500 text-xs md:text-sm">
+        <p className="text-zinc-500 text-xs md:text-sm text-left">
           Autonomous multi-agent architecture for structured manuscript generation.
         </p>
       </header>
