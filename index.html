@@ -70,6 +70,34 @@
       html.light { --sheet: 255 255 255; }
       .sheet { background-color: rgb(var(--sheet)); }
 
+      /* Monochrome, but not a flat fade: two highlights crossing the letters at an angle, so the
+         mark reads as light falling across type rather than as a colour ramp. Mirrored for the
+         light theme — dark letterforms with pale bands instead of the reverse. */
+      :root {
+        --mark-1: 104 104 114; --mark-2: 255 255 255; --mark-3: 138 138 148;
+        --mark-4: 244 244 250; --mark-5: 82 82 92;
+      }
+      html.light {
+        --mark-1: 88 88 98;  --mark-2: 9 9 11;   --mark-3: 120 120 132;
+        --mark-4: 24 24 27;  --mark-5: 148 148 160;
+      }
+      .wordmark {
+        background-image: linear-gradient(104deg,
+          rgb(var(--mark-1)) 0%, rgb(var(--mark-2)) 24%, rgb(var(--mark-3)) 46%,
+          rgb(var(--mark-4)) 68%, rgb(var(--mark-5)) 100%);
+        background-size: 220% 100%;
+        background-position: 0% 0;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        transition: background-position 900ms ease;
+      }
+      .wordmark:hover { background-position: 100% 0; }
+      @media (prefers-reduced-motion: reduce) {
+        .wordmark { transition: none; }
+        .wordmark:hover { background-position: 0% 0; }
+      }
+
       html.light {
         --z-50: 9 9 11;       --z-100: 24 24 27;    --z-200: 39 39 42;
         --z-300: 63 63 70;    --z-400: 82 82 91;    --z-500: 113 113 122;

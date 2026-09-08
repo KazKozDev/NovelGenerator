@@ -71,7 +71,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
       {/* One status strip: the step, the save state, the only global action. */}
       <div className="shrink-0 flex items-center justify-between gap-4 border-b border-zinc-800 pb-1.5">
         <div className="flex items-baseline gap-3 min-w-0">
-          <span className="text-xl font-semibold shrink-0 bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-500 bg-clip-text text-transparent">NovelGenerator</span>
+          <span className="text-xl font-semibold shrink-0 wordmark">NovelGenerator</span>
           {version && (
             <span className="shrink-0 font-mono text-xs text-zinc-500">
               {version}

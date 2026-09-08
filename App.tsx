@@ -88,7 +88,7 @@ const App: React.FC = () => {
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-semibold bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-500 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-semibold wordmark">
               NovelGenerator
             </h1>
             <span className="font-mono text-xs text-zinc-500">v4.2</span>
