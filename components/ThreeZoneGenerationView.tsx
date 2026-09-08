@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GenerationStep, ChapterData, AgentLogEntry } from '../types';
+import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
 import ProgressBar from './ProgressBar';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
@@ -146,7 +146,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 const chapterNum = idx + 1;
                 const isSelected = selectedChapterIdx === idx;
                 const isProcessing = currentChapterProcessing === chapterNum && isLoading;
-                const isCompleted = Boolean(chapter?.content && chapter.content.trim().length > 100);
+                const isCompleted = chapter?.generationStage === ChapterGenerationStage.Complete;
 
                 return (
                   <button
@@ -173,9 +173,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                           Live
                         </span>
                       ) : isCompleted ? (
-                        <span className="text-zinc-400 text-[11px] font-medium font-mono">Done</span>
+                        <span className="text-zinc-400 text-[11px] font-medium font-mono">Accepted</span>
                       ) : (
-                        <span className="text-zinc-600 text-[11px] font-mono">Pending</span>
+                        <span className="text-zinc-600 text-[11px] font-mono">{chapter?.content ? 'Needs review' : 'Pending'}</span>
                       )}
                     </div>
                   </button>
@@ -251,7 +251,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               </div>
               <h3 className="text-sm font-semibold text-zinc-200 mb-1.5 uppercase tracking-wide">Narrative Pre-production</h3>
               <p className="text-xs text-zinc-400 max-w-md mb-5 leading-relaxed">
-                Specialist agents are formulating character arcs, world mechanics, and scene breakdowns. Manuscript prose streaming will commence automatically.
+                The story plan is being prepared. Each completed scene will appear here before chapter review.
               </p>
               <div className="flex items-center gap-2 text-xs text-zinc-300 bg-zinc-800/80 px-3 py-1.5 rounded-lg border border-zinc-700 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />

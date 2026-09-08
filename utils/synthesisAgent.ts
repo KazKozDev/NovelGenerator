@@ -96,39 +96,42 @@ export class SynthesisAgent {
   private mapAllSlots(input: SynthesisInput): Record<string, SlotMapping> {
     const mappings: Record<string, SlotMapping> = {};
 
+    const addSlot = (slotId: string, content: any, sourceAgent: 'structure' | 'character' | 'scene', priority: number) => {
+      if (!content || typeof content !== 'string') return;
+      const trimmed = content.trim();
+      if (!trimmed) return;
+      // Skip dummy coordinator wrapper keys
+      if (slotId === 'characterContent' || slotId === 'sceneDescriptions' || slotId === 'structure') return;
+      mappings[slotId] = {
+        slotId,
+        content: trimmed,
+        sourceAgent,
+        priority
+      };
+    };
+
     // Map structure slots (highest priority - framework)
-    for (const [slotId, content] of Object.entries(input.structureOutput.content)) {
-      if (slotId !== 'structure') { // Skip the main structure template
-        mappings[slotId] = {
-          slotId,
-          content,
-          sourceAgent: 'structure',
-          priority: 3
-        };
+    if (input.structureOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.structureOutput.content)) {
+        addSlot(slotId, content, 'structure', 3);
       }
     }
 
     // Map character slots (high priority - dialogue and thoughts)
-    for (const [slotId, content] of Object.entries(input.characterOutput.content)) {
-      mappings[slotId] = {
-        slotId,
-        content,
-        sourceAgent: 'character',
-        priority: 2
-      };
+    if (input.characterOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.characterOutput.content)) {
+        addSlot(slotId, content, 'character', 2);
+      }
     }
 
     // Map scene slots (medium priority - descriptions and action)
-    for (const [slotId, content] of Object.entries(input.sceneOutput.content)) {
-      mappings[slotId] = {
-        slotId,
-        content,
-        sourceAgent: 'scene',
-        priority: 1
-      };
+    if (input.sceneOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.sceneOutput.content)) {
+        addSlot(slotId, content, 'scene', 1);
+      }
     }
 
-    console.log(`📋 Mapped ${Object.keys(mappings).length} slots from specialist agents`);
+    console.log(`📋 Mapped ${Object.keys(mappings).length} valid slots from specialist agents`);
     return mappings;
   }
 
@@ -352,14 +355,23 @@ Generate transitions now:`;
     mappings: Record<string, SlotMapping>,
     transitions: string[]
   ): { systemPrompt: string; userPrompt: string } {
-    const hasSpecialistSlots = Object.keys(mappings).length > 0;
+    const validEntries = Object.entries(mappings).filter(
+      ([slotId, mapping]) =>
+        mapping.content &&
+        typeof mapping.content === 'string' &&
+        mapping.content.trim().length > 0 &&
+        slotId !== 'characterContent' &&
+        slotId !== 'sceneDescriptions'
+    );
+    const hasSpecialistSlots = validEntries.length > 0;
 
     const systemPrompt = `You are a master fiction author and chapter synthesis specialist. Your job is to transform narrative frameworks into complete, immersive, publication-quality chapter prose.
 
 CRITICAL INSTRUCTIONS:
 - Start immediately with the chapter title (e.g. "# Chapter 1") or narrative prose.
 - Output ONLY the story chapter prose.
-- NEVER output reasoning steps, inner monologue, prompt analysis, options, or meta-commentary (such as "Let me look at this carefully", "The user has given me a task", "My role is...", etc.).`;
+- NEVER output reasoning steps, inner monologue, prompt analysis, options, or meta-commentary (such as "Let me look at this carefully", "The user has given me a task", "My role is...", etc.).
+- DO NOT output slot counting, checklists, notes, or verification steps (such as "Now let me count slots", "Dialogue slots:", "Final draft:", etc.).`;
 
     const userPrompt = hasSpecialistSlots
       ? `Synthesize the complete chapter prose by integrating the structure template and specialist slot content:
@@ -368,7 +380,7 @@ CRITICAL INSTRUCTIONS:
 ${structureTemplate}
 
 **SLOT CONTENT TO INTEGRATE:**
-${Object.entries(mappings)
+${validEntries
   .map(([slotId, mapping]) => `[${slotId}]: ${mapping.content}`)
   .join('\n\n')}
 

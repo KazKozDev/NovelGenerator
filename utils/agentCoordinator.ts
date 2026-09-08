@@ -671,8 +671,8 @@ Consequences: ${plan.consequencesOfChoices}`;
 
     return {
       structureOutput: structureOutput.framework,
-      characterOutput: characterOutput.content,
-      sceneOutput: sceneOutput.content,
+      characterOutput: characterOutput.slots || characterOutput.content,
+      sceneOutput: sceneOutput.slots || sceneOutput.content,
       coordinationMetadata: {
         sceneType,
         toneDetected: storyContextDB.getSharedState().currentTone,
@@ -777,7 +777,8 @@ Consequences: ${plan.consequencesOfChoices}`;
         genre: input.genre
       });
 
-      const content = result.content.characterContent || '';
+      const slots = (result.content && typeof result.content === 'object') ? result.content : {};
+      const content = Object.values(slots).filter((v): v is string => typeof v === 'string').join('\n\n') || (typeof result.content === 'string' ? result.content : '');
 
       // Check content limits
       const limitCheck = storyContextDB.checkContentLimits('character', content);
@@ -802,6 +803,7 @@ Consequences: ${plan.consequencesOfChoices}`;
         return {
           success: true,
           content: correctedContent,
+          slots,
           limitsApplied: [limitCheck.suggestedAction],
           originalLimitIssue: limitCheck.reason
         };
@@ -810,6 +812,7 @@ Consequences: ${plan.consequencesOfChoices}`;
       return {
         success: true,
         content: content,
+        slots,
         limitsApplied: []
       };
 
@@ -866,9 +869,13 @@ Consequences: ${plan.consequencesOfChoices}`;
         genre: input.genre
       });
 
+      const slots = (result.content && typeof result.content === 'object') ? result.content : {};
+      const content = Object.values(slots).filter((v): v is string => typeof v === 'string').join('\n\n') || (typeof result.content === 'string' ? result.content : '');
+
       return {
         success: true,
-        content: result.content.sceneDescriptions || '',
+        content: content,
+        slots,
         toneAdaptation: `Adapted to ${storyContextDB.getSharedState().currentTone} tone`
       };
 
@@ -882,6 +889,17 @@ Consequences: ${plan.consequencesOfChoices}`;
 
   private async synthesisWithValidation(input: any): Promise<any> {
     try {
+      // Extract clean slot dictionaries, ignoring empty placeholders
+      const characterSlots: Record<string, string> =
+        input.characterSlots && typeof input.characterSlots === 'object'
+          ? input.characterSlots
+          : (input.characterOutput && typeof input.characterOutput === 'object' ? input.characterOutput : {});
+
+      const sceneSlots: Record<string, string> =
+        input.sceneSlots && typeof input.sceneSlots === 'object'
+          ? input.sceneSlots
+          : (input.sceneOutput && typeof input.sceneOutput === 'object' ? input.sceneOutput : {});
+
       // Create compatible output objects for synthesis agent
       const structureAgentOutput = {
         chapterStructure: input.structureOutput,
@@ -904,15 +922,15 @@ Consequences: ${plan.consequencesOfChoices}`;
       };
 
       const characterAgentOutput = {
-        characterContent: input.characterOutput,
-        slotsFilled: [],
+        characterContent: typeof input.characterOutput === 'string' ? input.characterOutput : '',
+        slotsFilled: Object.keys(characterSlots),
         dialogueGenerated: [],
         internalMonologue: [],
-        dialogueContent: {},
+        dialogueContent: characterSlots,
         internalThoughts: {},
         characterMoments: [],
         emotionalProgression: [],
-        content: { characterContent: input.characterOutput },
+        content: characterSlots,
         metadata: {
           agentType: 'Character',
           processingTime: 0,
@@ -922,13 +940,13 @@ Consequences: ${plan.consequencesOfChoices}`;
       };
 
       const sceneAgentOutput = {
-        sceneDescriptions: input.sceneOutput,
+        sceneDescriptions: typeof input.sceneOutput === 'string' ? input.sceneOutput : '',
         atmosphericElements: [],
         sensoryDetails: [],
         settingEstablishment: '',
-        descriptions: {},
+        descriptions: sceneSlots,
         actionContent: {},
-        content: { sceneDescriptions: input.sceneOutput },
+        content: sceneSlots,
         metadata: {
           agentType: 'Scene',
           processingTime: 0,

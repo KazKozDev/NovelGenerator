@@ -7,105 +7,11 @@ interface ProgressBarProps {
   totalChaptersToProcess?: number;
 }
 
-const ProgressBar: React.FC<ProgressBarProps> = ({ 
-  currentStep, 
-  currentChapterProcessing, 
-  totalChaptersToProcess 
-}) => {
-  let progressMessage: string = currentStep;
-  let percentage = 0;
-
-  const stepOrder = [
-    GenerationStep.Idle,
-    GenerationStep.UserInput,
-    GenerationStep.GeneratingOutline,
-    GenerationStep.WaitingForOutlineApproval,
-    GenerationStep.ExtractingCharacters,
-    GenerationStep.ExtractingWorldName,
-    GenerationStep.ExtractingMotifs,
-    GenerationStep.GeneratingChapterPlan,
-    GenerationStep.GeneratingChapters,
-    GenerationStep.FinalEditingPass,
-    GenerationStep.ProfessionalPolish,
-    GenerationStep.FinalizingTransitions,
-    GenerationStep.CompilingBook,
-    GenerationStep.Done,
-    GenerationStep.Error,
-  ];
-
-  const currentStepIndex = stepOrder.indexOf(currentStep);
-  const totalMeaningfulSteps = stepOrder.length - 4; // Exclude Idle, UserInput, Error, Waiting
-
-
-  if (currentStep === GenerationStep.GeneratingChapters && currentChapterProcessing && totalChaptersToProcess) {
-    const basePercentageForChapters = (stepOrder.indexOf(GenerationStep.GeneratingChapters) / totalMeaningfulSteps) * 100;
-    const chapterPhasePercentageRange = (stepOrder.indexOf(GenerationStep.FinalEditingPass) / totalMeaningfulSteps) * 100 - basePercentageForChapters;
-    const chapterProgress = (currentChapterProcessing / totalChaptersToProcess) * chapterPhasePercentageRange;
-    percentage = basePercentageForChapters + chapterProgress;
-    progressMessage = `Generating Chapters: Chapter ${currentChapterProcessing} of ${totalChaptersToProcess}`;
-  } else if (currentStep === GenerationStep.FinalEditingPass && currentChapterProcessing && totalChaptersToProcess) {
-    const basePercentage = (stepOrder.indexOf(GenerationStep.FinalEditingPass) / totalMeaningfulSteps) * 100;
-    const phaseRange = (stepOrder.indexOf(GenerationStep.ProfessionalPolish) / totalMeaningfulSteps) * 100 - basePercentage;
-    const progress = (currentChapterProcessing / totalChaptersToProcess) * phaseRange;
-    percentage = basePercentage + progress;
-    progressMessage = `Final Editing Pass: Polishing Chapter ${currentChapterProcessing} of ${totalChaptersToProcess}`;
-  } else if (currentStep === GenerationStep.ProfessionalPolish && currentChapterProcessing && totalChaptersToProcess) {
-    const basePercentage = (stepOrder.indexOf(GenerationStep.ProfessionalPolish) / totalMeaningfulSteps) * 100;
-    const phaseRange = (stepOrder.indexOf(GenerationStep.FinalizingTransitions) / totalMeaningfulSteps) * 100 - basePercentage;
-    const progress = (currentChapterProcessing / totalChaptersToProcess) * phaseRange;
-    percentage = basePercentage + progress;
-    progressMessage = `Professional Polish: Refining Chapter ${currentChapterProcessing} of ${totalChaptersToProcess}`;
-  } else if (currentStep === GenerationStep.FinalizingTransitions && currentChapterProcessing && totalChaptersToProcess && totalChaptersToProcess > 1) {
-    const basePercentage = (stepOrder.indexOf(GenerationStep.FinalizingTransitions) / totalMeaningfulSteps) * 100;
-    const phaseRange = (stepOrder.indexOf(GenerationStep.CompilingBook) / totalMeaningfulSteps) * 100 - basePercentage;
-    const progress = (currentChapterProcessing / (totalChaptersToProcess - 1)) * phaseRange; // -1 because there are N-1 transitions
-    percentage = basePercentage + progress;
-    progressMessage = `Finalizing Transitions: Connecting chapter ${currentChapterProcessing} to ${currentChapterProcessing + 1}`;
-  } else if (currentStepIndex > 0 && currentStep !== GenerationStep.Error && currentStep !== GenerationStep.Done) {
-     percentage = (currentStepIndex / totalMeaningfulSteps) * 100;
-  } else if (currentStep === GenerationStep.Done) {
-    percentage = 100;
-  }
-
-
-  percentage = Math.min(Math.max(percentage, 0), 100);
-
-  // Estimate remaining time (rough approximation)
-  const estimateRemainingTime = (): string => {
-    if (percentage >= 100) return '';
-    
-    // Rough estimates per chapter: ~2-3 minutes
-    const avgMinutesPerChapter = 2.5;
-    const totalEstimatedMinutes = (totalChaptersToProcess || 3) * avgMinutesPerChapter;
-    const elapsedPercentage = percentage / 100;
-    const remainingMinutes = Math.ceil(totalEstimatedMinutes * (1 - elapsedPercentage));
-    
-    if (remainingMinutes < 1) return 'Almost done...';
-    if (remainingMinutes === 1) return '~1 minute remaining';
-    return `~${remainingMinutes} minutes remaining`;
-  };
-
-  return (
-    <div className="my-4 w-full">
-      <div className="flex justify-between items-center mb-1.5">
-        <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase">{progressMessage}</p>
-        {percentage > 0 && percentage < 100 && (
-          <p className="text-zinc-400 text-[11px] font-mono">{estimateRemainingTime()}</p>
-        )}
-      </div>
-      {currentStep !== GenerationStep.Idle && currentStep !== GenerationStep.UserInput && currentStep !== GenerationStep.Error && (
-        <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden border border-zinc-700/40">
-          <div
-            className="bg-zinc-300 h-1.5 rounded-full transition-all duration-300 ease-out"
-            style={{ width: `${percentage}%` }}
-          ></div>
-        </div>
-      )}
-       {currentStep === GenerationStep.Error && (
-         <p className="text-red-400 text-xs text-center mt-2 font-mono">An error occurred. Please check the message above.</p>
-       )}
-    </div>
-  );
-};
-
-export default ProgressBar;
+export default function ProgressBar({ currentStep, currentChapterProcessing, totalChaptersToProcess }: ProgressBarProps) {
+  const label = currentStep === GenerationStep.GeneratingChapters && currentChapterProcessing
+    ? `Writing and reviewing chapter ${currentChapterProcessing} of ${totalChaptersToProcess}` : currentStep;
+  return <div className="my-4 w-full" role="status" aria-live="polite">
+    <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase">{label}</p>
+    <p className="text-zinc-500 text-[11px] mt-1">Progress follows accepted checkpoints. Duration depends on the model and necessary revisions.</p>
+  </div>;
+}

@@ -7,7 +7,7 @@ import { MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
 import { getStoredProviderConfig, saveStoredProviderConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
-import { LLMProviderConfig, GenerationSpeedMode } from '../types';
+import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
   storyPremise: string;
@@ -16,8 +16,8 @@ interface UserInputProps {
   setNumChapters: (value: number) => void;
   genre: string;
   setGenre: (value: string) => void;
-  generationSpeedMode: GenerationSpeedMode;
-  setGenerationSpeedMode: (mode: GenerationSpeedMode) => void;
+  storySettings: StorySettings;
+  setStorySettings: (settings: StorySettings) => void;
   onSubmit: () => void;
   isLoading: boolean;
 }
@@ -29,8 +29,8 @@ const UserInput: React.FC<UserInputProps> = ({
   setNumChapters,
   genre,
   setGenre,
-  generationSpeedMode,
-  setGenerationSpeedMode,
+  storySettings,
+  setStorySettings,
   onSubmit,
   isLoading,
 }) => {
@@ -259,28 +259,52 @@ const UserInput: React.FC<UserInputProps> = ({
             value={numChapters}
             onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
             min={MIN_CHAPTERS}
+            max={100}
             required
           />
-           <p className="text-xs text-zinc-500 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
+           <p className="text-xs text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
         </div>
 
-        <div className="md:col-span-2">
-          <label htmlFor="speedMode" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
-            Generation Speed Mode
-          </label>
-          <Select
-            id="speedMode"
-            value={generationSpeedMode}
-            onChange={(e) => setGenerationSpeedMode(e.target.value as GenerationSpeedMode)}
-          >
-            <option value="fast">Fast (Single-pass — skips redundant chapter rewrite, 2x faster)</option>
-            <option value="thorough">Thorough (Dual-pass — full secondary polish and rewrite)</option>
-          </Select>
-          <p className="text-xs text-zinc-500 mt-1">
-            {generationSpeedMode === 'fast'
-              ? 'Single-pass synthesis: merges structure, character, and scene directly into prose. Saves ~4,000 tokens per chapter.'
-              : 'Dual-pass synthesis: full chapter rewrite and secondary polish pass.'}
-          </p>
+        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {([
+            ['language', 'Language', 'English'],
+            ['targetAudience', 'Target audience', 'adult'],
+            ['narrativeVoice', 'Narrative voice / POV', 'third-limited'],
+            ['tone', 'Tone', 'serious'],
+            ['writingStyle', 'Style and voice notes', 'descriptive'],
+          ] as const).map(([key, label, fallback]) => (
+            <div key={key}>
+              <label htmlFor={key} className="block text-xs text-zinc-300 mb-1">{label}</label>
+              <Input id={key} value={storySettings[key] || fallback}
+                onChange={event => setStorySettings({ ...storySettings, [key]: event.target.value })} />
+            </div>
+          ))}
+          <div>
+            <label htmlFor="targetWords" className="block text-xs text-zinc-300 mb-1">Target words per chapter</label>
+            <Input id="targetWords" type="number" min={300} max={10000} step={100}
+              value={storySettings.targetWordsPerChapter || 4000}
+              onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
+          </div>
+          <div>
+            <label htmlFor="tense" className="block text-xs text-zinc-300 mb-1">Tense</label>
+            <Select id="tense" value={storySettings.tense || 'past'} onChange={event => setStorySettings({ ...storySettings, tense: event.target.value as StorySettings['tense'] })}>
+              <option value="past">Past</option><option value="present">Present</option>
+            </Select>
+          </div>
+          <div>
+            <label htmlFor="ending" className="block text-xs text-zinc-300 mb-1">Ending</label>
+            <Select id="ending" value={storySettings.ending || 'closed'} onChange={event => setStorySettings({ ...storySettings, ending: event.target.value as StorySettings['ending'] })}>
+              <option value="closed">Resolved</option><option value="open">Intentionally open</option><option value="series">Part of a series</option>
+            </Select>
+          </div>
+          <div className="md:col-span-2">
+            <label htmlFor="writingMode" className="block text-xs text-zinc-300 mb-1">Writing approach</label>
+            <Select id="writingMode" value={storySettings.writingMode || 'slots'} onChange={event => setStorySettings({ ...storySettings, writingMode: event.target.value as StorySettings['writingMode'] })}>
+              <option value="slots">Specialist contributions, unified scene synthesis</option>
+              <option value="scenes">Single writer per scene (experimental)</option>
+            </Select>
+            <p className="text-xs text-zinc-500 mt-1">Both approaches use the same story plan and editorial checks. No quality or speed advantage is assumed.</p>
+          </div>
         </div>
       </div>
 
@@ -293,7 +317,7 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
           <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-            Pipeline Architecture
+            How your manuscript develops
           </h2>
         </div>
 
@@ -306,23 +330,23 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Multi-Agent Specialization</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Scene writing</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Sequential specialist agents generate narrative structure, character dialogue, and scene sensory details into distinct slots.
+              Each scene follows its characters’ goals, conflicts and consequential choices in your requested voice.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Synthesis & Coherence</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Continuity and revision</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Merges specialist modules, generates connective transitions, and updates persistent story memory across chapters.
+              Accepted passages establish the story’s facts. Revisions trigger fresh checks of affected chapters.
             </p>
           </div>
 
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Quality & Export</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Automated coherence and repetition verification followed by one-click export into EPUB, TXT, or PDF format.
+              Whole-book review checks setup, payoff and the ending before EPUB, Markdown or PDF export.
             </p>
           </div>
         </div>

@@ -10,7 +10,7 @@ export interface OllamaGeneratePayload {
   prompt: string;
   system?: string;
   stream?: boolean;
-  format?: 'json';
+  format?: 'json' | object;
   think?: boolean;
   options?: {
     temperature?: number;
@@ -27,12 +27,23 @@ export function parseOllamaTagsResponse(data: any): string[] {
   return data.models.map((m: any) => m.name || m.model).filter(Boolean);
 }
 
+export function stripThinking(text: string): string {
+  if (!text) return '';
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  if (/<think>/i.test(cleaned)) throw new Error('Ollama response ended inside a thinking block.');
+  if (cleaned.includes('</think>')) {
+    cleaned = cleaned.slice(cleaned.lastIndexOf('</think>') + 8);
+  }
+  return cleaned.trim();
+}
+
 export function buildOllamaGeneratePayload(params: {
   model: string;
   prompt: string;
   system?: string;
   temperature?: number;
   isJson?: boolean;
+  schema?: object;
   stream?: boolean;
   think?: boolean;
   maxTokens?: number;
@@ -43,7 +54,7 @@ export function buildOllamaGeneratePayload(params: {
     model: params.model || DEFAULT_OLLAMA_MODEL,
     prompt: params.prompt,
     stream: params.stream ?? false,
-    think: params.think ?? false, // Explicitly disable thinking mode for all models
+    think: params.think ?? false, // Off unless the caller's provider role enables it.
     options: {
       temperature: params.temperature ?? 0.7,
       ...(params.maxTokens !== undefined ? { num_predict: params.maxTokens } : {}),
@@ -53,14 +64,16 @@ export function buildOllamaGeneratePayload(params: {
   };
 
   const antiThinkingPrompt = "Do not output thinking, inner monologue, reasoning steps, or <think> tags. Output only direct final response.";
-  if (params.system) {
+  if (params.think) {
+    if (params.system) payload.system = params.system;
+  } else if (params.system) {
     payload.system = `${params.system}\n\n${antiThinkingPrompt}`;
   } else {
     payload.system = antiThinkingPrompt;
   }
 
-  if (params.isJson) {
-    payload.format = 'json';
+  if (params.schema || params.isJson) {
+    payload.format = params.schema || 'json';
   }
 
   return payload;
@@ -93,163 +106,87 @@ export async function fetchOllamaModels(endpoint: string = DEFAULT_OLLAMA_ENDPOI
   }
 }
 
-/**
- * Generate completion using local Ollama model
- */
-export async function generateOllamaText(
-  prompt: string,
-  systemInstruction?: string,
-  schema?: object,
-  temperature: number = 0.7,
-  model: string = DEFAULT_OLLAMA_MODEL,
-  endpoint: string = DEFAULT_OLLAMA_ENDPOINT,
-  maxTokens?: number,
-  topP?: number,
-  topK?: number
-): Promise<string> {
-  const cleanEndpoint = endpoint.replace(/\/+$/, '');
-  const url = `${cleanEndpoint}/api/generate`;
-
-  let effectiveSystem = systemInstruction;
-  if (schema) {
-    const schemaInstruction = `Output must be a single valid JSON object strictly conforming to this schema:\n${JSON.stringify(schema, null, 2)}\nDo not output multiple objects or extra text.`;
-    effectiveSystem = effectiveSystem ? `${effectiveSystem}\n\n${schemaInstruction}` : schemaInstruction;
-  }
-
-  const payload = buildOllamaGeneratePayload({
-    model,
-    prompt,
-    system: effectiveSystem,
-    temperature,
-    isJson: Boolean(schema),
-    stream: false,
-    think: false,
-    maxTokens,
-    topP,
-    topK
-  });
-
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
+/** Read every NDJSON frame and require a successful terminal record. Partial text is never success. */
+export async function readOllamaCompletion(response: Response): Promise<string> {
   if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(`Ollama generation failed [${response.status}]: ${errText || response.statusText}`);
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Ollama request failed [${response.status}]: ${detail || response.statusText}`);
   }
-
-  const result = await response.json();
-  const raw = result.response || '';
-  return raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-}
-
-/**
- * Stream text generation using local Ollama model with thinking suppressed
- */
-export async function generateOllamaTextStream(
-  prompt: string,
-  onChunk: (chunk: string) => void,
-  systemInstruction?: string,
-  model: string = DEFAULT_OLLAMA_MODEL,
-  endpoint: string = DEFAULT_OLLAMA_ENDPOINT
-): Promise<string> {
-  const cleanEndpoint = endpoint.replace(/\/+$/, '');
-  const url = `${cleanEndpoint}/api/generate`;
-
-  const payload = buildOllamaGeneratePayload({
-    model,
-    prompt,
-    system: systemInstruction,
-    stream: true,
-    think: false
-  });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok || !response.body) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(`Ollama stream failed [${response.status}]: ${errText || response.statusText}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let fullText = '';
-  let buffer = '';
-  let insideThinkTag = false;
-
-  const processChunk = (text: string) => {
-    let current = text;
-    while (current.length > 0) {
-      if (insideThinkTag) {
-        const closeIdx = current.indexOf('</think>');
-        if (closeIdx !== -1) {
-          insideThinkTag = false;
-          current = current.slice(closeIdx + 8);
-        } else {
-          break;
-        }
-      } else {
-        const openIdx = current.indexOf('<think>');
-        if (openIdx !== -1) {
-          const before = current.slice(0, openIdx);
-          if (before) {
-            fullText += before;
-            onChunk(before);
-          }
-          insideThinkTag = true;
-          current = current.slice(openIdx + 7);
-        } else {
-          fullText += current;
-          onChunk(current);
-          break;
-        }
-      }
+  let content = '';
+  let completed = false;
+  const consume = (frame: any) => {
+    if (frame.error) throw new Error(`Ollama stream error: ${frame.error}`);
+    if (completed) throw new Error('Ollama sent content after the terminal record.');
+    const text = frame.message?.content ?? frame.response ?? '';
+    if (typeof text !== 'string') throw new Error('Malformed Ollama content.');
+    content += text;
+    if (frame.done) {
+      if (['length', 'max_tokens'].includes(frame.done_reason)) throw new Error('Ollama output reached its token limit; the incomplete response was rejected.');
+      completed = true;
     }
   };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.response) {
-          processChunk(parsed.response);
-        }
-      } catch {
-        // Skip malformed chunk
-      }
-    }
-  }
-
-  if (buffer.trim()) {
+  if (response.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
     try {
-      const parsed = JSON.parse(buffer.trim());
-      if (parsed.response) {
-        processChunk(parsed.response);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) { buffer += decoder.decode(); break; }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) if (line.trim()) consume(JSON.parse(line));
       }
-    } catch {
-      // Ignore
-    }
-  }
+      if (buffer.trim()) consume(JSON.parse(buffer));
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    } finally { reader.releaseLock(); }
+  } else consume(await response.json());
+  if (!completed) throw new Error('Ollama stream ended without a completion record. No partial prose was accepted.');
+  const prose = stripThinking(content);
+  if (!prose) throw new Error('Ollama returned no final content.');
+  return prose;
+}
 
-  return fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+/** Stream transport prevents proxy inactivity; fallback is only for unsupported chat endpoints. */
+export async function generateOllamaText(
+  prompt: string, systemInstruction?: string, schema?: object, temperature = 0.7,
+  model = DEFAULT_OLLAMA_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT,
+  maxTokens?: number, topP?: number, topK?: number, think = false
+): Promise<string> {
+  const base = endpoint.replace(/\/+$/, '');
+  // Thinking is off unless the caller's provider role enables it; only message.content is ever read.
+  // Suppressing reasoning in the prompt would defeat a role that deliberately enables thinking.
+  const system = `${systemInstruction || ''}${think ? '' : '\nDo not output reasoning or thinking; return only the requested final answer.'}${schema ? `\nReturn one JSON object matching this schema: ${JSON.stringify(schema)}` : ''}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('Ollama request exceeded the 15 minute deadline.')), 900000);
+  try {
+    let response = await fetch(`${base}/api/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+        stream: true, think, ...(schema ? { format: schema } : {}),
+        options: { temperature, ...(maxTokens !== undefined ? { num_predict: maxTokens } : {}),
+          ...(topP !== undefined ? { top_p: topP } : {}), ...(topK !== undefined ? { top_k: topK } : {}) } }),
+    });
+    if (response.status === 404 || response.status === 405) {
+      await response.body?.cancel();
+      response = await fetch(`${base}/api/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify(buildOllamaGeneratePayload({ model, prompt, system, temperature, schema, isJson: Boolean(schema), stream: true, think, maxTokens, topP, topK })),
+      });
+    }
+    return await readOllamaCompletion(response);
+  } finally { clearTimeout(timeout); }
+}
+
+export async function generateOllamaTextStream(
+  prompt: string, onChunk: (chunk: string) => void, systemInstruction?: string,
+  model = DEFAULT_OLLAMA_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT
+): Promise<string> {
+  const text = await generateOllamaText(prompt, systemInstruction, undefined, 0.7, model, endpoint);
+  // Expose only verified final content; transport thinking and partial output stay out of the manuscript.
+  onChunk(text);
+  return text;
 }

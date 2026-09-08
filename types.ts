@@ -59,7 +59,7 @@ export enum GenerationStep {
   GeneratingChapters = "Generating Chapters...",
   FinalEditingPass = "Final Editing Pass - Polishing All Chapters...",
   ProfessionalPolish = "Professional Polish - Final Refinement...",
-  FinalizingTransitions = "Finalizing Chapter Transitions & Openings...",
+  FinalizingTransitions = "Final Book Review...",
   CompilingBook = "Compiling Final Book...",
   Done = "Book Generation Complete!",
   Error = "An Error Occurred"
@@ -185,6 +185,11 @@ export type GenerationSpeedMode = 'fast' | 'thorough';
 
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
+  language?: string;
+  tense?: 'past' | 'present';
+  ending?: 'closed' | 'open' | 'series';
+  targetWordsPerChapter?: number;
+  writingMode?: 'slots' | 'scenes';
   genre?: string;
   narrativeVoice?: string;
   tone?: string;
@@ -212,5 +217,10 @@ export interface LLMProviderConfig {
   provider: LLMProviderType;
   ollamaEndpoint: string;
   ollamaModel: string;
+  /**
+   * Reasoning models judge poorly with thinking off and answer trivially instead. Ollama returns
+   * their reasoning in a separate field, so enabling it here never reaches the manuscript.
+   * Configured per role: enable it for a validator, never for the prose writer.
+   */
+  think?: boolean;
 }
-

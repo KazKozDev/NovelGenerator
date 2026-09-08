@@ -598,39 +598,54 @@ export function cleanProseArtifacts(prose: string): string {
   // 1. Strip any explicit reasoning / think blocks
   let cleaned = prose.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  // 2. Strip plaintext reasoning/deliberation if a chapter header appears later
-  const chapterHeaderRegex = /(#{1,3}\s*(?:Chapter|Prologue|Epilogue)\b[^\n]*|\bChapter\s+(?:\d+|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty)\b[^\n]*)/i;
+  // 2. Strip plaintext reasoning/deliberation if a real chapter header appears
+  const chapterHeaderRegex = /(#{1,3}\s*(?:Chapter|Prologue|Epilogue)\b[^\n]*|(?:^|\n)\s*(?:Chapter|Prologue|Epilogue)\s+(?:\d+|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty)\b[^\n]*)/i;
   const chapterHeaderMatch = cleaned.match(chapterHeaderRegex);
   if (chapterHeaderMatch && chapterHeaderMatch.index !== undefined) {
-    const preamble = cleaned.slice(0, chapterHeaderMatch.index).trim();
+    const matchedText = chapterHeaderMatch[0];
+    const headerStartPos = cleaned.indexOf(matchedText.trim(), chapterHeaderMatch.index);
+    const preamble = cleaned.slice(0, headerStartPos).trim();
     if (
-      /let me |the user has|my role|so what should i|options:|given the|pragmatic|also important|the system prompt|i'm a text integration|the slot content|perform the integration|thinking process/i.test(preamble)
+      /let me |the user has|the user wants|my role|so what should i|options:|given the|pragmatic|also important|the system prompt|i'm a text integration|the slot content|perform the integration|thinking process|slot distribution targets|target minimum/i.test(preamble)
     ) {
-      cleaned = cleaned.slice(chapterHeaderMatch.index).trim();
+      cleaned = cleaned.slice(headerStartPos).trim();
     }
   }
 
   // 3. Strip any opening reasoning block even if there is no explicit # Chapter header
-  if (/^(?:Let me look|Let me analyze|Thinking Process:|The user has given me|My role per the system prompt)/i.test(cleaned)) {
-    const promptEchoIndex = cleaned.search(/(?:Also important:.*?(?:#|\n\n)|Do not output.*?(?:#|\n\n))/i);
-    if (promptEchoIndex !== -1) {
-      const afterEcho = cleaned.slice(promptEchoIndex).replace(/^[^\n]*\n+/i, '').trim();
-      if (afterEcho.length > 100) {
-        cleaned = afterEcho;
-      }
+  if (/^(?:Let me look|Let me analyze|Let me plan|Thinking Process:|The user has given me|The user wants me to|My role per the system prompt)/i.test(cleaned)) {
+    const standaloneHeader = cleaned.match(/\n(#{1,3}\s*(?:Chapter|Prologue|Epilogue)\b[^\n]*|(?:Chapter|Prologue|Epilogue)\s+\d+[^\n]*)\n/i);
+    if (standaloneHeader && standaloneHeader.index !== undefined) {
+      const headerPos = cleaned.indexOf(standaloneHeader[1], standaloneHeader.index);
+      cleaned = cleaned.slice(headerPos).trim();
     }
   }
 
-  // 4. Strip prompt echo leftovers
+  // 4. Strip trailing slot counting, checklists, or word counts from the model
+  const checklistPattern = /\n\s*(?:Now let me count slots|Let me count slots|Now let me count:|Final counts:|Dialogue slots:|Action slots:|Internal slots:|Description slots:|Transition slots:|Slot types I'll use|Forbidden words check:)\b/i;
+  const checklistMatch = cleaned.match(checklistPattern);
+  if (checklistMatch && checklistMatch.index !== undefined) {
+    // Check if after this checklist there is another clean chapter draft ("Final draft:\n\n# Chapter...")
+    const subsequentDraftMatch = cleaned.slice(checklistMatch.index).match(/\n(?:Final draft:?\s*\n+)?(#{1,3}\s*(?:Chapter|Prologue|Epilogue)\b[^\n]*|(?:Chapter|Prologue|Epilogue)\s+\d+[^\n]*)\n/i);
+    if (subsequentDraftMatch && subsequentDraftMatch.index !== undefined) {
+      const draftStart = cleaned.indexOf(subsequentDraftMatch[1], checklistMatch.index);
+      cleaned = cleaned.slice(draftStart).trim();
+    } else {
+      // Cut off the trailing checklist
+      cleaned = cleaned.slice(0, checklistMatch.index).trim();
+    }
+  }
+
+  // 5. Strip prompt echo leftovers
   cleaned = cleaned.replace(/^(?:Also important|Note|CRITICAL):\s*"?Do not output[^\n]*\n+/im, '');
 
-  // 5. Strip conversational/scaffolding preambles from LLM
+  // 6. Strip conversational/scaffolding preambles from LLM
   cleaned = cleaned.replace(
     /^(?:Here is the (?:integrated |polished |rewritten )?chapter.*|Every slot marker is resolved below.*|Below is the (?:integrated |polished |rewritten )?chapter.*|## slot Chapter marker.*)\n+/im,
     ''
   );
 
-  // 6. Remove lingering slot tags like [SLOT_NAME], [ACTION_SLOT], [DESCRIPTION_1], etc.
+  // 7. Remove lingering slot tags like [SLOT_NAME], [ACTION_SLOT], [DESCRIPTION_1], etc.
   cleaned = cleaned.replace(/\[(?:SLOT|ACTION|DIALOGUE|DESCRIPTION|INTERNAL|TRANSITION)[^\]]*\]/gi, '');
 
   return cleaned.trim();

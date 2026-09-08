@@ -4,6 +4,7 @@
 import React, { useEffect } from 'react';
 import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
+import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
 import BookDisplay from './components/BookDisplay';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -38,6 +39,7 @@ const App: React.FC = () => {
     isResumable,
     agentLogs,
     lastSavedAt,
+    reviseChapter,
   } = useBookGenerator();
 
   useEffect(() => {
@@ -74,7 +76,8 @@ const App: React.FC = () => {
                        currentStep !== GenerationStep.Idle && 
                        currentStep !== GenerationStep.Done &&
                        currentStep !== GenerationStep.Error &&
-                       currentStep !== GenerationStep.WaitingForOutlineApproval;
+                       currentStep !== GenerationStep.WaitingForOutlineApproval &&
+                       currentStep !== GenerationStep.GeneratingOutline;
 
   const isStudioLayout = showProgress;
 
@@ -100,7 +103,7 @@ const App: React.FC = () => {
           </button>
         </div>
         <p className="text-zinc-500 text-xs md:text-sm text-left">
-          Autonomous multi-agent architecture for structured manuscript generation.
+          From an approved outline to a reviewed manuscript in your voice.
         </p>
       </header>
 
@@ -108,12 +111,14 @@ const App: React.FC = () => {
         {error && (
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded-lg text-sm">
             <p className="font-semibold mb-1">Error:</p>
-            <p>{error}</p>
+            <p className="whitespace-pre-wrap">{error}</p>
+            {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry from checkpoint</button>}
+
             <button
               onClick={handleReset}
               className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs transition-colors"
             >
-              Try Again
+              Start a new book
             </button>
           </div>
         )}
@@ -130,23 +135,12 @@ const App: React.FC = () => {
               setNumChapters={setNumChapters}
               genre={storySettings.genre || 'fantasy'}
               setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
-              generationSpeedMode={storySettings.generationSpeedMode || 'fast'}
-              setGenerationSpeedMode={(generationSpeedMode) => setStorySettings({ ...storySettings, generationSpeedMode })}
+              storySettings={storySettings}
+              setStorySettings={setStorySettings}
               onSubmit={handleStartGeneration}
               isLoading={isLoading}
             />
-            <div className="mt-10 border-t border-zinc-800 pt-6">
-              <p className="text-[11px] text-zinc-500 mb-3 text-left leading-relaxed">
-                * Estimated generation time: Several minutes depending on chapter count and specialist iterations.
-              </p>
-              <p className="text-[11px] text-zinc-500 mb-2 text-left font-medium">Technical Pipeline:</p>
-              <div className="text-[11px] text-zinc-500 leading-relaxed text-left space-y-1">
-                <p>Specialist Coordination: Sequential agents (Structure, Character, Scene) feed structured contributions into the context database.</p>
-                <p>Slot-Based Architecture: Structure framework maps slots filled by dialogue, atmosphere, and action modules.</p>
-                <p>Synthesis Engine: Merges agent inputs, generates connective prose, and validates narrative continuity.</p>
-                <p>Coherence Tracking: Persistent state database maintains character arcs, timelines, and world rules across chapters.</p>
-              </div>
-            </div>
+
           </>
         )}
         
@@ -205,6 +199,7 @@ const App: React.FC = () => {
             )}
           </>
         )}
+        {!isLoading && generatedChapters.length > 0 && <div className="shrink-0 max-h-[60vh] overflow-auto"><ManuscriptRevision chapters={generatedChapters} onRevise={reviseChapter} /></div>}
       </main>
       <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
         <div className="text-center text-zinc-500 text-[10px] font-mono">

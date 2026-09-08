@@ -1,0 +1,148 @@
+import type { Character, ParsedChapterPlan, StorySettings, LLMProviderConfig } from '../../types';
+
+export interface BookSpec extends StorySettings {
+  version: 1;
+  premise: string;
+  chapterCount: number;
+  language: string;
+  tense: 'past' | 'present';
+  ending: 'closed' | 'open' | 'series';
+  targetWordsPerChapter: number;
+  writingMode: 'slots' | 'scenes';
+}
+
+export function createBookSpec(premise: string, chapterCount: number, settings: StorySettings = {}): BookSpec {
+  if (!Number.isInteger(chapterCount) || chapterCount < 3 || chapterCount > 100) {
+    throw new Error('Chapter count must be an integer between 3 and 100.');
+  }
+  if (!premise.trim()) throw new Error('A story premise is required.');
+  if (settings.targetWordsPerChapter !== undefined && (!Number.isInteger(settings.targetWordsPerChapter) || settings.targetWordsPerChapter < 300 || settings.targetWordsPerChapter > 10000)) {
+    throw new Error('Target chapter length must be 300–10000 words.');
+  }
+  return {
+    genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious',
+    targetAudience: 'adult', writingStyle: 'descriptive', generationSpeedMode: 'fast',
+    ...settings, version: 1, premise: premise.trim(), chapterCount,
+    language: settings.language || 'English', tense: settings.tense || 'past',
+    ending: settings.ending || 'closed',
+    targetWordsPerChapter: settings.targetWordsPerChapter || 4000,
+    writingMode: settings.writingMode || 'slots',
+  };
+}
+
+export function specPrompt(spec: BookSpec): string {
+  return `AUTHOR CONTRACT (applies to planning, prose and every revision):\n${JSON.stringify(spec, null, 2)}\nPreserve proper names. Style preferences are contextual, not absolute word bans. Respect the requested audience, viewpoint, language and ending. Do not impose a cliffhanger on a resolved ending.`;
+}
+
+export type ReviewStatus = 'passed' | 'failed' | 'not_checked';
+export interface Evidence { chapter: number; revision: number; quote: string }
+export interface ReviewIssue {
+  id: string;
+  category: 'canon' | 'knowledge' | 'plot' | 'character' | 'dialogue' | 'voice' | 'pacing' | 'hook' | 'ending' | 'audience' | 'format';
+  severity: 'critical' | 'major' | 'minor';
+  description: string;
+  instruction: string;
+  evidence: Evidence[];
+}
+export interface ReviewReport {
+  validationVersion?: 2;
+  status: ReviewStatus;
+  issues: ReviewIssue[];
+  checkedRevision: number;
+  error?: string;
+}
+export interface CanonFact {
+  id: string;
+  subject: string;
+  predicate: string;
+  value: string;
+  knownBy: string[];
+  evidence: Evidence;
+}
+export interface StoryEvent {
+  id: string;
+  description: string;
+  consequences: string[];
+  evidence: Evidence;
+}
+export interface PromisePlan {
+  id: string;
+  description: string;
+  setupChapter: number;
+  payoffChapter: number;
+  required: boolean;
+}
+export interface PromiseEvidence { promiseId: string; kind: 'setup' | 'payoff'; evidence: Evidence }
+export interface ChapterAnalysis {
+  summary: string;
+  facts: CanonFact[];
+  events: StoryEvent[];
+  promises: PromiseEvidence[];
+}
+export interface StoryState {
+  facts: CanonFact[];
+  events: StoryEvent[];
+  promises: PromiseEvidence[];
+  summaries: Record<number, string>;
+}
+export interface ChapterVersion {
+  revision: number;
+  content: string;
+  reason: string;
+  createdAt: number;
+  review?: ReviewReport;
+  analysis?: ChapterAnalysis;
+}
+export interface ChapterRecord {
+  number: number;
+  plan: ParsedChapterPlan;
+  status: 'pending' | 'draft' | 'accepted' | 'needs_revision' | 'invalidated';
+  versions: ChapterVersion[];
+  acceptedRevision?: number;
+  candidateRevision?: number;
+  repairAttempts: number;
+  sceneDrafts?: string[];
+  lineEditedRevision?: number;
+}
+export interface BookBlueprint {
+  centralConflict: string;
+  protagonistChange: string;
+  endingPayoff: string;
+  characters: Record<string, Character>;
+  promises: PromisePlan[];
+  chapters: ParsedChapterPlan[];
+}
+export interface NovelRun {
+  schemaVersion: 1;
+  validationVersion?: 2;
+  id: string;
+  spec: BookSpec;
+  provider: LLMProviderConfig;
+  /** Optional model proven to obey structured-output contracts with thinking disabled. */
+  validationProvider?: LLMProviderConfig;
+  outline: string;
+  blueprint?: BookBlueprint;
+  chapters: ChapterRecord[];
+  canon: StoryState;
+  stage: 'outline' | 'planning' | 'writing' | 'structural_review' | 'line_editing' | 'final_review' | 'complete' | 'needs_revision';
+  resumeStage?: NovelRun['stage'];
+  structuralReview?: ReviewReport;
+  finalReview?: ReviewReport;
+  title?: string;
+  error?: string;
+  structuralAttempts?: number;
+  finalAttempts?: number;
+  importedDrafts?: string[];
+  calls?: { purpose: string; durationMs: number; inputCharacters: number; outputCharacters: number; success: boolean }[];
+  updatedAt: number;
+}
+
+export function chapterRole(number: number, total: number): string {
+  if (number === 1) return 'setup';
+  if (number === total) return 'resolution';
+  if (number === total - 1) return 'climax';
+  const progress = number / total;
+  if (progress <= 0.25) return 'setup';
+  if (progress <= 0.55) return 'development';
+  return 'complication';
+}

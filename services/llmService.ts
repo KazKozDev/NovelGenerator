@@ -52,14 +52,15 @@ export async function generateText(
   topP?: number,
   topK?: number,
   overrideConfig?: LLMProviderConfig,
-  maxTokens?: number
+  maxTokens?: number,
+  jsonOnly = false
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}${config.think ? ' (thinking)' : ''}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
-    `Dispatching request to ${providerTag} (temp: ${temperature}, JSON: ${Boolean(schema)}${maxTokens ? `, limit: ${maxTokens} tok` : ''})`,
+    `Dispatching request to ${providerTag} (temp: ${temperature}, JSON: ${Boolean(schema || jsonOnly)}${maxTokens ? `, limit: ${maxTokens} tok` : ''})`,
     'LLM',
     'llm'
   );
@@ -69,16 +70,17 @@ export async function generateText(
     result = await generateOllamaText(
       prompt,
       systemInstruction,
-      schema,
+      schema || (jsonOnly ? { type: 'object' } : undefined),
       temperature,
       config.ollamaModel,
       config.ollamaEndpoint,
       maxTokens,
       topP,
-      topK
+      topK,
+      config.think
     );
   } else {
-    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens);
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly);
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
