@@ -70,16 +70,16 @@
       html.light { --sheet: 255 255 255; }
       .sheet { background-color: rgb(var(--sheet)); }
 
-      /* Monochrome, but not a flat fade: two highlights crossing the letters at an angle, so the
-         mark reads as light falling across type rather than as a colour ramp. Mirrored for the
-         light theme — dark letterforms with pale bands instead of the reverse. */
+      /* Light falling across type, now carrying blue: the highlights stay near-white so the letters
+         keep their contrast, while the body of the sweep runs through a saturated blue. Mirrored for
+         the light theme — dark blue letterforms with pale bands, not the dark version inverted. */
       :root {
-        --mark-1: 104 104 114; --mark-2: 255 255 255; --mark-3: 138 138 148;
-        --mark-4: 244 244 250; --mark-5: 82 82 92;
+        --mark-1: 96 116 160;  --mark-2: 255 255 255; --mark-3: 96 165 250;
+        --mark-4: 226 236 252; --mark-5: 96 140 220;
       }
       html.light {
-        --mark-1: 88 88 98;  --mark-2: 9 9 11;   --mark-3: 120 120 132;
-        --mark-4: 24 24 27;  --mark-5: 148 148 160;
+        --mark-1: 71 92 140;  --mark-2: 12 18 38;   --mark-3: 37 99 235;
+        --mark-4: 23 34 62;   --mark-5: 88 118 176;
       }
       .wordmark {
         background-image: linear-gradient(104deg,

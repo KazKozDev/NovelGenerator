@@ -17,13 +17,13 @@ export const Select: React.FC<SelectProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-xs font-semibold uppercaser text-zinc-300 mb-1">
+        <label className="block text-sm font-medium text-zinc-400 mb-1.5">
           {label}
         </label>
       )}
       <select
         className={`
-          w-full px-3 py-2 rounded
+          w-full h-10 px-3 rounded
           bg-zinc-900 border border-zinc-700/80
           text-zinc-100 text-sm
           focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400
