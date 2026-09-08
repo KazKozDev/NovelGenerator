@@ -97,7 +97,7 @@ const UserInput: React.FC<UserInputProps> = ({
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
               <span>AI provider</span>
             </h3>
-            <p className="text-xs text-zinc-500">Choose inference provider: Google Gemini or Ollama</p>
+            <p className="text-xs text-zinc-500">Choose inference provider: Gemini or Ollama</p>
           </div>
           
           <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
@@ -114,7 +114,7 @@ const UserInput: React.FC<UserInputProps> = ({
                   : 'text-zinc-400 hover:text-zinc-300'
               }`}
             >
-              Google Gemini
+              Gemini
             </button>
             <button
               type="button"
@@ -247,7 +247,7 @@ const UserInput: React.FC<UserInputProps> = ({
                 <label htmlFor="validatorProvider" className="block text-sm font-medium text-zinc-400 mb-1.5">Provider</label>
                 <Select id="validatorProvider" value={validator.provider} className="text-xs py-1.5"
                   onChange={event => updateValidator({ provider: event.target.value as LLMProviderConfig['provider'] })}>
-                  <option value="gemini">Google Gemini</option>
+                  <option value="gemini">Gemini</option>
                   <option value="ollama">Ollama</option>
                 </Select>
               </div>
