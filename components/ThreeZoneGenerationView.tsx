@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
 import ProgressBar from './ProgressBar';
 import ThemeToggle from './ThemeToggle';
+import PlanView from './PlanView';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
 import SaveStatusIndicator from './SaveStatusIndicator';
@@ -177,18 +178,12 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                Active Chapter Plan
-              </span>
-              <span className="text-[10px] text-zinc-500 font-mono">
-                Ch #{activeChapterNum}
+                Plan · Ch {activeChapterNum}
               </span>
             </div>
             <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto leading-relaxed">
-              <MarkdownView
-                content={(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
-                  ? currentChapterPlan 
-                  : (activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...')}
-                className="text-xs"
+              <PlanView
+                content={activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...'}
               />
             </div>
           </div>
@@ -223,7 +218,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-prose"
-          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800"
+          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet"
         >
           {isWritingProse || activeContent ? (
             <StreamingContentView
@@ -232,20 +227,12 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               fullHeight={true}
             />
           ) : (
-            <div className="p-6 md:p-8 border border-zinc-800 rounded-sm flex flex-col items-center justify-center text-center h-full flex-1 min-h-0 overflow-y-auto">
-              <div className="text-zinc-600 flex items-center justify-center mb-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-zinc-200 mb-1.5 uppercase tracking-wide">Narrative Pre-production</h3>
-              <p className="text-xs text-zinc-400 max-w-md mb-5 leading-relaxed">
-                The story plan is being prepared. Each completed scene will appear here before chapter review.
+            <div className="pt-8 px-6 text-left text-zinc-500">
+              <p className="text-xs font-medium text-zinc-400">Narrative pre-production</p>
+              <p className="text-[11px] mt-1 max-w-sm leading-relaxed">
+                The story plan is being prepared. Each completed scene appears here before chapter review.
               </p>
-              <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
-                <span>{currentStep}</span>
-              </div>
+              <p className="text-[11px] mt-3 font-mono text-zinc-500">{currentStep}</p>
             </div>
           )}
         </div>
@@ -292,7 +279,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               <AgentActivityLog logs={agentLogs} />
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center py-12 text-zinc-500 text-xs gap-2 font-mono">
+            <div className="pt-3 text-zinc-500 text-[11px] font-mono">
               <span>Awaiting agent telemetry...</span>
             </div>
           )}

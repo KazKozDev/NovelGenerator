@@ -49,22 +49,11 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
       </div>
       <div className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
         {!content ? (
-          <div className="flex flex-col items-center justify-center h-full min-h-[350px] text-center p-6 text-zinc-500">
-            <div className="text-zinc-600 flex items-center justify-center mb-3">
-              <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </div>
-            <p className="text-xs md:text-sm font-medium text-zinc-300 mb-1">
-              Coordinated Agents Authoring Manuscript
+          <div className="pt-8 text-left text-zinc-500">
+            <p className="text-xs font-medium text-zinc-400">Composing this chapter</p>
+            <p className="text-[11px] mt-1 max-w-sm leading-relaxed">
+              Specialist passages are being written; the finished scene appears here on synthesis.
             </p>
-            <p className="text-[11px] text-zinc-500 max-w-sm leading-relaxed mb-4">
-              Specialist agents (Structure, Character, Scene) are preparing chapter slots. Full unified prose will stream automatically upon synthesis.
-            </p>
-            <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-500">
-              <span className="w-2 h-2 rounded-full bg-zinc-400 animate-ping" />
-              <span>Pipeline active & synchronized</span>
-            </div>
           </div>
         ) : viewMode === 'markdown' ? (
           <MarkdownView 

@@ -50,6 +50,12 @@
         color-scheme: dark;
       }
       /* The same ramp, walked from the other end. */
+      /* One meaningful surface: the sheet the manuscript is written on. Lighter than its ground in
+         either theme, which a single palette step cannot express once the ramp is inverted. */
+      :root { --sheet: 20 20 23; }
+      html.light { --sheet: 255 255 255; }
+      .sheet { background-color: rgb(var(--sheet)); }
+
       html.light {
         --z-50: 9 9 11;       --z-100: 24 24 27;    --z-200: 39 39 42;
         --z-300: 63 63 70;    --z-400: 82 82 91;    --z-500: 113 113 122;
