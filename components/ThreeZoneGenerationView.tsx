@@ -63,6 +63,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   // Determine stage description
   const isWritingProse = currentStep === GenerationStep.GeneratingChapters || currentStep === GenerationStep.FinalEditingPass;
 
+  // An inspector with nothing to inspect should not hold a column open beside the manuscript.
+  const showInspector = agentLogs.length > 0;
+
   return (
     <div className="w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-200 overflow-hidden">
       {/* One status strip: the step, the save state, the only global action. */}
@@ -218,7 +221,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-prose"
-          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet"
+          className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet`}
         >
           {isWritingProse || activeContent ? (
             <StreamingContentView
@@ -234,53 +237,53 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           )}
         </div>
 
-        {/* ======================================================== */}
-        {/* ZONE 3: Agent Activity, Telemetry & Diffs (Unclipped)    */}
-        {/* ======================================================== */}
-        <div
-          data-testid="zone-agent-inspector"
-          className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
-        >
-          <div className="shrink-0 flex items-baseline justify-between pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-zinc-400" />
-              <h3 className="font-semibold text-zinc-200 text-xs tracking-wider uppercase">
-                Agent Inspector
-              </h3>
+        {/* ZONE 3: agent telemetry, shown only when there is any */}
+        {showInspector && (
+          <div
+            data-testid="zone-agent-inspector"
+            className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
+          >
+            <div className="shrink-0 flex items-baseline justify-between pb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-zinc-400" />
+                <h3 className="font-semibold text-zinc-200 text-xs tracking-wider uppercase">
+                  Agent Inspector
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-zinc-500">
+                {agentLogs.length} events
+              </span>
             </div>
-            <span className="text-[11px] font-mono text-zinc-500">
-              {agentLogs.length} events
-            </span>
-          </div>
 
-          {/* Quick Agent Status Telemetry */}
-          <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
-            <div className="py-1">
-              <div className="text-zinc-500 text-[10px] uppercase font-semibold">Specialists</div>
-              <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
-                Active
+            {/* Quick Agent Status Telemetry */}
+            <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
+              <div className="py-1">
+                <div className="text-zinc-500 text-[10px] uppercase font-semibold">Specialists</div>
+                <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
+                  Active
+                </div>
+              </div>
+              <div className="py-1">
+                <div className="text-zinc-500 text-[10px] uppercase font-semibold">Target</div>
+                <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
+                  Ch #{currentChapterProcessing || 1}
+                </div>
               </div>
             </div>
-            <div className="py-1">
-              <div className="text-zinc-500 text-[10px] uppercase font-semibold">Target</div>
-              <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
-                Ch #{currentChapterProcessing || 1}
-              </div>
-            </div>
-          </div>
 
-          {/* Full Agent Activity Log */}
-          {agentLogs.length > 0 ? (
-            <div className="flex-1 min-h-0 overflow-y-auto pt-2 pr-1">
-              <AgentActivityLog logs={agentLogs} />
-            </div>
-          ) : (
-            <div className="pt-3 text-zinc-500 text-[11px] font-mono">
-              <span>Awaiting agent telemetry...</span>
-            </div>
-          )}
-        </div>
+            {/* Full Agent Activity Log */}
+            {agentLogs.length > 0 ? (
+              <div className="flex-1 min-h-0 overflow-y-auto pt-2 pr-1">
+                <AgentActivityLog logs={agentLogs} />
+              </div>
+            ) : (
+              <div className="pt-3 text-zinc-500 text-[11px] font-mono">
+                <span>Awaiting agent telemetry...</span>
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
