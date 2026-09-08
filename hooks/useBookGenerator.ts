@@ -11,7 +11,7 @@ import type { NovelLLM } from '../utils/novel/review';
 
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
-  writingStyle: 'descriptive', generationSpeedMode: 'fast', language: 'English', tense: 'past',
+  writingStyle: 'descriptive', language: 'English', tense: 'past',
   ending: 'closed', targetWordsPerChapter: 4000, writingMode: 'slots',
 };
 

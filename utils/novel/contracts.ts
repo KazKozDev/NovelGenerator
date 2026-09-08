@@ -1,4 +1,5 @@
 import type { Character, ParsedChapterPlan, StorySettings, LLMProviderConfig } from '../../types';
+import { getGenreGuidelines } from '../genrePrompts';
 
 export interface BookSpec extends StorySettings {
   version: 1;
@@ -21,13 +22,22 @@ export function createBookSpec(premise: string, chapterCount: number, settings: 
   }
   return {
     genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious',
-    targetAudience: 'adult', writingStyle: 'descriptive', generationSpeedMode: 'fast',
-    ...settings, version: 1, premise: premise.trim(), chapterCount,
+    targetAudience: 'adult', writingStyle: 'descriptive',
+    ...settings, generationSpeedMode: undefined, version: 1, premise: premise.trim(), chapterCount,
     language: settings.language || 'English', tense: settings.tense || 'past',
     ending: settings.ending || 'closed',
     targetWordsPerChapter: settings.targetWordsPerChapter || 4000,
     writingMode: settings.writingMode || 'slots',
   };
+}
+
+/**
+ * Genre craft for the steps that actually write prose. It stays out of review and extraction:
+ * a reviewer handed a list of genre pitfalls starts reporting stylistic preference as defect.
+ */
+export function genreCraft(spec: BookSpec): string {
+  const guidelines = getGenreGuidelines(spec.genre || '');
+  return guidelines ? `\nGENRE CRAFT (guidance for the prose, not a checklist to recite):\n${guidelines}` : '';
 }
 
 export function specPrompt(spec: BookSpec): string {

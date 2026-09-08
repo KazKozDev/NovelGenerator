@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { analyseChapter, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
-import { createBookSpec, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
+import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { acceptCandidate, addCandidate, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint } from '../utils/novel/storyState';
 
 function fixture() {
@@ -106,6 +106,29 @@ describe('Sampled review durability', () => {
     expect(rechecked?.review?.status).toBe('failed');
     expect(rechecked?.review?.issues.map(issue => issue.id)).toContain('vase');
     expect(chapter.acceptedRevision).toBeUndefined();
+  });
+});
+
+describe('Author contract fields', () => {
+  it('carries only settings the author can actually set', () => {
+    const spec = createBookSpec('A letter changes a family', 3, { genre: 'thriller', generationSpeedMode: 'fast' });
+    expect(specPrompt(spec)).not.toContain('generationSpeedMode');
+  });
+
+  it('resolves a qualified genre to its craft profile and invents nothing for an unknown one', () => {
+    expect(genreCraft(createBookSpec('p', 3, { genre: 'psychological thriller' }))).toContain('GENRE CRAFT');
+    expect(genreCraft(createBookSpec('p', 3, { genre: 'thriller' }))).toBe(genreCraft(createBookSpec('p', 3, { genre: 'psychological thriller' })));
+    expect(genreCraft(createBookSpec('p', 3, { genre: 'kitchen-sink saga' }))).toBe('');
+  });
+
+  it('gives genre craft to the prose steps and keeps it out of review', async () => {
+    const { run, chapter, version } = fixture();
+    run.spec.genre = 'horror';
+    let seen = '';
+    await reviewChapter(run, chapter, version, async prompt => { seen = prompt; return '{"issues":[]}'; });
+    // A reviewer handed a pitfall list reports stylistic preference as defect.
+    expect(seen).toContain('"genre": "horror"');
+    expect(seen).not.toContain('GENRE CRAFT');
   });
 });
 

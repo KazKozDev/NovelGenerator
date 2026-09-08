@@ -184,6 +184,7 @@ describe('Slot assembly seam', () => {
     });
     await writeScene(run, run.chapters[0], 0, llm);
     expect(prompts[0]).toContain('never narrate or summarize in the framework a beat that a slot will write');
+    expect(prompts[0]).toContain('GENRE CRAFT');
     expect(prompts.at(-1)).toContain('must not narrate a moment twice');
     expect(prompts.at(-1)).toContain('must not summarize dialogue or action it has just dramatized');
   });
