@@ -97,7 +97,7 @@ const UserInput: React.FC<UserInputProps> = ({
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
               <span>AI provider</span>
             </h3>
-            <p className="text-xs text-zinc-500">Choose inference provider (Google Gemini or Local Ollama)</p>
+            <p className="text-xs text-zinc-500">Choose inference provider: Google Gemini or Ollama</p>
           </div>
           
           <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
@@ -129,7 +129,7 @@ const UserInput: React.FC<UserInputProps> = ({
                   : 'text-zinc-400 hover:text-zinc-300'
               }`}
             >
-              Ollama (Local)
+              Ollama
             </button>
           </div>
         </div>
@@ -204,7 +204,7 @@ const UserInput: React.FC<UserInputProps> = ({
                 )}
                 <p className="text-xs text-zinc-500 mt-1">
                   {ollamaModels.length > 0
-                    ? `Selected from ${ollamaModels.length} locally installed models`
+                    ? `Selected from ${ollamaModels.length} models Ollama reports`
                     : `Click "Fetch Ollama Models" to retrieve models`}
                 </p>
               </div>
