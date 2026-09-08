@@ -224,6 +224,36 @@ describe('Redundancy repair', () => {
   });
 });
 
+describe('Repair order', () => {
+  it('deletes the repetition first even when other defects are reported alongside it', async () => {
+    const run = runWithPlans();
+    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const draft = `${prose(1)} ${echoed}`;
+    const base = fixtureLLM();
+    let reviewed = 0;
+    const systems: string[] = [];
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      systems.push(system);
+      if (system.includes('never rewrite')) return JSON.stringify({ prose: prose(1) });
+      if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
+      if (system.includes('continuity and developmental') && ++reviewed === 1) {
+        // Repetition beside an unrelated continuity defect: the mix a real chapter reports.
+        return JSON.stringify({ issues: [
+          { id: 'dup', category: 'pacing', severity: 'major', description: 'Two overlapping concluding sequences repeat the same beat.',
+            instruction: 'Remove one.', evidence: [{ chapter: 1, revision: 1, quote: echoed }] },
+          { id: 'note', category: 'plot', severity: 'major', description: 'A note appears on the counter without being placed there.',
+            instruction: 'Establish the note.', evidence: [{ chapter: 1, revision: 1, quote: 'Thorne opened door 1.' }] },
+        ] });
+      }
+      return base(prompt, system, options);
+    });
+
+    await new NovelEngine(llm, new MemoryRunStore()).continue(run);
+    expect(systems.some(system => system.includes('never rewrite'))).toBe(true);
+    expect(systems.some(system => system.includes('targeted fiction revision'))).toBe(false);
+  });
+});
+
 describe('Slot assembly seam', () => {
   it('tells the framework not to narrate what a slot writes and the synthesis to drop the duplicate', async () => {
     const run = runWithPlans(); run.spec.writingMode = 'slots';

@@ -206,8 +206,8 @@ export class NovelEngine {
       }
       chapter.repairAttempts++;
       await this.checkpoint(run);
-      const repetition = candidate.review.issues.filter(issue => issue.id === 'duplicated-passage' || /redundan|repetit|duplicat|identical/i.test(issue.description));
-      const content = repetition.length === candidate.review.issues.length
+      const repetition = candidate.review.issues.filter(issue => issue.id === 'duplicated-passage' || /redundan|repetit|duplicat|identical|overlapping/i.test(issue.description));
+      const content = repetition.length
         ? await this.removeRedundancy(run, chapter, candidate, repetition)
         : await this.repair(run, chapter, candidate, candidate.review.issues);
       candidate = addCandidate(chapter, content, 'Repair reported chapter defects');
