@@ -61,9 +61,11 @@ describe('ThreeZoneGenerationView', () => {
     expect(html).toContain('Strategy: polish');
   });
 
-  it('renders unclipped chapter outline and plans without cutting text', () => {
+  it('renders a long chapter plan without cutting its text', () => {
     const longOutline = 'Grand Narrative Arc: ' + 'A'.repeat(500);
     const longPlan = 'Detailed Scene Plan: ' + 'B'.repeat(300);
+    // The panel shows the chapter's own plan; the book blueprint is a different document.
+    const chapters = [{ ...mockChapters[0], plan: longPlan }, ...mockChapters.slice(1)];
 
     const html = renderToStaticMarkup(
       <ThreeZoneGenerationView
@@ -71,13 +73,41 @@ describe('ThreeZoneGenerationView', () => {
         currentChapterProcessing={1}
         totalChaptersToProcess={1}
         currentStoryOutline={longOutline}
-        currentChapterPlan={longPlan}
-        generatedChapters={mockChapters}
+        currentChapterPlan={'{"centralConflict":"blueprint, not a chapter plan"}'}
+        generatedChapters={chapters}
         agentLogs={mockLogs}
       />
     );
 
-    // Verify long plan is present without truncation
     expect(html).toContain(longPlan);
+    expect(html).not.toContain('blueprint, not a chapter plan');
+  });
+
+  it('shows a plan as labelled decisions rather than raw JSON', () => {
+    const plan = JSON.stringify({
+      title: 'The Loop', summary: 'Dale reviews the footage and sees himself.',
+      sceneBreakdown: 'Kitchen, then the truck.', chapterEnding: 'He removes the dashcam.',
+      plotAdvancement: 'The doubling becomes undeniable.',
+    });
+    const chapters = [{ ...mockChapters[0], plan }, ...mockChapters.slice(1)];
+
+    const html = renderToStaticMarkup(
+      <ThreeZoneGenerationView
+        currentStep={GenerationStep.GeneratingChapters}
+        currentChapterProcessing={1}
+        totalChaptersToProcess={1}
+        currentStoryOutline="outline"
+        currentChapterPlan=""
+        generatedChapters={chapters}
+        agentLogs={mockLogs}
+      />
+    );
+
+    expect(html).toContain('Dale reviews the footage and sees himself.');
+    expect(html).toContain('Summary');
+    expect(html).not.toContain('&quot;sceneBreakdown&quot;');
+    // Fields beyond the digest stay one click away instead of filling the column.
+    expect(html).toContain('Show full plan');
+    expect(html).not.toContain('The doubling becomes undeniable.');
   });
 });
