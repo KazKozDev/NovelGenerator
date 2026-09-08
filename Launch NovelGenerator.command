@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# NovelGenerator v4.0 Launcher
+# NovelGenerator v4.2 Launcher
 # Double-click this file to start the application
 
 # Change to the script's directory
@@ -25,17 +25,26 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+DIM='\033[2m'
 NC='\033[0m'
 
 clear
 
-echo -e "${CYAN}"
-echo "╔════════════════════════════════════════╗"
-echo "║                                        ║"
-echo "║     NovelGenerator v4.0 Launcher       ║"
-echo "║                                        ║"
-echo "╚════════════════════════════════════════╝"
-echo -e "${NC}"
+printf "%b" "${WHITE}"
+cat <<'LOGO'
+█▄  █ ▄▀▀▀▄ █   █ █▀▀▀▀ █
+█▀▄ █ █   █ █   █ █▄▄▄  █
+█  ██ █   █ ▀▄ ▄▀ █     █
+▀   ▀  ▀▀▀    ▀   ▀▀▀▀▀ ▀▀▀▀▀
+
+▄▀▀▀▄ █▀▀▀▀ █▄  █ █▀▀▀▀ █▀▀▀▄ ▄▀▀▀▄ ▀▀█▀▀ ▄▀▀▀▄ █▀▀▀▄
+█ ▄▄▄ █▄▄▄  █▀▄ █ █▄▄▄  █▄▄▄▀ █▄▄▄█   █   █   █ █▄▄▄▀
+█   █ █     █  ██ █     █ ▀▄  █   █   █   █   █ █ ▀▄
+ ▀▀▀▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀   ▀   ▀    ▀▀▀  ▀   ▀
+LOGO
+printf "%b" "${NC}"
+echo -e "${DIM}  v4.2 · premise in, reviewed manuscript out${NC}"
 echo ""
 
 # Check if npm is installed
