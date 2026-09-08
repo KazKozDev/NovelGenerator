@@ -4,18 +4,18 @@
 <div align="center">
    NovelGenerator v 4.1<br><br>
    LLM-powered tool that expands brief concepts into full-length novels. <br><br>
-   From idea to manuscript. Without human intervention.
+   From idea to manuscript, with outline approval and explicit editorial review.
    
 </div>
 <br><br>
-NovelGenerator enables writers, storytellers, and LLM enthusiasts to produce complete fiction. The entire generation process runs autonomously while maintaining narrative coherence. Just provide your story premise and desired number of chapters. 
+NovelGenerator develops a manuscript from your premise, author settings and approved outline. It reviews candidate chapters before acceptance, preserves revisions, and pauses when a review cannot be validated or targeted repairs are exhausted.
 
 <br>
 <br>
 
 ![Screenshot 2025-05-28 at 07 59 30](https://github.com/user-attachments/assets/854e630c-e902-410a-b789-9706189e3abc)
 
-The pipeline generates multi-threaded narratives. It tracks multiple character perspectives across different timelines while maintaining what each character knows at any given moment, develops emotional arcs where psychological changes follow logically from story events, and synchronizes independent plot threads that run in parallel but converge at key moments with consistent chronology.
+The pipeline extracts evidenced facts, character knowledge, events and promise payoffs from accepted chapters. Local and book-level reviews check continuity and literary intent. These checks support revision; they do not guarantee narrative coherence, literary merit or commercial success. The examples below predate the current engine.
 
 ### Examples:
 
@@ -1248,266 +1248,61 @@ The pipeline generates multi-threaded narratives. It tracks multiple character p
    
 
 
-## Requirements
+## Run locally
 
-- **Node.js** 16+ (tested on 22.18.0)
-- **Google Gemini API key** - Free tier available at [aistudio.google.com](https://aistudio.google.com/)
-- **Browser** - Chrome, Safari, or Firefox (for PDF export)
+Requires Node.js 22+ and either a Gemini API key or an Ollama endpoint.
 
-## Installation
-
-1. **Install dependencies:**
 ```bash
 npm install
-```
-
-2. **Configure API key:**
-
-Create `.env` file in project root:
-```env
-API_KEY=your_gemini_api_key_here
-```
-
-Or use `.env.local`:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-3. **Start development server:**
-```bash
 npm run dev
 ```
 
-Server runs on `http://localhost:3000`
+Open `http://localhost:3000`. For Gemini, place `GEMINI_API_KEY=...` in `.env.local`.
+For Ollama, select the provider and model in the form. `/api/ollama` uses the Vite
+proxy to `http://127.0.0.1:11434`; `OLLAMA_HOST` can configure that proxy target.
+Thinking is disabled for all providers and stages. A model that writes prose may still
+be unsuitable for strict JSON validation. The checkpoint can therefore freeze a
+separate validator model after a schema capability check; see the architecture notes.
 
-## How to Use
+## Current generation workflow
 
-### Step 1: Input
-- **Story Premise:** Describe your story (max 1200 characters)
-- **Genre:** Select from 7 options (Fantasy, Sci-Fi, Mystery, Romance, Horror, Thriller, Historical)
-- **Chapters:** Set count (minimum 3, recommended 10-15)
+1. Set the premise, chapter count, audience, voice, language, tense, ending and length.
+2. Review and approve the outline.
+3. The engine plans scenes, writes them, reviews complete chapters and records facts
+   only from accepted prose with exact source quotations.
+4. Targeted revisions are checked again. Earlier edits invalidate dependent chapters.
+5. Whole-book structural review, targeted line editing and final review precede export.
 
-### Step 2: Outline Review
-- AI generates detailed chapter-by-chapter outline
-- Edit outline if needed
-- Approve to continue
+The default writing approach uses specialist contributions followed by scene synthesis.
+An experimental single-writer scene mode is available for comparison; no quality or
+speed advantage is assumed. The [architecture documentation](ARCHITECTURE.md) describes
+contracts, limitations, persistence and the retired production routes.
 
-### Step 3: Generation
-- Each chapter written individually
-- 3-level editing process per chapter:
-  1. Initial draft
-  2. Editing agent refinement
-  3. Professional polish
-- Final consistency pass across all chapters
-- Time: ~5-10 minutes per chapter
+## Saving and revision
 
-### Step 4: Export
-- **EPUB:** Proper e-book format with metadata, TOC, styling
-- **PDF:** Browser print dialog (Save as PDF)
-- **Markdown:** Plain text with formatting
-- **Metadata:** JSON with generation details
+Full checkpoints and revision histories are stored in IndexedDB in this browser.
+Resume continues from the first unaccepted chapter or pending candidate, including
+saved scene drafts. Old localStorage manuscripts are imported without discarding prose.
+Old review claims are rechecked under the current validation policy.
 
-## Features
+A failed or unavailable review leaves the manuscript editable. Use **Edit a chapter
+and recheck its consequences** for a manual revision, or retry a transient request from
+its checkpoint. A repair limit never turns a failed review into success.
 
-### AI Agent Architecture
-NovelGenerator v4.1 uses a coordinated multi-agent system:
+Final books can be exported as EPUB, Markdown or PDF (browser print). Metadata includes
+the author contract, prose and validation providers, accepted revisions, canonical evidence and measured calls.
+Literary merit and commercial success still require human judgment.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      GENERATION PIPELINE                         │
-└─────────────────────────────────────────────────────────────────┘
+## Verification and comparison
 
-INPUT: Story Premise + Chapter Outline
-   ↓
-┌──────────────────────┐
-│  STRUCTURE AGENT     │ → Creates prose framework with slots
-│  (LLM #1)            │   Output: "She walked [ACTION_SLOT] 
-└──────────────────────┘   while thinking [DIALOGUE_SLOT]..."
-   ↓
-┌──────────────────────┐
-│  CHARACTER AGENT     │ → Fills dialogue & emotion slots
-│  (LLM #2)            │   [DIALOGUE_SLOT] → "I can't believe this"
-└──────────────────────┘   [EMOTION_SLOT] → "her hands trembled"
-   ↓
-┌──────────────────────┐
-│  SCENE AGENT         │ → Adds atmosphere & sensory details
-│  (LLM #3)            │   [ACTION_SLOT] → "through the rain-soaked street"
-└──────────────────────┘   [DESCRIPTION_SLOT] → "neon lights reflected..."
-   ↓
-┌──────────────────────┐
-│  SYNTHESIS AGENT     │ → Integrates all outputs
-│  (Integration)       │   • Replaces slots with content
-└──────────────────────┘   • Resolves conflicts
-   ↓                       • Generates transitions
-┌──────────────────────┐
-│  QUALITY CONTROLLER  │ → Real-time validation
-│  (Validation)        │   • Repetition check
-└──────────────────────┘   • Tone consistency
-   ↓                       • Content balance
-┌──────────────────────┐
-│  STORY CONTEXT DB    │ → Updates persistent memory
-│  (Memory)            │   • Character states
-└──────────────────────┘   • Plot threads
-   ↓                       • World facts
-┌──────────────────────┐
-│  POLISH AGENT        │ → Final refinement
-│  (Refinement)        │   • Rhythm & pacing
-└──────────────────────┘   • Emotional depth
-   ↓
-OUTPUT: Polished Chapter Text
-```
-
-**Three Specialized LLM Agents:**
-- **Structure Agent:** Creates narrative framework with embedded content slots
-- **Character Agent:** Fills slots with dialogue, character development, emotional depth
-- **Scene Agent:** Adds atmosphere, sensory details, world-building elements
-
-**Slot-Based Generation:**
-1. Structure agent generates prose with `[DIALOGUE_SLOT]`, `[ACTION_SLOT]`, `[DESCRIPTION_SLOT]` markers
-2. Specialist agents fill slots with targeted content
-3. Synthesis agent integrates all outputs, resolves conflicts, generates transitions
-
-**Quality Pipeline:**
-- **Real-Time Validation:** Automatic checks for repetition, tone shifts, content balance
-- **Story Context Database:** Persistent tracking of character states, plot threads, world facts
-- **Multi-Pass Refinement:** Light polish → repetition fixes → continuity checks → professional polish
-- **Agent Coordination:** Sequential execution with full context sharing between agents
-
-### AI Generation
-- **Multi-pass editing:** 6+ coordinated phases per chapter (structure → character → scene → synthesis → validation → polish)
-- **Genre adaptation:** All specialist agents dynamically adjust to 6 genres (Fantasy, Sci-Fi, Thriller/Mystery, Romance, Horror, Literary Fiction)
-- **Consistency checking:** Character names, plot points, timeline validation
-- **Professional polish:** Final pass for rhythm, pacing, emotional depth
-- **Dialogue system:** Natural conversations with character voice consistency
-- **Scene breaks:** Automatic formatting with `***` markers
-- **Anti-LLM patterns:** 16 forbidden words + 8 core writing rules
-
-### User Interface
-- **Progress tracking:** Real-time chapter completion with time estimates
-- **Auto-save indicator:** Visual status showing generation progress with timestamps
-- **Draft versioning:** Complete history of each chapter's evolution through generation stages
-- **Diff viewer:** Visual comparison of before/after edits
-- **Agent logs:** Detailed activity feed of AI decisions
-- **Statistics:** Word count, reading time, chapter analysis
-- **Sound notifications:** Audio feedback on completion
-
-### Export Formats
-- **EPUB:** Full e-book with metadata, navigation, CSS styling (uses JSZip)
-- **PDF:** Print-ready format via browser (author name prompt)
-- **Markdown:** `.md` file with formatting preserved
-- **Metadata:** JSON with generation parameters and statistics
-
-### Technical
-- **Retry logic:** Automatic retry with exponential backoff on API errors (up to 7 attempts for complex requests)
-- **Streaming:** Real-time chapter display as they generate
-- **Auto-save system:** Persistent localStorage with multi-stage checkpoints (FirstDraft → LightPolish → ConsistencyCheck → Complete)
-- **Draft versioning:** Each chapter saves complete version history with timestamps
-- **Resume capability:** Safe to refresh browser at any time - generation continues from last saved stage
-- **Optimized schemas:** Adaptive JSON schemas with automatic fallback for reliability
-- **Genre adaptation:** All specialist agents dynamically adjust writing style to match selected genre
-- **Markdown support:** Bold, italic, scene breaks in exports
-
-## Tech Stack
-
-**Frontend:**
-- React 19.1.0 + TypeScript 5.8.2
-- Vite 6.2.0 (build tool)
-- TailwindCSS (styling)
-
-**AI/Backend:**
-- Google Gemini API 1.1.0 (`@google/genai`)
-- Model: `gemini-2.5-flash`
-
-**Libraries:**
-- JSZip (EPUB generation via CDN)
-- Web Audio API (sound notifications)
-
-## Project Structure
-
-```
-generator/
-├── components/              # React UI components
-│   ├── common/             # Button, Input, Select, LoadingSpinner
-│   ├── AgentActivityLog.tsx    # AI decision logs
-│   ├── ApprovalView.tsx        # Outline review
-│   ├── AuthorPromptModal.tsx   # Author name input
-│   ├── BookDisplay.tsx         # Final book view + export
-│   ├── BookStatistics.tsx      # Word count, reading time
-│   ├── DiffViewer.tsx          # Before/after comparison
-│   ├── FeatureGrid.tsx         # Landing page features
-│   ├── ProgressBar.tsx         # Generation progress
-│   ├── SaveStatusIndicator.tsx # Auto-save status & draft versions
-│   ├── StreamingContentView.tsx # Real-time chapter display
-│   └── UserInput.tsx           # Story input form
-│
-├── utils/                   # Core generation logic
-│   ├── agentCoordinator.ts     # 3-agent coordination system
-│   ├── synthesisAgent.ts       # Output integration engine
-│   ├── promptRegistry.ts       # Centralized prompt management
-│   ├── storyContextDatabase.ts # Persistent story context tracking
-│   ├── editingAgent.ts         # Multi-pass editing system
-│   ├── finalEditingPass.ts     # Cross-chapter consistency
-│   ├── professionalPolishAgent.ts # Final refinement
-│   ├── consistencyChecker.ts   # Character/plot validation
-│   ├── dialogueSystem.ts       # Conversation generation
-│   ├── genrePrompts.ts         # Genre-specific templates
-│   ├── styleConfig.ts          # Writing style rules
-│   ├── exportUtils.ts          # EPUB/PDF/MD export
-│   ├── soundUtils.ts           # Audio notifications
-│   └── parserUtils.ts          # Text parsing helpers
-│
-├── services/
-│   └── geminiService.ts        # API wrapper with retry logic
-│
-├── hooks/
-│   └── useBookGenerator.ts     # Main generation state machine
-│
-├── constants/
-│   └── generationParams.ts     # AI model configuration
-│
-└── types.ts                 # TypeScript definitions
-```
-
-## Configuration
-
-**File:** `constants/generationParams.ts`
-
-```typescript
-export const GENERATION_PARAMS = {
-  model: 'gemini-2.5-flash',
-  temperature: 0.7,        // Creativity (0-1)
-  maxTokens: 8000,         // Max output length
-  topP: 0.95,
-  topK: 40
-};
-```
-
-**Adjustable parameters:**
-- `temperature`: Lower = more focused, Higher = more creative
-- `maxTokens`: Chapter length limit
-- `model`: Gemini model version
-
-## Troubleshooting
-
-**Port in use:**
 ```bash
-lsof -ti:3000 | xargs kill
+npm test
+npx tsc --noEmit
+npm run build
+node scripts/compare-writers.mjs checkpoint.json /tmp/novel-comparison 1 1
 ```
 
-**API errors:**
-- Check API key in `.env`
-- Verify quota at https://aistudio.google.com/
-
-**Dependencies:**
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
----
-
-If you like this project, please give it a star ⭐
-
-For questions, feedback, or support, reach out to:
-
-[Artem KK](https://www.linkedin.com/in/kazkozdev/) | MIT [LICENSE](LICENSE) 
+The comparison command generates A/B samples from the same saved plan and provider.
+Read both before opening the unblinding file. Use multiple premises and readers before
+changing the default writing approach. Tests validate software contracts; they do not
+establish literary quality or a performance gain.
