@@ -106,7 +106,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               type="button"
               onClick={onReset}
               title="Wipe all temporary generation state and start from clean slate"
-              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded-sm transition-colors"
+              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
             >
               Clean Slate
             </button>
@@ -146,7 +146,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                     key={idx}
                     type="button"
                     onClick={() => setSelectedChapterIdx(idx)}
-                    className={`flex items-center justify-between p-2 rounded-sm text-xs transition-colors text-left w-full border ${
+                    className={`flex items-center justify-between p-2 rounded text-xs transition-colors text-left w-full border ${
                       isSelected
                         ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 font-medium'
                         : 'border-transparent hover:bg-zinc-900/60 text-zinc-400'

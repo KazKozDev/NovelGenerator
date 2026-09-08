@@ -91,7 +91,7 @@ const App: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
               NovelGenerator
             </h1>
-            <span className="inline-flex items-center px-1.5 py-0 rounded-sm bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0 rounded bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-[10px]">
               v4.2
             </span>
           </div>
@@ -101,7 +101,7 @@ const App: React.FC = () => {
             type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
-            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded-sm transition-colors"
+            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
           >
             Clean Slate
           </button>
@@ -115,14 +115,14 @@ const App: React.FC = () => {
 
       <main className={`w-full ${isStudioLayout ? 'max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
         {error && (
-          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded-sm text-sm">
+          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{error}</p>
             {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry from checkpoint</button>}
 
             <button
               onClick={handleReset}
-              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded-sm text-xs transition-colors"
+              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs transition-colors"
             >
               Start a new book
             </button>

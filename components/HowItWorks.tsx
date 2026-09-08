@@ -2,7 +2,7 @@ import React from 'react';
 
 const HowItWorks: React.FC = () => {
   return (
-    <div className="mb-8 p-6 border border-zinc-800 bg-zinc-900/60 rounded-sm">
+    <div className="mb-8 p-6 border border-zinc-800 bg-zinc-900/60 rounded">
       <h2 className="text-xl font-semibold text-center text-zinc-100 mb-6 tracking-tight">
         How it Works
       </h2>
@@ -10,7 +10,7 @@ const HowItWorks: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               01
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Story Planning</h3>
@@ -22,7 +22,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               02
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Outline Generation</h3>
@@ -34,7 +34,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               03
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Review & Approve</h3>
@@ -46,7 +46,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               04
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Chapter Writing</h3>
@@ -58,7 +58,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               05
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Final Editing Pass</h3>
@@ -70,7 +70,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               06
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Professional Polish</h3>
@@ -82,7 +82,7 @@ const HowItWorks: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center w-7 h-7 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
+            <span className="flex items-center justify-center w-7 h-7 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-mono font-medium text-xs">
               07
             </span>
             <h3 className="font-medium text-zinc-200 text-sm">Book Compilation</h3>
@@ -93,7 +93,7 @@ const HowItWorks: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-6 p-3 bg-zinc-950 border border-zinc-800 rounded-sm">
+      <div className="mt-6 p-3 bg-zinc-950 border border-zinc-800 rounded">
         <p className="text-xs text-zinc-400 text-center font-mono">
           <strong className="text-zinc-300 uppercase tracking-wider">Time estimate:</strong> Generation can take several minutes. Each chapter undergoes specialist coordination and multi-pass refinement.
         </p>

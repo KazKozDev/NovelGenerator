@@ -19,25 +19,25 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   const wordCount = content ? content.trim().split(/\s+/).filter(Boolean).length : 0;
 
   return (
-    <div className={`p-3 md:p-4 rounded-sm border border-zinc-800 flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
+    <div className={`p-3 md:p-4 rounded border border-zinc-800 flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
       <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2.5 mb-2.5">
         <h3 className="font-semibold text-zinc-200 text-xs md:text-sm flex items-center gap-2 tracking-wide font-sans uppercase">
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
           <span>{title}</span>
         </h3>
         <div className="flex items-center gap-2">
-          <div className="flex items-center border border-zinc-800 rounded-sm p-0.5 text-[10px] font-mono">
+          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-[10px] font-mono">
             <button
               type="button"
               onClick={() => setViewMode('markdown')}
-              className={`px-2 py-0.5 rounded-sm transition-colors ${viewMode === 'markdown' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`px-2 py-0.5 rounded transition-colors ${viewMode === 'markdown' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Rendered
             </button>
             <button
               type="button"
               onClick={() => setViewMode('raw')}
-              className={`px-2 py-0.5 rounded-sm transition-colors ${viewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`px-2 py-0.5 rounded transition-colors ${viewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Raw
             </button>

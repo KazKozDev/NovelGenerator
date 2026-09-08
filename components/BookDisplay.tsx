@@ -88,20 +88,20 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       </div>
 
       {activeTab === 'book' && (
-        <div className="p-4 border border-zinc-800 rounded-sm">
+        <div className="p-4 border border-zinc-800 rounded">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-zinc-800/80 pb-3">
-            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-sm p-0.5 text-xs font-mono">
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs font-mono">
               <button
                 type="button"
                 onClick={() => setBookViewMode('rendered')}
-                className={`px-3 py-1 rounded-sm transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
                 Rendered Markdown
               </button>
               <button
                 type="button"
                 onClick={() => setBookViewMode('raw')}
-                className={`px-3 py-1 rounded-sm transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
                 Raw Source
               </button>
@@ -144,14 +144,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             </div>
           </div>
           {bookViewMode === 'rendered' ? (
-            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-sm max-h-[65vh] overflow-y-auto text-left">
+            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded max-h-[65vh] overflow-y-auto text-left">
               <MarkdownView 
                 content={bookContent} 
                 className="font-serif leading-relaxed text-sm md:text-base" 
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap text-xs md:text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded-sm max-h-[65vh] overflow-y-auto font-mono leading-relaxed text-left">
+            <pre className="whitespace-pre-wrap text-xs md:text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto font-mono leading-relaxed text-left">
               {bookContent}
             </pre>
           )}
@@ -159,7 +159,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       )}
 
       {activeTab === 'timeline' && (
-        <div className="p-4 border border-zinc-800 rounded-sm max-h-[60vh] overflow-y-auto">
+        <div className="p-4 border border-zinc-800 rounded max-h-[60vh] overflow-y-auto">
           <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wide mb-6 text-center">Narrative Timeline</h3>
           {timelineData && chapterSummaries ? (
               <div className="relative pl-8 border-l-2 border-zinc-700">
@@ -189,7 +189,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       )}
 
       {activeTab === 'metadata' && (
-        <div className="p-4 border border-zinc-800 rounded-sm">
+        <div className="p-4 border border-zinc-800 rounded">
           <div className="flex justify-end mb-3 space-x-2">
             <Button 
               onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
@@ -206,7 +206,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               Download .json
             </Button>
           </div>
-          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded-sm max-h-[60vh] overflow-y-auto font-mono">
+          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto font-mono">
             {metadataJson}
           </pre>
         </div>
