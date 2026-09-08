@@ -161,12 +161,12 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isProcessing ? (
-                        <span className="flex items-center gap-1 text-xs text-zinc-300 font-medium">
+                        <span className="flex items-center gap-1 text-xs text-zinc-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
                           Live
                         </span>
                       ) : isCompleted ? (
-                        <span className="text-zinc-400 text-xs font-medium">Accepted</span>
+                        <span className="text-zinc-400 text-xs">Accepted</span>
                       ) : (
                         <span className="text-zinc-600 text-xs">{chapter?.content ? 'Needs review' : 'Pending'}</span>
                       )}
@@ -244,12 +244,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
           >
             <div className="shrink-0 flex items-baseline justify-between pb-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-zinc-400" />
-                <h3 className="font-semibold text-zinc-300 text-xsr uppercase">
-                  Agent Inspector
-                </h3>
-              </div>
+              <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
               <span className="text-xs text-zinc-500">
                 {agentLogs.length} events
               </span>
@@ -258,15 +253,15 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             {/* Quick Agent Status Telemetry */}
             <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
               <div className="py-1">
-                <div className="text-zinc-500 text-xs uppercase font-semibold">Specialists</div>
-                <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Specialists</div>
+                <div className="text-xs text-zinc-300 mt-0.5 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                   Active
                 </div>
               </div>
               <div className="py-1">
-                <div className="text-zinc-500 text-xs uppercase font-semibold">Target</div>
-                <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs">
+                <div className="text-xs font-semibold uppercase text-zinc-500">Target</div>
+                <div className="text-xs text-zinc-300 mt-0.5 truncate">
                   Ch #{currentChapterProcessing || 1}
                 </div>
               </div>

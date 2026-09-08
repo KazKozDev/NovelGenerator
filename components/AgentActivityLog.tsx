@@ -44,11 +44,11 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
               ) : (
                 <div className={`mb-1.5 pl-2.5 border-l-2 ${ACCENT[log.type] || ACCENT.default}`}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs uppercase text-zinc-500">{log.type}</span>
+                    <span className="text-xs font-semibold uppercase text-zinc-500">{log.type}</span>
                     {/* A timestamp is a machine value, so it keeps the monospaced face. */}
                     <span className="text-xs text-zinc-500 shrink-0">{formatTime(log.timestamp)}</span>
                   </div>
-                  <p className="text-sm text-zinc-400">{log.message}</p>
+                  <p className="text-xs text-zinc-300">{log.message}</p>
 
                   {log.details && (
                     <details className="mt-1">
