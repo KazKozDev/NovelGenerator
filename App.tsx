@@ -88,12 +88,10 @@ const App: React.FC = () => {
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-baseline gap-2">
-            <h1 className="text-lg  font-semibold text-zinc-100">
+            <h1 className="text-2xl font-semibold bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-500 bg-clip-text text-transparent">
               NovelGenerator
             </h1>
-            <span className="inline-flex items-center px-1.5 py-0 rounded bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-xs">
-              v4.2
-            </span>
+            <span className="font-mono text-xs text-zinc-500">v4.2</span>
           </div>
           <div className="flex items-center gap-3">
           <ThemeToggle />
