@@ -90,7 +90,7 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="bg-zinc-950 border border-zinc-800 rounded-sm p-4 md:p-5 shadow-sm">
+      <div className="border border-zinc-800 rounded-sm p-4 md:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
             <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-2">

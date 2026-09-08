@@ -19,14 +19,14 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   const wordCount = content ? content.trim().split(/\s+/).filter(Boolean).length : 0;
 
   return (
-    <div className={`p-3 md:p-4 bg-zinc-900/80 rounded-sm border border-zinc-800 shadow-sm flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
+    <div className={`p-3 md:p-4 rounded-sm border border-zinc-800 flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
       <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2.5 mb-2.5">
         <h3 className="font-semibold text-zinc-200 text-xs md:text-sm flex items-center gap-2 tracking-wide font-sans uppercase">
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
           <span>{title}</span>
         </h3>
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-sm p-0.5 text-[10px] font-mono">
+          <div className="flex items-center border border-zinc-800 rounded-sm p-0.5 text-[10px] font-mono">
             <button
               type="button"
               onClick={() => setViewMode('markdown')}
@@ -42,7 +42,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
               Raw
             </button>
           </div>
-          <span className="text-[11px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-sm font-mono border border-zinc-700">
+          <span className="text-[11px] text-zinc-500 font-mono">
             {wordCount.toLocaleString()} words
           </span>
         </div>
@@ -50,7 +50,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
       <div className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
         {!content ? (
           <div className="flex flex-col items-center justify-center h-full min-h-[350px] text-center p-6 text-zinc-500">
-            <div className="w-10 h-10 rounded-sm bg-zinc-800/80 border border-zinc-700 text-zinc-400 flex items-center justify-center mb-3">
+            <div className="text-zinc-600 flex items-center justify-center mb-3">
               <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
@@ -61,7 +61,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
             <p className="text-[11px] text-zinc-500 max-w-sm leading-relaxed mb-4">
               Specialist agents (Structure, Character, Scene) are preparing chapter slots. Full unified prose will stream automatically upon synthesis.
             </p>
-            <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400 bg-zinc-950 border border-zinc-800 px-3 py-1 rounded-sm">
+            <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-500">
               <span className="w-2 h-2 rounded-full bg-zinc-400 animate-ping" />
               <span>Pipeline active & synchronized</span>
             </div>

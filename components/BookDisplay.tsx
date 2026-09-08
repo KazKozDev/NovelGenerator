@@ -88,7 +88,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       </div>
 
       {activeTab === 'book' && (
-        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-sm shadow-sm">
+        <div className="p-4 border border-zinc-800 rounded-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-zinc-800/80 pb-3">
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-sm p-0.5 text-xs font-mono">
               <button
@@ -159,7 +159,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       )}
 
       {activeTab === 'timeline' && (
-        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-sm shadow-sm max-h-[60vh] overflow-y-auto">
+        <div className="p-4 border border-zinc-800 rounded-sm max-h-[60vh] overflow-y-auto">
           <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wide mb-6 text-center">Narrative Timeline</h3>
           {timelineData && chapterSummaries ? (
               <div className="relative pl-8 border-l-2 border-zinc-700">
@@ -189,7 +189,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       )}
 
       {activeTab === 'metadata' && (
-        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-sm shadow-sm">
+        <div className="p-4 border border-zinc-800 rounded-sm">
           <div className="flex justify-end mb-3 space-x-2">
             <Button 
               onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}

@@ -44,7 +44,7 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
         </div>
       </div>
       
-      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-sm shadow-sm">
+      <div className="p-4 border border-zinc-800 rounded-sm">
         <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
           The outline defines the narrative arc and chapter milestones. You may edit the structure directly below before approving generation.
         </p>

@@ -68,7 +68,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         <div className="flex items-baseline gap-3 min-w-0">
           <span className="text-lg font-semibold text-zinc-100 tracking-tight leading-none shrink-0">NovelGenerator</span>
           {version && (
-            <span className="shrink-0 px-1.5 rounded-sm bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-[10px]">
+            <span className="shrink-0 font-mono text-[10px] text-zinc-500">
               {version}
             </span>
           )}
@@ -85,7 +85,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <SaveStatusIndicator generatedChapters={generatedChapters} savedAt={lastSavedAt || undefined} />
           )}
           {isLoading && (
-            <div className="flex items-center gap-2 px-2.5 py-1 rounded-sm bg-zinc-800/80 border border-zinc-700 text-zinc-300 text-xs font-mono">
+            <div className="flex items-center gap-2 text-zinc-400 text-xs font-mono">
               <LoadingSpinner className="!my-0 !h-3.5 !w-3.5" />
               <span>Generating</span>
             </div>
@@ -116,7 +116,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-pipeline"
-          className="lg:col-span-2 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-sm p-3 shadow-sm text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 border border-zinc-800 rounded-sm p-3 text-left overflow-hidden"
         >
           <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
             <div className="flex items-center gap-2">
@@ -125,7 +125,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Pipeline & Chapters
               </h3>
             </div>
-            <span className="text-[11px] font-mono bg-zinc-800/90 text-zinc-400 px-2 py-0.5 rounded-sm border border-zinc-700/80">
+            <span className="text-[11px] font-mono text-zinc-500">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
           </div>
@@ -150,8 +150,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                     onClick={() => setSelectedChapterIdx(idx)}
                     className={`flex items-center justify-between p-2 rounded-sm text-xs transition-colors text-left w-full border ${
                       isSelected
-                        ? 'bg-zinc-800 border-zinc-600 text-zinc-100 font-medium'
-                        : 'bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800/60 text-zinc-400'
+                        ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 font-medium'
+                        : 'border-transparent hover:bg-zinc-900/60 text-zinc-400'
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate pr-2">
@@ -189,7 +189,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Ch #{activeChapterNum}
               </span>
             </div>
-            <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm">
+            <div className="flex-1 min-h-0 p-2.5 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm">
               <MarkdownView
                 content={(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
                   ? currentChapterPlan 
@@ -214,7 +214,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </button>
 
             {showOutline && (
-              <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm animate-fade-in">
+              <div className="flex-1 min-h-0 p-2.5 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm animate-fade-in">
                 <MarkdownView
                   content={currentStoryOutline || 'No outline generated yet.'}
                   className="text-xs"
@@ -238,8 +238,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               fullHeight={true}
             />
           ) : (
-            <div className="p-6 md:p-8 bg-zinc-900/80 border border-zinc-800 rounded-sm shadow-sm flex flex-col items-center justify-center text-center h-full flex-1 min-h-0 overflow-y-auto">
-              <div className="w-12 h-12 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-400 flex items-center justify-center mb-4">
+            <div className="p-6 md:p-8 border border-zinc-800 rounded-sm flex flex-col items-center justify-center text-center h-full flex-1 min-h-0 overflow-y-auto">
+              <div className="text-zinc-600 flex items-center justify-center mb-4">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
@@ -248,7 +248,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               <p className="text-xs text-zinc-400 max-w-md mb-5 leading-relaxed">
                 The story plan is being prepared. Each completed scene will appear here before chapter review.
               </p>
-              <div className="flex items-center gap-2 text-xs text-zinc-300 bg-zinc-800/80 px-3 py-1.5 rounded-sm border border-zinc-700 font-mono">
+              <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
                 <span>{currentStep}</span>
               </div>
@@ -261,7 +261,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-agent-inspector"
-          className="lg:col-span-2 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-sm p-3 shadow-sm text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 border border-zinc-800 rounded-sm p-3 text-left overflow-hidden"
         >
           <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
             <div className="flex items-center gap-2">
@@ -270,21 +270,21 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Agent Inspector
               </h3>
             </div>
-            <span className="text-[11px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-sm border border-zinc-700">
+            <span className="text-[11px] font-mono text-zinc-500">
               {agentLogs.length} events
             </span>
           </div>
 
           {/* Quick Agent Status Telemetry */}
           <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
-            <div className="p-2 bg-zinc-950 rounded-sm border border-zinc-800">
+            <div className="py-1">
               <div className="text-zinc-500 text-[10px] uppercase font-semibold">Specialists</div>
               <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                 Active
               </div>
             </div>
-            <div className="p-2 bg-zinc-950 rounded-sm border border-zinc-800">
+            <div className="py-1">
               <div className="text-zinc-500 text-[10px] uppercase font-semibold">Target</div>
               <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
                 Ch #{currentChapterProcessing || 1}
