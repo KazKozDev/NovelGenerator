@@ -86,6 +86,29 @@ The kettle had gone cold an hour ago, but Marina still sat at the kitchen table 
     expect(cleaned).not.toContain('My role per the system prompt');
     expect(cleaned).not.toContain('So what should I do');
   });
+
+  it('strips preamble reasoning and trailing slot-counting checklist', () => {
+    const raw = `The user wants me to synthesize a complete chapter prose for Chapter 1: "The Light Across the Yard" - a Russian psychological horror story.
+The slot content sections are empty, so I need to write the full prose myself.
+Let me plan the chapter:
+
+Chapter 1: The Light Across the Yard
+The lamp across the courtyard came on at 3:14, as it had for one hundred and eighty-three nights. Marina stood at her kitchen window.
+She left the lamp on. She sat facing the window this time.
+
+Now let me count slots:
+Dialogue slots: 11
+Action slots: 9
+Forbidden words check: None present.`;
+
+    const cleaned = cleanProseArtifacts(raw);
+    expect(cleaned).toContain('Chapter 1: The Light Across the Yard');
+    expect(cleaned).toContain('The lamp across the courtyard came on at 3:14');
+    expect(cleaned).toContain('She left the lamp on. She sat facing the window this time.');
+    expect(cleaned).not.toContain('The user wants me to synthesize');
+    expect(cleaned).not.toContain('Now let me count slots');
+    expect(cleaned).not.toContain('Forbidden words check');
+  });
 });
 
 describe('parserUtils - parseEvaluationResponse', () => {

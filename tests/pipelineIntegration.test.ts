@@ -6,7 +6,7 @@ import { extractBookTitle, exportAsEpub } from '../utils/exportUtils';
 import * as llmService from '../services/llmService';
 import { ParsedChapterPlan, Character } from '../types';
 
-describe('Architecture & Pipeline Verification', () => {
+describe('Legacy pipeline compatibility (not the production novel engine)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     storyContextDB.resetDatabase();
