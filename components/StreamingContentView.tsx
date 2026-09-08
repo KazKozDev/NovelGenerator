@@ -49,11 +49,8 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
       </div>
       <div className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
         {!content ? (
-          <div className="pt-8 text-left text-zinc-500">
-            <p className="text-xs font-medium text-zinc-400">Composing this chapter</p>
-            <p className="text-[11px] mt-1 max-w-sm leading-relaxed">
-              Specialist passages are being written; the finished scene appears here on synthesis.
-            </p>
+          <div className="pt-8 font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto text-zinc-500">
+            <p>Specialist passages are being written. The finished scene appears here on synthesis.</p>
           </div>
         ) : viewMode === 'markdown' ? (
           <MarkdownView 

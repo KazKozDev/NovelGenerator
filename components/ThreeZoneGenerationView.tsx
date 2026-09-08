@@ -227,12 +227,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               fullHeight={true}
             />
           ) : (
-            <div className="pt-8 px-6 text-left text-zinc-500">
-              <p className="text-xs font-medium text-zinc-400">Narrative pre-production</p>
-              <p className="text-[11px] mt-1 max-w-sm leading-relaxed">
-                The story plan is being prepared. Each completed scene appears here before chapter review.
-              </p>
-              <p className="text-[11px] mt-3 font-mono text-zinc-500">{currentStep}</p>
+            <div className="pt-8 px-6 font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto text-zinc-500">
+              <p>The story plan is being prepared. Each completed scene appears here before chapter review.</p>
+              <p className="text-[11px] mt-4 font-mono">{currentStep}</p>
             </div>
           )}
         </div>
