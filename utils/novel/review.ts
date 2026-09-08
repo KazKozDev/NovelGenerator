@@ -117,21 +117,30 @@ const foreignScripts = [
 ];
 
 /**
- * Near-duplicate sentences inside one chapter. Repairs return the whole chapter, and a model asked
- * to fix a passage tends to add its improved version beside the old one rather than replace it, so
- * the same beat accumulates. Matching finds this every time; a sampled reviewer only sometimes does.
+ * Passages a chapter says twice. Repairs return the whole chapter, and a model asked to fix a
+ * passage tends to set its improved version beside the old one rather than replace it, so the same
+ * beat accumulates. Rewording is the usual disguise — "Ray stood at the counter" against "Ray stood
+ * in the dark" — so sentences are compared by how much vocabulary they share, not letter for letter.
  */
-export function duplicatePassages(content: string): { first: string; second: string }[] {
+export function duplicatePassages(content: string, threshold = 0.7): { first: string; second: string }[] {
   const sentences = content.split(/(?<=[.!?…])\s+/).map(text => text.trim()).filter(text => text.split(/\s+/).length >= 8);
-  const seen = new Map<string, string>();
+  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
+  const bags = sentences.map(words);
   const found: { first: string; second: string }[] = [];
-  for (const sentence of sentences) {
-    // Compare on words alone: a duplicate that changed a comma is still a duplicate.
-    const key = sentence.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
-    const earlier = seen.get(key);
-    if (earlier && earlier !== sentence) found.push({ first: earlier, second: sentence });
-    else if (earlier) found.push({ first: earlier, second: sentence });
-    else seen.set(key, sentence);
+  const paired = new Set<number>();
+  for (let i = 0; i < sentences.length; i++) {
+    if (paired.has(i)) continue;
+    for (let j = i + 1; j < sentences.length; j++) {
+      if (paired.has(j)) continue;
+      let shared = 0;
+      for (const word of bags[j]) if (bags[i].has(word)) shared++;
+      // Overlap against the smaller sentence: an expanded restatement is still a restatement.
+      if (shared / Math.min(bags[i].size, bags[j].size) >= threshold) {
+        found.push({ first: sentences[i], second: sentences[j] });
+        paired.add(j);
+        break;
+      }
+    }
   }
   return found;
 }

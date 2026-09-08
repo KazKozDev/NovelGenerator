@@ -8,10 +8,28 @@ import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
 
 const provider = { provider: 'ollama' as const, ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'fixture' };
-const prose = (number: number) => `Thorne opened door ${number}. ` +
-  Array.from({ length: 18 }, (_, index) =>
-    `She kept the letter folded in her pocket while the clerk read entry ${index + 1} of the register.`).join(' ') +
-  ' The price was hers to pay.';
+const FILLER = [
+  'She kept the letter folded in her pocket while the clerk read the register.',
+  'Rain moved along the gutter outside and nobody in the room looked up at it.',
+  'A clock behind the counter lost a second every hour and no one had fixed it.',
+  'The archive smelled of dust, old glue and the cold iron of the shelving.',
+  'Somebody had written a name on the ledger and then crossed it out twice.',
+  'Her boots left grey half-moons of water across the boards by the door.',
+  'The lamp above the desk buzzed whenever a tram passed in the street below.',
+  'He counted the coins into her palm slowly, as if the number might change.',
+  'Outside, a dog barked once and then thought better of barking again.',
+  'The window frame had swollen with damp and would not close all the way.',
+  'A child ran past the glass carrying something wrapped in newspaper.',
+  'She thought about the boat and about how long the repairs would take.',
+  'The clerk turned a page and the sound was louder than either of them expected.',
+  'Someone upstairs dragged a chair across the floor and then stopped.',
+  'The stove had gone out an hour ago and nobody had said anything about it.',
+  'She read the top line again, though she already knew what it said.',
+  'A moth circled the lamp twice and settled on the cold part of the shade.',
+  'The town outside went on with its afternoon without any interest in either of them.',
+].join(' ');
+
+const prose = (number: number) => `Thorne opened door ${number}. ${FILLER} The price was hers to pay.`;
 function plan(number: number) {
   return {
     title: `Door ${number}`, summary: `Thorne opens door ${number}.`, sceneBreakdown: 'An encounter at the archive.',
@@ -172,6 +190,37 @@ describe('Editorial gates', () => {
     // The specialist step now retries, so the empty contribution must persist across both attempts.
     const llm = vi.fn().mockResolvedValueOnce('{"framework":"Thorne said [DIALOGUE_1]","slots":[{"id":"DIALOGUE_1","purpose":"reveal","participants":["Thorne"]}]}').mockResolvedValue('{"content":{}}');
     await expect(writeScene(run, run.chapters[0], 0, llm)).rejects.toThrow('Missing required slot');
+  });
+});
+
+describe('Redundancy repair', () => {
+  it('repairs repetition by deleting, and refuses a pass that rewrites instead', async () => {
+    const run = runWithPlans();
+    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const draft = `${prose(1)} ${echoed}`;
+    const base = fixtureLLM();
+    let reviewed = 0;
+    const prompts: string[] = [];
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('never rewrite')) {
+        prompts.push(prompt);
+        // First a rewrite, which the contract must refuse; then an honest deletion.
+        return prompts.length === 1
+          ? JSON.stringify({ prose: `${prose(1)} She held the letter in her pocket as the register was read.` })
+          : JSON.stringify({ prose: prose(1) });
+      }
+      // Only chapter one carries the duplicate; the rest come from the fixture unchanged.
+      if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
+      if (system.includes('continuity and developmental') && ++reviewed === 1) return '{"issues":[]}';
+      return base(prompt, system, options);
+    });
+
+    await new NovelEngine(llm, new MemoryRunStore()).continue(run);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('This is a deletion pass');
+    const accepted = acceptedVersion(run.chapters[0])?.content ?? '';
+    expect(accepted).not.toContain('She held the letter in her pocket');
+    expect(accepted.split(echoed).length - 1).toBe(1);
   });
 });
 

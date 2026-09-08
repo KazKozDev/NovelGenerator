@@ -8,8 +8,28 @@ import { acceptCandidate, addCandidate, evidenceExists, nextUnacceptedChapter, r
 function fixture() {
   const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
   const chapter: ChapterRecord = { number: 1, plan: { title: 'A letter', summary: 'A choice', sceneBreakdown: 'one scene', characterDevelopmentFocus: 'trust', plotAdvancement: 'truth', timelineIndicators: 'evening', emotionalToneTension: 'tense', connectionToNextChapter: 'consequence' }, versions: [], status: 'draft', repairAttempts: 2 };
-  const filler = Array.from({ length: 30 }, (_, index) =>
-    `The window was open and the room stayed quiet for the ${index + 1} hour of that long afternoon.`).join(' ');
+  const filler = [
+    'She kept the letter folded in her pocket while the clerk read the register.',
+    'Rain moved along the gutter outside and nobody in the room looked up at it.',
+    'A clock behind the counter lost a second every hour and no one had fixed it.',
+    'The archive smelled of dust, old glue and the cold iron of the shelving.',
+    'Somebody had written a name on the ledger and then crossed it out twice.',
+    'Her boots left grey half-moons of water across the boards by the door.',
+    'The lamp above the desk buzzed whenever a tram passed in the street below.',
+    'He counted the coins into her palm slowly, as if the number might change.',
+    'Outside, a dog barked once and then thought better of barking again.',
+    'The window frame had swollen with damp and would not close all the way.',
+    'A child ran past the glass carrying something wrapped in newspaper.',
+    'She thought about the boat and about how long the repairs would take.',
+    'The clerk turned a page and the sound was louder than either of them expected.',
+    'Someone upstairs dragged a chair across the floor and then stopped.',
+    'The stove had gone out an hour ago and nobody had said anything about it.',
+    'She read the top line again, though she already knew what it said.',
+    'A moth circled the lamp twice and settled on the cold part of the shade.',
+    'The town outside went on with its afternoon without any interest in either of them.',
+  ].join(' ');
+
+
   const version = addCandidate(chapter, `Vera read the letter. ${filler}`, 'test');
   run.chapters = [chapter];
   return { run, chapter, version };
@@ -18,8 +38,8 @@ function fixture() {
 describe('Evidence verification tolerance', () => {
   it('accepts a real passage shortened with an elision marker or reflowed whitespace', () => {
     const { version } = fixture();
-    expect(evidenceExists({ chapter: 1, revision: version.revision, quote: 'Vera read the letter. The window was open...' }, 1, version)).toBe(true);
-    expect(evidenceExists({ chapter: 1, revision: version.revision, quote: 'Vera read the letter.\n   The window was open' }, 1, version)).toBe(true);
+    expect(evidenceExists({ chapter: 1, revision: version.revision, quote: 'Vera read the letter. She kept the letter folded...' }, 1, version)).toBe(true);
+    expect(evidenceExists({ chapter: 1, revision: version.revision, quote: 'Vera read the letter.\n   She kept the letter' }, 1, version)).toBe(true);
   });
   it('still rejects invented prose, the wrong revision and an unidentifiable fragment', () => {
     const { version } = fixture();
@@ -56,6 +76,12 @@ describe('Duplicate detection boundaries', () => {
     expect(duplicatePassages(`${refrain} The night went on. ${refrain}`)).toHaveLength(0);
   });
 
+  it('catches a restatement that was reworded rather than repeated', () => {
+    const first = 'Ray stood at the counter of the clinic and felt the night press against the glass.';
+    const reworded = 'Ray stood in the dark of the clinic and felt the night press against the glass.';
+    expect(duplicatePassages(`${first} He waited a while longer. ${reworded}`)).toHaveLength(1);
+  });
+
   it('catches a repeat that differs only in punctuation or spacing', () => {
     const sentence = 'Ray stood in the dark of the clinic and listened to the rain against the window.';
     const variant = 'Ray stood in the dark of the clinic and listened to the rain against the window';
@@ -77,9 +103,12 @@ describe('Deterministic duplicate check', () => {
     expect(version.content).toContain(issue!.evidence[0].quote);
   });
 
-  it('leaves a chapter alone when its sentences merely resemble one another', async () => {
+  it('leaves a chapter alone when two sentences share a subject but say different things', async () => {
     const { run, chapter, version } = fixture();
-    version.content = [line(1), line(2)].join(' ');
+    version.content = [
+      'Ray stood at the counter of the clinic and counted the notes into the drawer.',
+      'Ray drove out to the bayou before dawn with the radio off and the windows down.',
+    ].join(' ');
     const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
     expect(result.issues.some(item => item.id === 'duplicated-passage')).toBe(false);
   });

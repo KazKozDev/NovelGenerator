@@ -206,7 +206,10 @@ export class NovelEngine {
       }
       chapter.repairAttempts++;
       await this.checkpoint(run);
-      const content = await this.repair(run, chapter, candidate, candidate.review.issues);
+      const repetition = candidate.review.issues.filter(issue => issue.id === 'duplicated-passage' || /redundan|repetit|duplicat|identical/i.test(issue.description));
+      const content = repetition.length === candidate.review.issues.length
+        ? await this.removeRedundancy(run, chapter, candidate, repetition)
+        : await this.repair(run, chapter, candidate, candidate.review.issues);
       candidate = addCandidate(chapter, content, 'Repair reported chapter defects');
       await this.checkpoint(run);
     }
@@ -215,6 +218,27 @@ export class NovelEngine {
   private extractProse(text: string): string {
     // Remove only explicitly delimited model thinking. Never guess which story section to discard.
     return stripThinking(text);
+  }
+
+  /**
+   * Redundancy is repaired by deletion, never by rewriting. A model asked to rewrite a repeated beat
+   * produces a third version of it; asked to cut, it can only remove. The result is checked: every
+   * sentence kept must come from the chapter as it stood, and the chapter must actually get shorter.
+   */
+  private async removeRedundancy(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[]): Promise<string> {
+    const sentences = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const original = new Set(sentences(version.content));
+    // The contract is checked inside the call, so a pass that rewrites is told why and tries again.
+    return structuredResponse(`${specPrompt(run.spec)}\nTHESE PASSAGES SAY THE SAME THING TWICE:\n${JSON.stringify(issues)}\nFULL CURRENT PROSE:\n${version.content}\nReturn the chapter with the weaker occurrence of each repetition deleted. This is a deletion pass: you may remove sentences and you may remove nothing else. Do not reword, merge, summarize or bridge what remains; every sentence you keep must appear in the prose above exactly as it is written there. Keep the stronger occurrence of each pair, and keep the chapter's ending single and in one place.\nOUTPUT FORMAT: Return one JSON object with exactly the field "prose", containing the complete chapter after the deletions.`,
+      'You remove repeated passages from fiction by deleting them. You never rewrite.', this.llm, ['prose'], raw => {
+        if (typeof raw.prose !== 'string' || !raw.prose.trim()) throw new Error('Missing final prose.');
+        const cleaned = this.extractProse(raw.prose).trim();
+        const invented = sentences(cleaned).filter(item => !original.has(item));
+        if (invented.length) throw new Error(`This was a deletion pass, but ${invented.length} sentence(s) are not in the original. Return the original sentences you kept, unchanged, and delete the repetitions.`);
+        if (cleaned.length >= version.content.length) throw new Error('Nothing was removed. Delete the weaker occurrence of each repeated passage.');
+        return cleaned;
+      }, { temperature: 0.1, maxTokens: Math.max(8192, version.content.length), route: 'writer',
+           schema: { type: 'object', required: ['prose'], properties: { prose: { type: 'string' } }, additionalProperties: false } });
   }
 
   private async repair(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[], extra = ''): Promise<string> {

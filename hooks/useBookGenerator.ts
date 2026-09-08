@@ -108,8 +108,12 @@ export default function useBookGenerator() {
       run.stage = run.resumeStage || 'writing';
       update(run);
     }
-    run.provider = getStoredProviderConfig();
+    const nextProvider = getStoredProviderConfig();
+    const writerChanged = run.provider.ollamaModel !== nextProvider.ollamaModel || run.provider.provider !== nextProvider.provider;
+    run.provider = nextProvider;
     run.validationProvider = getStoredValidatorConfig();
+    // A chapter that spent its budget under one writer starts fresh under another.
+    if (writerChanged) for (const chapter of run.chapters) chapter.repairAttempts = 0;
     try {
       await action(run, makeEngine(run, token));
       if (epoch.current === token && run.stage === 'complete') playSuccessSound();
