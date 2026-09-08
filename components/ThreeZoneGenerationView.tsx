@@ -90,7 +90,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <SaveStatusIndicator generatedChapters={generatedChapters} savedAt={lastSavedAt || undefined} />
           )}
           {isLoading && (
-            <div className="flex items-center gap-2 text-zinc-400 text-xs font-mono">
+            <div className="flex items-center gap-2 text-zinc-400 text-xs">
               <LoadingSpinner className="!my-0 !h-3.5 !w-3.5" />
               <span>Generating</span>
             </div>
@@ -106,7 +106,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               type="button"
               onClick={onReset}
               title="Wipe all temporary generation state and start from clean slate"
-              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+              className="text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
             >
               Clean Slate
             </button>
@@ -126,7 +126,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         >
           <div className="shrink-0 flex items-baseline justify-between pb-2">
             <h3 className="text-xs font-semibold uppercase text-zinc-500">Chapters</h3>
-            <span className="text-xs font-mono text-zinc-500">
+            <span className="text-xs text-zinc-500">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
           </div>
@@ -161,14 +161,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isProcessing ? (
-                        <span className="flex items-center gap-1 text-xs text-zinc-300 font-medium font-mono">
+                        <span className="flex items-center gap-1 text-xs text-zinc-300 font-medium">
                           <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
                           Live
                         </span>
                       ) : isCompleted ? (
-                        <span className="text-zinc-400 text-xs font-medium font-mono">Accepted</span>
+                        <span className="text-zinc-400 text-xs font-medium">Accepted</span>
                       ) : (
-                        <span className="text-zinc-600 text-xs font-mono">{chapter?.content ? 'Needs review' : 'Pending'}</span>
+                        <span className="text-zinc-600 text-xs">{chapter?.content ? 'Needs review' : 'Pending'}</span>
                       )}
                     </div>
                   </button>
@@ -202,7 +202,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 <span>Story Outline</span>
                 <span className="text-xs text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
               </div>
-              <span className="text-xs font-mono">{showOutline ? '[-]' : '[+]'}</span>
+              <span className="text-xs">{showOutline ? '[-]' : '[+]'}</span>
             </button>
 
             {showOutline && (
@@ -232,7 +232,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           ) : (
             <div className="pt-8 px-6 font-serif text-prose max-w-[62ch] mx-auto text-zinc-500">
               <p>The story plan is being prepared. Each completed scene appears here before chapter review.</p>
-              <p className="text-xs mt-4 font-mono">{currentStep}</p>
+              <p className="text-xs mt-4">{currentStep}</p>
             </div>
           )}
         </div>
@@ -250,7 +250,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                   Agent Inspector
                 </h3>
               </div>
-              <span className="text-xs font-mono text-zinc-500">
+              <span className="text-xs text-zinc-500">
                 {agentLogs.length} events
               </span>
             </div>
@@ -259,14 +259,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
               <div className="py-1">
                 <div className="text-zinc-500 text-xs uppercase font-semibold">Specialists</div>
-                <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
+                <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                   Active
                 </div>
               </div>
               <div className="py-1">
                 <div className="text-zinc-500 text-xs uppercase font-semibold">Target</div>
-                <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
+                <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs">
                   Ch #{currentChapterProcessing || 1}
                 </div>
               </div>

@@ -65,7 +65,7 @@ export default function PlanView({ content, className = '' }: { content: string;
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="mt-3 text-xs font-mono uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="mt-3 text-xs uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Show full plan ({hidden} more)
         </button>
@@ -74,7 +74,7 @@ export default function PlanView({ content, className = '' }: { content: string;
         <button
           type="button"
           onClick={() => setExpanded(false)}
-          className="mt-3 text-xs font-mono uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="mt-3 text-xs uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Show less
         </button>

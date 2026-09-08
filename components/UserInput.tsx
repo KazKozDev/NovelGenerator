@@ -383,7 +383,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
-          <h2 className="text-xs font-semibold text-zinc-400 uppercaser">
+          <h2 className="text-xs font-semibold text-zinc-400 uppercase">
             How your manuscript develops
           </h2>
         </div>

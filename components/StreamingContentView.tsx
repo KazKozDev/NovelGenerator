@@ -26,7 +26,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
           <span>{title}</span>
         </h3>
         <div className="flex items-center gap-2">
-          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-xs font-mono">
+          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setViewMode('markdown')}
@@ -42,7 +42,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
               Raw
             </button>
           </div>
-          <span className="text-xs text-zinc-500 font-mono">
+          <span className="text-xs text-zinc-500">
             {wordCount.toLocaleString()} words
           </span>
         </div>
@@ -59,7 +59,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
             className="font-serif text-prose max-w-[62ch] mx-auto" 
           />
         ) : (
-          <div className="whitespace-pre-wrap text-xs  font-mono text-zinc-300 selection:bg-zinc-700/60">
+          <div className="whitespace-pre-wrap font-mono text-xs text-zinc-300 selection:bg-zinc-700/60">
             {content}
             <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse ml-1 align-middle" />
           </div>

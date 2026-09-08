@@ -66,21 +66,21 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       <div className="flex border-b border-zinc-800">
         <button
           onClick={() => setActiveTab('book')}
-          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
             ${activeTab === 'book' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Book Content
         </button>
         <button
           onClick={() => setActiveTab('timeline')}
-          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
             ${activeTab === 'timeline' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Timeline
         </button>
         <button
           onClick={() => setActiveTab('metadata')}
-          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
             ${activeTab === 'metadata' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Metadata
@@ -90,7 +90,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       {activeTab === 'book' && (
         <div className="p-4 border border-zinc-800 rounded">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-zinc-800/80 pb-3">
-            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs font-mono">
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs">
               <button
                 type="button"
                 onClick={() => setBookViewMode('rendered')}
@@ -151,7 +151,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto font-mono text-left">
+            <pre className="whitespace-pre-wrap text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto text-left">
               {bookContent}
             </pre>
           )}
@@ -170,7 +170,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
                       return (
                           <div key={chapterNum} className="mb-8 relative">
                               <div className="absolute -left-[39px] top-1 h-4 w-4 bg-zinc-400 rounded-full border-4 border-zinc-950" aria-hidden="true"></div>
-                              <p className="text-xs text-zinc-500 font-mono">{timelineEntry.endTimeOfChapter}</p>
+                              <p className="text-xs text-zinc-500">{timelineEntry.endTimeOfChapter}</p>
                               <h4 className="text-sm font-semibold text-zinc-300 mt-1 uppercase">
                                   Chapter {chapterNum}: {chapterInfo?.title || 'Untitled'}
                               </h4>
@@ -206,7 +206,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               Download .json
             </Button>
           </div>
-          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto font-mono">
+          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto">
             {metadataJson}
           </pre>
         </div>

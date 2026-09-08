@@ -99,7 +99,7 @@ const App: React.FC = () => {
             type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
-            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+            className="text-xs px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Clean Slate
           </button>
@@ -208,7 +208,7 @@ const App: React.FC = () => {
         {!isLoading && generatedChapters.length > 0 && <div className="shrink-0 max-h-[60vh] overflow-auto"><ManuscriptRevision chapters={generatedChapters} onRevise={reviseChapter} /></div>}
       </main>
       <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
-        <div className="text-center text-zinc-500 text-xs font-mono">
+        <div className="text-center text-zinc-500 text-xs">
           <p>
             &copy; {new Date().getFullYear()}{' '}
             <a 

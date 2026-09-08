@@ -41,7 +41,7 @@ const FeatureGrid: React.FC = () => {
           key={index}
           className="bg-zinc-900 border border-zinc-800 rounded p-4 transition-colors"
         >
-          <div className="text-xs font-mono text-zinc-500 mb-2 uppercaser">
+          <div className="text-xs text-zinc-500 mb-2 uppercase">
             {feature.icon}
           </div>
           <h3 className="text-zinc-300 font-medium text-sm mb-1.5">
