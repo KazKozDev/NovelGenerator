@@ -93,9 +93,9 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="border border-zinc-800 rounded p-4 md:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+            <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
-              <span>AI Provider</span>
+              <span>AI provider</span>
             </h3>
             <p className="text-xs text-zinc-500">Choose inference provider (Google Gemini or Local Ollama)</p>
           </div>
@@ -111,7 +111,7 @@ const UserInput: React.FC<UserInputProps> = ({
               className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
                 providerConfig.provider === 'gemini'
                   ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
+                  : 'text-zinc-400 hover:text-zinc-300'
               }`}
             >
               Google Gemini
@@ -126,7 +126,7 @@ const UserInput: React.FC<UserInputProps> = ({
               className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
                 providerConfig.provider === 'ollama'
                   ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
+                  : 'text-zinc-400 hover:text-zinc-300'
               }`}
             >
               Ollama (Local)
@@ -139,7 +139,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">
+                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
                   Ollama Endpoint / Proxy
                 </label>
                 <Input
@@ -153,21 +153,21 @@ const UserInput: React.FC<UserInputProps> = ({
                   placeholder="/api/ollama"
                   className="text-xs py-1.5"
                 />
-                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
+                <p className="text-xs text-zinc-500 mt-1">
                   Default /api/ollama (proxied via Vite without CORS)
                 </p>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-zinc-300">
+                  <label className="block text-sm font-medium text-zinc-400">
                     Ollama Model
                   </label>
                   <button
                     type="button"
                     onClick={handleFetchOllamaModels}
                     disabled={isFetchingModels}
-                    className="text-[11px] text-zinc-400 hover:text-zinc-200 underline font-mono font-medium flex items-center gap-1 disabled:opacity-50"
+                    className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
                   >
                     {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
                   </button>
@@ -202,7 +202,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     className="text-xs py-1.5"
                   />
                 )}
-                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
+                <p className="text-xs text-zinc-500 mt-1">
                   {ollamaModels.length > 0
                     ? `Selected from ${ollamaModels.length} locally installed models`
                     : `Click "Fetch Ollama Models" to retrieve models`}
@@ -212,7 +212,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
             {fetchStatus && (
               <div
-                className={`text-xs px-3 py-2 rounded font-mono ${
+                className={`text-xs px-3 py-2 rounded ${
                   fetchStatus.success
                     ? 'bg-emerald-950/40 text-emerald-300/90 border border-emerald-900/60'
                     : 'bg-red-950/40 text-red-300/90 border border-red-900/60'
@@ -227,10 +227,10 @@ const UserInput: React.FC<UserInputProps> = ({
         <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h4 className="text-sm font-semibold text-zinc-200">Editor model</h4>
+              <h4 className="text-base font-semibold text-zinc-100">Editor model</h4>
               <p className="text-xs text-zinc-500">Reviews chapters, extracts canon and audits the book</p>
             </div>
-            <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
               <input type="checkbox" checked={validator.enabled}
                 onChange={event => updateValidator({ enabled: event.target.checked })} />
               Use a separate model
@@ -238,13 +238,13 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
 
           {!validator.enabled ? (
-            <p className="text-[11px] text-amber-300/80 font-mono">
+            <p className="text-xs text-zinc-400">
               The writer will review its own prose. A second model catches contradictions the writer cannot see.
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
               <div>
-                <label htmlFor="validatorProvider" className="block text-xs font-medium text-zinc-300 mb-1">Provider</label>
+                <label htmlFor="validatorProvider" className="block text-sm font-medium text-zinc-400 mb-1.5">Provider</label>
                 <Select id="validatorProvider" value={validator.provider} className="text-xs py-1.5"
                   onChange={event => updateValidator({ provider: event.target.value as LLMProviderConfig['provider'] })}>
                   <option value="gemini">Google Gemini</option>
@@ -253,7 +253,7 @@ const UserInput: React.FC<UserInputProps> = ({
               </div>
               {validator.provider === 'ollama' && (
                 <div>
-                  <label htmlFor="validatorModel" className="block text-xs font-medium text-zinc-300 mb-1">Model</label>
+                  <label htmlFor="validatorModel" className="block text-sm font-medium text-zinc-400 mb-1.5">Model</label>
                   {ollamaModels.length > 0 ? (
                     <Select id="validatorModel" value={validator.ollamaModel} className="text-xs py-1.5"
                       onChange={event => updateValidator({ ollamaModel: event.target.value })}>
@@ -267,12 +267,12 @@ const UserInput: React.FC<UserInputProps> = ({
                 </div>
               )}
               <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-xs text-zinc-300">
+                <label className="flex items-center gap-2 text-sm text-zinc-400">
                   <input type="checkbox" checked={Boolean(validator.think)}
                     onChange={event => updateValidator({ think: event.target.checked })} />
                   Let the editor think before answering
                 </label>
-                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
+                <p className="text-xs text-zinc-500 mt-1">
                   A reasoning model asked to judge with thinking off returns an empty review. Its reasoning is
                   returned separately and never reaches the manuscript.
                 </p>
@@ -283,8 +283,8 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div>
-        <label htmlFor="storyPremise" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
-          Story Premise
+        <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-400 mb-1.5">
+          Story premise
         </label>
         <TextArea
           id="storyPremise"
@@ -300,7 +300,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="genre" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
+          <label htmlFor="genre" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Genre
           </label>
           <Select
@@ -317,7 +317,7 @@ const UserInput: React.FC<UserInputProps> = ({
         </div>
 
         <div>
-          <label htmlFor="numChapters" className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
+          <label htmlFor="numChapters" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Number of Chapters
           </label>
           <Input
@@ -341,31 +341,31 @@ const UserInput: React.FC<UserInputProps> = ({
             ['writingStyle', 'Style and voice notes', 'descriptive'],
           ] as const).map(([key, label, fallback]) => (
             <div key={key}>
-              <label htmlFor={key} className="block text-xs text-zinc-300 mb-1">{label}</label>
+              <label htmlFor={key} className="block text-sm font-medium text-zinc-400 mb-1.5">{label}</label>
               <Input id={key} value={storySettings[key] || fallback}
                 onChange={event => setStorySettings({ ...storySettings, [key]: event.target.value })} />
             </div>
           ))}
           <div>
-            <label htmlFor="targetWords" className="block text-xs text-zinc-300 mb-1">Target words per chapter</label>
+            <label htmlFor="targetWords" className="block text-sm font-medium text-zinc-400 mb-1.5">Target words per chapter</label>
             <Input id="targetWords" type="number" min={300} max={10000} step={100}
               value={storySettings.targetWordsPerChapter || 4000}
               onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
           </div>
           <div>
-            <label htmlFor="tense" className="block text-xs text-zinc-300 mb-1">Tense</label>
+            <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>
             <Select id="tense" value={storySettings.tense || 'past'} onChange={event => setStorySettings({ ...storySettings, tense: event.target.value as StorySettings['tense'] })}>
               <option value="past">Past</option><option value="present">Present</option>
             </Select>
           </div>
           <div>
-            <label htmlFor="ending" className="block text-xs text-zinc-300 mb-1">Ending</label>
+            <label htmlFor="ending" className="block text-sm font-medium text-zinc-400 mb-1.5">Ending</label>
             <Select id="ending" value={storySettings.ending || 'closed'} onChange={event => setStorySettings({ ...storySettings, ending: event.target.value as StorySettings['ending'] })}>
               <option value="closed">Resolved</option><option value="open">Intentionally open</option><option value="series">Part of a series</option>
             </Select>
           </div>
           <div className="md:col-span-2">
-            <label htmlFor="writingMode" className="block text-xs text-zinc-300 mb-1">Writing approach</label>
+            <label htmlFor="writingMode" className="block text-sm font-medium text-zinc-400 mb-1.5">Writing approach</label>
             <Select id="writingMode" value={storySettings.writingMode || 'slots'} onChange={event => setStorySettings({ ...storySettings, writingMode: event.target.value as StorySettings['writingMode'] })}>
               <option value="slots">Specialist contributions, unified scene synthesis</option>
               <option value="scenes">Single writer per scene (experimental)</option>
@@ -383,36 +383,36 @@ const UserInput: React.FC<UserInputProps> = ({
 
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
-          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          <h2 className="text-xs font-semibold text-zinc-400 uppercaser">
             How your manuscript develops
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. Master Story Outline</h3>
-            <p className="text-xs text-zinc-500 leading-relaxed">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Master Story Outline</h3>
+            <p className="text-xs text-zinc-500">
               Establishes premise, characters, central conflicts, recurring motifs, and comprehensive chapter-by-chapter plans.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Scene writing</h3>
-            <p className="text-xs text-zinc-500 leading-relaxed">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Scene writing</h3>
+            <p className="text-xs text-zinc-500">
               Each scene follows its characters’ goals, conflicts and consequential choices in your requested voice.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Continuity and revision</h3>
-            <p className="text-xs text-zinc-500 leading-relaxed">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Continuity and revision</h3>
+            <p className="text-xs text-zinc-500">
               Accepted passages establish the story’s facts. Revisions trigger fresh checks of affected chapters.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Quality & Export</h3>
-            <p className="text-xs text-zinc-500 leading-relaxed">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Quality & Export</h3>
+            <p className="text-xs text-zinc-500">
               Whole-book review checks setup, payoff and the ending before EPUB, Markdown or PDF export.
             </p>
           </div>

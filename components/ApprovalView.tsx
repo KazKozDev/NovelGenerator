@@ -25,7 +25,7 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
-        <h2 className="text-base font-semibold text-zinc-100 uppercase tracking-wide">{title}</h2>
+        <h2 className="text-base font-semibold text-zinc-100 uppercase">{title}</h2>
         <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs font-mono self-start sm:self-auto">
           <button
             type="button"
@@ -45,7 +45,7 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
       </div>
       
       <div className="p-4 border border-zinc-800 rounded">
-        <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
+        <p className="text-xs text-zinc-400 mb-3">
           The outline defines the narrative arc and chapter milestones. You may edit the structure directly below before approving generation.
         </p>
         {tab === 'edit' ? (
@@ -53,12 +53,12 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
             rows={30}
-            className="min-h-[550px] font-mono text-xs text-zinc-200"
+            className="min-h-[550px] font-mono text-xs text-zinc-300"
             disabled={isLoading}
           />
         ) : (
           <div className="min-h-[550px] max-h-[70vh] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded text-left">
-            <MarkdownView content={content} className="text-sm font-serif leading-relaxed" />
+            <MarkdownView content={content} className="font-serif text-prose max-w-[62ch] mx-auto" />
           </div>
         )}
       </div>

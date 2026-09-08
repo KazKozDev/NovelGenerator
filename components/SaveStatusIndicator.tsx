@@ -27,7 +27,7 @@ const SaveStatusIndicator: React.FC<SaveStatusIndicatorProps> = ({ generatedChap
   return (
     <div className="flex items-center gap-2 shrink-0" role="status" aria-live="polite">
       <span className={`w-1.5 h-1.5 rounded-full ${inProgress ? 'bg-zinc-400 animate-pulse' : 'bg-zinc-600'}`} />
-      <span className="text-[11px] font-mono text-zinc-500 whitespace-nowrap">
+      <span className="text-xs font-mono text-zinc-500 whitespace-nowrap">
         {inProgress ? 'auto-saving' : 'saved'}{stamp ? ` · ${stamp}` : ''}
       </span>
     </div>

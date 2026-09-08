@@ -54,8 +54,8 @@ export default function PlanView({ content, className = '' }: { content: string;
       <dl className="space-y-3">
         {shown.map(entry => (
           <div key={entry.key}>
-            <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{entry.label}</dt>
-            <dd className={`text-xs text-zinc-300 leading-relaxed mt-1 ${!expanded && entry.key === 'summary' ? 'line-clamp-4' : ''}`}>
+            <dt className="text-xs font-semibold uppercase text-zinc-500">{entry.label}</dt>
+            <dd className={`text-xs text-zinc-300 mt-1 ${!expanded && entry.key === 'summary' ? 'line-clamp-4' : ''}`}>
               {entry.value}
             </dd>
           </div>
@@ -65,7 +65,7 @@ export default function PlanView({ content, className = '' }: { content: string;
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="mt-3 text-[10px] font-mono uppercase tracking-[0.14em] text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="mt-3 text-xs font-mono uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Show full plan ({hidden} more)
         </button>
@@ -74,7 +74,7 @@ export default function PlanView({ content, className = '' }: { content: string;
         <button
           type="button"
           onClick={() => setExpanded(false)}
-          className="mt-3 text-[10px] font-mono uppercase tracking-[0.14em] text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="mt-3 text-xs font-mono uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Show less
         </button>

@@ -83,15 +83,15 @@ const App: React.FC = () => {
   const isStudioLayout = showProgress;
 
   return (
-    <div className={`w-full bg-zinc-950 text-zinc-200 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
+    <div className={`w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl md:text-3xl font-semibold text-zinc-100 tracking-tight">
+            <h1 className="text-lg  font-semibold text-zinc-100">
               NovelGenerator
             </h1>
-            <span className="inline-flex items-center px-1.5 py-0 rounded bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-[10px]">
+            <span className="inline-flex items-center px-1.5 py-0 rounded bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-xs">
               v4.2
             </span>
           </div>
@@ -101,13 +101,13 @@ const App: React.FC = () => {
             type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
-            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+            className="text-xs font-mono px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Clean Slate
           </button>
           </div>
         </div>
-        <p className="text-zinc-500 text-xs md:text-sm text-left">
+        <p className="text-zinc-500 text-xs  text-left">
           From an approved outline to a reviewed manuscript in your voice.
         </p>
       </header>
@@ -122,7 +122,7 @@ const App: React.FC = () => {
 
             <button
               onClick={handleReset}
-              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs transition-colors"
+              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
             >
               Start a new book
             </button>
@@ -210,14 +210,14 @@ const App: React.FC = () => {
         {!isLoading && generatedChapters.length > 0 && <div className="shrink-0 max-h-[60vh] overflow-auto"><ManuscriptRevision chapters={generatedChapters} onRevise={reviseChapter} /></div>}
       </main>
       <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
-        <div className="text-center text-zinc-500 text-[10px] font-mono">
+        <div className="text-center text-zinc-500 text-xs font-mono">
           <p>
             &copy; {new Date().getFullYear()}{' '}
             <a 
               href="https://github.com/KazKozDev" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-zinc-400 hover:text-zinc-200 transition-colors duration-200 underline decoration-dotted"
+              className="text-zinc-400 hover:text-zinc-300 transition-colors duration-200 underline decoration-dotted"
             >
               KazKozDev
             </a>

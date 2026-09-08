@@ -21,12 +21,12 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   return (
     <div className={`p-3 md:p-4 rounded border border-zinc-800 flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
       <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2.5 mb-2.5">
-        <h3 className="font-semibold text-zinc-200 text-xs md:text-sm flex items-center gap-2 tracking-wide font-sans uppercase">
+        <h3 className="font-semibold text-zinc-300 text-xs  flex items-center gap-2 uppercase">
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
           <span>{title}</span>
         </h3>
         <div className="flex items-center gap-2">
-          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-[10px] font-mono">
+          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-xs font-mono">
             <button
               type="button"
               onClick={() => setViewMode('markdown')}
@@ -42,24 +42,24 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
               Raw
             </button>
           </div>
-          <span className="text-[11px] text-zinc-500 font-mono">
+          <span className="text-xs text-zinc-500 font-mono">
             {wordCount.toLocaleString()} words
           </span>
         </div>
       </div>
       <div className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
         {!content ? (
-          <div className="pt-8 font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto text-zinc-500">
+          <div className="pt-8 font-serif text-prose max-w-[62ch] mx-auto text-zinc-500">
             <p>Specialist passages are being written. The finished scene appears here on synthesis.</p>
           </div>
         ) : viewMode === 'markdown' ? (
           <MarkdownView 
             content={content} 
             isStreaming={true} 
-            className="font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto" 
+            className="font-serif text-prose max-w-[62ch] mx-auto" 
           />
         ) : (
-          <div className="whitespace-pre-wrap text-xs md:text-sm font-mono text-zinc-300 leading-relaxed selection:bg-zinc-700/60">
+          <div className="whitespace-pre-wrap text-xs  font-mono text-zinc-300 selection:bg-zinc-700/60">
             {content}
             <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse ml-1 align-middle" />
           </div>

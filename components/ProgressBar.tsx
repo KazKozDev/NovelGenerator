@@ -12,7 +12,7 @@ export default function ProgressBar({ currentStep, currentChapterProcessing, tot
   const label = currentStep === GenerationStep.GeneratingChapters && currentChapterProcessing
     ? `Writing and reviewing chapter ${currentChapterProcessing} of ${totalChaptersToProcess}` : currentStep;
   return (
-    <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase truncate" role="status" aria-live="polite">
+    <p className="text-zinc-300 text-xs font-medium uppercase truncate" role="status" aria-live="polite">
       {label}
     </p>
   );

@@ -67,13 +67,13 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   const showInspector = agentLogs.length > 0;
 
   return (
-    <div className="w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-200 overflow-hidden">
+    <div className="w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-300 overflow-hidden">
       {/* One status strip: the step, the save state, the only global action. */}
       <div className="shrink-0 flex items-center justify-between gap-4 border-b border-zinc-800 pb-1.5">
         <div className="flex items-baseline gap-3 min-w-0">
-          <span className="text-lg font-semibold text-zinc-100 tracking-tight leading-none shrink-0">NovelGenerator</span>
+          <span className="text-lg font-semibold text-zinc-100 shrink-0">NovelGenerator</span>
           {version && (
-            <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+            <span className="shrink-0 font-mono text-xs text-zinc-500">
               {version}
             </span>
           )}
@@ -106,7 +106,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               type="button"
               onClick={onReset}
               title="Wipe all temporary generation state and start from clean slate"
-              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
             >
               Clean Slate
             </button>
@@ -125,8 +125,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           className="lg:col-span-2 flex flex-col h-full min-h-0 pr-4 text-left overflow-hidden"
         >
           <div className="shrink-0 flex items-baseline justify-between pb-2">
-            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Chapters</h3>
-            <span className="text-[11px] font-mono text-zinc-500">
+            <h3 className="text-xs font-semibold uppercase text-zinc-500">Chapters</h3>
+            <span className="text-xs font-mono text-zinc-500">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
           </div>
@@ -161,14 +161,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isProcessing ? (
-                        <span className="flex items-center gap-1 text-[11px] text-zinc-300 font-medium font-mono">
+                        <span className="flex items-center gap-1 text-xs text-zinc-300 font-medium font-mono">
                           <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
                           Live
                         </span>
                       ) : isCompleted ? (
-                        <span className="text-zinc-400 text-[11px] font-medium font-mono">Accepted</span>
+                        <span className="text-zinc-400 text-xs font-medium font-mono">Accepted</span>
                       ) : (
-                        <span className="text-zinc-600 text-[11px] font-mono">{chapter?.content ? 'Needs review' : 'Pending'}</span>
+                        <span className="text-zinc-600 text-xs font-mono">{chapter?.content ? 'Needs review' : 'Pending'}</span>
                       )}
                     </div>
                   </button>
@@ -180,11 +180,11 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           {/* Active Chapter Plan */}
           <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+              <span className="text-xs font-semibold uppercase text-zinc-500">
                 Plan · Ch {activeChapterNum}
               </span>
             </div>
-            <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto leading-relaxed">
+            <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto">
               <PlanView
                 content={activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...'}
               />
@@ -196,17 +196,17 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <button
               type="button"
               onClick={() => setShowOutline(!showOutline)}
-              className="shrink-0 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 hover:text-zinc-200 transition-colors"
+              className="shrink-0 flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               <div className="flex items-center gap-1.5">
                 <span>Story Outline</span>
-                <span className="text-[10px] text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
+                <span className="text-xs text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
               </div>
-              <span className="text-[10px] font-mono">{showOutline ? '[-]' : '[+]'}</span>
+              <span className="text-xs font-mono">{showOutline ? '[-]' : '[+]'}</span>
             </button>
 
             {showOutline && (
-              <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto leading-relaxed animate-fade-in">
+              <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto animate-fade-in">
                 <MarkdownView
                   content={currentStoryOutline || 'No outline generated yet.'}
                   className="text-xs"
@@ -230,9 +230,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               fullHeight={true}
             />
           ) : (
-            <div className="pt-8 px-6 font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto text-zinc-500">
+            <div className="pt-8 px-6 font-serif text-prose max-w-[62ch] mx-auto text-zinc-500">
               <p>The story plan is being prepared. Each completed scene appears here before chapter review.</p>
-              <p className="text-[11px] mt-4 font-mono">{currentStep}</p>
+              <p className="text-xs mt-4 font-mono">{currentStep}</p>
             </div>
           )}
         </div>
@@ -246,11 +246,11 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <div className="shrink-0 flex items-baseline justify-between pb-2">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-zinc-400" />
-                <h3 className="font-semibold text-zinc-200 text-xs tracking-wider uppercase">
+                <h3 className="font-semibold text-zinc-300 text-xsr uppercase">
                   Agent Inspector
                 </h3>
               </div>
-              <span className="text-[11px] font-mono text-zinc-500">
+              <span className="text-xs font-mono text-zinc-500">
                 {agentLogs.length} events
               </span>
             </div>
@@ -258,14 +258,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             {/* Quick Agent Status Telemetry */}
             <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
               <div className="py-1">
-                <div className="text-zinc-500 text-[10px] uppercase font-semibold">Specialists</div>
+                <div className="text-zinc-500 text-xs uppercase font-semibold">Specialists</div>
                 <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                   Active
                 </div>
               </div>
               <div className="py-1">
-                <div className="text-zinc-500 text-[10px] uppercase font-semibold">Target</div>
+                <div className="text-zinc-500 text-xs uppercase font-semibold">Target</div>
                 <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
                   Ch #{currentChapterProcessing || 1}
                 </div>
@@ -278,7 +278,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 <AgentActivityLog logs={agentLogs} />
               </div>
             ) : (
-              <div className="pt-3 text-zinc-500 text-[11px] font-mono">
+              <div className="pt-3 text-zinc-500 text-xs">
                 <span>Awaiting agent telemetry...</span>
               </div>
             )}

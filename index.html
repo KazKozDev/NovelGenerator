@@ -22,6 +22,18 @@
       tailwind.config = {
         theme: {
           extend: {
+            // One scale for the whole interface. Four steps carry every label, control and reading
+            // in the UI; the manuscript has its own step because it is set for reading, not for use.
+            // Type scale from IBM Carbon's algorithm (12, 14, 16, 18, 20, 24...), with every line
+            // height snapped to the 4px baseline grid so text aligns across columns. Letter spacing
+            // opens up at small sizes and closes at large ones, as the same system prescribes.
+            fontSize: {
+              xs: ['12px', { lineHeight: '16px', letterSpacing: '0.32px' }],  // meta, counts, helper text
+              sm: ['14px', { lineHeight: '20px', letterSpacing: '0.16px' }],  // labels, secondary text
+              base: ['16px', { lineHeight: '24px', letterSpacing: '0' }],     // controls and body
+              lg: ['20px', { lineHeight: '28px', letterSpacing: '0' }],       // section and panel headings
+              prose: ['20px', { lineHeight: '32px', letterSpacing: '0' }],    // the manuscript
+            },
             colors: {
               zinc: {
                 50: 'rgb(var(--z-50) / <alpha-value>)',
@@ -67,8 +79,15 @@
         height: 100%;
         min-height: 100%;
       }
+      /* Form controls do not inherit typography by default, which drops them off the grid. */
+      button, input, select, textarea {
+        font: inherit;
+        letter-spacing: inherit;
+      }
       body {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 24px;
       }
       /* Custom scrollbars in zinc dark theme */
       ::-webkit-scrollbar {
@@ -129,8 +148,8 @@
       }
       .markdown-content p {
         color: rgb(var(--z-300));
-        line-height: 1.8;
-        margin-bottom: 1.15em;
+        line-height: 32px;
+        margin-bottom: 16px;
         text-wrap: pretty;
       }
       .markdown-content p:last-child {
@@ -160,7 +179,7 @@
       }
       .markdown-content li {
         margin-bottom: 0.25rem;
-        line-height: 1.6;
+        line-height: 24px;
       }
       .markdown-content blockquote {
         border-left: 3px solid rgb(var(--z-700));

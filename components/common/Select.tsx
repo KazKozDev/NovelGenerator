@@ -17,7 +17,7 @@ export const Select: React.FC<SelectProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-300 mb-1">
+        <label className="block text-xs font-semibold uppercaser text-zinc-300 mb-1">
           {label}
         </label>
       )}

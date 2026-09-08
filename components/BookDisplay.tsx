@@ -57,7 +57,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-xl font-semibold text-zinc-100 uppercase tracking-wide mb-4">Generation Complete</h2>
+        <h2 className="text-lg font-semibold text-zinc-100 uppercase mb-4">Generation Complete</h2>
         
         {/* Book Statistics */}
         <BookStatistics bookContent={bookContent} metadata={metadata} />
@@ -66,21 +66,21 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       <div className="flex border-b border-zinc-800">
         <button
           onClick={() => setActiveTab('book')}
-          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
             ${activeTab === 'book' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Book Content
         </button>
         <button
           onClick={() => setActiveTab('timeline')}
-          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
             ${activeTab === 'timeline' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Timeline
         </button>
         <button
           onClick={() => setActiveTab('metadata')}
-          className={`py-2 px-4 text-xs font-semibold uppercase tracking-wider transition-colors duration-150
+          className={`py-2 px-4 text-xs font-semibold uppercaser transition-colors duration-150
             ${activeTab === 'metadata' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Metadata
@@ -147,11 +147,11 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             <div className="bg-zinc-900 border border-zinc-800 p-6 rounded max-h-[65vh] overflow-y-auto text-left">
               <MarkdownView 
                 content={bookContent} 
-                className="font-serif leading-relaxed text-sm md:text-base" 
+                className="font-serif text-prose max-w-[62ch] mx-auto" 
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap text-xs md:text-sm text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto font-mono leading-relaxed text-left">
+            <pre className="whitespace-pre-wrap text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto font-mono text-left">
               {bookContent}
             </pre>
           )}
@@ -160,7 +160,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
 
       {activeTab === 'timeline' && (
         <div className="p-4 border border-zinc-800 rounded max-h-[60vh] overflow-y-auto">
-          <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wide mb-6 text-center">Narrative Timeline</h3>
+          <h3 className="text-sm font-semibold text-zinc-300 uppercase mb-6 text-center">Narrative Timeline</h3>
           {timelineData && chapterSummaries ? (
               <div className="relative pl-8 border-l-2 border-zinc-700">
                   {Object.entries(timelineData).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([chapterNum, rawTimelineEntry]) => {
@@ -171,7 +171,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
                           <div key={chapterNum} className="mb-8 relative">
                               <div className="absolute -left-[39px] top-1 h-4 w-4 bg-zinc-400 rounded-full border-4 border-zinc-950" aria-hidden="true"></div>
                               <p className="text-xs text-zinc-500 font-mono">{timelineEntry.endTimeOfChapter}</p>
-                              <h4 className="text-sm font-semibold text-zinc-200 mt-1 uppercase tracking-wide">
+                              <h4 className="text-sm font-semibold text-zinc-300 mt-1 uppercase">
                                   Chapter {chapterNum}: {chapterInfo?.title || 'Untitled'}
                               </h4>
                               <div className="mt-2 text-zinc-400 text-xs space-y-1 pl-2 border-l-2 border-zinc-800 ml-1">
