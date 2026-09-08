@@ -5,7 +5,7 @@ import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
-import { getStoredProviderConfig, saveStoredProviderConfig } from '../services/llmService';
+import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
@@ -35,6 +35,16 @@ const UserInput: React.FC<UserInputProps> = ({
   isLoading,
 }) => {
   const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
+  const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
+    const stored = getStoredValidatorConfig();
+    return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? true, enabled: Boolean(stored) };
+  });
+
+  const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
+    const next = { ...validator, ...change };
+    setValidator(next);
+    saveStoredValidatorConfig(next.enabled ? next : undefined);
+  };
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -213,6 +223,63 @@ const UserInput: React.FC<UserInputProps> = ({
             )}
           </div>
         )}
+
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-zinc-200">Editor model</h4>
+              <p className="text-xs text-zinc-500">Reviews chapters, extracts canon and audits the book</p>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <input type="checkbox" checked={validator.enabled}
+                onChange={event => updateValidator({ enabled: event.target.checked })} />
+              Use a separate model
+            </label>
+          </div>
+
+          {!validator.enabled ? (
+            <p className="text-[11px] text-amber-300/80 font-mono">
+              The writer will review its own prose. A second model catches contradictions the writer cannot see.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
+              <div>
+                <label htmlFor="validatorProvider" className="block text-xs font-medium text-zinc-300 mb-1">Provider</label>
+                <Select id="validatorProvider" value={validator.provider} className="text-xs py-1.5"
+                  onChange={event => updateValidator({ provider: event.target.value as LLMProviderConfig['provider'] })}>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="ollama">Ollama</option>
+                </Select>
+              </div>
+              {validator.provider === 'ollama' && (
+                <div>
+                  <label htmlFor="validatorModel" className="block text-xs font-medium text-zinc-300 mb-1">Model</label>
+                  {ollamaModels.length > 0 ? (
+                    <Select id="validatorModel" value={validator.ollamaModel} className="text-xs py-1.5"
+                      onChange={event => updateValidator({ ollamaModel: event.target.value })}>
+                      {ollamaModels.map(model => <option key={model} value={model}>{model}</option>)}
+                    </Select>
+                  ) : (
+                    <Input id="validatorModel" type="text" value={validator.ollamaModel} className="text-xs py-1.5"
+                      placeholder="gemma4:31b-cloud"
+                      onChange={event => updateValidator({ ollamaModel: event.target.value })} />
+                  )}
+                </div>
+              )}
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-2 text-xs text-zinc-300">
+                  <input type="checkbox" checked={Boolean(validator.think)}
+                    onChange={event => updateValidator({ think: event.target.checked })} />
+                  Let the editor think before answering
+                </label>
+                <p className="text-[11px] text-zinc-500 mt-1 font-mono">
+                  A reasoning model asked to judge with thinking off returns an empty review. Its reasoning is
+                  returned separately and never reaches the manuscript.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div>

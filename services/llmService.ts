@@ -32,6 +32,40 @@ export function getStoredProviderConfig(): LLMProviderConfig {
   }
 }
 
+const VALIDATOR_STORAGE_KEY = 'novelGenerator_validator_config';
+
+/**
+ * The editor model, when the author wants one distinct from the writer. Undefined means the writer
+ * also judges its own prose, which is the weakest configuration and never the recommended one.
+ */
+export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = localStorage.getItem(VALIDATOR_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.enabled === false) return undefined;
+    return {
+      provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
+      ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      think: Boolean(parsed.think),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveStoredValidatorConfig(config: (LLMProviderConfig & { enabled: boolean }) | undefined): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!config) localStorage.removeItem(VALIDATOR_STORAGE_KEY);
+    else localStorage.setItem(VALIDATOR_STORAGE_KEY, JSON.stringify(config));
+  } catch (err) {
+    console.error('Failed to save editor model config to localStorage:', err);
+  }
+}
+
 export function saveStoredProviderConfig(config: LLMProviderConfig): void {
   if (typeof window === 'undefined') return;
   try {

@@ -3,6 +3,19 @@
 The production path is `App → useBookGenerator → utils/novel/engine.ts`.
 React renders committed snapshots; it does not calculate canon or sequence model calls.
 
+## Model roles
+
+Two roles, configured independently: the **writer** produces prose, the **editor** reviews
+chapters, extracts canon and audits the book. `NovelLLM` carries `route: 'writer' | 'validator'`
+and the caller resolves it to `run.provider` or `run.validationProvider`. Without an editor the
+writer judges its own prose, and a model that grades itself is the configuration this pipeline
+exists to avoid.
+
+Thinking belongs to the role, not to a model name: `LLMProviderConfig.think` is set on the
+editor and never on the writer. A reasoning model asked to judge with thinking disabled returns
+an empty review; Ollama returns its reasoning in `message.thinking`, which `readOllamaCompletion`
+never reads, so it cannot reach the manuscript.
+
 ## Author contract and planning
 
 `BookSpec` freezes premise, chapter count, genre, audience, language, POV, tense,

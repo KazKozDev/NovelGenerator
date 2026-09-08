@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry } from '../types';
-import { generateText, getStoredProviderConfig } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import { createBookSpec, type NovelRun } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { BrowserRunStore, type RunStore } from '../utils/novel/runStore';
@@ -108,6 +108,7 @@ export default function useBookGenerator() {
       run.stage = run.resumeStage || 'writing';
       update(run);
     }
+    run.validationProvider = getStoredValidatorConfig();
     try {
       await action(run, makeEngine(run, token));
       if (epoch.current === token && run.stage === 'complete') playSuccessSound();
@@ -123,6 +124,7 @@ export default function useBookGenerator() {
     if (runRef.current) return continueGeneration();
     try {
       const run = createRun(createBookSpec(premise, count, storySettings), getStoredProviderConfig());
+      run.validationProvider = getStoredValidatorConfig();
       runRef.current = run;
       update(run);
       await execute(async (state, engine) => { await storeRef.current.save(state); await engine.outline(state); });
