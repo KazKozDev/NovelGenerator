@@ -8,7 +8,10 @@ import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
 
 const provider = { provider: 'ollama' as const, ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'fixture' };
-const prose = (number: number) => `Thorne opened door ${number}. ` + 'She kept the letter folded in her pocket while the clerk read the register. '.repeat(18) + 'The price was hers to pay.';
+const prose = (number: number) => `Thorne opened door ${number}. ` +
+  Array.from({ length: 18 }, (_, index) =>
+    `She kept the letter folded in her pocket while the clerk read entry ${index + 1} of the register.`).join(' ') +
+  ' The price was hers to pay.';
 function plan(number: number) {
   return {
     title: `Door ${number}`, summary: `Thorne opens door ${number}.`, sceneBreakdown: 'An encounter at the archive.',

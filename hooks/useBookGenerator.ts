@@ -108,6 +108,7 @@ export default function useBookGenerator() {
       run.stage = run.resumeStage || 'writing';
       update(run);
     }
+    run.provider = getStoredProviderConfig();
     run.validationProvider = getStoredValidatorConfig();
     try {
       await action(run, makeEngine(run, token));

@@ -116,6 +116,26 @@ const foreignScripts = [
   { name: 'Hebrew', pattern: /[\u0590-\u05ff]/, languages: ['hebrew', 'yiddish'] },
 ];
 
+/**
+ * Near-duplicate sentences inside one chapter. Repairs return the whole chapter, and a model asked
+ * to fix a passage tends to add its improved version beside the old one rather than replace it, so
+ * the same beat accumulates. Matching finds this every time; a sampled reviewer only sometimes does.
+ */
+export function duplicatePassages(content: string): { first: string; second: string }[] {
+  const sentences = content.split(/(?<=[.!?…])\s+/).map(text => text.trim()).filter(text => text.split(/\s+/).length >= 8);
+  const seen = new Map<string, string>();
+  const found: { first: string; second: string }[] = [];
+  for (const sentence of sentences) {
+    // Compare on words alone: a duplicate that changed a comma is still a duplicate.
+    const key = sentence.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    const earlier = seen.get(key);
+    if (earlier && earlier !== sentence) found.push({ first: earlier, second: sentence });
+    else if (earlier) found.push({ first: earlier, second: sentence });
+    else seen.set(key, sentence);
+  }
+  return found;
+}
+
 export function mechanicalIssues(chapter: number, version: ChapterVersion, language = ''): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const target = language.toLowerCase();
@@ -130,6 +150,13 @@ export function mechanicalIssues(chapter: number, version: ChapterVersion, langu
       evidence: [{ chapter, revision: version.revision, quote: version.content.slice(Math.max(0, found.index - 40), found.index + 40) }],
     });
   }
+  const duplicates = duplicatePassages(version.content);
+  if (duplicates.length) issues.push({
+    id: 'duplicated-passage', category: 'format', severity: 'critical',
+    description: `${duplicates.length} passage(s) appear twice in this chapter.`,
+    instruction: 'Delete the weaker occurrence of each repeated passage outright. Do not rewrite both into new wording, and do not keep a shortened version of the one you remove.',
+    evidence: duplicates.slice(0, 4).map(pair => ({ chapter, revision: version.revision, quote: pair.second })),
+  });
   const marker = version.content.match(/\[(?:DIALOGUE|ACTION|INTERNAL|DESCRIPTION|TRANSITION|EMOTION|SLOT)[A-Z_\d -]*\]/i);
   if (marker) issues.push({
     id: 'unfilled-slot', category: 'format', severity: 'critical',

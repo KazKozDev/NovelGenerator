@@ -7,6 +7,7 @@ import { GenerationStep } from './types';
 import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
+import ModelSwitch from './components/ModelSwitch';
 import BookDisplay from './components/BookDisplay';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import ApprovalView from './components/ApprovalView';
@@ -116,7 +117,8 @@ const App: React.FC = () => {
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{error}</p>
-            {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry from checkpoint</button>}
+            {isResumable && <ModelSwitch />}
+            {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry with these models</button>}
 
             <button
               onClick={handleReset}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -8,7 +8,9 @@ import { acceptCandidate, addCandidate, evidenceExists, nextUnacceptedChapter, r
 function fixture() {
   const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
   const chapter: ChapterRecord = { number: 1, plan: { title: 'A letter', summary: 'A choice', sceneBreakdown: 'one scene', characterDevelopmentFocus: 'trust', plotAdvancement: 'truth', timelineIndicators: 'evening', emotionalToneTension: 'tense', connectionToNextChapter: 'consequence' }, versions: [], status: 'draft', repairAttempts: 2 };
-  const version = addCandidate(chapter, 'Vera read the letter. ' + 'The window was open and the room was quiet. '.repeat(30), 'test');
+  const filler = Array.from({ length: 30 }, (_, index) =>
+    `The window was open and the room stayed quiet for the ${index + 1} hour of that long afternoon.`).join(' ');
+  const version = addCandidate(chapter, `Vera read the letter. ${filler}`, 'test');
   run.chapters = [chapter];
   return { run, chapter, version };
 }
@@ -48,6 +50,41 @@ describe('Promise ledger schedule', () => {
   });
 });
 
+describe('Duplicate detection boundaries', () => {
+  it('ignores repetition short enough to be a deliberate refrain', () => {
+    const refrain = 'He did not sleep.';
+    expect(duplicatePassages(`${refrain} The night went on. ${refrain}`)).toHaveLength(0);
+  });
+
+  it('catches a repeat that differs only in punctuation or spacing', () => {
+    const sentence = 'Ray stood in the dark of the clinic and listened to the rain against the window.';
+    const variant = 'Ray stood in the dark of the clinic and listened to the rain against the window';
+    expect(duplicatePassages(`${sentence} He waited a while longer. ${variant}.`)).toHaveLength(1);
+  });
+});
+
+describe('Deterministic duplicate check', () => {
+  const line = (n: number) => `Ray stood at the counter of the clinic and felt the night press against the glass for the ${n} time.`;
+
+  it('fails a chapter that says the same thing twice, whatever the reviewer reports', async () => {
+    const { run, chapter, version } = fixture();
+    version.content = [line(1), 'He drove home along the bayou road without once looking at the water beside him.', line(1)].join(' ');
+    const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
+    const issue = result.issues.find(item => item.id === 'duplicated-passage');
+    expect(result.status).toBe('failed');
+    expect(issue?.severity).toBe('critical');
+    expect(issue?.instruction).toContain('Delete the weaker occurrence');
+    expect(version.content).toContain(issue!.evidence[0].quote);
+  });
+
+  it('leaves a chapter alone when its sentences merely resemble one another', async () => {
+    const { run, chapter, version } = fixture();
+    version.content = [line(1), line(2)].join(' ');
+    const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
+    expect(result.issues.some(item => item.id === 'duplicated-passage')).toBe(false);
+  });
+});
+
 describe('Deterministic script check', () => {
   it('fails a Russian chapter that carries characters from the writer model\'s own script', async () => {
     const { run, chapter, version } = fixture();
@@ -71,7 +108,7 @@ describe('Deterministic script check', () => {
 describe('Prompt canon size', () => {
   it('sends the established facts to writer and reviewer without the paragraphs that prove them', async () => {
     const { run, chapter, version } = fixture();
-    const quote = 'The window was open and the room was quiet. '.repeat(4).trim();
+    const quote = fixture().version.content.split(/(?<=\.)\s+/).slice(1, 5).join(' ');
     const earlier = chapter.versions[0];
     earlier.analysis = { summary: 'Vera reads the letter.', facts: [{ id: 'f1', subject: 'Vera', predicate: 'condition', value: 'sleepless', knownBy: ['Vera'], evidence: { chapter: 1, revision: earlier.revision, quote } }], events: [], promises: [] };
     chapter.status = 'accepted';
@@ -153,7 +190,7 @@ describe('Editorial evidence filtering', () => {
   it('keeps an evidenced issue and drops only the citation that is not in the prose', async () => {
     const { run, chapter, version } = fixture();
     const result = await reviewChapter(run, chapter, version, async () => issue([
-      { chapter: 1, revision: version.revision, quote: 'The window was open and the room was quiet.' },
+      { chapter: 1, revision: version.revision, quote: version.content.split(/(?<=\.)\s+/)[1] },
       { chapter: 1, revision: version.revision, quote: 'Vera hurled the letter into the fireplace.' },
     ]));
     expect(result.status).toBe('failed');
