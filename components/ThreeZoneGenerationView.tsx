@@ -20,6 +20,9 @@ export interface ThreeZoneGenerationViewProps {
   isResumable?: boolean;
   isLoading?: boolean;
   onResumeGeneration?: () => void;
+  /** The studio puts the wordmark and the global reset on the same strip as the run status. */
+  version?: string;
+  onReset?: () => void;
 }
 
 export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = ({
@@ -31,6 +34,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   generatedChapters,
   agentLogs,
   lastSavedAt,
+  version,
+  onReset,
   isResumable = false,
   isLoading = false,
   onResumeGeneration,
@@ -60,7 +65,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
     <div className="w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-200 overflow-hidden">
       {/* One status strip: the step, the save state, the only global action. */}
       <div className="shrink-0 flex items-center justify-between gap-4 border-b border-zinc-800 pb-1.5">
-        <div className="min-w-0">
+        <div className="flex items-baseline gap-3 min-w-0">
+          <span className="text-sm font-semibold text-zinc-100 tracking-tight shrink-0">NovelGenerator</span>
+          {version && (
+            <span className="shrink-0 px-1.5 rounded-sm bg-zinc-800 text-zinc-500 border border-zinc-700 font-mono text-[10px]">
+              {version}
+            </span>
+          )}
+          <span className="text-zinc-700 shrink-0">|</span>
           <ProgressBar
             currentStep={currentStep}
             currentChapterProcessing={currentChapterProcessing}
@@ -82,6 +94,16 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <Button onClick={onResumeGeneration} variant="primary" className="text-xs py-1 px-2.5">
               Resume Generation
             </Button>
+          )}
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              title="Wipe all temporary generation state and start from clean slate"
+              className="text-xs font-mono px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded-sm transition-colors"
+            >
+              Clean Slate
+            </button>
           )}
         </div>
       </div>
