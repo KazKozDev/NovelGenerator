@@ -90,7 +90,7 @@ const App: React.FC = () => {
               NovelGenerator
             </h1>
             <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 font-mono text-[10px]">
-              v4.1
+              v4.2
             </span>
           </div>
           <button

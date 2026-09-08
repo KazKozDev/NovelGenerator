@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="NovelGenerator">
+  <rect width="32" height="32" rx="7" fill="#18181B"/>
+  <!-- A manuscript page with a turned corner: the silhouette still reads at 16px. -->
+  <path d="M8 6h11l5 5v15a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" fill="#FAFAFA"/>
+  <path d="M19 6l5 5h-5V6z" fill="#A1A1AA"/>
+  <!-- Written lines, the last one short: a page still being written. -->
+  <rect x="11" y="15" width="10" height="1.6" rx="0.8" fill="#3F3F46"/>
+  <rect x="11" y="18.6" width="10" height="1.6" rx="0.8" fill="#3F3F46"/>
+  <rect x="11" y="22.2" width="5.5" height="1.6" rx="0.8" fill="#D4A017"/>
+</svg>
