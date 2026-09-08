@@ -11,7 +11,7 @@ FONT = {
 }
 CELL, GAP, LETTER_GAP, LINE_GAP, PAD = 16, 0.9, 1, 1, 26
 SHADOW_DX, SHADOW_DY = -7, 7
-INK, BG = "#E07A5F", "#17171A"
+INK, BG = "#FAFAFA", "#09090B"
 LINES = ["NOVEL", "GENERATOR"]
 
 blocks = []
@@ -47,4 +47,23 @@ svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" 
        layer(SHADOW_DX, SHADOW_DY, 'fill="none" stroke="%s" stroke-width="1.6"' % INK),
        layer(0, 0, 'fill="%s"' % INK))
 open('public/logo.svg', 'w').write(svg)
+
+# The PNG is drawn from the same blocks rather than rasterised by a previewer,
+# which scales and pads the artwork before you ever see it.
+SCALE = 2
+try:
+    from PIL import Image, ImageDraw
+except ImportError:
+    Image = None
+if Image is not None:
+    img = Image.new("RGB", (W * SCALE, H * SCALE), BG)
+    draw = ImageDraw.Draw(img)
+    for x, y in blocks:
+        left, top = (x + PAD + SHADOW_DX) * SCALE, (y + PAD + SHADOW_DY) * SCALE
+        draw.rectangle([left, top, left + side * SCALE, top + side * SCALE], outline=INK, width=2)
+    for x, y in blocks:
+        left, top = (x + PAD) * SCALE, (y + PAD) * SCALE
+        draw.rectangle([left, top, left + side * SCALE, top + side * SCALE], fill=INK)
+    img.save('public/logo.png')
+
 print("%dx%d, блоков %d" % (W, H, len(blocks)))

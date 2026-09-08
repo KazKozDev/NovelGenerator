@@ -1,3 +1,5 @@
+![NovelGenerator](public/logo.png)
+
 # NovelGenerator — AI novel writing app for Gemini and Ollama
 
 Turn a one-paragraph premise into a full manuscript, chapter by chapter.
