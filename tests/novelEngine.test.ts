@@ -194,33 +194,54 @@ describe('Editorial gates', () => {
 });
 
 describe('Redundancy repair', () => {
-  it('repairs repetition by deleting, and refuses a pass that rewrites instead', async () => {
+  it('removes the sentences the model names and refuses ones it invented', async () => {
     const run = runWithPlans();
     const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
     const draft = `${prose(1)} ${echoed}`;
     const base = fixtureLLM();
     let reviewed = 0;
-    const prompts: string[] = [];
+    let asked = 0;
     const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
-      if (system.includes('never rewrite')) {
-        prompts.push(prompt);
-        // First a rewrite, which the contract must refuse; then an honest deletion.
-        return prompts.length === 1
-          ? JSON.stringify({ prose: `${prose(1)} She held the letter in her pocket as the register was read.` })
-          : JSON.stringify({ prose: prose(1) });
+      if (system.includes('never write prose')) {
+        asked++;
+        // A sentence the chapter does not contain must be refused; then an honest choice is taken.
+        return asked === 1
+          ? JSON.stringify({ delete: ['She held the letter in her pocket as the register was read.'] })
+          : JSON.stringify({ delete: [echoed] });
       }
-      // Only chapter one carries the duplicate; the rest come from the fixture unchanged.
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
       if (system.includes('continuity and developmental') && ++reviewed === 1) return '{"issues":[]}';
       return base(prompt, system, options);
     });
 
     await new NovelEngine(llm, new MemoryRunStore()).continue(run);
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain('This is a deletion pass');
+    expect(asked).toBe(2);
     const accepted = acceptedVersion(run.chapters[0])?.content ?? '';
+    // The application did the cutting, so nothing arrived that the chapter did not already contain.
     expect(accepted).not.toContain('She held the letter in her pocket');
     expect(accepted.split(echoed).length - 1).toBe(1);
+  });
+});
+
+describe('Deletion arithmetic', () => {
+  it('keeps one copy of a sentence the chapter says twice, and removes a unique one outright', async () => {
+    const run = runWithPlans();
+    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const unique = 'The price was hers to pay.';
+    const draft = `${prose(1)} ${echoed}`;
+    const base = fixtureLLM();
+    let reviewed = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('never write prose')) return JSON.stringify({ delete: [echoed, unique] });
+      if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
+      if (system.includes('continuity and developmental') && ++reviewed === 1) return '{"issues":[]}';
+      return base(prompt, system, options);
+    });
+
+    await new NovelEngine(llm, new MemoryRunStore()).continue(run);
+    const accepted = acceptedVersion(run.chapters[0])?.content ?? '';
+    expect(accepted.split(echoed).length - 1).toBe(1);
+    expect(accepted).not.toContain(unique);
   });
 });
 
@@ -234,7 +255,7 @@ describe('Repair order', () => {
     const systems: string[] = [];
     const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
       systems.push(system);
-      if (system.includes('never rewrite')) return JSON.stringify({ prose: prose(1) });
+      if (system.includes('never write prose')) return JSON.stringify({ delete: ['She kept the letter folded in her pocket while the clerk read the register.'] });
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
       if (system.includes('continuity and developmental') && ++reviewed === 1) {
         // Repetition beside an unrelated continuity defect: the mix a real chapter reports.
@@ -249,7 +270,7 @@ describe('Repair order', () => {
     });
 
     await new NovelEngine(llm, new MemoryRunStore()).continue(run);
-    expect(systems.some(system => system.includes('never rewrite'))).toBe(true);
+    expect(systems.some(system => system.includes('never write prose'))).toBe(true);
     expect(systems.some(system => system.includes('targeted fiction revision'))).toBe(false);
   });
 });

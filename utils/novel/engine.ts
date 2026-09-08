@@ -225,20 +225,44 @@ export class NovelEngine {
    * produces a third version of it; asked to cut, it can only remove. The result is checked: every
    * sentence kept must come from the chapter as it stood, and the chapter must actually get shorter.
    */
+  /**
+   * Redundancy is removed by the application, not by the model. Asking for the whole chapter back
+   * makes reproducing four thousand words the precondition for cutting one paragraph, and a single
+   * altered comma voids the pass. The model names the passages to drop; the deletion happens here,
+   * so nothing can be reworded on the way through.
+   */
   private async removeRedundancy(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[]): Promise<string> {
-    const sentences = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
-    const original = new Set(sentences(version.content));
-    // The contract is checked inside the call, so a pass that rewrites is told why and tries again.
-    return structuredResponse(`${specPrompt(run.spec)}\nTHESE PASSAGES SAY THE SAME THING TWICE:\n${JSON.stringify(issues)}\nFULL CURRENT PROSE:\n${version.content}\nReturn the chapter with the weaker occurrence of each repetition deleted. This is a deletion pass: you may remove sentences and you may remove nothing else. Do not reword, merge, summarize or bridge what remains; every sentence you keep must appear in the prose above exactly as it is written there. Keep the stronger occurrence of each pair, and keep the chapter's ending single and in one place.\nOUTPUT FORMAT: Return one JSON object with exactly the field "prose", containing the complete chapter after the deletions.`,
-      'You remove repeated passages from fiction by deleting them. You never rewrite.', this.llm, ['prose'], raw => {
-        if (typeof raw.prose !== 'string' || !raw.prose.trim()) throw new Error('Missing final prose.');
-        const cleaned = this.extractProse(raw.prose).trim();
-        const invented = sentences(cleaned).filter(item => !original.has(item));
-        if (invented.length) throw new Error(`This was a deletion pass, but ${invented.length} sentence(s) are not in the original. Return the original sentences you kept, unchanged, and delete the repetitions.`);
-        if (cleaned.length >= version.content.length) throw new Error('Nothing was removed. Delete the weaker occurrence of each repeated passage.');
-        return cleaned;
-      }, { temperature: 0.1, maxTokens: Math.max(8192, version.content.length), route: 'writer',
-           schema: { type: 'object', required: ['prose'], properties: { prose: { type: 'string' } }, additionalProperties: false } });
+    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const sentences = version.content.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(Boolean);
+    const byText = new Map(sentences.map(item => [normalize(item), item]));
+
+    const doomed = await structuredResponse(`${specPrompt(run.spec)}\nTHESE PASSAGES SAY THE SAME THING TWICE:\n${JSON.stringify(issues)}\nCHAPTER SENTENCES:\n${JSON.stringify(sentences)}\nFor each repetition, choose the weaker occurrence and list it for deletion. Keep the stronger one. Where a whole aftermath or ending is told more than once, list every sentence of the weaker telling, so the chapter ends once and in one place. Copy each sentence exactly as it appears above; do not edit, merge or shorten anything. Return JSON {"delete":["exact sentence", "exact sentence"]}.`,
+      'You choose which repeated sentences a chapter should lose. You never write prose.', this.llm, ['delete'], raw => {
+        if (!Array.isArray(raw.delete) || !raw.delete.length) throw new Error('List at least one sentence to delete.');
+        const resolved = raw.delete
+          .filter((item: unknown): item is string => typeof item === 'string')
+          .map((item: string) => byText.get(normalize(item)))
+          .filter((item: string | undefined): item is string => Boolean(item));
+        if (!resolved.length) throw new Error('None of those sentences appear in the chapter. Copy them exactly as they are written.');
+        return new Set(resolved);
+      }, { temperature: 0.1, maxTokens: 8192, route: 'writer',
+           schema: { type: 'object', required: ['delete'], properties: { delete: { type: 'array', minItems: 1, items: { type: 'string' } } }, additionalProperties: false } });
+
+    // Removing every copy of a repeated sentence deletes the beat as well as the repetition, so a
+    // sentence the chapter says twice keeps its first occurrence and loses the rest.
+    const occurrences = new Map<string, number>();
+    for (const item of sentences) occurrences.set(item, (occurrences.get(item) || 0) + 1);
+    const survived = new Set<string>();
+    const kept = sentences.filter(item => {
+      if (!doomed.has(item)) return true;
+      if ((occurrences.get(item) || 0) > 1 && !survived.has(item)) { survived.add(item); return true; }
+      return false;
+    });
+    const cleaned = kept.join(' ').replace(/\s*\n\s*\n\s*/g, '\n\n').trim();
+    // A deletion pass trims repetition; losing a third of the chapter is a different operation.
+    if (cleaned.length < version.content.length * 0.6) throw new Error('The deletion pass would remove too much of the chapter.');
+    if (!cleaned) throw new Error('The deletion pass emptied the chapter.');
+    return cleaned;
   }
 
   private async repair(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[], extra = ''): Promise<string> {
