@@ -23,7 +23,7 @@ export const Select: React.FC<SelectProps> = ({
       )}
       <select
         className={`
-          w-full px-3 py-2 rounded-lg
+          w-full px-3 py-2 rounded-sm
           bg-zinc-900 border border-zinc-700/80
           text-zinc-100 text-sm
           focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400

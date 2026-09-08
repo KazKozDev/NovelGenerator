@@ -58,59 +58,32 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
   return (
     <div className="w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-200 overflow-hidden">
-      {/* Top Header & Global Controls */}
-      <div className="shrink-0 bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 md:p-3.5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 mb-2.5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm md:text-base font-semibold text-zinc-100 tracking-tight">Author Studio</h2>
-                <span className="px-2 py-0.5 text-[10px] font-medium font-mono rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-                  Pipeline Active
-                </span>
-              </div>
-              <p className="text-[11px] text-zinc-500 mt-0.5">
-                Real-time synchronization: narrative structure, manuscript prose, and agent telemetry.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {isLoading && (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-zinc-800/80 border border-zinc-700 text-zinc-300 text-xs font-mono">
-                <LoadingSpinner className="!my-0 !h-3.5 !w-3.5" />
-                <span>Generating...</span>
-              </div>
-            )}
-            {isResumable && !isLoading && onResumeGeneration && (
-              <Button onClick={onResumeGeneration} variant="primary" className="text-xs py-1 px-2.5">
-                Resume Generation
-              </Button>
-            )}
-          </div>
+      {/* One status strip: the step, the save state, the only global action. */}
+      <div className="shrink-0 flex items-center justify-between gap-4 border-b border-zinc-800 pb-1.5">
+        <div className="min-w-0">
+          <ProgressBar
+            currentStep={currentStep}
+            currentChapterProcessing={currentChapterProcessing}
+            totalChaptersToProcess={totalChaptersToProcess}
+          />
         </div>
 
-        {/* Global Progress Bar */}
-        <ProgressBar
-          currentStep={currentStep}
-          currentChapterProcessing={currentChapterProcessing}
-          totalChaptersToProcess={totalChaptersToProcess}
-        />
-
-        {/* Global Save Status Indicator */}
-        {generatedChapters.length > 0 && (
-          <div className="mt-1.5">
-            <SaveStatusIndicator
-              generatedChapters={generatedChapters}
-              savedAt={lastSavedAt || undefined}
-            />
-          </div>
-        )}
+        <div className="flex items-center gap-3 shrink-0">
+          {generatedChapters.length > 0 && (
+            <SaveStatusIndicator generatedChapters={generatedChapters} savedAt={lastSavedAt || undefined} />
+          )}
+          {isLoading && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-sm bg-zinc-800/80 border border-zinc-700 text-zinc-300 text-xs font-mono">
+              <LoadingSpinner className="!my-0 !h-3.5 !w-3.5" />
+              <span>Generating</span>
+            </div>
+          )}
+          {isResumable && !isLoading && onResumeGeneration && (
+            <Button onClick={onResumeGeneration} variant="primary" className="text-xs py-1 px-2.5">
+              Resume Generation
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* 3-Zone Studio Grid */}
@@ -121,7 +94,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-pipeline"
-          className="lg:col-span-3 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 shadow-sm text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-sm p-3 shadow-sm text-left overflow-hidden"
         >
           <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
             <div className="flex items-center gap-2">
@@ -130,7 +103,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Pipeline & Chapters
               </h3>
             </div>
-            <span className="text-[11px] font-mono bg-zinc-800/90 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700/80">
+            <span className="text-[11px] font-mono bg-zinc-800/90 text-zinc-400 px-2 py-0.5 rounded-sm border border-zinc-700/80">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
           </div>
@@ -153,7 +126,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                     key={idx}
                     type="button"
                     onClick={() => setSelectedChapterIdx(idx)}
-                    className={`flex items-center justify-between p-2 rounded-lg text-xs transition-colors text-left w-full border ${
+                    className={`flex items-center justify-between p-2 rounded-sm text-xs transition-colors text-left w-full border ${
                       isSelected
                         ? 'bg-zinc-800 border-zinc-600 text-zinc-100 font-medium'
                         : 'bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800/60 text-zinc-400'
@@ -194,7 +167,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Ch #{activeChapterNum}
               </span>
             </div>
-            <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-lg">
+            <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm">
               <MarkdownView
                 content={(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
                   ? currentChapterPlan 
@@ -219,7 +192,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </button>
 
             {showOutline && (
-              <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-lg animate-fade-in">
+              <div className="flex-1 min-h-0 p-2.5 bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm animate-fade-in">
                 <MarkdownView
                   content={currentStoryOutline || 'No outline generated yet.'}
                   className="text-xs"
@@ -234,7 +207,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-prose"
-          className="lg:col-span-6 flex flex-col w-full h-full min-h-0 overflow-hidden"
+          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden"
         >
           {isWritingProse || activeContent ? (
             <StreamingContentView
@@ -243,8 +216,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               fullHeight={true}
             />
           ) : (
-            <div className="p-6 md:p-8 bg-zinc-900/80 border border-zinc-800 rounded-xl shadow-sm flex flex-col items-center justify-center text-center h-full flex-1 min-h-0 overflow-y-auto">
-              <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 flex items-center justify-center mb-4">
+            <div className="p-6 md:p-8 bg-zinc-900/80 border border-zinc-800 rounded-sm shadow-sm flex flex-col items-center justify-center text-center h-full flex-1 min-h-0 overflow-y-auto">
+              <div className="w-12 h-12 rounded-sm bg-zinc-800 border border-zinc-700 text-zinc-400 flex items-center justify-center mb-4">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
@@ -253,7 +226,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               <p className="text-xs text-zinc-400 max-w-md mb-5 leading-relaxed">
                 The story plan is being prepared. Each completed scene will appear here before chapter review.
               </p>
-              <div className="flex items-center gap-2 text-xs text-zinc-300 bg-zinc-800/80 px-3 py-1.5 rounded-lg border border-zinc-700 font-mono">
+              <div className="flex items-center gap-2 text-xs text-zinc-300 bg-zinc-800/80 px-3 py-1.5 rounded-sm border border-zinc-700 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
                 <span>{currentStep}</span>
               </div>
@@ -266,7 +239,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-agent-inspector"
-          className="lg:col-span-3 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 shadow-sm text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 bg-zinc-900/80 border border-zinc-800 rounded-sm p-3 shadow-sm text-left overflow-hidden"
         >
           <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
             <div className="flex items-center gap-2">
@@ -275,21 +248,21 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 Agent Inspector
               </h3>
             </div>
-            <span className="text-[11px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700">
+            <span className="text-[11px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-sm border border-zinc-700">
               {agentLogs.length} events
             </span>
           </div>
 
           {/* Quick Agent Status Telemetry */}
           <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
-            <div className="p-2 bg-zinc-950 rounded-lg border border-zinc-800">
+            <div className="p-2 bg-zinc-950 rounded-sm border border-zinc-800">
               <div className="text-zinc-500 text-[10px] uppercase font-semibold">Specialists</div>
               <div className="text-zinc-300 font-medium mt-0.5 flex items-center gap-1.5 text-xs font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                 Active
               </div>
             </div>
-            <div className="p-2 bg-zinc-950 rounded-lg border border-zinc-800">
+            <div className="p-2 bg-zinc-950 rounded-sm border border-zinc-800">
               <div className="text-zinc-500 text-[10px] uppercase font-semibold">Target</div>
               <div className="text-zinc-300 font-medium mt-0.5 truncate text-xs font-mono">
                 Ch #{currentChapterProcessing || 1}

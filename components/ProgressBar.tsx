@@ -7,11 +7,13 @@ interface ProgressBarProps {
   totalChaptersToProcess?: number;
 }
 
+/** The current step, on one line. What the pipeline is and how long it takes is not news every render. */
 export default function ProgressBar({ currentStep, currentChapterProcessing, totalChaptersToProcess }: ProgressBarProps) {
   const label = currentStep === GenerationStep.GeneratingChapters && currentChapterProcessing
     ? `Writing and reviewing chapter ${currentChapterProcessing} of ${totalChaptersToProcess}` : currentStep;
-  return <div className="my-4 w-full" role="status" aria-live="polite">
-    <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase">{label}</p>
-    <p className="text-zinc-500 text-[11px] mt-1">Progress follows accepted checkpoints. Duration depends on the model and necessary revisions.</p>
-  </div>;
+  return (
+    <p className="text-zinc-200 text-xs font-medium tracking-wide uppercase truncate" role="status" aria-live="polite">
+      {label}
+    </p>
+  );
 }

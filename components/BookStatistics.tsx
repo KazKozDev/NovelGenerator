@@ -64,28 +64,28 @@ const BookStatistics: React.FC<BookStatisticsProps> = ({ bookContent, metadata }
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {/* Total Words */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-md">
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-sm">
         <div className="text-zinc-400 text-xs font-mono uppercase tracking-wider mb-1">Total Words</div>
         <div className="text-zinc-100 text-2xl font-semibold font-mono">{stats.totalWords.toLocaleString()}</div>
         <div className="text-zinc-500 text-xs mt-1 font-mono">{stats.characters.toLocaleString()} characters</div>
       </div>
 
       {/* Reading Time */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-md">
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-sm">
         <div className="text-zinc-400 text-xs font-mono uppercase tracking-wider mb-1">Reading Time</div>
         <div className="text-zinc-100 text-2xl font-semibold font-mono">{formatReadingTime(stats.readingTimeMinutes)}</div>
         <div className="text-zinc-500 text-xs mt-1 font-mono">~200 words/min</div>
       </div>
 
       {/* Chapters */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-md">
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-sm">
         <div className="text-zinc-400 text-xs font-mono uppercase tracking-wider mb-1">Chapters</div>
         <div className="text-zinc-100 text-2xl font-semibold font-mono">{stats.chapterCount}</div>
         <div className="text-zinc-500 text-xs mt-1 font-mono">{stats.avgWordsPerChapter.toLocaleString()} words avg</div>
       </div>
 
       {/* Dialogue Ratio */}
-      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-md">
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-sm">
         <div className="text-zinc-400 text-xs font-mono uppercase tracking-wider mb-1">Dialogue</div>
         <div className="text-zinc-100 text-2xl font-semibold font-mono">{stats.dialogueRatio}%</div>
         <div className="text-zinc-500 text-xs mt-1 font-mono">of content</div>

@@ -90,7 +90,7 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 md:p-5 shadow-sm">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-sm p-4 md:p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
             <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
@@ -100,7 +100,7 @@ const UserInput: React.FC<UserInputProps> = ({
             <p className="text-xs text-zinc-500">Choose inference provider (Google Gemini or Local Ollama)</p>
           </div>
           
-          <div className="inline-flex rounded-lg bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
+          <div className="inline-flex rounded-sm bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
             <button
               type="button"
               onClick={() => {
@@ -108,7 +108,7 @@ const UserInput: React.FC<UserInputProps> = ({
                 setProviderConfig(updated);
                 saveStoredProviderConfig(updated);
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-sm text-xs font-medium transition-all ${
                 providerConfig.provider === 'gemini'
                   ? 'bg-zinc-200 text-zinc-900 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -123,7 +123,7 @@ const UserInput: React.FC<UserInputProps> = ({
                 setProviderConfig(updated);
                 saveStoredProviderConfig(updated);
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-sm text-xs font-medium transition-all ${
                 providerConfig.provider === 'ollama'
                   ? 'bg-zinc-200 text-zinc-900 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -212,7 +212,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
             {fetchStatus && (
               <div
-                className={`text-xs px-3 py-2 rounded-lg font-mono ${
+                className={`text-xs px-3 py-2 rounded-sm font-mono ${
                   fetchStatus.success
                     ? 'bg-emerald-950/40 text-emerald-300/90 border border-emerald-900/60'
                     : 'bg-red-950/40 text-red-300/90 border border-red-900/60'

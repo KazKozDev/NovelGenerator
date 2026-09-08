@@ -26,25 +26,25 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
         <h2 className="text-base font-semibold text-zinc-100 uppercase tracking-wide">{title}</h2>
-        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs font-mono self-start sm:self-auto">
+        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-sm p-0.5 text-xs font-mono self-start sm:self-auto">
           <button
             type="button"
             onClick={() => setTab('edit')}
-            className={`px-3 py-1 rounded transition-colors ${tab === 'edit' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-3 py-1 rounded-sm transition-colors ${tab === 'edit' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             Edit Outline
           </button>
           <button
             type="button"
             onClick={() => setTab('preview')}
-            className={`px-3 py-1 rounded transition-colors ${tab === 'preview' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`px-3 py-1 rounded-sm transition-colors ${tab === 'preview' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             Preview Markdown
           </button>
         </div>
       </div>
       
-      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-sm">
+      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-sm shadow-sm">
         <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
           The outline defines the narrative arc and chapter milestones. You may edit the structure directly below before approving generation.
         </p>
@@ -57,7 +57,7 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
             disabled={isLoading}
           />
         ) : (
-          <div className="min-h-[550px] max-h-[70vh] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded-md text-left">
+          <div className="min-h-[550px] max-h-[70vh] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded-sm text-left">
             <MarkdownView content={content} className="text-sm font-serif leading-relaxed" />
           </div>
         )}

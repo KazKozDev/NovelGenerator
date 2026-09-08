@@ -39,7 +39,7 @@ const FeatureGrid: React.FC = () => {
       {features.map((feature, index) => (
         <div
           key={index}
-          className="bg-zinc-900 border border-zinc-800 rounded-md p-4 transition-colors"
+          className="bg-zinc-900 border border-zinc-800 rounded-sm p-4 transition-colors"
         >
           <div className="text-xs font-mono text-zinc-500 mb-2 uppercase tracking-wider">
             {feature.icon}
