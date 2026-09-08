@@ -6,6 +6,7 @@ import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
+import ThemeToggle from './components/ThemeToggle';
 import BookDisplay from './components/BookDisplay';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import ApprovalView from './components/ApprovalView';
@@ -94,6 +95,8 @@ const App: React.FC = () => {
               v4.2
             </span>
           </div>
+          <div className="flex items-center gap-3">
+          <ThemeToggle />
           <button
             type="button"
             onClick={handleReset}
@@ -102,6 +105,7 @@ const App: React.FC = () => {
           >
             Clean Slate
           </button>
+          </div>
         </div>
         <p className="text-zinc-500 text-xs md:text-sm text-left">
           From an approved outline to a reviewed manuscript in your voice.

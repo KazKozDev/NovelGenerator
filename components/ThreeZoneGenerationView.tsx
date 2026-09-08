@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
 import ProgressBar from './ProgressBar';
+import ThemeToggle from './ThemeToggle';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
 import SaveStatusIndicator from './SaveStatusIndicator';
@@ -95,6 +96,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               Resume Generation
             </Button>
           )}
+          <ThemeToggle />
           {onReset && (
             <button
               type="button"
@@ -116,15 +118,10 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-pipeline"
-          className="lg:col-span-2 flex flex-col h-full min-h-0 border border-zinc-800 rounded-sm p-3 text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 pr-4 text-left overflow-hidden"
         >
-          <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-zinc-400" />
-              <h3 className="font-semibold text-zinc-200 text-xs tracking-wider uppercase">
-                Pipeline & Chapters
-              </h3>
-            </div>
+          <div className="shrink-0 flex items-baseline justify-between pb-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Chapters</h3>
             <span className="text-[11px] font-mono text-zinc-500">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
             </span>
@@ -132,9 +129,6 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
           {/* Chapter List Navigation */}
           <div className="shrink-0 flex flex-col gap-1.5 pt-2">
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
-              Chapter Navigation
-            </label>
             <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1">
               {Array.from({ length: Math.max(totalChaptersToProcess, generatedChapters.length) }).map((_, idx) => {
                 const chapter = generatedChapters[idx];
@@ -182,14 +176,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           {/* Active Chapter Plan */}
           <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                 Active Chapter Plan
               </span>
               <span className="text-[10px] text-zinc-500 font-mono">
                 Ch #{activeChapterNum}
               </span>
             </div>
-            <div className="flex-1 min-h-0 p-2.5 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm">
+            <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto leading-relaxed">
               <MarkdownView
                 content={(selectedChapterIdx === currentChapterProcessing - 1 && currentChapterPlan) 
                   ? currentChapterPlan 
@@ -204,7 +198,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <button
               type="button"
               onClick={() => setShowOutline(!showOutline)}
-              className="shrink-0 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="shrink-0 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 hover:text-zinc-200 transition-colors"
             >
               <div className="flex items-center gap-1.5">
                 <span>Story Outline</span>
@@ -214,7 +208,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </button>
 
             {showOutline && (
-              <div className="flex-1 min-h-0 p-2.5 border border-zinc-800 text-xs text-zinc-300 overflow-y-auto leading-relaxed rounded-sm animate-fade-in">
+              <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto leading-relaxed animate-fade-in">
                 <MarkdownView
                   content={currentStoryOutline || 'No outline generated yet.'}
                   className="text-xs"
@@ -229,7 +223,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-prose"
-          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden"
+          className="lg:col-span-8 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800"
         >
           {isWritingProse || activeContent ? (
             <StreamingContentView
@@ -261,9 +255,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-agent-inspector"
-          className="lg:col-span-2 flex flex-col h-full min-h-0 border border-zinc-800 rounded-sm p-3 text-left overflow-hidden"
+          className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
         >
-          <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 pb-2">
+          <div className="shrink-0 flex items-baseline justify-between pb-2">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
               <h3 className="font-semibold text-zinc-200 text-xs tracking-wider uppercase">

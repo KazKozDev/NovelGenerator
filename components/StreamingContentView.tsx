@@ -70,7 +70,7 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
           <MarkdownView 
             content={content} 
             isStreaming={true} 
-            className="text-sm md:text-base font-serif leading-relaxed" 
+            className="font-serif text-[18px] md:text-[20px] leading-[1.75] max-w-[62ch] mx-auto" 
           />
         ) : (
           <div className="whitespace-pre-wrap text-xs md:text-sm font-mono text-zinc-300 leading-relaxed selection:bg-zinc-700/60">
