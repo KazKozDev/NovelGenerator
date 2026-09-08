@@ -9,6 +9,7 @@ import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import ModelSwitch from './components/ModelSwitch';
 import BookDisplay from './components/BookDisplay';
+import SaveBook from './components/SaveBook';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import ApprovalView from './components/ApprovalView';
 import AgentActivityLog from './components/AgentActivityLog';
@@ -83,11 +84,17 @@ const App: React.FC = () => {
 
   const isStudioLayout = showProgress;
 
+  const saveControl = finalBookContent ? (
+    <SaveBook content={finalBookContent} metadata={finalMetadataJson ? JSON.parse(finalMetadataJson) : {}} />
+  ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
+    <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
+  ) : null;
+
   return (
     <div className={`w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex items-center justify-between mb-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
           <div className="flex items-baseline gap-2">
             <h1 className="text-2xl font-semibold wordmark">
               NovelGenerator
@@ -96,11 +103,12 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-3">
           <ThemeToggle />
+          {saveControl}
           <button
             type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
-            className="text-xs px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Clean Slate
           </button>
@@ -187,6 +195,7 @@ const App: React.FC = () => {
             isResumable={isResumable}
             isLoading={isLoading}
             onResumeGeneration={handleStartGeneration}
+            headerActions={saveControl}
             version="v4.2"
             onReset={handleReset}
           />

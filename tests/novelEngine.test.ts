@@ -152,6 +152,20 @@ describe('Novel contracts and accepted canon', () => {
 });
 
 describe('Editorial gates', () => {
+  it('clarifies the JSON envelope and supplies the failed prose for format correction', async () => {
+    const llm = vi.fn<NovelLLM>()
+      .mockResolvedValueOnce('She closed the door. "Stay," he said.')
+      .mockResolvedValueOnce(JSON.stringify({ prose: 'She closed the door. "Stay," he said.' }));
+    await expect(generateProse(llm, 'Repair the chapter.', 'Return only prose.')).resolves.toBe('She closed the door. "Stay," he said.');
+    expect(llm.mock.calls[0][1]).toContain('not the response envelope');
+    expect(llm.mock.calls[1][0]).toContain(JSON.stringify('She closed the door. "Stay," he said.'));
+  });
+
+  it('identifies the failing structured operation without accepting malformed data', async () => {
+    await expect(structuredResponse('Extract facts.', 'editor', async () => 'invalid', ['facts'], raw => raw))
+      .rejects.toThrow('validator; expected fields: facts');
+  });
+
   it('routes prose to the writer and structured editorial work to the validator', async () => {
     const llm = vi.fn(async (_prompt: string, _system: string, options?: Parameters<NovelLLM>[2]) =>
       options?.route === 'writer' ? JSON.stringify({ prose: 'Complete scene.' }) : JSON.stringify({ value: 'checked' }),
@@ -194,20 +208,21 @@ describe('Editorial gates', () => {
 });
 
 describe('Redundancy repair', () => {
-  it('removes the sentences the model names and refuses ones it invented', async () => {
+  it('deletes numbered occurrences and rejects invalid IDs', async () => {
     const run = runWithPlans();
     const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
-    const draft = `${prose(1)} ${echoed}`;
+    const original = prose(1).replace(' The price', '\n\nThe price');
+    const draft = `${original} ${echoed}`;
     const base = fixtureLLM();
     let reviewed = 0;
     let asked = 0;
     const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
       if (system.includes('never write prose')) {
         asked++;
-        // A sentence the chapter does not contain must be refused; then an honest choice is taken.
+        // Reject an out-of-range ID, then select the final repeated occurrence.
         return asked === 1
-          ? JSON.stringify({ delete: ['She held the letter in her pocket as the register was read.'] })
-          : JSON.stringify({ delete: [echoed] });
+          ? JSON.stringify({ delete: [99999] })
+          : JSON.stringify({ delete: [draft.split(/(?<=[.!?…])\s+/).length] });
       }
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
       if (system.includes('continuity and developmental') && ++reviewed === 1) return '{"issues":[]}';
@@ -218,8 +233,69 @@ describe('Redundancy repair', () => {
     expect(asked).toBe(2);
     const accepted = acceptedVersion(run.chapters[0])?.content ?? '';
     // The application did the cutting, so nothing arrived that the chapter did not already contain.
-    expect(accepted).not.toContain('She held the letter in her pocket');
+    expect(accepted).toBe(original);
     expect(accepted.split(echoed).length - 1).toBe(1);
+  });
+});
+
+describe('Repair budget', () => {
+  it('stops after five repairs leave the same finding unresolved', async () => {
+    const run = runWithPlans();
+    const base = fixtureLLM();
+    let repairs = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        repairs++;
+        return JSON.stringify({ prose: `${prose(1)} Revision ${repairs} settled the matter.` });
+      }
+      if (system.includes('continuity and developmental')) return JSON.stringify({ issues: [{
+        id: 'voice', category: 'voice', severity: 'major', description: 'The same unresolved defect.',
+        instruction: 'Fix it.', evidence: [{ chapter: 1, revision: repairs + 1, quote: 'Thorne opened door 1.' }],
+      }] });
+      return base(prompt, system, options);
+    });
+    await expect(new NovelEngine(llm, new MemoryRunStore()).continue(run)).rejects.toThrow(/needs editorial attention/);
+    expect(repairs).toBe(5);
+    expect(run.chapters[0].status).toBe('needs_revision');
+    expect(run.chapters[0].acceptedRevision).toBeUndefined();
+    const engine = new NovelEngine(llm, new MemoryRunStore());
+    // A passive resume must not silently spend another budget.
+    await expect(engine.continue(run)).rejects.toThrow(/needs editorial attention/);
+    expect(repairs).toBe(5);
+    // Explicit retries get bounded cycles even after the lifetime history exceeds 14 versions.
+    for (const total of [10, 15]) {
+      await expect(engine.continue(run, { retry: true })).rejects.toThrow(/needs editorial attention/);
+      expect(repairs).toBe(total);
+      expect(run.chapters[0].versions).toHaveLength(total + 1);
+      expect(run.chapters[0].acceptedRevision).toBeUndefined();
+    }
+  });
+
+  it('spends the budget on rounds that face the same findings, not on rounds that fix something', async () => {
+    const run = runWithPlans();
+    const base = fixtureLLM();
+    let reviewed = 0;
+    let repairs = 0;
+    const issue = (description: string) => JSON.stringify({ issues: [{
+      id: 'voice', category: 'voice', severity: 'major', description,
+      instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote: 'Thorne opened door 1.' }],
+    }] });
+
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) { repairs++; return JSON.stringify({ prose: `${prose(1)} Revision ${repairs} settled the matter.` }); }
+      if (system.includes('continuity and developmental')) {
+        reviewed++;
+        // Seven rounds, each answering the last and raising something new, then a clean chapter.
+        return reviewed <= 7 ? issue(`Defect number ${reviewed}.`) : '{"issues":[]}';
+      }
+      return base(prompt, system, options);
+    });
+
+    await new NovelEngine(llm, new MemoryRunStore()).continue(run);
+    // Seven repairs is past the five-round budget, and none of them were stuck.
+    expect(repairs).toBe(7);
+    expect(run.chapters[0].repairAttempts).toBe(0);
+    expect(run.stage).toBe('complete');
   });
 });
 
@@ -232,7 +308,7 @@ describe('Deletion arithmetic', () => {
     const base = fixtureLLM();
     let reviewed = 0;
     const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
-      if (system.includes('never write prose')) return JSON.stringify({ delete: [echoed, unique] });
+      if (system.includes('never write prose')) return JSON.stringify({ delete: draft.split(/(?<=[.!?…])\s+/).flatMap((text, index) => text === echoed || text === unique ? [index + 1] : []) });
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
       if (system.includes('continuity and developmental') && ++reviewed === 1) return '{"issues":[]}';
       return base(prompt, system, options);
@@ -255,7 +331,7 @@ describe('Repair order', () => {
     const systems: string[] = [];
     const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
       systems.push(system);
-      if (system.includes('never write prose')) return JSON.stringify({ delete: ['She kept the letter folded in her pocket while the clerk read the register.'] });
+      if (system.includes('never write prose')) return JSON.stringify({ delete: [draft.split(/(?<=[.!?…])\s+/).length] });
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: draft });
       if (system.includes('continuity and developmental') && ++reviewed === 1) {
         // Repetition beside an unrelated continuity defect: the mix a real chapter reports.

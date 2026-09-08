@@ -109,11 +109,8 @@ export default function useBookGenerator() {
       update(run);
     }
     const nextProvider = getStoredProviderConfig();
-    const writerChanged = run.provider.ollamaModel !== nextProvider.ollamaModel || run.provider.provider !== nextProvider.provider;
     run.provider = nextProvider;
     run.validationProvider = getStoredValidatorConfig();
-    // A chapter that spent its budget under one writer starts fresh under another.
-    if (writerChanged) for (const chapter of run.chapters) chapter.repairAttempts = 0;
     try {
       await action(run, makeEngine(run, token));
       if (epoch.current === token && run.stage === 'complete') playSuccessSound();
@@ -137,9 +134,10 @@ export default function useBookGenerator() {
   }
 
   async function continueGeneration() {
+    const retry = runRef.current?.stage === 'needs_revision';
     await execute(async (run, engine) => {
       if (!run.outline.trim()) await engine.outline(run);
-      else await engine.continue(run);
+      else await engine.continue(run, { retry });
     });
   }
 
@@ -165,6 +163,8 @@ export default function useBookGenerator() {
     addCandidate(chapter, content, 'Author revision');
     chapter.status = 'needs_revision';
     chapter.repairAttempts = 0;
+    chapter.lastFindings = undefined;
+    chapter.repairVersionStart = chapter.versions.length;
     run.structuralAttempts = 0;
     run.finalAttempts = 0;
     run.stage = 'writing';

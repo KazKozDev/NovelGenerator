@@ -145,6 +145,7 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   chapter.candidateRevision = undefined;
   chapter.status = 'accepted';
   chapter.repairAttempts = 0;
+  chapter.lastFindings = undefined;
   // Re-reviewing a chapter whose premises did not move only invites a fresh sampled verdict on prose
   // nobody changed, and every such round can restart the cascade.
   if (canonMoved) {
@@ -159,6 +160,7 @@ export function acceptCandidate(run: NovelRun, number: number): void {
       dependent.status = 'invalidated';
       dependent.candidateRevision = undefined;
       dependent.repairAttempts = 0;
+      dependent.lastFindings = undefined;
     }
   }
   run.structuralReview = undefined;

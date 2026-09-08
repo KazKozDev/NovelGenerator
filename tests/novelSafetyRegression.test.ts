@@ -163,7 +163,9 @@ describe('Sampled review durability', () => {
     run.outline = 'Vera recovers the letter and pays for it.';
     run.stage = 'writing';
     run.blueprint = { centralConflict: 'c', protagonistChange: 'p', endingPayoff: 'e', characters: {}, chapters: [], promises: [{ id: 'letter', description: 'truth', setupChapter: 1, payoffChapter: 1, required: false }] };
-    chapter.repairAttempts = 5; // Budget spent: the verdict on this candidate is the whole subject here.
+    // Budget spent on this exact finding: the verdict on the candidate is the whole subject here.
+    chapter.repairAttempts = 5;
+    chapter.lastFindings = JSON.stringify(['The vase has stood there for years and since yesterday.']);
     version.review = { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [{ id: 'vase', category: 'canon', severity: 'major', description: 'The vase has stood there for years and since yesterday.', instruction: 'Resolve the timeline.', evidence: [{ chapter: 1, revision: version.revision, quote: 'Vera read the letter.' }] }] };
     chapter.candidateRevision = version.revision;
     const engine = new NovelEngine(async () => '{"issues":[]}', new MemoryRunStore());

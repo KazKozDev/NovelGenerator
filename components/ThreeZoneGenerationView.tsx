@@ -25,6 +25,7 @@ export interface ThreeZoneGenerationViewProps {
   /** The studio puts the wordmark and the global reset on the same strip as the run status. */
   version?: string;
   onReset?: () => void;
+  headerActions?: React.ReactNode;
 }
 
 export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = ({
@@ -38,6 +39,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   lastSavedAt,
   version,
   onReset,
+  headerActions,
   isResumable = false,
   isLoading = false,
   onResumeGeneration,
@@ -101,12 +103,13 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </Button>
           )}
           <ThemeToggle />
+          {headerActions}
           {onReset && (
             <button
               type="button"
               onClick={onReset}
               title="Wipe all temporary generation state and start from clean slate"
-              className="text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+              className="h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
             >
               Clean Slate
             </button>

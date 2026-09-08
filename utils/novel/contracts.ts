@@ -111,6 +111,10 @@ export interface ChapterRecord {
   acceptedRevision?: number;
   candidateRevision?: number;
   repairAttempts: number;
+  /** Version count at the start of the latest explicitly requested repair cycle. */
+  repairVersionStart?: number;
+  /** The findings the last round faced, so a round that fixed something is not counted against it. */
+  lastFindings?: string;
   sceneDrafts?: string[];
   lineEditedRevision?: number;
 }

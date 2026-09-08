@@ -102,6 +102,9 @@ export const chapterPlanSchema = {
  */
 const MAX_CHAPTER_REPAIRS = 5;
 
+/** An absolute ceiling, so a chapter that keeps producing new defects still ends. */
+const MAX_CHAPTER_VERSIONS = 14;
+
 export class NeedsRevisionError extends Error {}
 
 export class NovelEngine {
@@ -200,11 +203,15 @@ export class NovelEngine {
         chapter.status = 'needs_revision';
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || 'Review failed or was offline.'}`);
       }
-      if (chapter.repairAttempts >= MAX_CHAPTER_REPAIRS) {
+      // A round that answered the previous findings made progress, whatever it uncovered next. The
+      // budget counts rounds that faced the same findings again, which is what being stuck means.
+      const findings = JSON.stringify(candidate.review.issues.map(issue => issue.description).sort());
+      chapter.repairAttempts = findings === chapter.lastFindings ? chapter.repairAttempts + 1 : 0;
+      chapter.lastFindings = findings;
+      if (chapter.repairAttempts >= MAX_CHAPTER_REPAIRS || chapter.versions.length - (chapter.repairVersionStart || 0) >= MAX_CHAPTER_VERSIONS) {
         chapter.status = 'needs_revision';
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || candidate.review.issues.map(issue => issue.description).join('; ')}`);
       }
-      chapter.repairAttempts++;
       await this.checkpoint(run);
       const repetition = candidate.review.issues.filter(issue => issue.id === 'duplicated-passage' || /redundan|repetit|duplicat|identical|overlapping/i.test(issue.description));
       const content = repetition.length
@@ -232,33 +239,31 @@ export class NovelEngine {
    * so nothing can be reworded on the way through.
    */
   private async removeRedundancy(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[]): Promise<string> {
-    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
-    const sentences = version.content.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(Boolean);
-    const byText = new Map(sentences.map(item => [normalize(item), item]));
-
-    const doomed = await structuredResponse(`${specPrompt(run.spec)}\nTHESE PASSAGES SAY THE SAME THING TWICE:\n${JSON.stringify(issues)}\nCHAPTER SENTENCES:\n${JSON.stringify(sentences)}\nFor each repetition, choose the weaker occurrence and list it for deletion. Keep the stronger one. Where a whole aftermath or ending is told more than once, list every sentence of the weaker telling, so the chapter ends once and in one place. Copy each sentence exactly as it appears above; do not edit, merge or shorten anything. Return JSON {"delete":["exact sentence", "exact sentence"]}.`,
+    // Keep separators so deleting a sentence does not flatten the remaining paragraphs.
+    const parts = version.content.split(/((?<=[.!?…])\s+)/);
+    const sentences = parts.filter((_, index) => index % 2 === 0);
+    const numbered = sentences.map((text, index) => ({ id: index + 1, text }));
+    const doomed = await structuredResponse(`${specPrompt(run.spec)}\nTHESE PASSAGES SAY THE SAME THING TWICE:\n${JSON.stringify(issues)}\nCHAPTER SENTENCES:\n${JSON.stringify(numbered)}\nFor each repetition, choose the weaker occurrence for deletion and keep the stronger one. Where a whole aftermath or ending is told more than once, select every sentence of the weaker telling. Return JSON {"delete":[2,5]} using only integer sentence IDs from the list above. Each ID selects that specific occurrence. Do not copy or rewrite sentences.`,
       'You choose which repeated sentences a chapter should lose. You never write prose.', this.llm, ['delete'], raw => {
-        if (!Array.isArray(raw.delete) || !raw.delete.length) throw new Error('List at least one sentence to delete.');
-        const resolved = raw.delete
-          .filter((item: unknown): item is string => typeof item === 'string')
-          .map((item: string) => byText.get(normalize(item)))
-          .filter((item: string | undefined): item is string => Boolean(item));
-        if (!resolved.length) throw new Error('None of those sentences appear in the chapter. Copy them exactly as they are written.');
-        return new Set(resolved);
+        if (!Array.isArray(raw.delete) || !raw.delete.length) throw new Error('List at least one sentence ID to delete.');
+        if (raw.delete.some((id: unknown) => !Number.isInteger(id) || Number(id) < 1 || Number(id) > sentences.length)) {
+          throw new Error(`Every deletion must be an integer sentence ID between 1 and ${sentences.length}.`);
+        }
+        return new Set<number>(raw.delete);
       }, { temperature: 0.1, maxTokens: 8192, route: 'writer',
-           schema: { type: 'object', required: ['delete'], properties: { delete: { type: 'array', minItems: 1, items: { type: 'string' } } }, additionalProperties: false } });
+           schema: { type: 'object', required: ['delete'], properties: { delete: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1, maximum: sentences.length } } }, additionalProperties: false } });
 
-    // Removing every copy of a repeated sentence deletes the beat as well as the repetition, so a
-    // sentence the chapter says twice keeps its first occurrence and loses the rest.
-    const occurrences = new Map<string, number>();
-    for (const item of sentences) occurrences.set(item, (occurrences.get(item) || 0) + 1);
-    const survived = new Set<string>();
-    const kept = sentences.filter(item => {
-      if (!doomed.has(item)) return true;
-      if ((occurrences.get(item) || 0) > 1 && !survived.has(item)) { survived.add(item); return true; }
-      return false;
+    // Even if all identical occurrences were selected, preserve one copy of the beat.
+    const occurrences = new Map<string, number[]>();
+    sentences.forEach((text, index) => {
+      const key = text.replace(/\s+/g, ' ').trim();
+      occurrences.set(key, [...(occurrences.get(key) || []), index + 1]);
     });
-    const cleaned = kept.join(' ').replace(/\s*\n\s*\n\s*/g, '\n\n').trim();
+    for (const ids of occurrences.values()) {
+      if (ids.length > 1 && ids.every(id => doomed.has(id))) doomed.delete(ids[0]);
+    }
+    const cleaned = sentences.map((text, index) => doomed.has(index + 1) ? '' : text + (parts[index * 2 + 1] || '')).join('').trim();
+    if (cleaned === version.content.trim()) throw new Error('The deletion pass did not remove any text.');
     // A deletion pass trims repetition; losing a third of the chapter is a different operation.
     if (cleaned.length < version.content.length * 0.6) throw new Error('The deletion pass would remove too much of the chapter.');
     if (!cleaned) throw new Error('The deletion pass emptied the chapter.');
@@ -350,11 +355,20 @@ export class NovelEngine {
     await this.writeRemaining(run);
   }
 
-  async continue(run: NovelRun): Promise<void> {
+  async continue(run: NovelRun, options: { retry?: boolean } = {}): Promise<void> {
     try {
       if (reconcileCheckpoint(run)) await this.checkpoint(run);
       if (!run.outline.trim()) throw new Error('Approve an outline before continuing.');
       if (run.stage === 'complete') return;
+      if (options.retry) {
+        for (const chapter of run.chapters) {
+          if (chapter.candidateRevision === undefined && chapter.status !== 'needs_revision') continue;
+          chapter.repairAttempts = 0;
+          chapter.lastFindings = undefined;
+          chapter.repairVersionStart = chapter.versions.length;
+        }
+        await this.checkpoint(run);
+      }
       if (run.stage === 'needs_revision') run.stage = run.resumeStage || 'writing';
       run.error = undefined;
       if (run.stage === 'outline' || run.stage === 'planning') {

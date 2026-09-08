@@ -1,9 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
-import AuthorPromptModal from './AuthorPromptModal';
 import { MarkdownView } from './common/MarkdownView';
-import { exportAsEpub, exportAsPdf, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
 
 interface BookDisplayProps {
   bookContent: string;
@@ -14,8 +12,6 @@ interface BookDisplayProps {
 const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, onReset }) => {
   const [activeTab, setActiveTab] = useState<'book' | 'metadata' | 'timeline'>('book');
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
-  const [isAuthorModalOpen, setIsAuthorModalOpen] = useState(false);
-  const [exportType, setExportType] = useState<'epub' | 'pdf'>('epub');
   const [bookViewMode, setBookViewMode] = useState<'rendered' | 'raw'>('rendered');
 
   const metadata = useMemo(() => {
@@ -114,33 +110,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               >
                 {copiedStates['book'] ? 'Copied' : 'Copy Markdown'}
               </Button>
-              <Button 
-                onClick={() => downloadFile(bookContent, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}.md`, 'text/markdown;charset=utf-8')}
-                variant="secondary"
-                size="sm"
-              >
-                Download .md
-              </Button>
-              <Button 
-                onClick={() => {
-                  setExportType('epub');
-                  setIsAuthorModalOpen(true);
-                }}
-                variant="secondary"
-                size="sm"
-              >
-                Export EPUB
-              </Button>
-              <Button 
-                onClick={() => {
-                  setExportType('pdf');
-                  setIsAuthorModalOpen(true);
-                }}
-                variant="secondary"
-                size="sm"
-              >
-                Export PDF
-              </Button>
             </div>
           </div>
           {bookViewMode === 'rendered' ? (
@@ -218,24 +187,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         </Button>
       </div>
 
-      {/* Author Prompt Modal */}
-      <AuthorPromptModal
-        isOpen={isAuthorModalOpen}
-        defaultAuthor={metadata?.author || ''}
-        onConfirm={async (authorName) => {
-          setIsAuthorModalOpen(false);
-          const updatedMetadata = { ...metadata, author: authorName };
-          
-          if (exportType === 'epub') {
-            const title = extractBookTitle(bookContent);
-            const filename = sanitizeFilename(title);
-            await exportAsEpub(bookContent, updatedMetadata, `${filename}.epub`);
-          } else {
-            exportAsPdf(bookContent, updatedMetadata);
-          }
-        }}
-        onCancel={() => setIsAuthorModalOpen(false)}
-      />
+
     </div>
   );
 };
