@@ -187,6 +187,23 @@ export function copyOfEarlierScene(scene: string, earlier: string[] = []): boole
   });
 }
 
+/** Findings about a share of the chapter rather than a place in it. */
+export const distributedIssues = ['speech-tag-bloat', 'simile-density', 'adjective-stacking', 'serial-explanation', 'paragraph-monotony'];
+
+/**
+ * Each of these asks the writer to go through the whole chapter, and four such demands in one repair
+ * produced four revisions that moved almost nothing: comparisons fell half a point and the other three
+ * measures stood. Passing one at a time keeps a repair to a single sweep; the rest return next round,
+ * still measured, still failing, until each has had its turn.
+ */
+export function oneDistributedAtATime(issues: ReviewIssue[]): ReviewIssue[] {
+  const spread = issues.filter(issue => distributedIssues.includes(issue.id));
+  if (spread.length < 2) return issues;
+  const rank = { critical: 0, major: 1, minor: 2 } as const;
+  const chosen = [...spread].sort((first, second) => rank[first.severity] - rank[second.severity])[0];
+  return issues.filter(issue => !distributedIssues.includes(issue.id) || issue === chosen);
+}
+
 export class NovelEngine {
   constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder) {}
 
@@ -407,7 +424,7 @@ export class NovelEngine {
       let extra = '';
       // Cutting is the repair some issues actually ask for; only then may a revision come back shorter.
       let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage');
-      if (!repetition.length) content = await this.repair(run, chapter, version, version.review!.issues);
+      if (!repetition.length) content = await this.repair(run, chapter, version, oneDistributedAtATime(version.review!.issues));
       else {
         try { content = await this.removeRedundancy(run, chapter, version, repetition); }
         catch (error) {
@@ -486,7 +503,7 @@ export class NovelEngine {
   private async repair(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[], extra = '', allowShortening = false): Promise<string> {
     // Findings about a share of the chapter rather than a place in it. "Change nothing uncited" and
     // "half the lines must end up bare" cannot both be obeyed, and the model obeys the cautious one.
-    const distributed = ['speech-tag-bloat', 'simile-density', 'adjective-stacking', 'serial-explanation', 'paragraph-monotony'];
+    const distributed = distributedIssues;
     // A revision must not silently condense the chapter, but demanding the target length back is how
     // padding gets bought: measured across seven revisions, a repair that lost 500 words returned them
     // as description and comparisons, never as dialogue or event. Ask for the missing length only when

@@ -2,7 +2,7 @@ import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
-import { createRun, NovelEngine, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
+import { createRun, NovelEngine, oneDistributedAtATime, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, endingIssues, nextUnacceptedChapter } from '../utils/novel/storyState';
 import { generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
@@ -467,6 +467,22 @@ describe('A review is allowed to find nothing', () => {
 });
 
 describe('A defect that is a proportion, not a place', () => {
+  const spread = (id: string, severity: 'critical' | 'major' | 'minor' = 'major') =>
+    ({ id, category: 'voice' as const, severity, description: 'A share.', instruction: 'Fix it.', evidence: [] });
+
+  it('sends one chapter-wide sweep per repair and keeps every finding about a place', () => {
+    const issues = [spread('simile-density', 'minor'), { ...spread('knowledge-01'), category: 'knowledge' as const },
+      spread('speech-tag-bloat'), spread('serial-explanation'), spread('adjective-stacking', 'minor')];
+    const passed = oneDistributedAtATime(issues).map(issue => issue.id);
+    // The most severe sweep goes first; the others come back next round, still measured.
+    expect(passed).toEqual(['knowledge-01', 'speech-tag-bloat']);
+  });
+
+  it('changes nothing when there is only one sweep to make', () => {
+    const issues = [spread('simile-density'), { ...spread('knowledge-01'), category: 'knowledge' as const }];
+    expect(oneDistributedAtATime(issues)).toEqual(issues);
+  });
+
   it('lifts the leave-everything-else rule for the issues that describe a share of the chapter', async () => {
     const run = runWithPlans();
     const chapter = run.chapters[0];
