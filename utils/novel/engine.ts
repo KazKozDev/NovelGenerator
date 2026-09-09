@@ -136,7 +136,10 @@ export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics,
   if (!shorteningExpected && after.words < before.words * 0.85) {
     damage.push(`it cut the chapter from ${before.words} to ${after.words} words although no issue asked for anything to be removed.`);
   }
-  if (before.dialogueShare > 0 && after.dialogueShare < before.dialogueShare / 2) {
+  // Below a handful of spoken paragraphs "halved" is arithmetic, not damage: a solitary chapter with
+  // one line would spend a repair defending it. Guard an exchange, not a stray line.
+  const spokenBefore = Math.round(before.dialogueShare * before.paragraphs);
+  if (spokenBefore >= 3 && after.dialogueShare < before.dialogueShare / 2) {
     damage.push(`it cut spoken dialogue from ${Math.round(before.dialogueShare * 100)}% of paragraphs to ${Math.round(after.dialogueShare * 100)}%.`);
   }
   if (after.medianParagraphWords > before.medianParagraphWords * 1.25 && after.medianParagraphWords > 60) {

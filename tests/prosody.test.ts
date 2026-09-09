@@ -192,10 +192,22 @@ describe('report mode inside the engine', () => {
 
 describe('texture regression between revisions', () => {
   const metrics = (text: string) => prosodyMetrics(text, 'Russian');
-  const withDialogue = ['— Ты пришёл, — сказала она.', 'Он закрыл дверь.', '— Не сейчас.', 'Она отвернулась к окну.'].join('\n\n');
+  const withDialogue = ['— Ты пришёл, — сказала она.', 'Он закрыл дверь и остался стоять у порога.', '— Не сейчас.',
+    'Она отвернулась к окну и долго молчала.', '— Тогда я подожду снаружи.', 'Он не двинулся с места.',
+    '— Уходи.', 'Дверь за ним закрылась почти беззвучно.'].join('\n\n');
+
+  it('spends no repair defending a single stray line in a solitary chapter', () => {
+    const oneLine = ['— Кто там? — спросила она в пустоту.', ...Array.from({ length: 20 },
+      (_, i) => `Она смотрела в окно и считала минуты до утра, номер ${i}.`)].join('\n\n');
+    const silent = oneLine.split('\n\n').slice(1).join('\n\n');
+    expect(textureRegression(metrics(oneLine), metrics(silent))).toBeUndefined();
+  });
 
   it('names the loss when a repair silences the dialogue a chapter had', () => {
-    const silenced = 'Он закрыл дверь и ничего не сказал.\n\nОна отвернулась к окну.';
+    // Same material, same length: only the spoken lines became narration.
+    const silenced = ['Она сказала, что он пришёл.', 'Он закрыл дверь и остался стоять у порога.', 'Она попросила подождать.',
+      'Она отвернулась к окну и долго молчала.', 'Он предложил подождать снаружи.', 'Он не двинулся с места.',
+      'Она велела ему уйти.', 'Дверь за ним закрылась почти беззвучно.'].join('\n\n');
     expect(textureRegression(metrics(withDialogue), metrics(silenced))).toMatch(/spoken dialogue from 50% of paragraphs to 0%/);
   });
 
@@ -214,7 +226,7 @@ describe('texture regression between revisions', () => {
   });
 
   it('accepts a revision that keeps the chapter\'s shape', () => {
-    const revised = ['— Ты пришёл, — сказала она тише.', 'Он закрыл дверь.', '— Не сейчас.', 'Она смотрела в окно.'].join('\n\n');
+    const revised = withDialogue.replace('— Уходи.', '— Уходи сейчас же.');
     expect(textureRegression(metrics(withDialogue), metrics(revised))).toBeUndefined();
   });
 

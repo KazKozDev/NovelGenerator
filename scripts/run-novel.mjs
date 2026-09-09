@@ -52,7 +52,7 @@ try {
   const writer = { provider: 'ollama', ollamaEndpoint: arg('endpoint') || 'http://127.0.0.1:11434', ollamaModel: arg('writer') || 'qwen3.5:397b-cloud' };
   // Thinking is enabled for judgement only: reasoning models answer trivially without it, and Ollama
   // returns their reasoning in a separate field that never reaches the manuscript.
-  const validator = { provider: 'ollama', ollamaEndpoint: writer.ollamaEndpoint, ollamaModel: arg('validator') || 'gemma4:31b-cloud', think: true };
+  const validator = { provider: 'ollama', ollamaEndpoint: writer.ollamaEndpoint, ollamaModel: arg('validator') || 'mistral-large-3:675b-cloud', think: true };
 
   if (!run) {
     const premiseFile = arg('premise-file');
