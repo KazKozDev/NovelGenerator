@@ -405,6 +405,15 @@ describe('planned exchanges must reach the page as speech', () => {
     expect(prosodyMetrics(bare, 'Russian').taggedSpeechShare).toBeLessThan(0.85);
   });
 
+  it('does not mistake a long speech for an attributed one', () => {
+    // Nineteen revisions of a live chapter were spent stripping attributions from lines like this,
+    // which carry none: the old reading counted any sentence break followed by a capital.
+    const long = ['— Я пришла. Теперь говори. Кто ты? Зачем ты носишь мою одежду?', 'Она ждала ответа у самого стекла.',
+      '— Уходи. Уходи сейчас же. Я не буду просить дважды.', 'Свет в окне напротив не дрогнул.'].join('\n\n');
+    expect(prosodyMetrics(long, 'Russian').taggedSpeechShare).toBe(0);
+    expect(dialogueIssues(1, version(long), speechScene)).toEqual([]);
+  });
+
   it('counts direct speech, not reported speech', () => {
     expect(speechParagraphs('— Я знаю.\n\nОн сказал, что знает.\n\n«Я знаю», — подумала она.')).toHaveLength(2);
   });

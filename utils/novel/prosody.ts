@@ -57,8 +57,14 @@ export function paragraphsOf(text: string): string[] {
 
 // Direct speech opens with a dash in most European typography and with a quote elsewhere.
 const isSpeech = (line: string) => /^[—–-]\s|^[«"“]/.test(line);
-/** An attribution dash inside the line, or narration continuing after the spoken sentence ends. */
-const isTagged = (line: string) => (line.match(/[—–]/g) || []).length > 1 || /[.!?…]»?\s+[A-ZА-ЯЁ]/.test(line);
+/**
+ * A speech attribution: the second dash of "— Реплика, — сказал он", or narration after a closing
+ * quotation mark. Deliberately conservative — an earlier version counted any sentence break followed
+ * by a capital, which marks every multi-sentence line as tagged: "— Я пришла. Теперь говори." carries
+ * no attribution at all, yet a live chapter was told for nineteen revisions to strip one from it.
+ * A floor is the right error here: demanding the removal of something that is not there cannot succeed.
+ */
+const isTagged = (line: string) => (line.match(/[—–]/g) || []).length > 1 || /[»"“][^»"“]*[\p{L}]/u.test(line.replace(/^[«"“]/, ''));
 
 const wordsIn = (text: string) => (text.match(/[\p{L}\p{N}]+/gu) || []).length;
 const count = (text: string, pattern: RegExp) => (text.match(new RegExp(pattern.source, pattern.flags)) || []).length;
@@ -172,11 +178,12 @@ export function speechParagraphs(text: string): string[] {
 }
 
 /**
- * Calibrated like the budgets above, on this pipeline's own 11 measured chapters: 67% at best, 96% at
- * the lower quartile, 100% at the median. A ceiling of 0.6 would have flagged every chapter ever
- * written here and distinguished nothing; 0.85 marks the shape where the exchange never once runs as
- * speech alone, and the best chapter already clears it. Asking for bare lines in the writing prompt
- * did not move the number at all — 100% again on the next run — so the check acts instead.
+ * Recalibrated on 18 chapters after the detector was corrected: 33% at best, 67% at the lower
+ * quartile, 88% at the median, 100% in a third of them. The earlier reading of this measure counted
+ * any multi-sentence spoken line as tagged, so it stood near 100% everywhere and could not be
+ * repaired — there was nothing to strip. At 0.85 the ceiling now separates the chapters where nearly
+ * every line arrives wrapped from the ones that let speech stand, and the best chapters prove the
+ * lower figures are reachable.
  */
 export const taggedSpeechCeiling = 0.85;
 
