@@ -44,6 +44,7 @@ try {
   const { createBookSpec } = await server.ssrLoadModule('/utils/novel/contracts.ts');
   const { createRun, NovelEngine } = await server.ssrLoadModule('/utils/novel/engine.ts');
   const { generateText } = await server.ssrLoadModule('/services/llmService.ts');
+  const { embedOllama } = await server.ssrLoadModule('/services/ollamaService.ts');
 
   const store = new FileRunStore();
   let run = await store.load();
@@ -61,10 +62,10 @@ try {
       genre: arg('genre') || 'psychological thriller', narrativeVoice: 'third-limited', tone: 'unsettling',
       targetAudience: 'adult', writingStyle: 'literary', generationSpeedMode: 'quality',
       language: arg('language') || 'Russian', tense: 'past', ending: 'closed',
-      targetWordsPerChapter: Number(arg('words') || 4000), writingMode: arg('mode') || 'slots',
+      targetWordsPerChapter: Number(arg('words') || 4000),
     });
     run = createRun(spec, writer);
-    log(`NEW RUN ${run.id} chapters=${spec.chapterCount} words=${spec.targetWordsPerChapter} mode=${spec.writingMode}`);
+    log(`NEW RUN ${run.id} chapters=${spec.chapterCount} words=${spec.targetWordsPerChapter}`);
   } else {
     log(`RESUME ${run.id} stage=${run.stage}`);
   }
@@ -97,6 +98,13 @@ try {
     }
   };
 
+  // Report mode: measured prose texture is logged, never blocks a chapter.
+  const embeddingModel = arg('embed') ?? 'qwen3-embedding:4b';
+  const embed = embeddingModel === 'off' ? undefined
+    : async inputs => embedOllama(inputs, embeddingModel, writer.ollamaEndpoint);
+  log(`embeddings=${embeddingModel}`);
+
+  const reported = new Set();
   let lastStage = '';
   const engine = new NovelEngine(llm, store, state => {
     const accepted = state.chapters.filter(chapter => chapter.acceptedRevision !== undefined && chapter.candidateRevision === undefined).length;
@@ -107,7 +115,22 @@ try {
     }, 0);
     const stage = `${state.stage} chapters=${state.chapters.length} accepted=${accepted} scenes=${drafted} words=${words}`;
     if (stage !== lastStage) { lastStage = stage; log(`STATE ${stage}`); }
-  });
+    for (const chapter of state.chapters) {
+      for (const version of chapter.versions) {
+        const key = `${chapter.number}.${version.revision}`;
+        if (!version.prosody || version.prosody.checkedRevision !== version.revision || reported.has(key)) continue;
+        reported.add(key);
+        const m = version.prosody.metrics;
+        const number = value => value === undefined ? 'n/a' : value.toFixed(1);
+        log(`PROSODY ch${chapter.number} rev${version.revision}`,
+          `words=${m.words} paragraphs=${m.paragraphs} median=${m.medianParagraphWords}w longest=${m.longestParagraphWords}w ` +
+          `dialogue=${Math.round(m.dialogueShare * 100)}% similes/1k=${number(m.similesPer1000)} stacked/1k=${number(m.stackedAdjectivesPer1000)} ` +
+          `repetition=${version.prosody.repetitionChecked ? 'checked' : 'not checked'}${version.prosody.error ? ` error=${version.prosody.error}` : ''} ` +
+          `advisory=[${version.prosody.findings.map(issue => issue.id).join(', ') || 'none'}]`);
+        for (const issue of version.prosody.findings) log(`  · ${issue.id}: ${issue.description}`);
+      }
+    }
+  }, embed);
 
   if (!run.outline.trim()) { log('STAGE outline'); await engine.outline(run); }
   await engine.continue(run);

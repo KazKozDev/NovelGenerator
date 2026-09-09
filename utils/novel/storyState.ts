@@ -1,3 +1,4 @@
+import { literaryCurrent } from './literaryState';
 import type { CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, StoryState } from './contracts';
 
 export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], summaries: {} });
@@ -134,6 +135,10 @@ export function acceptCandidate(run: NovelRun, number: number): void {
     throw new Error('Earlier chapters must be accepted before this chapter.');
   }
   validateAnalysis(version.analysis, number, version);
+  if (run.literaryValidationVersion === 1 && (!literaryCurrent(run, number, version) || version.literary?.status !== 'passed')) {
+    throw new Error('Only a chapter with current passed literary review can be accepted.');
+  }
+
   const knownPromises = new Set(run.blueprint?.promises.map(item => item.id) || []);
   if (version.analysis.promises.some(item => !knownPromises.has(item.promiseId))) {
     throw new Error('Analysis references an unknown planned promise.');
@@ -141,6 +146,9 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   const superseded = chapter.versions.find(item => item.revision === chapter.acceptedRevision)?.analysis;
   const delta = superseded ? canonDelta(superseded, version.analysis) : undefined;
   const canonMoved = !superseded || canonContribution(superseded) !== canonContribution(version.analysis);
+  const previousLiterary = chapter.versions.find(item => item.revision === chapter.acceptedRevision)?.literary;
+  const contribution = (assessment: typeof previousLiterary) => JSON.stringify(assessment?.observations.map(({ evidence, ...rest }) => ({ ...rest, quotes: evidence.map(item => item.quote) })));
+  const literaryMoved = run.literaryValidationVersion === 1 && contribution(previousLiterary) !== contribution(version.literary);
   chapter.acceptedRevision = version.revision;
   chapter.candidateRevision = undefined;
   chapter.status = 'accepted';
@@ -148,12 +156,12 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   chapter.lastFindings = undefined;
   // Re-reviewing a chapter whose premises did not move only invites a fresh sampled verdict on prose
   // nobody changed, and every such round can restart the cascade.
-  if (canonMoved) {
+  if (canonMoved || literaryMoved) {
     for (const dependent of run.chapters.filter(item => item.number > number)) {
       if (!dependent.versions.length) continue;
       // When the move is confined to named subjects, only the chapters that speak about those
       // subjects can now contradict canon; the rest were judged on prose nobody has touched.
-      if (delta && !delta.structural && delta.subjects.size) {
+      if (!literaryMoved && delta && !delta.structural && delta.subjects.size) {
         const analysis = dependent.versions.find(item => item.revision === dependent.acceptedRevision)?.analysis;
         if (analysis && ![...delta.subjects].some(subject => analysisMentions(analysis).includes(subject))) continue;
       }
@@ -175,7 +183,7 @@ export function nextUnacceptedChapter(run: NovelRun): ChapterRecord | undefined 
 
 /** Older checkpoints used permissive review parsing. Preserve every draft but revalidate claims. */
 export function reconcileCheckpoint(run: NovelRun): boolean {
-  if (run.validationVersion === 2) return false;
+  if (run.validationVersion === 2 && run.literaryValidationVersion === 1 && !run.chapters.some(chapter => chapter.status === 'accepted' && (!acceptedVersion(chapter) || !literaryCurrent(run, chapter.number, acceptedVersion(chapter)) || acceptedVersion(chapter).literary?.status !== 'passed'))) return false;
   for (const chapter of run.chapters) {
     if (chapter.versions.length) chapter.status = 'invalidated';
   }
@@ -185,6 +193,7 @@ export function reconcileCheckpoint(run: NovelRun): boolean {
   run.structuralAttempts = 0;
   run.finalAttempts = 0;
   run.validationVersion = 2;
+  run.literaryValidationVersion = 1;
   if (run.chapters.length === run.spec.chapterCount) run.stage = 'writing';
   else if (run.blueprint || run.chapters.length) run.stage = 'planning';
   run.resumeStage = undefined;

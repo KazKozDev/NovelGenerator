@@ -1,3 +1,4 @@
+import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
 import { analyseChapter, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
@@ -157,7 +158,7 @@ describe('Prompt canon size', () => {
 
 describe('Sampled review durability', () => {
   it('keeps an evidenced defect when a later pass over the same prose comes back clean', async () => {
-    const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300, writingMode: 'scenes' }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
+    const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
     const { chapter, version } = fixture();
     run.chapters = [chapter];
     run.outline = 'Vera recovers the letter and pays for it.';
@@ -168,7 +169,7 @@ describe('Sampled review durability', () => {
     chapter.lastFindings = JSON.stringify(['The vase has stood there for years and since yesterday.']);
     version.review = { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [{ id: 'vase', category: 'canon', severity: 'major', description: 'The vase has stood there for years and since yesterday.', instruction: 'Resolve the timeline.', evidence: [{ chapter: 1, revision: version.revision, quote: 'Vera read the letter.' }] }] };
     chapter.candidateRevision = version.revision;
-    const engine = new NovelEngine(async () => '{"issues":[]}', new MemoryRunStore());
+    const engine = new NovelEngine(async (prompt, system) => literaryResponse(prompt, system) ?? '{"issues":[]}', new MemoryRunStore());
     await expect(engine.continue(run)).rejects.toThrow(/needs editorial attention/);
     const rechecked = chapter.versions.find(item => item.revision === version.revision);
     expect(rechecked?.review?.status).toBe('failed');

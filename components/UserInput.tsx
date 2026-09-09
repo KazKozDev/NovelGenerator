@@ -364,14 +364,6 @@ const UserInput: React.FC<UserInputProps> = ({
               <option value="closed">Resolved</option><option value="open">Intentionally open</option><option value="series">Part of a series</option>
             </Select>
           </div>
-          <div className="md:col-span-2">
-            <label htmlFor="writingMode" className="block text-sm font-medium text-zinc-400 mb-1.5">Writing approach</label>
-            <Select id="writingMode" value={storySettings.writingMode || 'slots'} onChange={event => setStorySettings({ ...storySettings, writingMode: event.target.value as StorySettings['writingMode'] })}>
-              <option value="slots">Specialist contributions, unified scene synthesis</option>
-              <option value="scenes">Single writer per scene (experimental)</option>
-            </Select>
-            <p className="text-xs text-zinc-500 mt-1">Both approaches use the same story plan and editorial checks. No quality or speed advantage is assumed.</p>
-          </div>
         </div>
       </div>
 

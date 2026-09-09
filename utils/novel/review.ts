@@ -1,5 +1,6 @@
 import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { specPrompt } from './contracts';
+import { dialogueIssues } from './prosody';
 import { acceptedVersion, canonBefore, canonForPrompt, endingIssues, evidenceExists, validateAnalysis } from './storyState';
 
 export type NovelLLMRoute = 'writer' | 'validator';
@@ -62,12 +63,30 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
   throw new Error(`Structured response remained unvalidated after two attempts (${options.route ?? 'validator'}; expected fields: ${keys.join(', ')}): ${failure}`);
 }
 
+/**
+ * Prose travels inside a JSON field so a model's commentary and scaffolding cannot reach the
+ * manuscript by accident. The cost appeared once whole scenes were written in one call: three runs
+ * died because the model ended a long string without closing the object. The envelope stays the
+ * default; this is its recovery path — ask again for the prose alone, under the same checks, rather
+ * than lose a chapter to a missing brace.
+ */
 export async function generateProse(llm: NovelLLM, prompt: string, system: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  return structuredResponse(`${prompt}\nOUTPUT FORMAT: Return one JSON object with exactly the field "prose", containing the complete final literary prose as a string. Do not put planning, notes, commentary or reasoning inside prose.`, system, llm, ['prose'], raw => {
-    if (typeof raw.prose !== 'string' || !raw.prose.trim()) throw new Error('Missing final prose.');
-    if (/<\/?think>/i.test(raw.prose)) throw new Error('Thinking markup remains inside final prose.');
-    return raw.prose.trim();
-  }, { ...options, route: 'writer', schema: { type: 'object', required: ['prose'], properties: { prose: { type: 'string' } }, additionalProperties: false } });
+  const validate = (text: unknown): string => {
+    if (typeof text !== 'string' || !text.trim()) throw new Error('Missing final prose.');
+    if (/<\/?think>/i.test(text)) throw new Error('Thinking markup remains inside final prose.');
+    return text.trim();
+  };
+  try {
+    return await structuredResponse(`${prompt}\nOUTPUT FORMAT: Return one JSON object with exactly the field "prose", containing the complete final literary prose as a string. Do not put planning, notes, commentary or reasoning inside prose.`, system, llm, ['prose'],
+      raw => validate(raw.prose), { ...options, route: 'writer', schema: { type: 'object', required: ['prose'], properties: { prose: { type: 'string' } }, additionalProperties: false } });
+  } catch (error) {
+    if (!/complete JSON object/.test(String(error))) throw error;
+    const raw = await llm(`${prompt}\nOUTPUT FORMAT: Return the finished literary prose itself and nothing else. No JSON, no code fences, no heading, no planning, no commentary, no notes about what you did.`,
+      system, { temperature: options.temperature, maxTokens: options.maxTokens, route: 'writer' });
+    // Only code fences are stripped. Thinking is rejected here exactly as it is inside the envelope:
+    // the fallback exists to save a chapter from a missing brace, not to relax what may reach prose.
+    return validate(raw.replace(/^\s*```[a-z]*\n?|```\s*$/gi, '').trim());
+  }
 }
 
 const categories = ['canon', 'knowledge', 'plot', 'character', 'dialogue', 'voice', 'pacing', 'hook', 'ending', 'audience', 'format'];
@@ -186,13 +205,19 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(chapter.plan)}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `PREVIOUS ACCEPTED VERSION (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${previous.content}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\nCheck causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition (a character must not state or rely on a specific fact — a name, an event, a hidden detail — that the story has not yet given them; guessing, doubting, forming a wrong hypothesis, or reacting to something they directly perceive is not a violation, and neither is an action the character takes without certainty), distinct dialogue voices, POV/tense/style/audience, scene completeness, intentional pacing and emotional hooks. Check setup/payoff timing against the plan: report a missing setup or payoff only for a promise scheduled for this chapter. A promise whose payoff belongs to a later chapter must not be reported as unresolved here, and this chapter is not required to escalate or conclude it. The final chapter must fulfill the requested ending without a forced next-chapter hook. Flag only concrete defects, not universal stylistic preferences.\n${issueFormat}`;
     
     const report = await structuredResponse(prompt, 'You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.', llm, ['issues'], raw => parseIssues(raw, [{ chapter: chapter.number, version }]), { schema: issueSchema });
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language), ...report.issues];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...report.issues];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
       id: 'incomplete-length', category: 'plot', severity: 'major',
       description: `Chapter contains ${words} words against a target of ${target}; it may be a synopsis or incomplete output.`,
       instruction: `Expand the chapter to at least ${Math.ceil(target * 0.8)} words by developing the planned scenes through action, dialogue, sensory detail, reflection and consequences; do not pad with repetition.`,
+      evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
+    });
+    if (words > target * 1.25) issues.push({
+      id: 'excess-length', category: 'pacing', severity: 'major',
+      description: `Chapter contains ${words} words against a target of ${target}; it runs past the length this chapter was planned for.`,
+      instruction: `Cut back to about ${target} words by removing the passages that add no event, no changed relation and no new information: restatement, decoration and aftermath that only echoes the outcome. Delete rather than compress, and keep every planned beat, clue and line of dialogue.`,
       evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
     });
     // A report whose only findings were unverifiable is not a clean chapter; never pass it silently.

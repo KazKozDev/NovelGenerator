@@ -73,6 +73,9 @@ export interface DetailedScene {
   objective: string; // What the scene is trying to accomplish
   conflict: string; // Main tension or obstacle in the scene
   outcome: string; // How the scene resolves
+  narrativeWeight?: number; // Relative page space (1–5), not elapsed story time
+  /** How the scene's conflict reaches the page. 'speech' obliges the prose to dramatize it in direct speech. */
+  conflictCarriedBy?: 'speech' | 'action' | 'solitude';
   duration: string; // Estimated time span (e.g., "10 minutes", "several hours")
   mood: string; // Emotional atmosphere of the scene
   keyMoments: string[]; // Specific beats or events within the scene
@@ -189,7 +192,6 @@ export interface StorySettings {
   tense?: 'past' | 'present';
   ending?: 'closed' | 'open' | 'series';
   targetWordsPerChapter?: number;
-  writingMode?: 'slots' | 'scenes';
   genre?: string;
   narrativeVoice?: string;
   tone?: string;

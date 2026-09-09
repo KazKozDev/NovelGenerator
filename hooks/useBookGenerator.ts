@@ -12,7 +12,7 @@ import type { NovelLLM } from '../utils/novel/review';
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
   writingStyle: 'descriptive', language: 'English', tense: 'past',
-  ending: 'closed', targetWordsPerChapter: 4000, writingMode: 'slots',
+  ending: 'closed', targetWordsPerChapter: 4000,
 };
 
 /** React presents snapshots; the engine owns execution state and durable transactions. */

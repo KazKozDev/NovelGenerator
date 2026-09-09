@@ -190,3 +190,35 @@ export async function generateOllamaTextStream(
   onChunk(text);
   return text;
 }
+
+export const DEFAULT_OLLAMA_EMBEDDING_MODEL = 'qwen3-embedding:4b';
+
+/**
+ * Embeddings for measured prose checks. Batched in one request; a short or ragged response is an
+ * error rather than a silent partial result, because a missing vector would read as "no repetition".
+ */
+export async function embedOllama(
+  inputs: string[], model = DEFAULT_OLLAMA_EMBEDDING_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT,
+): Promise<number[][]> {
+  if (!inputs.length) return [];
+  const base = endpoint.replace(/\/+$/, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('Ollama embedding request exceeded the 5 minute deadline.')), 300000);
+  try {
+    const response = await fetch(`${base}/api/embed`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ model, input: inputs }),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`Ollama embedding request failed [${response.status}]: ${detail || response.statusText}`);
+    }
+    const data = await response.json();
+    const vectors = data?.embeddings;
+    if (!Array.isArray(vectors) || vectors.length !== inputs.length
+      || vectors.some((vector: unknown) => !Array.isArray(vector) || !vector.length || vector.some((value: unknown) => typeof value !== 'number' || !Number.isFinite(value)))) {
+      throw new Error(`Ollama returned no usable embeddings for ${inputs.length} input(s) from ${model}.`);
+    }
+    return vectors as number[][];
+  } finally { clearTimeout(timeout); }
+}

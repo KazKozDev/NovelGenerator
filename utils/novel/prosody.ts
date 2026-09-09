@@ -1,0 +1,299 @@
+import type { ChapterVersion, Evidence, ReviewIssue } from './contracts';
+
+/**
+ * Measured prose texture, not a model's opinion of it. Every number here is computed from the
+ * text itself, so a threshold can be argued about and a regression can be seen.
+ */
+export interface ProsodyMetrics {
+  words: number;
+  paragraphs: number;
+  medianParagraphWords: number;
+  longestParagraphWords: number;
+  dialogueShare: number;
+  /** Share of spoken paragraphs that also carry an attribution or an action beat. */
+  taggedSpeechShare: number | undefined;
+  similesPer1000: number | undefined;
+  stackedAdjectivesPer1000: number | undefined;
+}
+
+// JavaScript's \b is defined over ASCII word characters, so a Cyrillic boundary must be spelled out.
+const edge = { before: '(?<![\\p{L}\\p{N}])', after: '(?![\\p{L}\\p{N}])' };
+const word = (alternatives: string[]) => new RegExp(`${edge.before}(?:${alternatives.join('|')})${edge.after}`, 'giu');
+
+/** Comparison markers are language-specific; an unlisted language is measured, not guessed at. */
+const similePatterns: { languages: string[]; pattern: RegExp }[] = [
+  { languages: ['russian', 'русский', 'ru'], pattern: word(['словно', 'будто', 'подобно', 'точно как', 'как если бы', 'напоминая']) },
+  { languages: ['english', 'en'], pattern: word(['like an?', 'as if', 'as though', 'resembling', 'reminiscent of']) },
+];
+/**
+ * Two adjectives joined by a comma: the shape that turns every noun into a small catalogue. Only
+ * listed where inflection marks an adjective; guessing from word order would flag ordinary lists.
+ */
+const stackedAdjectives: { languages: string[]; pattern: RegExp }[] = [
+  { languages: ['russian', 'русский', 'ru'], pattern: new RegExp(`${edge.before}\\p{L}+(?:ым|ой|ая|ое|ые|ого|ной|ним)${edge.after},\\s+\\p{L}+(?:ым|ой|ая|ое|ые|ого|ной|ним)${edge.after}`, 'giu') },
+];
+
+const forLanguage = <T extends { languages: string[] }>(table: T[], language: string) =>
+  table.find(entry => entry.languages.some(name => language.toLowerCase().includes(name)));
+
+export function paragraphsOf(text: string): string[] {
+  return text.split(/\n+/).map(line => line.trim()).filter(line => line && !/^[*\-—_\s]+$/.test(line));
+}
+
+// Direct speech opens with a dash in most European typography and with a quote elsewhere.
+const isSpeech = (line: string) => /^[—–-]\s|^[«"“]/.test(line);
+/** An attribution dash inside the line, or narration continuing after the spoken sentence ends. */
+const isTagged = (line: string) => (line.match(/[—–]/g) || []).length > 1 || /[.!?…]»?\s+[A-ZА-ЯЁ]/.test(line);
+
+const wordsIn = (text: string) => (text.match(/[\p{L}\p{N}]+/gu) || []).length;
+const count = (text: string, pattern: RegExp) => (text.match(new RegExp(pattern.source, pattern.flags)) || []).length;
+
+export function prosodyMetrics(text: string, language = ''): ProsodyMetrics {
+  const paragraphs = paragraphsOf(text);
+  const speech = paragraphs.filter(isSpeech);
+  const words = wordsIn(text);
+  const lengths = paragraphs.map(wordsIn).sort((a, b) => a - b);
+  const simile = forLanguage(similePatterns, language);
+  const stacked = forLanguage(stackedAdjectives, language);
+  const per1000 = (matches: number) => words ? (matches * 1000) / words : 0;
+  return {
+    words,
+    paragraphs: paragraphs.length,
+    medianParagraphWords: lengths.length ? lengths[Math.floor(lengths.length / 2)] : 0,
+    longestParagraphWords: lengths.at(-1) || 0,
+    dialogueShare: paragraphs.length ? speech.length / paragraphs.length : 0,
+    taggedSpeechShare: speech.length ? speech.filter(isTagged).length / speech.length : undefined,
+    similesPer1000: simile ? per1000(count(text, simile.pattern)) : undefined,
+    stackedAdjectivesPer1000: stacked ? per1000(count(text, stacked.pattern)) : undefined,
+  };
+}
+
+/**
+ * Calibrated against this system's own output, not against published fiction: 13 chapters from five
+ * runs and two writer models gave 3.4–7.1 similes and 2.8–6.7 stacked modifiers per 1000 words. The
+ * ceilings sit at that distribution's upper quartile, so a finding means "denser than this pipeline
+ * usually writes" — a claim the numbers support — and not "denser than literature", which nothing
+ * here measured. An earlier budget of 2.5 similes was set from one manuscript and from memory; it
+ * failed all 13 chapters and therefore distinguished nothing.
+ */
+export interface ProsodyBudget {
+  similesPer1000: number;
+  stackedAdjectivesPer1000: number;
+  medianParagraphWords: number;
+}
+export const defaultProsodyBudget: ProsodyBudget = { similesPer1000: 5, stackedAdjectivesPer1000: 5.6, medianParagraphWords: 90 };
+
+/** Drift inside one book: a chapter well above what this book's accepted chapters do is an outlier. */
+export const driftFactor = 1.25;
+
+/** The passages the writer must actually change, quoted, so the repair pass can locate them. */
+function densest(text: string, pattern: RegExp, limit: number): string[] {
+  const paragraphs = paragraphsOf(text);
+  return paragraphs
+    .map(paragraph => ({ paragraph, density: count(paragraph, pattern) / Math.max(wordsIn(paragraph), 1) }))
+    .filter(item => item.density > 0)
+    .sort((a, b) => b.density - a.density)
+    .slice(0, limit)
+    .map(item => item.paragraph);
+}
+
+export function prosodyIssues(chapter: number, version: ChapterVersion, language = '', budget = defaultProsodyBudget, reference?: ProsodyMetrics): ReviewIssue[] {
+  const metrics = prosodyMetrics(version.content, language);
+  // A chapter may sit inside the absolute ceiling and still be far denser than the book around it.
+  const over = (value: number | undefined, ceiling: number, book: number | undefined) =>
+    value !== undefined && (value > ceiling || (book !== undefined && book > 0 && value > book * driftFactor));
+  const issues: ReviewIssue[] = [];
+  const quote = (quotes: string[]): Evidence[] => quotes.map(text => ({ chapter, revision: version.revision, quote: text }));
+  const simile = forLanguage(similePatterns, language);
+  if (simile && over(metrics.similesPer1000, budget.similesPer1000, reference?.similesPer1000)) issues.push({
+    id: 'simile-density', category: 'voice', severity: 'major',
+    description: `Comparisons appear ${metrics.similesPer1000!.toFixed(1)} times per 1000 words${reference?.similesPer1000 ? `, against ${reference.similesPer1000.toFixed(1)} in the chapters this book has already accepted` : ''}; the ceiling is ${budget.similesPer1000}.`,
+    instruction: 'Delete the comparisons that restate what the sentence already conveys, keeping those that add information the reader does not have. Do not replace a deleted comparison with a different one.',
+    evidence: quote(densest(version.content, simile.pattern, 4)),
+  });
+  const stacked = forLanguage(stackedAdjectives, language);
+  if (stacked && over(metrics.stackedAdjectivesPer1000, budget.stackedAdjectivesPer1000, reference?.stackedAdjectivesPer1000)) issues.push({
+    id: 'adjective-stacking', category: 'voice', severity: 'minor',
+    description: `Comma-joined modifier pairs appear ${metrics.stackedAdjectivesPer1000!.toFixed(1)} times per 1000 words; the budget is ${budget.stackedAdjectivesPer1000}.`,
+    instruction: 'Where two modifiers carry the same meaning, keep the more precise one and delete the other. Leave pairs that genuinely say different things.',
+    evidence: quote(densest(version.content, stacked.pattern, 3)),
+  });
+  if (over(metrics.medianParagraphWords, budget.medianParagraphWords, reference?.medianParagraphWords)) {
+    const longest = paragraphsOf(version.content).sort((a, b) => wordsIn(b) - wordsIn(a)).slice(0, 3);
+    issues.push({
+      id: 'paragraph-monotony', category: 'pacing', severity: 'minor',
+      description: `The median paragraph runs ${metrics.medianParagraphWords} words and the longest ${metrics.longestParagraphWords}; a chapter whose paragraphs are all this size has no rhythm.`,
+      instruction: 'Break the paragraphs whose material is already two separate beats, and let a decisive action or line stand as a short paragraph. Do not pad the short ones back up.',
+      evidence: quote(longest),
+    });
+  }
+  return issues;
+}
+
+/**
+ * A floor, not a law of literature. Commercial fiction carries a large share of its scenes in speech,
+ * but no corpus was measured here: this number is a convention, chosen below the 16% that whole-scene
+ * writing produced unprompted in matched samples, so it flags silence rather than legislating a style.
+ * A chapter whose plan contains no speech-driven scene is never held to it.
+ */
+export const dialogueFloor = 0.12;
+
+/** Direct speech, not reported speech: the paragraph opens with a dash or an opening quotation mark. */
+export function speechParagraphs(text: string): string[] {
+  return paragraphsOf(text).filter(isSpeech);
+}
+
+/**
+ * A ceiling, and a convention like the floor above: no corpus was measured. It marks the shape where
+ * every line arrives wrapped in a gesture and the gesture's interpretation — 96% and 100% in the two
+ * chapters that prompted it — so that some lines are left to stand as speech.
+ */
+export const taggedSpeechCeiling = 0.6;
+
+/**
+ * The plan says which scenes are argued out loud; this checks the prose kept that promise. Deterministic
+ * on purpose: a scene planned as an exchange and written without a spoken line is a defect no model
+ * needs to adjudicate. Scenes planned before this field existed are not judged.
+ */
+export function dialogueIssues(chapter: number, version: ChapterVersion, scenes: { sceneId: string; conflictCarriedBy?: string }[] = []): ReviewIssue[] {
+  const spoken = scenes.filter(scene => scene.conflictCarriedBy === 'speech');
+  if (!spoken.length) return [];
+  const speech = speechParagraphs(version.content);
+  const share = speech.length / Math.max(paragraphsOf(version.content).length, 1);
+  const opening = { chapter, revision: version.revision, quote: paragraphsOf(version.content)[0] || version.content.slice(0, 200) };
+  if (!speech.length) return [{
+    id: 'missing-dialogue', category: 'dialogue', severity: 'major',
+    description: `${spoken.length} planned scene(s) carry their conflict in speech (${spoken.map(scene => scene.sceneId).join(', ')}), but the chapter contains no spoken line.`,
+    instruction: 'Dramatize those confrontations as conversation: let the characters press their opposing aims on each other in direct speech, with the resistance and the concession on the page. Do not summarize what was said, and do not narrate the exchange from outside.',
+    evidence: [opening],
+  }];
+  const tagged = speech.filter(isTagged);
+  if (speech.length >= 6 && tagged.length / speech.length > taggedSpeechCeiling) return [{
+    id: 'speech-tag-bloat', category: 'dialogue', severity: 'minor',
+    description: `${Math.round((tagged.length / speech.length) * 100)}% of spoken lines arrive with an attached gesture or attribution; the exchange never runs as speech alone.`,
+    instruction: 'Leave most lines bare once the reader knows who is speaking. Keep a gesture only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and never follow a named gesture with its anatomy and its meaning.',
+    evidence: tagged.slice(0, 3).map(quote => ({ chapter, revision: version.revision, quote })),
+  }];
+  if (share < dialogueFloor) return [{
+    id: 'thin-dialogue', category: 'dialogue', severity: 'minor',
+    description: `Spoken lines occupy ${Math.round(share * 100)}% of paragraphs while ${spoken.length} scene(s) were planned to carry their conflict in speech.`,
+    instruction: 'Let the planned exchanges run at their real length instead of resolving in one or two lines: the answer that refuses, the pressure that follows, the thing said that cannot be taken back.',
+    evidence: [speech[0] ? { chapter, revision: version.revision, quote: speech[0] } : opening],
+  }];
+  return [];
+}
+
+export type Embedder = (inputs: string[]) => Promise<number[][]>;
+
+/**
+ * What was actually measured on a version. Report mode records findings without failing the
+ * chapter, so a budget can be argued about against real manuscripts before it blocks anything.
+ */
+export interface ProsodyReport {
+  checkedRevision: number;
+  metrics: ProsodyMetrics;
+  findings: ReviewIssue[];
+  /** False when no embedder was configured: repetition was not checked, not found absent. */
+  repetitionChecked: boolean;
+  /** Set when measurement itself failed; findings are then incomplete, not empty. */
+  error?: string;
+}
+
+const normalise = (vector: number[]) => {
+  const length = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  return length ? vector.map(value => value / length) : vector;
+};
+const cosine = (a: number[], b: number[]) => a.reduce((sum, value, index) => sum + value * b[index], 0);
+
+/**
+ * Measured against six generated chapters: adjacent paragraphs sit at a median cosine of 0.585 and a
+ * 95th percentile of 0.785, so 0.80 is the tail where one beat is genuinely told twice.
+ */
+export const defaultRepetitionThresholds = { adjacent: 0.8, crossChapter: 0.8, minimumCharacters: 200 };
+
+export interface PriorProse { chapter: number; revision: number; content: string }
+
+/**
+ * Semantic repetition the lexical check cannot see: the same beat in new words, next to itself or
+ * chapters away. Findings carry the id the repair loop routes to deletion, because a paraphrase of a
+ * paraphrase is still the second telling.
+ */
+export async function repetitionIssues(
+  chapter: number, version: ChapterVersion, earlier: PriorProse[], embed: Embedder,
+  thresholds = defaultRepetitionThresholds,
+): Promise<ReviewIssue[]> {
+  const current = paragraphsOf(version.content).filter(paragraph => paragraph.length >= thresholds.minimumCharacters);
+  if (current.length < 2) return [];
+  const history = earlier.flatMap(prior => paragraphsOf(prior.content)
+    .filter(paragraph => paragraph.length >= thresholds.minimumCharacters)
+    .map(paragraph => ({ ...prior, paragraph })));
+  const vectors = (await embed([...current, ...history.map(item => item.paragraph)])).map(normalise);
+  if (vectors.length !== current.length + history.length) throw new Error('The embedder returned a different number of vectors than paragraphs.');
+  const currentVectors = vectors.slice(0, current.length);
+  const historyVectors = vectors.slice(current.length);
+
+  const issues: ReviewIssue[] = [];
+  const adjacent: Evidence[] = [];
+  for (let index = 0; index < current.length - 1; index++) {
+    if (cosine(currentVectors[index], currentVectors[index + 1]) < thresholds.adjacent) continue;
+    // The later telling is the one the deletion pass should weigh first.
+    adjacent.push({ chapter, revision: version.revision, quote: current[index + 1] });
+  }
+  if (adjacent.length) issues.push({
+    id: 'duplicated-passage', category: 'format', severity: 'critical',
+    description: `${adjacent.length} paragraph(s) restate the beat immediately before them in different words.`,
+    instruction: 'Delete the weaker telling of each doubled beat outright. Do not merge the two into a third version.',
+    evidence: adjacent.slice(0, 4),
+  });
+
+  const crossed: Evidence[] = [];
+  for (let index = 0; index < current.length; index++) {
+    let best = { score: 0, source: -1 };
+    for (let prior = 0; prior < history.length; prior++) {
+      const score = cosine(currentVectors[index], historyVectors[prior]);
+      if (score > best.score) best = { score, source: prior };
+    }
+    if (best.score < thresholds.crossChapter) continue;
+    crossed.push({ chapter, revision: version.revision, quote: current[index] });
+    crossed.push({ chapter: history[best.source].chapter, revision: history[best.source].revision, quote: history[best.source].paragraph });
+  }
+  if (crossed.length) issues.push({
+    id: 'recycled-passage', category: 'voice', severity: 'major',
+    description: `${crossed.length / 2} paragraph(s) repeat a passage from an earlier chapter in new wording.`,
+    instruction: 'Rewrite the passage in this chapter so it performs work the earlier one did not, or cut it. Leave the earlier chapter untouched. A deliberate motif must gain a changed meaning or consequence, not return in synonyms.',
+    evidence: crossed.slice(0, 8),
+  });
+  return issues;
+}
+
+/** The book's own habit so far: the median of what it has already accepted, not an average of drafts. */
+export function referenceMetrics(earlier: PriorProse[], language: string): ProsodyMetrics | undefined {
+  if (earlier.length < 2) return undefined;
+  const each = earlier.map(item => prosodyMetrics(item.content, language));
+  const median = (values: (number | undefined)[]) => {
+    const known = values.filter((value): value is number => typeof value === 'number').sort((a, b) => a - b);
+    return known.length ? known[Math.floor(known.length / 2)] : undefined;
+  };
+  return {
+    words: median(each.map(item => item.words))!,
+    paragraphs: median(each.map(item => item.paragraphs))!,
+    medianParagraphWords: median(each.map(item => item.medianParagraphWords))!,
+    longestParagraphWords: median(each.map(item => item.longestParagraphWords))!,
+    dialogueShare: median(each.map(item => item.dialogueShare))!,
+    taggedSpeechShare: median(each.map(item => item.taggedSpeechShare)),
+    similesPer1000: median(each.map(item => item.similesPer1000)),
+    stackedAdjectivesPer1000: median(each.map(item => item.stackedAdjectivesPer1000)),
+  };
+}
+
+/** One report for a candidate: deterministic budgets always, semantic repetition when an embedder exists. */
+export async function prosodyReport(
+  chapter: number, version: ChapterVersion, earlier: PriorProse[], language: string,
+  embed?: Embedder, budget = defaultProsodyBudget, scenes: { sceneId: string; conflictCarriedBy?: string }[] = [],
+): Promise<ProsodyReport> {
+  const reference = referenceMetrics(earlier, language);
+  const findings = [...prosodyIssues(chapter, version, language, budget, reference), ...dialogueIssues(chapter, version, scenes)];
+  if (!embed) return { checkedRevision: version.revision, metrics: prosodyMetrics(version.content, language), findings, repetitionChecked: false };
+  const repetition = await repetitionIssues(chapter, version, earlier, embed);
+  return { checkedRevision: version.revision, metrics: prosodyMetrics(version.content, language), findings: [...findings, ...repetition], repetitionChecked: true };
+}

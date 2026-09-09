@@ -9,7 +9,6 @@ export interface BookSpec extends StorySettings {
   tense: 'past' | 'present';
   ending: 'closed' | 'open' | 'series';
   targetWordsPerChapter: number;
-  writingMode: 'slots' | 'scenes';
 }
 
 export function createBookSpec(premise: string, chapterCount: number, settings: StorySettings = {}): BookSpec {
@@ -27,7 +26,6 @@ export function createBookSpec(premise: string, chapterCount: number, settings: 
     language: settings.language || 'English', tense: settings.tense || 'past',
     ending: settings.ending || 'closed',
     targetWordsPerChapter: settings.targetWordsPerChapter || 4000,
-    writingMode: settings.writingMode || 'slots',
   };
 }
 
@@ -102,6 +100,9 @@ export interface ChapterVersion {
   createdAt: number;
   review?: ReviewReport;
   analysis?: ChapterAnalysis;
+  literary?: import('./literaryState').LiteraryAssessment;
+  /** Measured prose texture. Advisory in report mode: it never blocks acceptance on its own. */
+  prosody?: import('./prosody').ProsodyReport;
 }
 export interface ChapterRecord {
   number: number;
@@ -115,6 +116,9 @@ export interface ChapterRecord {
   repairVersionStart?: number;
   /** The findings the last round faced, so a round that fixed something is not counted against it. */
   lastFindings?: string;
+  literaryPlan?: import('./literaryState').LiteraryPlan;
+  /** Recorded when a planning rule could not be satisfied; never a reason to lose the run. */
+  planningNote?: string;
   sceneDrafts?: string[];
   lineEditedRevision?: number;
 }
@@ -127,6 +131,7 @@ export interface BookBlueprint {
   chapters: ParsedChapterPlan[];
 }
 export interface NovelRun {
+  literaryValidationVersion?: 1;
   schemaVersion: 1;
   validationVersion?: 2;
   id: string;

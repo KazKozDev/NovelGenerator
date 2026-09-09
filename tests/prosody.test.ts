@@ -1,0 +1,261 @@
+import { describe, expect, it } from 'vitest';
+import type { ChapterVersion } from '../utils/novel/contracts';
+import { dialogueIssues, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { textureRegression } from '../utils/novel/engine';
+import { createBookSpec } from '../utils/novel/contracts';
+import { createRun, NovelEngine } from '../utils/novel/engine';
+import { addCandidate } from '../utils/novel/storyState';
+import { MemoryRunStore } from '../utils/novel/runStore';
+import type { NovelLLM } from '../utils/novel/review';
+import { stampLiterary } from './helpers/literaryFixture';
+
+const version = (content: string, revision = 1): ChapterVersion => ({ revision, content, reason: 'test', createdAt: 0 });
+
+/** Vectors chosen so cosine similarity is exact and the thresholds, not an embedder, are under test. */
+const unit = (angle: number) => [Math.cos(angle), Math.sin(angle)];
+const embedderFor = (map: Record<string, number[]>): Embedder => async inputs => inputs.map(input => {
+  const key = Object.keys(map).find(prefix => input.startsWith(prefix));
+  if (!key) throw new Error(`No vector for: ${input.slice(0, 30)}`);
+  return map[key];
+});
+
+const long = (opening: string) => `${opening} ${'Она смотрела в окно и ждала следующего движения на той стороне двора. '.repeat(4)}`.trim();
+
+describe('measured prose texture', () => {
+  it('counts paragraphs, dialogue and comparison density from the text itself', () => {
+    const text = ['Он открыл дверь, словно боялся того, что за ней.', '— Ты пришёл, — сказала она.', 'Комната была пуста, будто из неё вынесли даже воздух.'].join('\n\n');
+    const metrics = prosodyMetrics(text, 'Russian');
+    expect(metrics.paragraphs).toBe(3);
+    expect(metrics.dialogueShare).toBeCloseTo(1 / 3);
+    expect(metrics.similesPer1000).toBeGreaterThan(0);
+    expect(metrics.words).toBe(prosodyMetrics(text, 'Russian').words);
+  });
+
+  it('reports no comparison budget for a language it cannot measure', () => {
+    const metrics = prosodyMetrics('Ein Satz ohne bekannte Sprache.', 'German');
+    expect(metrics.similesPer1000).toBeUndefined();
+    expect(prosodyIssues(1, version('Ein Satz ohne bekannte Sprache.'), 'German')).toEqual([]);
+  });
+
+  it('ignores scene separators when counting paragraphs', () => {
+    expect(paragraphsOf('Первый абзац.\n\n***\n\nВторой абзац.')).toEqual(['Первый абзац.', 'Второй абзац.']);
+  });
+
+  it('raises a repairable issue with the densest passages quoted', () => {
+    const dense = 'Тьма была словно вода, будто плотная масса, точно как стена, подобно дыханию.';
+    const issues = prosodyIssues(1, version(`${dense}\n\nОн вышел.`), 'Russian');
+    const simile = issues.find(issue => issue.id === 'simile-density');
+    expect(simile?.severity).toBe('major');
+    expect(simile?.evidence[0].quote).toBe(dense);
+    expect(simile?.evidence[0].revision).toBe(1);
+  });
+
+  it('stays silent when the prose is inside its budget', () => {
+    const plain = ['Он открыл дверь и вышел на лестницу.', '— Подожди, — сказала она.', 'Дверь закрылась.'].join('\n\n');
+    expect(prosodyIssues(1, version(plain), 'Russian').map(issue => issue.id)).not.toContain('simile-density');
+  });
+});
+
+describe('semantic repetition', () => {
+  const a = long('Ваза начала движение через комнату.');
+  const b = long('Ваза медленно пересекала комнату.');
+  const c = long('За окном шёл дождь и никто не отвечал.');
+
+  it('flags an adjacent paragraph that retells the beat before it, for deletion', async () => {
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'Ваза медленно': unit(0.3), 'За окном': unit(1.4) });
+    const issues = await repetitionIssues(1, version([a, b, c].join('\n\n')), [], embed);
+    const doubled = issues.find(issue => issue.id === 'duplicated-passage');
+    expect(doubled?.severity).toBe('critical');
+    expect(doubled?.evidence).toHaveLength(1);
+    expect(doubled?.evidence[0].quote).toBe(b);
+  });
+
+  it('leaves consecutive paragraphs that do different work alone', async () => {
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4) });
+    expect(await repetitionIssues(1, version([a, c].join('\n\n')), [], embed)).toEqual([]);
+  });
+
+  it('finds a passage recycled from an earlier chapter and cites both chapters', async () => {
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.3) });
+    const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed);
+    const recycled = issues.find(issue => issue.id === 'recycled-passage');
+    expect(recycled?.evidence.map(item => item.chapter)).toEqual([3, 1]);
+    expect(recycled?.evidence[1].revision).toBe(4);
+    expect(recycled?.evidence[0].revision).toBe(2);
+  });
+
+  it('skips paragraphs too short to compare rather than guessing about them', async () => {
+    const embed = embedderFor({ 'Он вышел': unit(0), 'Она вышла': unit(0) });
+    expect(await repetitionIssues(1, version('Он вышел.\n\nОна вышла.'), [], embed)).toEqual([]);
+  });
+
+  it('refuses a truncated embedder response instead of reporting no repetition', async () => {
+    const short: Embedder = async inputs => inputs.slice(1).map(() => unit(0));
+    await expect(repetitionIssues(1, version([a, b].join('\n\n')), [], short)).rejects.toThrow(/different number of vectors/);
+  });
+});
+
+describe('report mode inside the engine', () => {
+  const purple = Array.from({ length: 12 }, (_, index) =>
+    `Тьма была словно вода, будто плотная масса, точно как стена, подобно дыханию, и она ждала неподвижно у окна номер ${index}. `
+    + 'Комната стояла тихой, застывшей, и воздух был тяжёлым, плотным, пока она считала минуты до нужного часа.').join('\n\n');
+
+  function ready() {
+    const run = createRun(createBookSpec('A woman watches the window opposite.', 3, { targetWordsPerChapter: 300, language: 'Russian' }),
+      { provider: 'ollama', ollamaModel: 'test', ollamaEndpoint: 'http://localhost:11434' });
+    run.outline = 'She learns what the light means.';
+    run.chapters = [{ number: 1, status: 'pending' as const, repairAttempts: 0, versions: [], plan: {
+      title: 'Ритуал', summary: 'A vigil', sceneBreakdown: 'One vigil', characterDevelopmentFocus: 'Doubt', plotAdvancement: 'The light returns',
+      timelineIndicators: 'Night', emotionalToneTension: 'Tense', connectionToNextChapter: 'Closure',
+      detailedScenes: [{ sceneId: 's1', location: 'flat', participants: ['Марина'], objective: 'Watch', conflict: 'Sleeplessness', outcome: 'The light appears', duration: 'an hour', mood: 'tense', keyMoments: ['the light'] }],
+    } }];
+    const candidate = addCandidate(run.chapters[0], purple, 'test');
+    candidate.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: candidate.revision };
+    candidate.analysis = { summary: 'Марина ждёт света.', facts: [], events: [], promises: [] };
+    stampLiterary(run, 1, candidate);
+    return { run, candidate };
+  }
+  // Only the canon extraction a passed chapter still needs; any other call would mean the report
+  // mode had changed the verdict rather than recorded it.
+  const extractOnly: NovelLLM = async (prompt, system) => {
+    if (system.includes('extract evidence')) {
+      if (prompt.includes('TASK: Extract facts')) return '{"summary":"Марина ждёт света в окне напротив.","facts":[]}';
+      if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+      return '{"promises":[]}';
+    }
+    throw new Error(`No ${system.slice(0, 40)} call belongs in an accepted, current chapter.`);
+  };
+
+  it('keeps budget findings advisory: a chapter over every budget is still accepted', async () => {
+    const { run, candidate } = ready();
+    // Orthogonal vectors: nothing in this chapter repeats, so only the fitted budgets have anything to say.
+    const embed: Embedder = async inputs => inputs.map((_, index) => [Math.cos(index), Math.sin(index)]);
+    await (new NovelEngine(extractOnly, new MemoryRunStore(), () => {}, embed) as any).acceptOrRepair(run, run.chapters[0], candidate);
+    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
+    expect(candidate.review!.issues).toEqual([]);
+    const report = candidate.prosody!;
+    expect(report.repetitionChecked).toBe(true);
+    expect(report.findings.map(issue => issue.id)).toContain('simile-density');
+    expect(report.metrics.similesPer1000).toBeGreaterThan(2.5);
+  });
+
+  it('fails a chapter whose paragraphs repeat each other, however clean the review was', async () => {
+    const { run, candidate } = ready();
+    const embed: Embedder = async inputs => inputs.map(() => [1, 0]);
+    // The repair fixture refuses to answer, so the run stops at the attempt; the verdict is already set.
+    await expect((new NovelEngine(extractOnly, new MemoryRunStore(), () => {}, embed) as any)
+      .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow();
+    expect(run.chapters[0].acceptedRevision).toBeUndefined();
+    expect(candidate.review!.status).toBe('failed');
+    expect(candidate.review!.issues.map(issue => issue.id)).toContain('duplicated-passage');
+  });
+
+  it('says repetition was not checked when no embedder is configured', async () => {
+    const { run, candidate } = ready();
+    await (new NovelEngine(extractOnly, new MemoryRunStore()) as any).acceptOrRepair(run, run.chapters[0], candidate);
+    expect(candidate.prosody!.repetitionChecked).toBe(false);
+    expect(candidate.prosody!.findings.map(issue => issue.id)).not.toContain('duplicated-passage');
+    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
+  });
+
+  it('keeps a reviewed chapter when the embedder fails and says so', async () => {
+    const { run, candidate } = ready();
+    const broken: Embedder = async () => { throw new Error('embedding endpoint unreachable'); };
+    await (new NovelEngine(extractOnly, new MemoryRunStore(), () => {}, broken) as any).acceptOrRepair(run, run.chapters[0], candidate);
+    expect(candidate.prosody!.error).toMatch(/unreachable/);
+    expect(candidate.prosody!.repetitionChecked).toBe(false);
+    expect(candidate.prosody!.metrics.words).toBeGreaterThan(0);
+    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
+  });
+});
+
+describe('texture regression between revisions', () => {
+  const metrics = (text: string) => prosodyMetrics(text, 'Russian');
+  const withDialogue = ['— Ты пришёл, — сказала она.', 'Он закрыл дверь.', '— Не сейчас.', 'Она отвернулась к окну.'].join('\n\n');
+
+  it('names the loss when a repair silences the dialogue a chapter had', () => {
+    const silenced = 'Он закрыл дверь и ничего не сказал.\n\nОна отвернулась к окну.';
+    expect(textureRegression(metrics(withDialogue), metrics(silenced))).toMatch(/spoken dialogue from 50% of paragraphs to 0%/);
+  });
+
+  it('names the loss when separate beats are fused into far longer paragraphs', () => {
+    const short = ['Он вошёл.', 'Она молчала.', 'Дверь закрылась.'].join('\n\n');
+    const fused = `${'Он вошёл, и она молчала, и дверь закрылась за его спиной, и в комнате остался только свет. '.repeat(12)}`;
+    expect(textureRegression(metrics(short), metrics(fused))).toMatch(/median paragraph from \d+ to \d+ words/);
+  });
+
+  it('reports a repair that quietly took a fifth of the chapter with nothing asking for cuts', () => {
+    const full = Array.from({ length: 20 }, (_, i) => `Он вышел на лестницу и прислушался к тишине за дверью соседа, номер ${i}.`).join('\n\n');
+    const cut = full.split('\n\n').slice(0, 12).join('\n\n');
+    expect(textureRegression(metrics(full), metrics(cut))).toMatch(/cut the chapter from \d+ to \d+ words/);
+    // The same cut is correct when an issue asked for it.
+    expect(textureRegression(metrics(full), metrics(cut), true)).toBeUndefined();
+  });
+
+  it('accepts a revision that keeps the chapter\'s shape', () => {
+    const revised = ['— Ты пришёл, — сказала она тише.', 'Он закрыл дверь.', '— Не сейчас.', 'Она смотрела в окно.'].join('\n\n');
+    expect(textureRegression(metrics(withDialogue), metrics(revised))).toBeUndefined();
+  });
+
+  it('does not invent a regression for a chapter that never had dialogue', () => {
+    const before = 'Он вошёл в комнату и остановился у окна.\n\nСвет за двором не горел.';
+    const after = 'Он вошёл в комнату и остановился у окна.\n\nСвет за двором погас.';
+    expect(textureRegression(metrics(before), metrics(after))).toBeUndefined();
+  });
+});
+
+describe('planned exchanges must reach the page as speech', () => {
+  const speechScene = [{ sceneId: 's1', conflictCarriedBy: 'speech' }];
+  const silentChapter = ['Она смотрела в окно и молчала.', 'Он ушёл, не сказав ни слова.'].join('\n\n');
+  const spoken = ['— Ты знал, — сказала она.', 'Он не ответил.', '— Скажи это вслух.', '— Знал.', 'Она отвернулась.'].join('\n\n');
+
+  it('reports a planned exchange written without a spoken line, and names the scene', () => {
+    const issues = dialogueIssues(1, version(silentChapter), speechScene);
+    expect(issues[0].id).toBe('missing-dialogue');
+    expect(issues[0].severity).toBe('major');
+    expect(issues[0].category).toBe('dialogue');
+    expect(issues[0].description).toContain('s1');
+  });
+
+  it('reports an exchange resolved in one line as thin rather than missing', () => {
+    const thin = [...Array.from({ length: 14 }, (_, i) => `Она смотрела в окно и считала минуты, номер ${i}.`), '— Знал.'].join('\n\n');
+    const issues = dialogueIssues(1, version(thin), speechScene);
+    expect(issues[0].id).toBe('thin-dialogue');
+    expect(issues[0].severity).toBe('minor');
+  });
+
+  it('says nothing when the planned exchange was actually written', () => {
+    expect(dialogueIssues(1, version(spoken), speechScene)).toEqual([]);
+  });
+
+  it('never demands dialogue from a scene planned to be faced alone', () => {
+    expect(dialogueIssues(1, version(silentChapter), [{ sceneId: 's1', conflictCarriedBy: 'solitude' }])).toEqual([]);
+    expect(dialogueIssues(1, version(silentChapter), [{ sceneId: 's1', conflictCarriedBy: 'action' }])).toEqual([]);
+  });
+
+  it('judges no chapter planned before the field existed', () => {
+    expect(dialogueIssues(1, version(silentChapter), [{ sceneId: 's1' }])).toEqual([]);
+    expect(dialogueIssues(1, version(silentChapter), [])).toEqual([]);
+  });
+
+  it('reports an exchange where every line arrives wrapped in a gesture', () => {
+    const wrapped = Array.from({ length: 8 }, (_, i) =>
+      `— Скажи это вслух, — произнёс он, и его брови сошлись на переносице, номер ${i}.`).join('\n\n');
+    const issues = dialogueIssues(1, version(wrapped), speechScene);
+    expect(issues[0].id).toBe('speech-tag-bloat');
+    expect(issues[0].severity).toBe('minor');
+    expect(issues[0].evidence).toHaveLength(3);
+    expect(prosodyMetrics(wrapped, 'Russian').taggedSpeechShare).toBe(1);
+  });
+
+  it('leaves an exchange alone when most of its lines stand bare', () => {
+    const bare = ['— Ты знал.', '— Знал.', '— И молчал.', '— Молчал.', '— Почему?',
+      '— Потому что ты бы ушла, — сказал он.', '— Я и ухожу.', '— Знаю.'].join('\n\n');
+    expect(dialogueIssues(1, version(bare), speechScene)).toEqual([]);
+    expect(prosodyMetrics(bare, 'Russian').taggedSpeechShare).toBeLessThan(0.6);
+  });
+
+  it('counts direct speech, not reported speech', () => {
+    expect(speechParagraphs('— Я знаю.\n\nОн сказал, что знает.\n\n«Я знаю», — подумала она.')).toHaveLength(2);
+  });
+});

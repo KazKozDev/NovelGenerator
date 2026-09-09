@@ -1,3 +1,4 @@
+import { literaryCurrent } from './literaryState';
 import { ChapterGenerationStage, GenerationStep, type ChapterData } from '../../types';
 import type { NovelRun } from './contracts';
 import { acceptedVersion } from './storyState';
@@ -32,7 +33,7 @@ export function displayChapters(run?: NovelRun): ChapterData[] {
 }
 
 export function compileBook(run: NovelRun): string {
-  if (run.stage !== 'complete' || run.finalReview?.status !== 'passed' || run.chapters.length !== run.spec.chapterCount || run.chapters.some(chapter => chapter.candidateRevision !== undefined || !acceptedVersion(chapter))) {
+  if (run.literaryValidationVersion !== 1 || run.stage !== 'complete' || run.finalReview?.status !== 'passed' || run.chapters.length !== run.spec.chapterCount || run.chapters.some(chapter => chapter.candidateRevision !== undefined || !acceptedVersion(chapter) || (run.literaryValidationVersion === 1 && (!literaryCurrent(run, chapter.number, acceptedVersion(chapter)) || acceptedVersion(chapter).literary?.status !== 'passed')))) {
     throw new Error('Only a complete, reviewed manuscript can be exported as final.');
   }
   return `# ${run.title}\n\n` + run.chapters.map(chapter => `## Chapter ${chapter.number}: ${chapter.plan.title}\n\n${acceptedVersion(chapter).content}`).join('\n\n');
@@ -42,6 +43,8 @@ export function metadata(run: NovelRun): string {
   return JSON.stringify({
     title: run.title, story_premise: run.spec.premise, spec: run.spec, provider: run.provider, validationProvider: run.validationProvider,
     runId: run.id, characters: run.blueprint?.characters, chapter_summaries: run.canon.summaries,
+    literaryState: run.chapters.map(chapter => ({ number: chapter.number, plan: chapter.literaryPlan, assessment: acceptedVersion(chapter)?.literary })),
+    prosody: run.chapters.map(chapter => ({ number: chapter.number, report: acceptedVersion(chapter)?.prosody })),
     canon: run.canon, promises: run.blueprint?.promises, finalReview: run.finalReview,
     chapterVersions: run.chapters.map(chapter => ({ number: chapter.number, revision: chapter.acceptedRevision })),
     measurement: { calls: run.calls || [], note: 'Provider calls and duration are operational measurements, not literary quality scores.' },

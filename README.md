@@ -103,7 +103,6 @@ Set in the app before generation starts.
 | Target audience | adult | Audience contract |
 | Writing style | descriptive | Style contract |
 | Ending | closed | `closed`, `open` or `series` |
-| Writing mode | slots | `slots` composes a scene from specialist passages; `scenes` writes it in one call |
 | Writer provider | gemini | `gemini` or `ollama`; the Ollama model is chosen from the models it reports |
 | Editor model | same as writer | A second model for review, canon extraction and the book audits |
 | Editor thinking | on | Lets the editor reason before judging; its reasoning never enters the manuscript |

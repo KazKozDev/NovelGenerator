@@ -29,13 +29,39 @@ not evidence of events or character knowledge. Roles use the actual chapter coun
 
 ## Writing and review
 
-Two scene-writing treatments share the same plan and context:
+One prose writer generates each scene from the plan, the accepted canon and the prose
+already written in that chapter. A second treatment — a framework of specialist slots
+merged by a synthesis call — was measured against it on four matched scene pairs and
+removed: it produced shorter scenes every time (879 against 1233 words on the same
+target) and almost no dialogue (3.8% against 16% of paragraphs), with no measured
+advantage. The shortfall it created is what the length contract then paid for in
+description.
 
-- `slots`: structure and specialist contributions followed by one scene synthesis.
-- `scenes`: one prose writer generates the whole scene (experimental).
+Measured prose texture is recorded on every candidate version: comparison density,
+paragraph length distribution, dialogue share, and semantic repetition found with
+embeddings. Three of these measurements act, and the rest only report.
 
-Neither treatment has a claimed quality or speed advantage. `scripts/compare-writers.mjs`
-creates blind A/B manuscript samples with separate operational measurements.
+**Repetition fails a chapter.** Paragraphs whose embeddings sit above the tail of what a
+real manuscript produces — cosine 0.80, against a median of 0.585 — are the same defect
+the lexical duplicate check already blocks, caught after rewording, so they are treated
+the same way and repaired by deletion. A passage recycled from an earlier chapter is
+reported against both chapters and repaired in the later one.
+
+**Planned exchanges must reach the page as speech.** Each planned scene declares whether
+its conflict is carried by speech, action or solitude. A chapter whose plan contains a
+speech-driven scene and whose prose contains no spoken line is rejected; spoken lines
+below `dialogueFloor` of paragraphs are reported. Scenes planned before the field
+existed are not judged.
+
+**A repair may not pay for its fix with the chapter.** A revision is compared against the
+text it came from: silencing the dialogue that chapter had, fusing its paragraphs into
+far longer blocks, or cutting a sixth of it when no issue asked for cuts sends the
+repair back once with the damage named. That comparison needs no fitted threshold.
+
+Chapter length is bounded on both sides against the planned target, and a repair is told
+to restore length only when an issue names content as missing. Comparison density,
+modifier stacking and paragraph monotony stay advisory: their budgets were fitted to one
+manuscript and must be recalibrated across several before they can block acceptance.
 
 Every chapter goes through full-prose review, bounded targeted repair and grounded
 analysis before acceptance. Review reports use `passed`, `failed`, or `not_checked`.
