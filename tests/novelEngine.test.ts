@@ -395,6 +395,27 @@ describe('Retrying a structured response', () => {
   });
 });
 
+describe('A review is allowed to find nothing', () => {
+  it('tells the editor that an empty report is a complete review, and refuses the suggestion shape', async () => {
+    const run = runWithPlans();
+    const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
+    let seen = '';
+    await reviewChapter(run, run.chapters[0], candidate, async (prompt) => { seen = prompt; return '{"issues":[]}'; });
+    expect(seen).toContain('An empty issues array is the expected result');
+    expect(seen).toContain('this review does not collect suggestions');
+    // The checked dimensions are where to look, not a quota to fill.
+    expect(seen).toContain('not a list to fill');
+  });
+
+  it('passes a chapter the editor found nothing wrong with', async () => {
+    const run = runWithPlans();
+    const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
+    const report = await reviewChapter(run, run.chapters[0], candidate, async () => '{"issues":[]}');
+    expect(report.status).toBe('passed');
+    expect(report.issues).toEqual([]);
+  });
+});
+
 describe('Prose that will not fit in a JSON string', () => {
   it('asks for the prose alone when the envelope comes back unterminated, and keeps the same checks', async () => {
     const story = 'Марина открыла дверь. За порогом никого не было.';
