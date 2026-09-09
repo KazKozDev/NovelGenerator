@@ -5,7 +5,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -32,7 +32,10 @@ const FILLER = [
   'The town outside went on with its afternoon without any interest in either of them.',
 ].join(' ');
 
-const prose = (number: number) => `Thorne opened door ${number}. ${FILLER} The price was hers to pay.`;
+// Every chapter gets its own wording. Chapters built from one shared block of filler are chapters
+// that copy each other sentence for sentence, which is the defect copied-passage exists to report.
+const filler = (number: number) => FILLER.split(' ').map((word, index) => index % 4 === 1 ? `${word}${number}` : word).join(' ');
+const prose = (number: number) => `Thorne opened door ${number}. ${filler(number)} The price was hers to pay.`;
 function plan(number: number) {
   return {
     title: `Door ${number}`, summary: `Thorne opens door ${number}.`, sceneBreakdown: 'An encounter at the archive.',
@@ -211,7 +214,7 @@ describe('Editorial gates', () => {
 describe('Redundancy repair', () => {
   it('deletes numbered occurrences and rejects invalid IDs', async () => {
     const run = runWithPlans();
-    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const echoed = filler(1).split(/(?<=[.!?…])\s+/)[0];
     const original = prose(1).replace(' The price', '\n\nThe price');
     const draft = `${original} ${echoed}`;
     const base = fixtureLLM();
@@ -240,7 +243,7 @@ describe('Redundancy repair', () => {
 
   it('rewrites instead of ending the run when deletion would take the whole chapter', async () => {
     const run = runWithPlans();
-    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const echoed = filler(1).split(/(?<=[.!?…])\s+/)[0];
     const draft = `${prose(1)} ${echoed} ${echoed}`;
     const base = fixtureLLM();
     let reviewed = 0;
@@ -665,7 +668,7 @@ describe('Repair budget', () => {
 describe('Deletion arithmetic', () => {
   it('keeps one copy of a sentence the chapter says twice, and removes a unique one outright', async () => {
     const run = runWithPlans();
-    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const echoed = filler(1).split(/(?<=[.!?…])\s+/)[0];
     const unique = 'The price was hers to pay.';
     const draft = `${prose(1)} ${echoed}`;
     const base = fixtureLLM();
@@ -687,7 +690,7 @@ describe('Deletion arithmetic', () => {
 describe('Repair order', () => {
   it('deletes the repetition first even when other defects are reported alongside it', async () => {
     const run = runWithPlans();
-    const echoed = 'She kept the letter folded in her pocket while the clerk read the register.';
+    const echoed = filler(1).split(/(?<=[.!?…])\s+/)[0];
     const draft = `${prose(1)} ${echoed}`;
     const base = fixtureLLM();
     let reviewed = 0;
@@ -978,5 +981,44 @@ describe('The beat registry', () => {
     await expect((new NovelEngine(llm as any, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate)).rejects.toThrow(/repair reached/);
     expect(chapter.status).not.toBe('accepted');
     expect(candidate.review!.issues.map(issue => issue.id)).toContain('undramatized-beat');
+  });
+});
+
+describe('A passage carried out of an earlier chapter', () => {
+  const line = 'Марина посмотрела на окно напротив и не увидела там ни света, ни силуэта, ни движения.';
+
+  it('reports a sentence copied word for word, and stays silent on one merely reworded', () => {
+    const earlier = [{ chapter: 1, revision: 1, content: `${line} Она закрыла дверь на два оборота и легла.` }];
+    expect(copiedFromEarlier(`Ночь тянулась. ${line}`, earlier).map(item => item.source.chapter)).toEqual([1]);
+    // A shorter earlier sentence grown longer here is a chapter reusing a formula, not copying a passage.
+    const reworded = 'Марина посмотрела в сторону окна напротив и подумала, что света там не будет уже никогда.';
+    expect(copiedFromEarlier(`Ночь тянулась. ${reworded}`, earlier)).toEqual([]);
+    expect(copiedFromEarlier(`Ночь тянулась. ${line}`, [])).toEqual([]);
+  });
+
+  it('fails the chapter through review, quoting both chapters and naming which one is the writer\'s', async () => {
+    const run = runWithPlans();
+    const first = approve(run, 1, `${prose(1)} ${line}`);
+    const chapter = run.chapters[1];
+    const version = addCandidate(chapter, `${prose(2)} ${line}`, 'fixture');
+    const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
+    const issue = result.issues.find(item => item.id === 'copied-passage');
+    expect(result.status).toBe('failed');
+    expect(issue?.severity).toBe('critical');
+    expect(issue?.description).toContain('chapter(s) 1');
+    expect(issue?.instruction).toContain('Only the sentence from chapter 2');
+    expect(issue?.evidence).toEqual([
+      { chapter: 2, revision: version.revision, quote: line },
+      { chapter: 1, revision: first.revision, quote: line },
+    ]);
+  });
+
+  it('reads only accepted chapters, never a draft the book has not told', async () => {
+    const run = runWithPlans();
+    addCandidate(run.chapters[0], `${prose(1)} ${line}`, 'an unaccepted draft');
+    const chapter = run.chapters[1];
+    const version = addCandidate(chapter, `${prose(2)} ${line}`, 'fixture');
+    const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
+    expect(result.issues.some(item => item.id === 'copied-passage')).toBe(false);
   });
 });

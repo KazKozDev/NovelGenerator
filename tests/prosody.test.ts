@@ -114,6 +114,18 @@ describe('semantic repetition', () => {
     expect(await repetitionIssues(1, version([a, c].join('\n\n')), [], embed)).toEqual([]);
   });
 
+  it('holds cross-chapter pairs to their own distribution, not the one measured inside a chapter', async () => {
+    // Paragraphs from different chapters of the same novel sit a tenth higher than paragraphs inside
+    // one: at 0.80 the band is the book's own echoes — a scene continued across the break, a later
+    // chapter arguing about the light the first one lit — and every one of them blocked acceptance.
+    const echo = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }],
+      embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.61) }));
+    expect(echo.find(issue => issue.id === 'recycled-passage')).toBeUndefined();
+    const repeated = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }],
+      embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.49) }));
+    expect(repeated.find(issue => issue.id === 'recycled-passage')?.evidence.map(item => item.chapter)).toEqual([3, 1]);
+  });
+
   it('finds a passage recycled from an earlier chapter and cites both chapters', async () => {
     const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.3) });
     const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed);

@@ -460,7 +460,7 @@ export class NovelEngine {
       let content: string;
       let extra = '';
       // Cutting is the repair some issues actually ask for; only then may a revision come back shorter.
-      let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage');
+      let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage' || issue.id === 'copied-passage');
       const sweep = nextSweep(version.review!.issues, chapter.distributedServed);
       if (!repetition.length) {
         chapter.distributedServed = sweep.served;

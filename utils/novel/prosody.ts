@@ -252,8 +252,17 @@ const cosine = (a: number[], b: number[]) => a.reduce((sum, value, index) => sum
 /**
  * Measured against six generated chapters: adjacent paragraphs sit at a median cosine of 0.585 and a
  * 95th percentile of 0.785, so 0.80 is the tail where one beat is genuinely told twice.
+ *
+ * Paragraphs from different chapters are not that distribution. Across 525 paragraphs of six finished
+ * runs they sit a tenth higher — median 0.705, 95th percentile 0.800 — so the inherited 0.80 was the
+ * 95th percentile itself: a quota that takes the top 5% of every chapter however clean it is, and in
+ * that band the pairs are a novel's own echoes, not its repetitions. The first chapter's light in the
+ * window against the second chapter's argument about that light; a scene that goes on across the
+ * chapter break. Above 0.86 the reading changes and stops changing: 0.86, 0.90 and 0.95 all return
+ * exactly the same two paragraphs, and those two are word-for-word copies, which copiedFromEarlier
+ * now catches without an embedder at all.
  */
-export const defaultRepetitionThresholds = { adjacent: 0.8, crossChapter: 0.8, distant: 0.8, minimumCharacters: 200 };
+export const defaultRepetitionThresholds = { adjacent: 0.8, crossChapter: 0.86, distant: 0.8, minimumCharacters: 200 };
 
 export interface PriorProse { chapter: number; revision: number; content: string }
 

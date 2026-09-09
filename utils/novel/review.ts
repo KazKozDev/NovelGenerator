@@ -1,6 +1,6 @@
 import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { specPrompt } from './contracts';
-import { dialogueIssues } from './prosody';
+import { dialogueIssues, type PriorProse } from './prosody';
 import { acceptedVersion, beatKey, canonBefore, canonForPrompt, endingIssues, evidenceExists, plannedBeats, unplayedBeats, validateAnalysis } from './storyState';
 
 export type NovelLLMRoute = 'writer' | 'validator';
@@ -185,6 +185,39 @@ export function duplicatePassages(content: string, threshold = 0.7): { first: st
   return found;
 }
 
+/**
+ * Sentences this chapter copied out of a chapter already accepted. The lexical duplicate check reads
+ * one chapter at a time and the semantic one needs an embedder, so a paragraph carried whole into the
+ * next chapter was visible only while the network was up — and in the band where that check fires it
+ * is mostly reporting a novel's own echoes anyway.
+ *
+ * The threshold is where the reading is unambiguous: across 2442 sentences of six finished runs the
+ * cross-chapter overlap has a median of 0.30 and a 99th percentile of 0.70, and every match at or
+ * above 0.9 was an exact copy — fourteen of them, in two chapters nothing was reporting. Just below,
+ * at 0.85, the matches are a short earlier sentence grown longer here, which is a chapter reusing a
+ * formula, not a chapter copying a passage.
+ */
+export function copiedFromEarlier(content: string, earlier: PriorProse[], threshold = 0.9): { sentence: string; source: PriorProse & { sentence: string } }[] {
+  const split = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.split(/\s+/).length >= 8);
+  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
+  const history = earlier.flatMap(prior => split(prior.content).map(sentence => ({ ...prior, sentence, bag: words(sentence) })));
+  if (!history.length) return [];
+  const found: { sentence: string; source: PriorProse & { sentence: string } }[] = [];
+  for (const sentence of split(content)) {
+    const bag = words(sentence);
+    for (const prior of history) {
+      let shared = 0;
+      for (const word of prior.bag) if (bag.has(word)) shared++;
+      // Overlap against the shorter sentence, as inside a chapter: a copy padded with a clause is a copy.
+      if (shared / Math.min(bag.size, prior.bag.size) < threshold) continue;
+      const { bag: _bag, ...source } = prior;
+      found.push({ sentence, source });
+      break;
+    }
+  }
+  return found;
+}
+
 /** The whole sentence carrying an offset, so a repair has a unit with a beginning and an end. */
 function sentenceAround(content: string, index: number): string {
   const start = Math.max(content.lastIndexOf('.', index), content.lastIndexOf('!', index), content.lastIndexOf('?', index), content.lastIndexOf('\n', index));
@@ -193,7 +226,7 @@ function sentenceAround(content: string, index: number): string {
   return content.slice(start + 1, end).trim() || content.slice(Math.max(0, index - 40), index + 40);
 }
 
-export function mechanicalIssues(chapter: number, version: ChapterVersion, language = ''): ReviewIssue[] {
+export function mechanicalIssues(chapter: number, version: ChapterVersion, language = '', earlier: PriorProse[] = []): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const target = language.toLowerCase();
   for (const script of foreignScripts) {
@@ -216,6 +249,18 @@ export function mechanicalIssues(chapter: number, version: ChapterVersion, langu
     description: `${duplicates.length} passage(s) appear twice in this chapter.`,
     instruction: 'Delete the weaker occurrence of each repeated passage outright. Do not rewrite both into new wording, and do not keep a shortened version of the one you remove.',
     evidence: duplicates.slice(0, 4).map(pair => ({ chapter, revision: version.revision, quote: pair.second })),
+  });
+  const copied = copiedFromEarlier(version.content, earlier);
+  if (copied.length) issues.push({
+    // Its own id, like the semantic check: sharing one meant that whenever the first check fired, the
+    // second's findings were dropped as already reported and never reached a repair.
+    id: 'copied-passage', category: 'format', severity: 'critical',
+    description: `${copied.length} sentence(s) are carried word for word out of chapter(s) ${[...new Set(copied.map(item => item.source.chapter))].sort((first, second) => first - second).join(', ')}.`,
+    instruction: `Each pair below is a sentence from this chapter followed by the earlier sentence it copies. Only the sentence from chapter ${chapter} is yours to change: cut it, or write what this chapter actually needs at that point. The earlier sentence belongs to another chapter and is quoted only as context — you will not find it in the prose you were given, so do not look for it and do not change it.`,
+    evidence: copied.slice(0, 4).flatMap(item => [
+      { chapter, revision: version.revision, quote: item.sentence },
+      { chapter: item.source.chapter, revision: item.source.revision, quote: item.source.sentence },
+    ]),
   });
   const marker = version.content.match(/\[(?:DIALOGUE|ACTION|INTERNAL|DESCRIPTION|TRANSITION|EMOTION|SLOT)[A-Z_\d -]*\]/i);
   if (marker) issues.push({
@@ -269,7 +314,12 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(chapter.plan)}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `PREVIOUS ACCEPTED VERSION (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${previous.content}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\nCheck causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition (a character must not state or rely on a specific fact — a name, an event, a hidden detail — that the story has not yet given them; guessing, doubting, forming a wrong hypothesis, or reacting to something they directly perceive is not a violation, and neither is an action the character takes without certainty; a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge either — a character failing to place a smell is the opposite of a character using a fact, and reporting it as a leak means reading past what the sentence says; the premise in the author contract above is established ground, the situation this book begins from, so everything it states is already known to the reader and to the characters it describes, and repeating it is never a violation), distinct dialogue voices, POV/tense/style/audience, scene completeness, intentional pacing and emotional hooks. Check setup/payoff timing against the plan: report a missing setup or payoff only for a promise scheduled for this chapter. A promise whose payoff belongs to a later chapter must not be reported as unresolved here, and this chapter is not required to escalate or conclude it. In the same way, a revelation this chapter makes that an earlier chapter did not prepare is a defect of the book and not of this chapter: nothing written here can plant a clue in a chapter that is already finished, and the whole-book review checks preparation across chapters. Report what this chapter does with the material it has. The final chapter must fulfill the requested ending without a forced next-chapter hook. These are the dimensions to look along, not a list to fill: most of them will be clean in most chapters, and finding one defect per dimension is a sign of a review inventing them rather than a chapter carrying them. Flag only concrete defects, not universal stylistic preferences.\n${issueFormat}`;
     
     const report = await structuredResponse(prompt, 'You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.', llm, ['issues'], raw => parseIssues(raw, [{ chapter: chapter.number, version }]), { schema: issueSchema });
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...report.issues];
+    // The chapters this one may have copied from are the accepted ones before it; a draft nobody
+    // accepted is not prose this book has told.
+    const earlier = run.chapters.filter(item => item.number < chapter.number)
+      .map(item => ({ item, accepted: acceptedVersion(item) }))
+      .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...report.issues];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
