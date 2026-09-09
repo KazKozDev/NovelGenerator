@@ -68,6 +68,12 @@ describe('a gesture named once and explained twice more', () => {
     expect(metrics.serialExplanationsPer1000).toBeGreaterThan(1.5);
     const issue = prosodyIssues(1, version(flogged), 'Russian').find(item => item.id === 'serial-explanation');
     expect(issue?.severity).toBe('major');
+    // Denser than the book but inside the budget: worth saying, not worth failing a chapter over.
+    const mild = 'Она коснулась плеча. Движение было плавным, размеренным, наполненным смыслом.\n\n'
+      + Array.from({ length: 110 }, (_, i) => `Она смотрела в окно и считала минуты до утра номер ${i}.`).join('\n\n');
+    const reference = { ...prosodyMetrics(mild, 'Russian'), serialExplanationsPer1000: 0.1 };
+    const drift = prosodyIssues(1, version(mild), 'Russian', undefined, reference).find(item => item.id === 'serial-explanation');
+    expect(drift?.severity).toBe('minor');
     expect(issue?.evidence.length).toBeGreaterThan(0);
     expect(issue?.evidence[0].quote).toContain('плавным');
   });

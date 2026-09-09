@@ -126,6 +126,13 @@ export function prosodyIssues(chapter: number, version: ChapterVersion, language
   // A chapter may sit inside the absolute ceiling and still be far denser than the book around it.
   const over = (value: number | undefined, ceiling: number, book: number | undefined) =>
     value !== undefined && (value > ceiling || (book !== undefined && book > 0 && value > book * driftFactor));
+  /**
+   * Drift alone informs; only the absolute ceiling blocks. A chapter measured at 0.7 coordinate series
+   * per 1000 words against a budget of 1.5 was failed for standing above its book's median of 0.25 —
+   * denser than its neighbours, and comfortably clean by the only threshold with evidence behind it.
+   */
+  const weight = (value: number | undefined, ceiling: number): 'major' | 'minor' =>
+    value !== undefined && value > ceiling ? 'major' : 'minor';
   const issues: ReviewIssue[] = [];
   const quote = (quotes: string[]): Evidence[] => quotes.map(text => ({ chapter, revision: version.revision, quote: text }));
   const simile = forLanguage(similePatterns, language);
@@ -146,7 +153,7 @@ export function prosodyIssues(chapter: number, version: ChapterVersion, language
   if (serial && over(metrics.serialExplanationsPer1000, budget.serialExplanationsPer1000, reference?.serialExplanationsPer1000)) {
     const sentences = version.content.split(/(?<=[.!?…])\s+/).filter(sentence => count(sentence, serial.pattern));
     issues.push({
-      id: 'serial-explanation', category: 'voice', severity: 'major',
+      id: 'serial-explanation', category: 'voice', severity: weight(metrics.serialExplanationsPer1000, budget.serialExplanationsPer1000),
       description: `${metrics.serialExplanationsPer1000!.toFixed(1)} series of three or more coordinate members per 1000 words: a gesture is named and then explained twice more.`,
       instruction: 'In each of these sentences keep the member that carries information the reader does not already have and delete the rest of the series. Do not replace a deleted member with a different one, and change nothing outside the series.',
       evidence: quote(sentences.slice(0, 4)),
