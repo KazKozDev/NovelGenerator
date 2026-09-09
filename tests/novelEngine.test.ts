@@ -483,6 +483,20 @@ describe('A defect that is a proportion, not a place', () => {
     expect(oneDistributedAtATime(issues)).toEqual(issues);
   });
 
+  it('hands the repair this chapter\'s intent, not the book\'s whole literary ledger', async () => {
+    const run = runWithPlans();
+    approve(run, 1, 'An accepted chapter whose literary ledger must not travel into every later repair.');
+    const chapter = run.chapters[1];
+    chapter.literaryPlan = { version: 1, contextKey: 'k', chapterPlanKey: 'p', endingDevelopment: 'The ending turns.', avoidReplaying: [], scenes: [] };
+    const version = addCandidate(chapter, prose(2), 'draft');
+    let seen = '';
+    await (new NovelEngine(async prompt => { seen = prompt; return JSON.stringify({ prose: prose(2) }); }, new MemoryRunStore()) as any)
+      .repair(run, chapter, version, [{ id: 'knowledge-01', category: 'knowledge' as const, severity: 'major' as const, description: 'A leak.', instruction: 'Remove it.', evidence: [] }]);
+    expect(seen).toContain('LITERARY INTENT FOR THIS CHAPTER');
+    expect(seen).toContain('The ending turns.');
+    expect(seen).not.toContain('LITERARY STATE AND INTENT');
+  });
+
   it('lifts the leave-everything-else rule for the issues that describe a share of the chapter', async () => {
     const run = runWithPlans();
     const chapter = run.chapters[0];
