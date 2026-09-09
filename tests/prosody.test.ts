@@ -217,6 +217,61 @@ describe('report mode inside the engine', () => {
     expect(candidate.review!.issues.map(issue => issue.id)).toContain('restated-passage');
   });
 
+  /** A chapter with nothing mechanically wrong with it, so the editor's verdict is the only verdict. */
+  function clean() {
+    const { run } = ready();
+    const chapter = run.chapters[0];
+    chapter.versions = [];
+    chapter.plan.targetWordCount = 214; // the chapter's own length, so neither length gate speaks for the editor
+    const content = [
+      'Марина открыла ящик стола и увидела счёт за электричество, выписанный на фамилию, которой в этом доме никогда не было.',
+      'Соседский кот сидел на подоконнике с той стороны стекла и не шевелился, хотя дождь шёл уже второй час подряд.',
+      'В кладовой пахло сухой известью, и этот запах не менялся с тех пор, как она въехала сюда в позапрошлом сентябре.',
+      'Телефон показывал три пропущенных звонка с номера, который сам себя определял как её собственный домашний.',
+      'Она поставила чайник, забыла о нём, и через двадцать минут кухню заполнил свист, похожий на далёкий детский плач.',
+      'На лестничной площадке кто-то сменил лампочку, и теперь свет падал под другим углом, удлиняя тени у почтовых ящиков.',
+      'Вешалка в прихожей держала два пальто, хотя жила Марина одна и второе пальто было ей велико в плечах.',
+      'Дождь кончился внезапно, будто выключили кран, и двор наполнился тем гулким молчанием, которое бывает только к рассвету.',
+      'Она достала из холодильника вчерашний хлеб, отломила корку и не стала есть, оставив кусок лежать на столе.',
+      'Часы в спальне спешили на семь минут, и она давно перестала их подводить, привыкнув вычитать эту разницу в уме.',
+      'Из вентиляции доносилась музыка, слишком тихая, чтобы узнать мелодию, и слишком отчётливая, чтобы счесть её выдумкой.',
+      'Марина села в кресло, положила ладони на подлокотники и стала ждать, сама не зная точно, чего именно ждёт.',
+    ].join('\n\n');
+    const version = addCandidate(chapter, content, 'test');
+    version.analysis = { summary: 'Марина находит чужие счета.', facts: [], events: [], promises: [] };
+    stampLiterary(run, 1, version);
+    return { run, candidate: version };
+  }
+
+  it('draws the review again when every citation missed the prose, instead of ending the chapter', async () => {
+    const { run, candidate } = clean();
+    let asked = 0;
+    const editor: NovelLLM = async (prompt, system) => {
+      if (!system.includes('continuity and developmental')) return extractOnly(prompt, system);
+      // The first draw cites prose that is not there; the second is usable.
+      return ++asked === 1
+        ? JSON.stringify({ issues: [{ id: 'ghost', category: 'plot', severity: 'major', description: 'A defect.', instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote: 'Этого предложения в главе нет.' }] }] })
+        : '{"issues":[]}';
+    };
+    await (new NovelEngine(editor, new MemoryRunStore(), () => {}) as any).acceptOrRepair(run, run.chapters[0], candidate);
+    expect(asked).toBe(2);
+    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
+  });
+
+  it('gives up when a second draw misses the prose as well', async () => {
+    const { run, candidate } = clean();
+    let asked = 0;
+    const editor: NovelLLM = async (prompt, system) => {
+      if (!system.includes('continuity and developmental')) return extractOnly(prompt, system);
+      asked++;
+      return JSON.stringify({ issues: [{ id: 'ghost', category: 'plot', severity: 'major', description: 'A defect.', instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote: 'Этого предложения в главе нет.' }] }] });
+    };
+    await expect((new NovelEngine(editor, new MemoryRunStore(), () => {}) as any)
+      .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow(/do not appear in this revision/);
+    expect(asked).toBe(2);
+    expect(run.chapters[0].status).toBe('needs_revision');
+  });
+
   it('says repetition was not checked when no embedder is configured', async () => {
     const { run, candidate } = ready();
     await (new NovelEngine(extractOnly, new MemoryRunStore()) as any).acceptOrRepair(run, run.chapters[0], candidate);

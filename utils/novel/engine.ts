@@ -128,6 +128,9 @@ const MAX_CHAPTER_VERSIONS = 14;
 /** One second chance per chapter: a texture retry costs a call and must not become its own loop. */
 const MAX_TEXTURE_RETRIES = 1;
 
+/** One redraw of an unusable review: two samples that both miss the prose are a verdict, not bad luck. */
+const MAX_REVIEW_REDRAWS = 1;
+
 /**
  * A repair may not buy its fix with the chapter's texture. This compares a revision against the text
  * it came from, so it needs no fitted threshold: silencing the dialogue a chapter had, or fusing its
@@ -312,6 +315,7 @@ export class NovelEngine {
 
   private async acceptOrRepair(run: NovelRun, chapter: ChapterRecord, candidate: ChapterVersion): Promise<void> {
     let repairsRetried = 0;
+    let reviewsRedrawn = 0;
     for (;;) {
       if (candidate.review?.validationVersion !== 2 || candidate.review.status !== 'passed' || candidate.review.checkedRevision !== candidate.revision) {
         const superseded = candidate.review;
@@ -373,6 +377,15 @@ export class NovelEngine {
         return;
       }
       if (candidate.review.status === 'not_checked') {
+        // "Not checked" says we do not know, not that the chapter is bad. The review is sampled, so an
+        // unusable draw deserves another before a chapter dies: one whose every citation missed the
+        // prose ended a run whose measured texture was clean of every defect this engine can see.
+        if (reviewsRedrawn < MAX_REVIEW_REDRAWS) {
+          reviewsRedrawn++;
+          candidate.review = await reviewChapter(run, chapter, candidate, this.llm);
+          await this.checkpoint(run);
+          if (candidate.review.status !== 'not_checked') continue;
+        }
         chapter.status = 'needs_revision';
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || 'Review failed or was offline.'}`);
       }
