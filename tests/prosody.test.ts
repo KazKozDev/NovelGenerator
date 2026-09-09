@@ -45,7 +45,8 @@ describe('measured prose texture', () => {
     const dense = 'Тьма была словно вода, будто плотная масса, точно как стена, подобно дыханию.';
     const issues = prosodyIssues(1, version(`${dense}\n\nОн вышел.`), 'Russian');
     const simile = issues.find(issue => issue.id === 'simile-density');
-    expect(simile?.severity).toBe('major');
+    // A fitted density budget informs a repair; it never fails a chapter by itself.
+    expect(simile?.severity).toBe('minor');
     expect(simile?.evidence[0].quote).toBe(dense);
     expect(simile?.evidence[0].revision).toBe(1);
   });
@@ -53,6 +54,26 @@ describe('measured prose texture', () => {
   it('stays silent when the prose is inside its budget', () => {
     const plain = ['Он открыл дверь и вышел на лестницу.', '— Подожди, — сказала она.', 'Дверь закрылась.'].join('\n\n');
     expect(prosodyIssues(1, version(plain), 'Russian').map(issue => issue.id)).not.toContain('simile-density');
+  });
+});
+
+describe('a gesture named once and explained twice more', () => {
+  const flogged = Array.from({ length: 4 }, (_, i) =>
+    `Она коснулась плеча номер ${i}. Движение было плавным, размеренным, наполненным смыслом, и она провела пальцами, проверяя текстуру, подтверждая связь, повторяя жест.`).join('\n\n');
+
+  it('counts the series the embedder could not separate, and quotes the sentences', () => {
+    const metrics = prosodyMetrics(flogged, 'Russian');
+    expect(metrics.serialExplanationsPer1000).toBeGreaterThan(1.5);
+    const issue = prosodyIssues(1, version(flogged), 'Russian').find(item => item.id === 'serial-explanation');
+    expect(issue?.severity).toBe('major');
+    expect(issue?.evidence.length).toBeGreaterThan(0);
+    expect(issue?.evidence[0].quote).toContain('плавным');
+  });
+
+  it('leaves prose that names an action once alone', () => {
+    const plain = 'Она коснулась плеча. Ткань была тёплой.\n\nОн отвернулся к окну и молчал.';
+    expect(prosodyMetrics(plain, 'Russian').serialExplanationsPer1000).toBe(0);
+    expect(prosodyIssues(1, version(plain), 'Russian').map(item => item.id)).not.toContain('serial-explanation');
   });
 });
 

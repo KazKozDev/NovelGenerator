@@ -292,11 +292,12 @@ export class NovelEngine {
         await this.checkpoint(run);
       }
       await this.measureProsody(run, chapter, candidate);
-      // Repetition is not a fitted matter of taste: it is the defect the lexical check already blocks,
-      // caught after rewording. The rest of the texture report stays advisory until recalibrated.
+      // Which measurements act is expressed as their severity: repetition and serial explanation name
+      // a defect and quote it, while the fitted density budgets stay minor and only inform a repair
+      // that some other finding already triggered.
       if (candidate.review.status === 'passed') {
-        const repeats = (candidate.prosody?.findings || []).filter(issue => issue.id === 'duplicated-passage' || issue.id === 'recycled-passage');
-        if (repeats.length) candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...repeats] };
+        const acting = (candidate.prosody?.findings || []).filter(issue => issue.severity !== 'minor');
+        if (acting.length) candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...acting] };
       }
       if (candidate.review.status === 'passed') {
         if (!literaryCurrent(run, chapter.number, candidate)) {

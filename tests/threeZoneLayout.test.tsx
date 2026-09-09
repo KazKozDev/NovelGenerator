@@ -127,6 +127,8 @@ describe('ThreeZoneGenerationView', () => {
         currentChapterProcessing={1}
         totalChaptersToProcess={1}
         generatedChapters={measured}
+        currentStoryOutline=""
+        currentChapterPlan=""
         agentLogs={[]}
       />
     );
