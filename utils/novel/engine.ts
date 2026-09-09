@@ -204,6 +204,15 @@ export function oneDistributedAtATime(issues: ReviewIssue[]): ReviewIssue[] {
   return issues.filter(issue => !distributedIssues.includes(issue.id) || issue === chosen);
 }
 
+/** Whether a revision left the prose as it was: sentence sets identical, whitespace aside. */
+export function unchanged(before: string, after: string): boolean {
+  const sentences = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const first = sentences(before);
+  const second = sentences(after);
+  if (first.length !== second.length) return false;
+  return first.every((sentence, index) => sentence === second[index]);
+}
+
 export class NovelEngine {
   constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder) {}
 
@@ -435,6 +444,19 @@ export class NovelEngine {
           allowShortening = true;
           extra = `A deletion pass could not repair this chapter (${reason}). Rewrite the repeated material instead: tell each beat once, at the point it belongs, and delete every later retelling of it. Do not compensate for the removed length by restating what the chapter has already established. `;
           content = await this.repair(run, chapter, version, version.review!.issues, extra, true);
+        }
+      }
+      // A repair that returns the chapter unchanged is not a repair, and nothing noticed: the stuck
+      // counter watches the findings, which drift in wording every round, so six revisions of
+      // byte-identical prose passed for progress and spent the budget.
+      if (unchanged(version.content, content)) {
+        content = await this.repair(run, chapter, version, oneDistributedAtATime(version.review!.issues),
+          `${extra}Your previous attempt returned this chapter unchanged, sentence for sentence. If an issue cannot be answered inside this chapter, answer the ones that can and leave that one; returning the chapter as it stands answers nothing.`, allowShortening);
+        // The stuck counter resets whenever the findings are worded differently, which they always
+        // are, so a repair that does nothing needs its own count or it spends the whole budget.
+        if (unchanged(version.content, content)) {
+          chapter.status = 'needs_revision';
+          throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row returned the chapter unchanged against ${candidate.review.issues.map(issue => issue.description).join('; ')}`);
         }
       }
       const origin = chapter.versions[0] && chapter.versions[0] !== version ? prosodyMetrics(chapter.versions[0].content, run.spec.language) : undefined;

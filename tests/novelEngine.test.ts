@@ -2,7 +2,7 @@ import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
-import { createRun, NovelEngine, oneDistributedAtATime, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
+import { createRun, NovelEngine, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, endingIssues, nextUnacceptedChapter } from '../utils/novel/storyState';
 import { generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
@@ -466,6 +466,39 @@ describe('A review is allowed to find nothing', () => {
     const report = await reviewChapter(run, run.chapters[0], candidate, async () => '{"issues":[]}');
     expect(report.status).toBe('passed');
     expect(report.issues).toEqual([]);
+  });
+});
+
+describe('A repair that changes nothing', () => {
+  it('is asked again, and ends the budget if it changes nothing twice', async () => {
+    const run = runWithPlans();
+    const base = fixtureLLM();
+    let reviewed = 0;
+    let asked = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        asked++;
+        // Hand the chapter back exactly as it came, twice.
+        return JSON.stringify({ prose: prose(1) });
+      }
+      if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: prose(1) });
+      if (system.includes('continuity and developmental')) {
+        reviewed++;
+        return JSON.stringify({ issues: [{ id: `voice-${reviewed}`, category: 'voice', severity: 'major', description: `Something differently worded each round, ${reviewed}.`, instruction: 'Change it.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }] }] });
+      }
+      return base(prompt, system, options);
+    });
+    await expect(new NovelEngine(llm, new MemoryRunStore()).continue(run)).rejects.toThrow(/returned the chapter unchanged/);
+    // Asked twice for the same round, then stopped instead of spending fourteen versions on nothing.
+    expect(asked).toBe(2);
+    expect(run.chapters[0].versions.length).toBeLessThan(4);
+    expect(run.chapters[0].status).toBe('needs_revision');
+  });
+
+  it('recognises a revision as unchanged only when every sentence matches', () => {
+    expect(unchanged('Он вышел. Она осталась.', 'Он вышел.  Она осталась.')).toBe(true);
+    expect(unchanged('Он вышел. Она осталась.', 'Он вышел. Она ушла.')).toBe(false);
+    expect(unchanged('Он вышел.', 'Он вышел. Она осталась.')).toBe(false);
   });
 });
 
