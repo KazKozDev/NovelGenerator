@@ -89,8 +89,8 @@ describe('semantic repetition', () => {
     const issues = await repetitionIssues(1, version([a, b, c].join('\n\n')), [], embed);
     const doubled = issues.find(issue => issue.id === 'duplicated-passage');
     expect(doubled?.severity).toBe('critical');
-    expect(doubled?.evidence).toHaveLength(1);
-    expect(doubled?.evidence[0].quote).toBe(b);
+    // Both tellings, in the order they appear: one copy alone proves nothing to a reader or a repair.
+    expect(doubled?.evidence.map(item => item.quote)).toEqual([a, b]);
   });
 
   it('finds a beat told again twenty paragraphs later, not only next door', async () => {
@@ -99,8 +99,7 @@ describe('semantic repetition', () => {
       ...Object.fromEntries(filler.map((_, i) => [`Он считал минуты до утра, номер ${i}`, axis(i + 2)])) });
     const issues = await repetitionIssues(1, version([a, ...filler, b].join('\n\n')), [], embed);
     const doubled = issues.find(issue => issue.id === 'duplicated-passage');
-    expect(doubled?.evidence).toHaveLength(1);
-    expect(doubled?.evidence[0].quote).toBe(b);
+    expect(doubled?.evidence.map(item => item.quote)).toEqual([a, b]);
   });
 
   it('leaves consecutive paragraphs that do different work alone', async () => {

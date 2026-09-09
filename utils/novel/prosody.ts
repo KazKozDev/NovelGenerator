@@ -272,16 +272,18 @@ export async function repetitionIssues(
     for (let other = index + 1; other < current.length; other++) {
       const threshold = other === index + 1 ? thresholds.adjacent : thresholds.distant;
       if (seen.has(other) || cosine(currentVectors[index], currentVectors[other]) < threshold) continue;
-      // The later telling is the one the deletion pass should weigh first.
+      // Both copies, first then second: one alone proves nothing, and the deletion pass has to see
+      // what it is choosing between. The later telling is the one it should weigh for removal.
       seen.add(other);
-      doubled.push({ chapter, revision: version.revision, quote: current[other] });
+      doubled.push({ chapter, revision: version.revision, quote: current[index] },
+        { chapter, revision: version.revision, quote: current[other] });
     }
   }
   if (doubled.length) issues.push({
     id: 'duplicated-passage', category: 'format', severity: 'critical',
-    description: `${doubled.length} paragraph(s) tell again, in different words, a beat this chapter has already told.`,
+    description: `${doubled.length / 2} paragraph(s) tell again a beat this chapter has already told; each pair below is the first telling followed by the second.`,
     instruction: 'Delete the weaker telling of each doubled beat outright. Do not merge the two into a third version.',
-    evidence: doubled.slice(0, 4),
+    evidence: doubled.slice(0, 8),
   });
 
   const crossed: Evidence[] = [];
