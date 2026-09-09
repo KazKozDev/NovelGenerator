@@ -165,6 +165,22 @@ export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics,
 
 export class NeedsRevisionError extends Error {}
 
+/**
+ * Whether a freshly written scene is one the chapter already has. Compared on sentences rather than
+ * on the whole string: a copy that differs by a word is the same failure as a byte-identical one.
+ */
+export function copyOfEarlierScene(scene: string, earlier: string[] = []): boolean {
+  const sentences = (text: string) => new Set(text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.length > 80));
+  const fresh = sentences(scene);
+  if (fresh.size < 3) return false; // Too short to judge; the emptiness check speaks for these.
+  return earlier.some(previous => {
+    const before = sentences(previous);
+    if (!before.size) return false;
+    const shared = [...fresh].filter(item => before.has(item)).length;
+    return shared / fresh.size > 0.5;
+  });
+}
+
 export class NovelEngine {
   constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder) {}
 
@@ -484,8 +500,14 @@ export class NovelEngine {
       if (!candidate) {
         chapter.sceneDrafts ||= [];
         for (let sceneIndex = chapter.sceneDrafts.length; sceneIndex < chapter.plan.detailedScenes.length; sceneIndex++) {
-          const rawScene = await writeScene(run, chapter, sceneIndex, this.llm);
-          const scene = this.extractProse(rawScene);
+          let scene = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm));
+          // A live chapter arrived as scene one followed by scene two written four times: the writer,
+          // shown the prose already written, returned it again for every remaining scene. Catching the
+          // copy here costs one call; letting it through cost that chapter fourteen revisions.
+          if (copyOfEarlierScene(scene, chapter.sceneDrafts)) {
+            scene = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm, 'Your previous attempt returned prose already written for an earlier scene of this chapter. That scene is finished. Write the scene requested here: it starts from the situation the earlier prose ended in and must not retell it.'));
+            if (copyOfEarlierScene(scene, chapter.sceneDrafts)) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} came back as a copy of an earlier scene twice.`);
+          }
           if (!scene) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} is empty.`);
           chapter.sceneDrafts.push(scene);
           chapter.status = 'draft';

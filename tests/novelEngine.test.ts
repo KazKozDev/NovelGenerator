@@ -618,6 +618,23 @@ describe('First-draft prose context', () => {
     expect(context.length).toBeLessThan(11000);
   });
 
+  it('gives the next scene the events and the last words, not every finished scene in full', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const finished = `Начало сцены, которое не должно попасть в промпт. ${'Она ждала у окна и считала минуты. '.repeat(60)}Последние слова на странице.`;
+    chapter.sceneDrafts = [finished];
+    chapter.plan.detailedScenes = [chapter.plan.detailedScenes[0], { ...chapter.plan.detailedScenes[0], sceneId: 's2' }];
+    let seen = '';
+    await writeScene(run, chapter, 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Дальше.' }); });
+    expect(seen).toContain('Последние слова на странице.');
+    expect(seen).not.toContain('Начало сцены, которое не должно попасть в промпт.');
+    expect(seen).toContain(chapter.plan.detailedScenes[0].outcome);
+    expect(seen).toContain('must not be told again');
+    // Exactly the tail travels, and no more: the scene's own middle never reaches the writer.
+    expect(seen).toContain(finished.slice(-1200));
+    expect(seen).not.toContain(finished.slice(-1300));
+  });
+
   it('supplies cross-chapter prose to the writing call', async () => {
     const run = runWithPlans();
     approve(run, 1, 'An earlier accepted prose sample with a distinctive register.');
