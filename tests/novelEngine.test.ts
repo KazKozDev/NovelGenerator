@@ -407,6 +407,16 @@ describe('A review is allowed to find nothing', () => {
     expect(seen).toContain('not a list to fill');
   });
 
+  it('tells the editor the premise is established ground, not a knowledge violation', async () => {
+    const run = runWithPlans();
+    const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
+    let seen = '';
+    await reviewChapter(run, run.chapters[0], candidate, async prompt => { seen = prompt; return '{"issues":[]}'; });
+    // A live review flagged a sentence lifted from the author's own premise as a knowledge leak.
+    expect(seen).toContain('the premise in the author contract above is established ground');
+    expect(seen).toContain('repeating it is never a violation');
+  });
+
   it('passes a chapter the editor found nothing wrong with', async () => {
     const run = runWithPlans();
     const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
