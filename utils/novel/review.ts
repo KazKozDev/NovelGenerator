@@ -102,6 +102,20 @@ const issueFormat = `Return JSON {"issues":[{"id":"unique-id","category":"canon|
  * One sloppy paraphrase must not void an otherwise evidenced report, and must not be repaired either:
  * unverifiable citations are dropped, an issue left without evidence is discarded and counted.
  */
+/**
+ * A finding often names its culprit in quotation marks — a word, a name, a phrase the prose is said to
+ * carry. The evidence check proves a citation exists, not that it is about anything: a live review
+ * reported a character's name as unestablished for five revisions after that name had been deleted,
+ * attaching an unrelated but genuine quotation each time, and the chapter was repaired against a
+ * defect it no longer had. When a finding quotes its subject, that subject must be in the prose.
+ */
+function namesAbsentSubject(description: string, sources: { version: ChapterVersion }[]): boolean {
+  const quoted = [...description.matchAll(/[«"'']([^«»"'']{3,60})[»"'']/g)].map(match => match[1].trim());
+  // Only prose-shaped fragments: scene ids, field names and code-like tokens are not quotations of prose.
+  const subjects = quoted.filter(fragment => /^[\p{L}][\p{L}\s'’-]*$/u.test(fragment) && !/_/.test(fragment));
+  return subjects.length > 0 && subjects.every(subject => !sources.some(source => source.version.content.includes(subject)));
+}
+
 function parseIssues(value: any, sources: { chapter: number; version: ChapterVersion }[]): { issues: ReviewIssue[]; discarded: number } {
   if (!Array.isArray(value?.issues)) throw new Error('Review did not return issues.');
   const ids = new Set<string>();
@@ -128,7 +142,7 @@ function parseIssues(value: any, sources: { chapter: number; version: ChapterVer
       const source = ordered.find(candidate => evidenceExists({ chapter: candidate.chapter, revision: candidate.version.revision, quote: item.quote }, candidate.chapter, candidate.version));
       if (source) evidence.push({ chapter: source.chapter, revision: source.version.revision, quote: item.quote });
     }
-    if (!evidence.length) { discarded++; return; }
+    if (!evidence.length || namesAbsentSubject(description, sources)) { discarded++; return; }
     issues.push({ id, category, severity, description, instruction, evidence } as ReviewIssue);
   });
   return { issues, discarded };

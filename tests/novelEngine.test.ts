@@ -417,6 +417,22 @@ describe('A review is allowed to find nothing', () => {
     expect(seen).toContain('repeating it is never a violation');
   });
 
+  it('discards a finding whose own quoted subject is not in the prose', async () => {
+    const run = runWithPlans();
+    const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
+    const quote = prose(1).slice(0, 60);
+    const issue = (description: string) => JSON.stringify({ issues: [{ id: 'knowledge-01', category: 'knowledge', severity: 'major', description, instruction: 'Remove it.', evidence: [{ chapter: 1, revision: 1, quote }] }] });
+
+    // The name was deleted revisions ago; the citation is real but has nothing to do with the claim.
+    const stale = await reviewChapter(run, run.chapters[0], candidate, async () => issue('The protagonist uses the name «Игорь» which the story has not established.'));
+    expect(stale.issues).toEqual([]);
+    expect(stale.status).toBe('not_checked');
+
+    // A finding whose quoted subject really is in the prose survives untouched.
+    const real = await reviewChapter(run, run.chapters[0], candidate, async () => issue(`The prose leans on «${prose(1).split(' ')[1]}» without establishing it.`));
+    expect(real.issues.map(item => item.id)).toEqual(['knowledge-01']);
+  });
+
   it('passes a chapter the editor found nothing wrong with', async () => {
     const run = runWithPlans();
     const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
