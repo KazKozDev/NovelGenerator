@@ -303,7 +303,7 @@ export async function repetitionIssues(
   if (crossed.length) issues.push({
     id: 'recycled-passage', category: 'voice', severity: 'major',
     description: `${crossed.length / 2} paragraph(s) repeat a passage from an earlier chapter in new wording.`,
-    instruction: 'Rewrite the passage in this chapter so it performs work the earlier one did not, or cut it. Leave the earlier chapter untouched. A deliberate motif must gain a changed meaning or consequence, not return in synonyms.',
+    instruction: `Each pair below is one passage from this chapter followed by the earlier passage it repeats. Only the passage from chapter ${chapter} is yours to change: rewrite it so it performs work the earlier one did not, or cut it. The earlier passage is quoted as context, it lives in another chapter and you will not find it in the prose you were given; do not look for it and do not change it. A deliberate motif must gain a changed meaning or consequence, not return in synonyms.`,
     evidence: crossed.slice(0, 8),
   });
   return issues;

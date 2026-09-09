@@ -112,6 +112,10 @@ describe('semantic repetition', () => {
     const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed);
     const recycled = issues.find(issue => issue.id === 'recycled-passage');
     expect(recycled?.evidence.map(item => item.chapter)).toEqual([3, 1]);
+    // The earlier passage is not in the prose being repaired, and saying so is what makes the finding
+    // actionable: two live revisions left four recycled passages untouched without it.
+    expect(recycled?.instruction).toContain('Only the passage from chapter 3 is yours to change');
+    expect(recycled?.instruction).toContain('you will not find it in the prose you were given');
     expect(recycled?.evidence[1].revision).toBe(4);
     expect(recycled?.evidence[0].revision).toBe(2);
   });
