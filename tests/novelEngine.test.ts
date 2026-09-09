@@ -439,6 +439,9 @@ describe('A review is allowed to find nothing', () => {
     // that said it could not take the form of a concrete event.
     expect(seen).toContain('a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge');
     expect(seen).toContain('requires a smoother transition');
+    // A final chapter stalled for four revisions on a revelation the earlier chapters had not planted:
+    // nothing it can write will plant a clue in a chapter that is already accepted.
+    expect(seen).toContain('is a defect of the book and not of this chapter');
   });
 
   it('discards a finding whose own quoted subject is not in the prose', async () => {
