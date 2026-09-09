@@ -185,6 +185,14 @@ export function duplicatePassages(content: string, threshold = 0.7): { first: st
   return found;
 }
 
+/** The whole sentence carrying an offset, so a repair has a unit with a beginning and an end. */
+function sentenceAround(content: string, index: number): string {
+  const start = Math.max(content.lastIndexOf('.', index), content.lastIndexOf('!', index), content.lastIndexOf('?', index), content.lastIndexOf('\n', index));
+  const after = [...content.slice(index).matchAll(/[.!?…]/g)][0];
+  const end = after ? index + after.index + 1 : content.length;
+  return content.slice(start + 1, end).trim() || content.slice(Math.max(0, index - 40), index + 40);
+}
+
 export function mechanicalIssues(chapter: number, version: ChapterVersion, language = ''): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const target = language.toLowerCase();
@@ -196,7 +204,10 @@ export function mechanicalIssues(chapter: number, version: ChapterVersion, langu
       id: `foreign-script-${script.name.toLowerCase()}`, category: 'format', severity: 'critical',
       description: `${script.name} characters appear inside prose written in ${language || 'the story language'}.`,
       instruction: `Replace every ${script.name} character with the intended wording in ${language || 'the story language'}, changing nothing else.`,
-      evidence: [{ chapter, revision: version.revision, quote: version.content.slice(Math.max(0, found.index - 40), found.index + 40) }],
+      // The sentence, not forty characters either side of the character: a repair told to rewrite a
+      // fragment with no beginning and no end rewrites nothing, and a single wedged 直达 survived
+      // every round of a live chapter.
+      evidence: [{ chapter, revision: version.revision, quote: sentenceAround(version.content, found.index) }],
     });
   }
   const duplicates = duplicatePassages(version.content);

@@ -125,6 +125,8 @@ describe('Deterministic script check', () => {
     const issue = result.issues.find(item => item.id === 'foreign-script-cjk');
     expect(issue?.severity).toBe('critical');
     expect(version.content).toContain(issue!.evidence[0].quote);
+    // A whole sentence, so the repair has a unit to rewrite rather than a fragment with no ends.
+    expect(issue!.evidence[0].quote).toBe('Вера прочитала письмо, повторяя её试探тельное движение.');
   });
   it('leaves the same characters alone when the story is written in that script', async () => {
     const { run, chapter, version } = fixture();
