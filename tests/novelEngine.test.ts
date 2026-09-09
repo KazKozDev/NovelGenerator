@@ -466,6 +466,26 @@ describe('A review is allowed to find nothing', () => {
   });
 });
 
+describe('A defect that is a proportion, not a place', () => {
+  it('lifts the leave-everything-else rule for the issues that describe a share of the chapter', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, prose(1), 'draft');
+    const issue = (id: string) => ({ id, category: 'dialogue' as const, severity: 'major' as const, description: 'A share.', instruction: 'Fix it.', evidence: [{ chapter: 1, revision: version.revision, quote: prose(1).slice(0, 50) }] });
+    let seen = '';
+    const llm: NovelLLM = async prompt => { seen = prompt; return JSON.stringify({ prose: prose(1) }); };
+
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).repair(run, chapter, version, [issue('speech-tag-bloat')]);
+    expect(seen).toContain('One exception, and only for these issues: speech-tag-bloat');
+    expect(seen).toContain('change every line in the chapter that carries the same defect');
+
+    // A finding about one place keeps the ordinary contract.
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).repair(run, chapter, version, [issue('knowledge-01')]);
+    expect(seen).not.toContain('One exception');
+    expect(seen).toContain('Reproduce every other sentence unchanged');
+  });
+});
+
 describe('Prose that will not fit in a JSON string', () => {
   it('asks for the prose alone when the envelope comes back unterminated, and keeps the same checks', async () => {
     const story = 'Марина открыла дверь. За порогом никого не было.';
