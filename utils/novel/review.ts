@@ -240,7 +240,10 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     if (words < target * 0.8) issues.push({
       id: 'incomplete-length', category: 'plot', severity: 'major',
       description: `Chapter contains ${words} words against a target of ${target}; it may be a synopsis or incomplete output.`,
-      instruction: `Expand the chapter to at least ${Math.ceil(target * 0.8)} words by developing the planned scenes through action, dialogue, sensory detail, reflection and consequences; do not pad with repetition.`,
+      // "More words" is answered with restatement: a live chapter oscillated between 2966 and 3542
+      // words for three revisions, cutting the repetition it had just been asked to invent. Name the
+      // material instead — the planned beats are the only honest source of the missing length.
+      instruction: `Find which of the chapter's planned beats are named but never dramatized on the page, and dramatize those: ${JSON.stringify((chapter.plan.detailedScenes || []).map(scene => ({ sceneId: scene.sceneId, objective: scene.objective, keyMoments: scene.keyMoments })))}. Reaching at least ${Math.ceil(target * 0.8)} words is the consequence of putting the missing beats on the page, not the goal. If every planned beat is already dramatized, say so by leaving the chapter as it is rather than restating what it already tells.`,
       evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
     });
     if (words > target * 1.25) issues.push({

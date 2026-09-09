@@ -407,6 +407,16 @@ describe('A review is allowed to find nothing', () => {
     expect(seen).toContain('not a list to fill');
   });
 
+  it('asks a short chapter for its missing beats, not for more words', async () => {
+    const run = runWithPlans();
+    const candidate = addCandidate(run.chapters[0], 'Короткая глава.', 'draft');
+    const report = await reviewChapter(run, run.chapters[0], candidate, async () => '{"issues":[]}');
+    const short = report.issues.find(issue => issue.id === 'incomplete-length');
+    expect(short?.instruction).toContain('named but never dramatized');
+    expect(short?.instruction).toContain(run.chapters[0].plan.detailedScenes[0].keyMoments[0]);
+    expect(short?.instruction).toContain('is the consequence of putting the missing beats on the page, not the goal');
+  });
+
   it('tells the editor the premise is established ground, not a knowledge violation', async () => {
     const run = runWithPlans();
     const candidate = addCandidate(run.chapters[0], prose(1), 'draft');
