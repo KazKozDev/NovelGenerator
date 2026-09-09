@@ -77,13 +77,16 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
     for (const field of ['sceneId', 'location', 'objective', 'conflict', 'outcome', 'duration', 'mood']) {
       if (typeof scene[field] !== 'string' || !scene[field].trim()) throw new Error(`Scene missing ${field}.`);
     }
-    if (ids.has(scene.sceneId) || !Array.isArray(scene.participants) || !scene.participants.length ||
+    // A scene may legitimately have no one in it — a room after everyone has gone, the closing image
+    // of a chapter — and rejecting that killed a live run over a plan that was right.
+    if (ids.has(scene.sceneId) || !Array.isArray(scene.participants) ||
         !scene.participants.every((name: unknown) => typeof name === 'string' && name.trim()) ||
         !Array.isArray(scene.keyMoments) || !scene.keyMoments.length ||
         !scene.keyMoments.every((beat: unknown) => typeof beat === 'string' && beat.trim())) throw new Error('Invalid scene identity, participants or beats.');
     if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error('Scene narrativeWeight must be an integer from 1 to 5.');
     // Older checkpoints planned scenes before this field existed; their prose is not retroactively defective.
     if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error('Scene conflictCarriedBy must be speech, action or solitude.');
+    if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) throw new Error('A scene carried by speech needs at least two characters present to speak.');
     ids.add(scene.sceneId);
     return scene;
   });
@@ -109,7 +112,7 @@ export const chapterPlanSchema = {
   properties: {
     ...Object.fromEntries(planStrings.map(field => [field, text])),
     tensionLevel: { type: 'integer' },
-    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'duration', 'mood', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneId: text, location: text, participants: { type: 'array', minItems: 1, items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
+    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'duration', 'mood', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
   }, additionalProperties: false,
 };
 

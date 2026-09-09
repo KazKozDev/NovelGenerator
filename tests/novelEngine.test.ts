@@ -284,6 +284,16 @@ describe('A chapter is planned against the book', () => {
   });
   const spec = createBookSpec('Recover a letter', 3);
 
+  it('accepts a scene with nobody in it: a room after everyone has gone is a scene', () => {
+    const empty = plan('The empty room', [scene('s1', ['Thorne'], 'solitude'), scene('s2', [], 'solitude')]);
+    expect(validateChapterPlan(empty, spec).detailedScenes[1].participants).toEqual([]);
+  });
+
+  it('refuses to call a scene an exchange when nobody is there to speak', () => {
+    const alone = plan('Alone', [scene('s1', ['Thorne'], 'speech')]);
+    expect(() => validateChapterPlan(alone, spec)).toThrow(/at least two characters present to speak/);
+  });
+
   it('does not demand speech of a single chapter: two participants can be a watcher and the watched', () => {
     const silent = plan('Silence', [scene('s1', ['Thorne', 'the clerk'], 'action'), scene('s2', ['Thorne', 'the clerk'], 'solitude')]);
     expect(validateChapterPlan(silent, spec).title).toBe('Silence');
