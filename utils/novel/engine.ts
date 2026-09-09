@@ -6,7 +6,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -408,7 +408,7 @@ export class NovelEngine {
         );
         if (identical?.analysis) {
           candidate.analysis = structuredClone(identical.analysis);
-          for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises]) {
+          for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises, candidate.analysis.beats || []]) {
             for (const item of items) item.evidence.revision = candidate.revision;
           }
           const knownPromiseIds = new Set(run.blueprint?.promises.map(promise => promise.id) || []);
@@ -417,9 +417,18 @@ export class NovelEngine {
         } else {
           candidate.analysis = await analyseChapter(run, chapter, candidate, this.llm);
         }
-        acceptCandidate(run, chapter.number);
-        await this.checkpoint(run);
-        return;
+        // A chapter is accepted on what it put on the page, not on what it was asked to put there.
+        // Accepting a chapter whose planned scene was never written writes the gap into canon, and
+        // every later chapter then builds on an event this book never told.
+        const gap = beatCoverageIssue(chapter, candidate.analysis, candidate);
+        if (gap) {
+          candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, gap] };
+          await this.checkpoint(run);
+        } else {
+          acceptCandidate(run, chapter.number);
+          await this.checkpoint(run);
+          return;
+        }
       }
       if (candidate.review.status === 'not_checked') {
         // "Not checked" says we do not know, not that the chapter is bad. The review is sampled, so an

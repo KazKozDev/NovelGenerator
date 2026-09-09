@@ -81,16 +81,22 @@ export interface PromisePlan {
   required: boolean;
 }
 export interface PromiseEvidence { promiseId: string; kind: 'setup' | 'payoff'; evidence: Evidence }
+/** A planned beat found on the page, quoted from the prose that dramatizes it. */
+export interface BeatEvidence { sceneId: string; beat: string; evidence: Evidence }
 export interface ChapterAnalysis {
   summary: string;
   facts: CanonFact[];
   events: StoryEvent[];
   promises: PromiseEvidence[];
+  /** Absent in analyses recorded before the beat registry existed; never a reason to lose a run. */
+  beats?: BeatEvidence[];
 }
 export interface StoryState {
   facts: CanonFact[];
   events: StoryEvent[];
   promises: PromiseEvidence[];
+  /** Which planned beats the accepted chapters have already played, and where. */
+  beats: BeatEvidence[];
   summaries: Record<number, string>;
 }
 export interface ChapterVersion {

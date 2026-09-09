@@ -1,3 +1,4 @@
+import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
 import { dialogueIssues, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
@@ -163,6 +164,7 @@ describe('report mode inside the engine', () => {
     if (system.includes('extract evidence')) {
       if (prompt.includes('TASK: Extract facts')) return '{"summary":"Марина ждёт света в окне напротив.","facts":[]}';
       if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+      if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
       return '{"promises":[]}';
     }
     throw new Error(`No ${system.slice(0, 40)} call belongs in an accepted, current chapter.`);

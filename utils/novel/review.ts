@@ -1,7 +1,7 @@
 import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { specPrompt } from './contracts';
 import { dialogueIssues } from './prosody';
-import { acceptedVersion, canonBefore, canonForPrompt, endingIssues, evidenceExists, validateAnalysis } from './storyState';
+import { acceptedVersion, beatKey, canonBefore, canonForPrompt, endingIssues, evidenceExists, plannedBeats, unplayedBeats, validateAnalysis } from './storyState';
 
 export type NovelLLMRoute = 'writer' | 'validator';
 export type NovelLLM = (prompt: string, system: string, options?: { json?: boolean; schema?: object; temperature?: number; maxTokens?: number; route?: NovelLLMRoute }) => Promise<string>;
@@ -227,6 +227,41 @@ export function mechanicalIssues(chapter: number, version: ChapterVersion, langu
   return issues;
 }
 
+/**
+ * What the beat registry says about a chapter that has just been reviewed clean. The review reads the
+ * prose and the plan together, and a scene the prose never wrote is exactly the thing it does not see:
+ * nothing on the page contradicts anything, so the chapter passes and the gap enters canon as though
+ * the chapter had told it. The registry answers the one question directly — is this planned beat here.
+ *
+ * Not every unplayed beat is a defect. A beat reworded on the page is a beat the extractor may fail to
+ * match, and one such miss is far more likely to be the matching than the writing. A whole scene with
+ * nothing found, or half the chapter's beats missing, is not a matching failure.
+ */
+export function beatCoverageIssue(chapter: ChapterRecord, analysis: ChapterAnalysis, version: ChapterVersion): ReviewIssue | undefined {
+  // No registry is not an empty registry: an analysis recorded before the registry existed says
+  // nothing about which beats reached the page, and reading its silence as absence would fail a
+  // chapter this book already accepted.
+  if (!analysis.beats) return undefined;
+  const planned = plannedBeats(chapter);
+  if (!planned.length) return undefined;
+  const unplayed = unplayedBeats(chapter, analysis);
+  if (!unplayed.length) return undefined;
+  const silentScenes = (chapter.plan.detailedScenes || []).filter(scene => {
+    const own = planned.filter(item => item.sceneId === scene.sceneId);
+    return own.length >= 2 && own.every(item => unplayed.some(gap => gap.sceneId === item.sceneId && gap.beat === item.beat));
+  });
+  if (!silentScenes.length && unplayed.length < planned.length / 2) return undefined;
+  const scope = silentScenes.length
+    ? `Scene(s) ${silentScenes.map(scene => scene.sceneId).join(', ')} reached the page with none of their planned beats.`
+    : `${unplayed.length} of ${planned.length} planned beats never reached the page.`;
+  return {
+    id: 'undramatized-beat', category: 'plot', severity: 'major',
+    description: `${scope} The chapter reads as complete because what is missing was never written, not because it was contradicted.`,
+    instruction: `Dramatize these planned beats on the page, at the point in the chapter where each belongs: ${JSON.stringify(unplayed)}. Write them as scene — a goal met by resistance, a choice, a changed situation — not as a sentence reporting that they happened. Change nothing else: every beat already on the page stays exactly as it stands.`,
+    evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
+  };
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
@@ -267,25 +302,33 @@ export async function analyseChapter(run: NovelRun, chapter: ChapterRecord, vers
     facts: '{"summary":"concise factual synopsis including the ending","facts":[{"id":"stable-id","subject":"name","predicate":"status/location/relationship:Name/belief/knowledge","value":"established value","knownBy":["name"],"evidence":{"sourceId":"p1"}}]}',
     events: '{"events":[{"id":"event-id","description":"actual choice or event","consequences":["established consequence"],"evidence":{"sourceId":"p1"}}]}',
     promises: '{"promises":[{"promiseId":"planned-id","kind":"setup|payoff","evidence":{"sourceId":"p1"}}]}',
+    beats: '{"beats":[{"sceneId":"scene-id","beat":"the planned beat, copied exactly as planned","evidence":{"sourceId":"p1"}}]}',
   };
   const sourceEvidenceSchema = { type: 'object', required: ['sourceId'], properties: { sourceId: { type: 'string' } }, additionalProperties: false };
   const sectionSchemas = {
     facts: { type: 'object', required: ['summary', 'facts'], properties: { summary: { type: 'string' }, facts: { type: 'array', maxItems: 12, items: { type: 'object', required: ['id', 'subject', 'predicate', 'value', 'knownBy', 'evidence'], properties: { id: { type: 'string' }, subject: { type: 'string' }, predicate: { type: 'string' }, value: { type: 'string' }, knownBy: { type: 'array', items: { type: 'string' } }, evidence: sourceEvidenceSchema }, additionalProperties: false } } }, additionalProperties: false },
     events: { type: 'object', required: ['events'], properties: { events: { type: 'array', maxItems: 8, items: { type: 'object', required: ['id', 'description', 'consequences', 'evidence'], properties: { id: { type: 'string' }, description: { type: 'string' }, consequences: { type: 'array', items: { type: 'string' } }, evidence: sourceEvidenceSchema }, additionalProperties: false } } }, additionalProperties: false },
     promises: { type: 'object', required: ['promises'], properties: { promises: { type: 'array', items: { type: 'object', required: ['promiseId', 'kind', 'evidence'], properties: { promiseId: { type: 'string' }, kind: { type: 'string', enum: ['setup', 'payoff'] }, evidence: sourceEvidenceSchema }, additionalProperties: false } } }, additionalProperties: false },
+    beats: { type: 'object', required: ['beats'], properties: { beats: { type: 'array', items: { type: 'object', required: ['sceneId', 'beat', 'evidence'], properties: { sceneId: { type: 'string' }, beat: { type: 'string' }, evidence: sourceEvidenceSchema }, additionalProperties: false } } }, additionalProperties: false },
   };
+  const planned = plannedBeats(chapter);
   // Separate bounded tasks avoid a single sprawling extraction. Nothing enters canon until all pass.
-  const combined: ChapterAnalysis = { summary: '', facts: [], events: [], promises: [] };
-  for (const field of ['facts', 'events', 'promises'] as const) {
+  const combined: ChapterAnalysis = { summary: '', facts: [], events: [], promises: [], beats: [] };
+  for (const field of ['facts', 'events', 'promises', 'beats'] as const) {
     const extra = field === 'facts'
       ? 'Return at most 12 facts needed for later continuity. knownBy names only characters whose acquisition is supported by the passage.'
       : field === 'events'
         ? 'Return at most 8 consequential actions or choices. Describe intentions as intentions, not their future fulfillment.'
+        : field === 'beats'
+        // The registry answers one question and nothing else: is this planned beat on the page. A beat
+        // reported from the plan rather than from the prose would make an unwritten scene look written,
+        // which is the failure the registry exists to catch, so every entry is held to quoted prose.
+        ? `Return one entry for each planned beat below that this chapter actually dramatizes on the page, and none for the others. Copy the beat text exactly as it appears in the plan, with its sceneId, and cite the passage that puts it on the page. A beat that is only named, summarized in passing, or merely implied by a later reference is not dramatized and gets no entry. An empty array is the correct answer for a chapter that dramatizes none of them; never add an entry for a beat you cannot cite.\nPLANNED BEATS FOR THIS CHAPTER:\n${JSON.stringify(planned)}`
         : `Return only evidenced setup/payoff entries for the promises this chapter is scheduled to carry (at most one entry per ID and kind); a plan is not evidence of fulfillment. Record "setup" only for a promise whose setupChapter is ${chapter.number}, and "payoff" only for a promise whose payoffChapter is ${chapter.number}. A promise merely mentioned or advanced here, but scheduled elsewhere, gets no entry.\nSCHEDULED FOR THIS CHAPTER:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}`;
     const part = await structuredResponse(`${context}\nTASK: Extract ${field} only${field === 'facts' ? ', with a brief chapter synopsis' : ''}. ${extra}\nReturn JSON ${schemas[field]}`, 'You extract evidence from fiction, separating accepted events from intentions. Respond only with JSON.', llm, field === 'facts' ? ['summary', field] : [field], raw => {
       const items = structuredClone(raw[field]);
       if (!Array.isArray(items)) throw new Error('Chapter analysis is incomplete.');
-      const limit = field === 'facts' ? 12 : field === 'events' ? 8 : (run.blueprint?.promises.length || 0) * 2;
+      const limit = field === 'facts' ? 12 : field === 'events' ? 8 : field === 'beats' ? planned.length * 2 : (run.blueprint?.promises.length || 0) * 2;
       if (items.length > limit) throw new Error(`${field} exceeds the bounded extraction limit of ${limit}.`);
       for (const item of items) {
         const evidence = item?.evidence;
@@ -308,8 +351,22 @@ export async function analyseChapter(run: NovelRun, chapter: ChapterRecord, vers
             if (!promise) return false;
             return item.kind === 'setup' ? promise.setupChapter === chapter.number : promise.payoffChapter === chapter.number;
           })
-        : items;
-      const section: ChapterAnalysis = { summary: field === 'facts' ? raw.summary : 'section validation', facts: [], events: [], promises: [], [field]: validatedItems };
+        : field === 'beats'
+          // A beat the plan does not contain cannot be a planned beat that reached the page. Dropping
+          // it is fail-closed: the beat it was meant to be stays unplayed and comes back as a finding.
+          ? (() => {
+              const seen = new Set<string>();
+              return items.flatMap((item: { sceneId?: string; beat?: string; evidence: unknown }) => {
+                const key = beatKey(String(item.sceneId), String(item.beat));
+                const match = planned.find(entry => beatKey(entry.sceneId, entry.beat) === key);
+                // One beat is played once. A second entry for it proves nothing the first did not.
+                if (!match || seen.has(key)) return [];
+                seen.add(key);
+                return [{ ...item, sceneId: match.sceneId, beat: match.beat }];
+              });
+            })()
+          : items;
+      const section: ChapterAnalysis = { summary: field === 'facts' ? raw.summary : 'section validation', facts: [], events: [], promises: [], beats: [], [field]: validatedItems };
       validateAnalysis(section, chapter.number, version);
       return section;
     }, { schema: sectionSchemas[field] });

@@ -1,7 +1,23 @@
 import { literaryCurrent } from './literaryState';
-import type { CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, StoryState } from './contracts';
+import type { BeatEvidence, CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, StoryState } from './contracts';
 
-export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], summaries: {} });
+export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], beats: [], summaries: {} });
+
+/** The beats the chapter plan asks this chapter to dramatize, in plan order. */
+export function plannedBeats(chapter: ChapterRecord): { sceneId: string; beat: string }[] {
+  return (chapter.plan.detailedScenes || []).flatMap(scene =>
+    (scene.keyMoments || []).filter(beat => typeof beat === 'string' && beat.trim())
+      .map(beat => ({ sceneId: scene.sceneId, beat: beat.trim() })));
+}
+
+/** One beat is one beat however its wording was reflowed; the registry keys on the planned string. */
+export const beatKey = (sceneId: string, beat: string) => `${sceneId}\u0001${beat.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+
+/** Planned beats the chapter's own analysis could not find on the page. */
+export function unplayedBeats(chapter: ChapterRecord, analysis: ChapterAnalysis): { sceneId: string; beat: string }[] {
+  const played = new Set((analysis.beats || []).map(item => beatKey(item.sceneId, item.beat)));
+  return plannedBeats(chapter).filter(item => !played.has(beatKey(item.sceneId, item.beat)));
+}
 
 export function acceptedVersion(chapter: ChapterRecord): ChapterVersion | undefined {
   if (chapter.status !== 'accepted') return undefined;
@@ -54,6 +70,14 @@ export function validateAnalysis(analysis: ChapterAnalysis, chapter: number, ver
       throw new Error(`Promise ${promise.promiseId || '(missing id)'} has missing or ungrounded evidence: ${JSON.stringify(promise.evidence)}. Required chapter=${chapter}, revision=${version.revision}; quote must be a short verbatim substring, without paraphrase or ellipsis.`);
     }
   }
+  // A registry entry claims a planned beat reached the page, so it is held to the same proof as canon.
+  // Its absence is not: analyses recorded before the registry existed carry no beats, and a finished
+  // run is not reopened for a field it never had.
+  for (const beat of analysis.beats || []) {
+    if (!beat.sceneId || typeof beat.beat !== 'string' || !beat.beat.trim() || !evidenceExists(beat.evidence, chapter, version)) {
+      throw new Error(`Beat ${beat.beat || '(missing beat)'} has missing or ungrounded evidence: ${JSON.stringify(beat.evidence)}. Required chapter=${chapter}, revision=${version.revision}; quote must be a short verbatim substring, without paraphrase or ellipsis.`);
+    }
+  }
 }
 
 export function rebuildCanon(chapters: ChapterRecord[]): StoryState {
@@ -67,6 +91,7 @@ export function rebuildCanon(chapters: ChapterRecord[]): StoryState {
     state.facts.push(...version.analysis.facts);
     state.events.push(...version.analysis.events);
     state.promises.push(...version.analysis.promises);
+    state.beats.push(...(version.analysis.beats || []));
     state.summaries[chapter.number] = version.analysis.summary;
   }
   return state;
@@ -89,7 +114,7 @@ export function addCandidate(chapter: ChapterRecord, content: string, reason: st
  */
 function canonContribution(analysis: ChapterAnalysis): string {
   const strip = <T extends { evidence: Evidence }>(items: T[]) => items.map(({ evidence, ...rest }) => rest);
-  return JSON.stringify({ summary: analysis.summary, facts: strip(analysis.facts), events: strip(analysis.events), promises: strip(analysis.promises) });
+  return JSON.stringify({ summary: analysis.summary, facts: strip(analysis.facts), events: strip(analysis.events), promises: strip(analysis.promises), beats: strip(analysis.beats || []) });
 }
 
 /**
@@ -110,7 +135,8 @@ function canonDelta(previous: ChapterAnalysis, next: ChapterAnalysis): { subject
   // Events, promise ledger entries and the chapter synopsis carry no single subject to trace.
   const structural = previous.summary !== next.summary ||
     JSON.stringify(previous.events.map(strip)) !== JSON.stringify(next.events.map(strip)) ||
-    JSON.stringify(previous.promises.map(strip)) !== JSON.stringify(next.promises.map(strip));
+    JSON.stringify(previous.promises.map(strip)) !== JSON.stringify(next.promises.map(strip)) ||
+    JSON.stringify((previous.beats || []).map(strip)) !== JSON.stringify((next.beats || []).map(strip));
   return { subjects, structural };
 }
 
@@ -208,7 +234,7 @@ export function reconcileCheckpoint(run: NovelRun): boolean {
  */
 export function canonForPrompt(state: StoryState): object {
   const strip = <T extends { evidence: Evidence }>(items: T[]) => items.map(({ evidence, ...rest }) => rest);
-  return { facts: strip(state.facts), events: strip(state.events), promises: strip(state.promises), summaries: state.summaries };
+  return { facts: strip(state.facts), events: strip(state.events), promises: strip(state.promises), beats: strip(state.beats || []), summaries: state.summaries };
 }
 
 export function canonBefore(run: NovelRun, chapterNumber: number): StoryState {

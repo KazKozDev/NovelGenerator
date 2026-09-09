@@ -2,9 +2,10 @@ import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
+import { plannedBeatsFrom } from './beatStub';
 import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
-import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, endingIssues, nextUnacceptedChapter } from '../utils/novel/storyState';
-import { generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
+import { analyseChapter, beatCoverageIssue, generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -77,7 +78,7 @@ function fixtureLLM(count = 3): NovelLLM {
       const number = Number(prompt.match(/chapter=(\d+)/)?.[1]);
       const revision = Number(prompt.match(/revision=(\d+)/)?.[1]);
       const evidence = { chapter: number, revision, quote: `Thorne opened door ${number}.` };
-      return JSON.stringify({ summary: `Thorne opened door ${number} and paid the price.`, facts: [{ id: `door-${number}`, subject: 'Thorne', predicate: 'location', value: `door ${number}`, knownBy: ['Thorne'], evidence }], events: [{ id: `event-${number}`, description: 'Thorne chose to act', consequences: ['Paid a price'], evidence }], promises: number === 1 ? [{ promiseId: 'letter', kind: 'setup', evidence }] : number === count ? [{ promiseId: 'letter', kind: 'payoff', evidence }] : [] });
+      return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence })), summary: `Thorne opened door ${number} and paid the price.`, facts: [{ id: `door-${number}`, subject: 'Thorne', predicate: 'location', value: `door ${number}`, knownBy: ['Thorne'], evidence }], events: [{ id: `event-${number}`, description: 'Thorne chose to act', consequences: ['Paid a price'], evidence }], promises: number === 1 ? [{ promiseId: 'letter', kind: 'setup', evidence }] : number === count ? [{ promiseId: 'letter', kind: 'payoff', evidence }] : [] });
     }
     if (system.includes('title completed')) return JSON.stringify({ title: 'The Letter' });
     throw new Error(`Unexpected fixture call: ${system}`);
@@ -908,5 +909,74 @@ describe('Complete-run resume boundaries', () => {
     expect(run.chapters[2].acceptedRevision).toBe(candidate.revision);
     expect(candidate.analysis?.events[0].evidence.revision).toBe(candidate.revision);
     expect(llm).not.toHaveBeenCalled();
+  });
+});
+
+describe('The beat registry', () => {
+  const beat = (sceneId: string, text: string, revision: number) =>
+    ({ sceneId, beat: text, evidence: { chapter: 1, revision, quote: prose(1).slice(0, 24) } });
+
+  it('records only the planned beats the extractor can cite, and drops one the plan never asked for', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, prose(1), 'fixture');
+    const analysis = await analyseChapter(run, chapter, version, async (prompt: string) => {
+      if (prompt.includes('TASK: Extract facts')) return '{"summary":"Thorne opened the door.","facts":[]}';
+      if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+      if (prompt.includes('TASK: Extract promises')) return '{"promises":[]}';
+      const planned = plannedBeatsFrom(prompt);
+      expect(planned).toEqual([{ sceneId: 'scene-1', beat: 'choice' }, { sceneId: 'scene-1', beat: 'consequence' }]);
+      // The third entry names a beat no scene planned; it cannot be a planned beat that reached the page.
+      return JSON.stringify({ beats: [...planned, { sceneId: 'scene-1', beat: 'a beat nobody planned' }].map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+    });
+    expect(analysis.beats?.map(item => item.beat)).toEqual(['choice', 'consequence']);
+  });
+
+  it('carries the registry into canon, where the chapters that follow can read it', async () => {
+    const run = runWithPlans();
+    const version = approve(run, 1);
+    version.analysis!.beats = [beat('scene-1', 'choice', version.revision)];
+    run.canon = rebuildCanon(run.chapters);
+    expect(run.canon.beats).toEqual([beat('scene-1', 'choice', version.revision)]);
+    expect((canonForPrompt(run.canon) as { beats: unknown[] }).beats).toEqual([{ sceneId: 'scene-1', beat: 'choice' }]);
+  });
+
+  it('says nothing when one beat of several is unmatched, and speaks when a whole scene is silent', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, prose(1), 'fixture');
+    const analysis = (beats: ReturnType<typeof beat>[]) => ({ summary: 's', facts: [], events: [], promises: [], beats });
+    // Reworded on the page and unmatched by the extractor is the likelier reading of a single miss.
+    chapter.plan.detailedScenes = [{ ...chapter.plan.detailedScenes![0], keyMoments: ['choice', 'consequence', 'cost'] }];
+    expect(beatCoverageIssue(chapter, analysis([beat('scene-1', 'choice', version.revision), beat('scene-1', 'consequence', version.revision)]), version)).toBeUndefined();
+    const issue = beatCoverageIssue(chapter, analysis([]), version);
+    expect(issue?.id).toBe('undramatized-beat');
+    expect(issue?.severity).toBe('major');
+    expect(issue?.instruction).toContain('cost');
+  });
+
+  it('reads a missing registry as silence about the beats, not as beats that never reached the page', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, prose(1), 'fixture');
+    expect(beatCoverageIssue(chapter, { summary: 's', facts: [], events: [], promises: [] }, version)).toBeUndefined();
+  });
+
+  it('sends a chapter whose planned scene was never written back to repair instead of accepting it', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, prose(1), 'fixture');
+    candidate.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: candidate.revision };
+    stampLiterary(run, 1, candidate);
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('extract evidence')) {
+        // The extraction is clean and finds nothing of the planned scene: the scene was never written.
+        return JSON.stringify({ summary: 'Thorne opened door 1.', facts: [], events: [], promises: [], beats: [] });
+      }
+      throw new Error(`repair reached: ${system}`);
+    });
+    await expect((new NovelEngine(llm as any, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate)).rejects.toThrow(/repair reached/);
+    expect(chapter.status).not.toBe('accepted');
+    expect(candidate.review!.issues.map(issue => issue.id)).toContain('undramatized-beat');
   });
 });

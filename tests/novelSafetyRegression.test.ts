@@ -61,10 +61,11 @@ describe('Promise ledger schedule', () => {
     const reply = (field: string) => {
       if (field === 'facts') return JSON.stringify({ summary: 'Vera reads the letter.', facts: [] });
       if (field === 'events') return JSON.stringify({ events: [] });
+      if (field === 'beats') return JSON.stringify({ beats: [] });
       // Chapter 1 owns the setup, never the payoff, however confidently the model labels it.
       return JSON.stringify({ promises: [{ promiseId: 'letter', kind: 'payoff', evidence: { sourceId: 'p1' } }, { promiseId: 'letter', kind: 'setup', evidence: { sourceId: 'p1' } }] });
     };
-    const analysis = await analyseChapter(run, chapter, version, async prompt => reply(prompt.includes('Extract facts') ? 'facts' : prompt.includes('Extract events') ? 'events' : 'promises'));
+    const analysis = await analyseChapter(run, chapter, version, async prompt => reply(prompt.includes('Extract facts') ? 'facts' : prompt.includes('Extract events') ? 'events' : prompt.includes('Extract beats') ? 'beats' : 'promises'));
     expect(analysis.promises).toHaveLength(1);
     expect(analysis.promises[0]).toMatchObject({ promiseId: 'letter', kind: 'setup' });
     expect(passage).toContain('Vera read the letter.');
@@ -310,7 +311,7 @@ describe('Follow-up audit regressions', () => {
 describe('Source-indexed evidence extraction', () => {
   it('resolves a declared source to exact prose and rejects unknown or ambiguous references', async () => {
     const { run, chapter, version } = fixture();
-    const response = (evidence: unknown) => JSON.stringify({ summary: 'Vera reads.', facts: [], events: [{ id: 'read', description: 'Vera reads the letter', consequences: [], evidence }], promises: [] });
+    const response = (evidence: unknown) => JSON.stringify({ summary: 'Vera reads.', facts: [], events: [{ id: 'read', description: 'Vera reads the letter', consequences: [], evidence }], promises: [], beats: [] });
     const analysis = await analyseChapter(run, chapter, version, async () => response({ sourceId: 'p1' }));
     expect(analysis.events[0].evidence).toEqual({ chapter: 1, revision: version.revision, quote: version.content });
     await expect(analyseChapter(run, chapter, version, async () => response({ sourceId: 'p999' }))).rejects.toThrow(/Unknown evidence sourceId/);
@@ -324,6 +325,7 @@ describe('Source-indexed evidence extraction', () => {
       { summary: 'Vera reads.', facts: [] },
       { events: [] },
       { promises: [{ promiseId: 'invented', kind: 'setup', evidence: { sourceId: 'p1' } }] },
+      { beats: [] },
     ];
     const analysis = await analyseChapter(run, chapter, version, async () => JSON.stringify(responses.shift()));
     expect(analysis.promises).toEqual([]);

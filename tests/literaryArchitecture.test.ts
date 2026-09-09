@@ -1,3 +1,4 @@
+import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, type ChapterRecord, type ChapterVersion } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
@@ -154,6 +155,7 @@ describe('Versioned literary architecture', () => {
       if (system.includes('extract evidence')) {
         if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
         return '{"promises":[]}';
       }
       throw new Error(system);
