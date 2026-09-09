@@ -174,6 +174,25 @@ describe('report mode inside the engine', () => {
     expect(report.metrics.similesPer1000).toBeGreaterThan(2.5);
   });
 
+  it('sends measured defects into a repair the editor already triggered', async () => {
+    const { run, candidate } = ready();
+    // The editor finds its own defect, so the chapter is failing anyway; the doubled paragraphs must
+    // still reach the repair, or they survive every round while other findings come and go.
+    candidate.review = undefined; // let the editor actually review this revision
+    const quote = paragraphsOf(candidate.content)[0];
+    const editor: NovelLLM = async (prompt, system) => {
+      if (system.includes('continuity and developmental')) return JSON.stringify({ issues: [{ id: 'knowledge-01', category: 'knowledge', severity: 'major', description: 'A name the story has not given.', instruction: 'Remove it.', evidence: [{ chapter: 1, revision: 1, quote }] }] });
+      return extractOnly(prompt, system);
+    };
+    const embed: Embedder = async inputs => inputs.map(() => [1, 0]);
+    await expect((new NovelEngine(editor, new MemoryRunStore(), () => {}, embed) as any)
+      .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow();
+    const reported = candidate.review!.issues.map(issue => issue.id);
+    expect(reported).toContain('knowledge-01');
+    expect(reported).toContain('duplicated-passage');
+    expect(candidate.review!.status).toBe('failed');
+  });
+
   it('fails a chapter whose paragraphs repeat each other, however clean the review was', async () => {
     const { run, candidate } = ready();
     const embed: Embedder = async inputs => inputs.map(() => [1, 0]);

@@ -310,8 +310,12 @@ export class NovelEngine {
       // Which measurements act is expressed as their severity: repetition and serial explanation name
       // a defect and quote it, while the fitted density budgets stay minor and only inform a repair
       // that some other finding already triggered.
-      if (candidate.review.status === 'passed') {
-        const acting = (candidate.prosody?.findings || []).filter(issue => issue.severity !== 'minor');
+      // Merged whenever the review reached a verdict, not only when it passed: gating them behind a
+      // clean review meant that a chapter the editor had already failed went into repair without its
+      // measured defects, and three doubled paragraphs survived every round untouched.
+      if (candidate.review.status !== 'not_checked') {
+        const acting = (candidate.prosody?.findings || []).filter(issue => issue.severity !== 'minor'
+          && !candidate.review!.issues.some(existing => existing.id === issue.id));
         if (acting.length) candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...acting] };
       }
       if (candidate.review.status === 'passed') {
