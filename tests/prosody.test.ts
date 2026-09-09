@@ -243,7 +243,7 @@ describe('planned exchanges must reach the page as speech', () => {
       `— Скажи это вслух, — произнёс он, и его брови сошлись на переносице, номер ${i}.`).join('\n\n');
     const issues = dialogueIssues(1, version(wrapped), speechScene);
     expect(issues[0].id).toBe('speech-tag-bloat');
-    expect(issues[0].severity).toBe('minor');
+    expect(issues[0].severity).toBe('major');
     expect(issues[0].evidence).toHaveLength(3);
     expect(prosodyMetrics(wrapped, 'Russian').taggedSpeechShare).toBe(1);
   });
@@ -252,7 +252,7 @@ describe('planned exchanges must reach the page as speech', () => {
     const bare = ['— Ты знал.', '— Знал.', '— И молчал.', '— Молчал.', '— Почему?',
       '— Потому что ты бы ушла, — сказал он.', '— Я и ухожу.', '— Знаю.'].join('\n\n');
     expect(dialogueIssues(1, version(bare), speechScene)).toEqual([]);
-    expect(prosodyMetrics(bare, 'Russian').taggedSpeechShare).toBeLessThan(0.6);
+    expect(prosodyMetrics(bare, 'Russian').taggedSpeechShare).toBeLessThan(0.85);
   });
 
   it('counts direct speech, not reported speech', () => {

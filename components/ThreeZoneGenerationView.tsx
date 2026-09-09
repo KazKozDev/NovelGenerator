@@ -226,6 +226,24 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           data-testid="zone-prose"
           className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet`}
         >
+          {activeChapter?.texture && (
+            <div className="shrink-0 px-6 pt-3 text-xs text-zinc-500 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-zinc-800 pb-2">
+              <span className="uppercase tracking-wide text-zinc-600">Measured</span>
+              <span>dialogue <span className="tabular-nums text-zinc-400">{Math.round(activeChapter.texture.dialogueShare * 100)}%</span></span>
+              <span>median paragraph <span className="tabular-nums text-zinc-400">{activeChapter.texture.medianParagraphWords}w</span></span>
+              {activeChapter.texture.similesPer1000 !== undefined && (
+                <span>comparisons/1k <span className="tabular-nums text-zinc-400">{activeChapter.texture.similesPer1000.toFixed(1)}</span></span>
+              )}
+              {activeChapter.texture.taggedSpeechShare !== undefined && (
+                <span>lines with a beat <span className="tabular-nums text-zinc-400">{Math.round(activeChapter.texture.taggedSpeechShare * 100)}%</span></span>
+              )}
+              {activeChapter.texture.findings.length > 0 && (
+                <span className="basis-full text-zinc-400" title={activeChapter.texture.findings.map(finding => finding.description).join('\n')}>
+                  {activeChapter.texture.findings.map(finding => finding.id).join(' · ')}
+                </span>
+              )}
+            </div>
+          )}
           {isWritingProse || activeContent ? (
             <StreamingContentView
               title={`Chapter ${activeChapterNum}: ${activeTitle}`}

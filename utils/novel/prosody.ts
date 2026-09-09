@@ -144,11 +144,13 @@ export function speechParagraphs(text: string): string[] {
 }
 
 /**
- * A ceiling, and a convention like the floor above: no corpus was measured. It marks the shape where
- * every line arrives wrapped in a gesture and the gesture's interpretation — 96% and 100% in the two
- * chapters that prompted it — so that some lines are left to stand as speech.
+ * Calibrated like the budgets above, on this pipeline's own 11 measured chapters: 67% at best, 96% at
+ * the lower quartile, 100% at the median. A ceiling of 0.6 would have flagged every chapter ever
+ * written here and distinguished nothing; 0.85 marks the shape where the exchange never once runs as
+ * speech alone, and the best chapter already clears it. Asking for bare lines in the writing prompt
+ * did not move the number at all — 100% again on the next run — so the check acts instead.
  */
-export const taggedSpeechCeiling = 0.6;
+export const taggedSpeechCeiling = 0.85;
 
 /**
  * The plan says which scenes are argued out loud; this checks the prose kept that promise. Deterministic
@@ -169,9 +171,9 @@ export function dialogueIssues(chapter: number, version: ChapterVersion, scenes:
   }];
   const tagged = speech.filter(isTagged);
   if (speech.length >= 6 && tagged.length / speech.length > taggedSpeechCeiling) return [{
-    id: 'speech-tag-bloat', category: 'dialogue', severity: 'minor',
+    id: 'speech-tag-bloat', category: 'dialogue', severity: 'major',
     description: `${Math.round((tagged.length / speech.length) * 100)}% of spoken lines arrive with an attached gesture or attribution; the exchange never runs as speech alone.`,
-    instruction: 'Leave most lines bare once the reader knows who is speaking. Keep a gesture only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and never follow a named gesture with its anatomy and its meaning.',
+    instruction: 'Delete the attribution and the gesture from the lines that do not need them: once the reader knows who is speaking, a line stands on its own. Keep a beat only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and where a gesture stays, cut the clause that names its anatomy and the clause that explains its meaning. Change no spoken words.',
     evidence: tagged.slice(0, 3).map(quote => ({ chapter, revision: version.revision, quote })),
   }];
   if (share < dialogueFloor) return [{

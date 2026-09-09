@@ -27,6 +27,13 @@ export function displayChapters(run?: NovelRun): ChapterData[] {
       wordCount: content.split(/\s+/).filter(Boolean).length,
       generationStage: chapter.status === 'accepted' && chapter.candidateRevision === undefined ? ChapterGenerationStage.Complete : ChapterGenerationStage.FirstDraft,
       draftVersions: chapter.versions.map(item => ({ stage: item.revision === chapter.acceptedRevision ? ChapterGenerationStage.Complete : ChapterGenerationStage.FirstDraft, content: item.content, timestamp: item.createdAt })),
+      texture: version?.prosody && {
+        dialogueShare: version.prosody.metrics.dialogueShare,
+        medianParagraphWords: version.prosody.metrics.medianParagraphWords,
+        similesPer1000: version.prosody.metrics.similesPer1000,
+        taggedSpeechShare: version.prosody.metrics.taggedSpeechShare,
+        findings: version.prosody.findings.map(issue => ({ id: issue.id, description: issue.description })),
+      },
       lastSavedAt: run.updatedAt,
     };
   });

@@ -369,6 +369,32 @@ describe('A chapter is planned against the book', () => {
   });
 });
 
+describe('Retrying a structured response', () => {
+  it('retries colder after a malformed answer', async () => {
+    const temperatures: (number | undefined)[] = [];
+    const llm: NovelLLM = async (_prompt, _system, options) => {
+      temperatures.push(options?.temperature);
+      return temperatures.length === 1 ? '{"title":' : '{"title":"A name"}';
+    };
+    await structuredResponse('PROMPT', 'system', llm, ['title'], raw => raw.title as string, { temperature: 0.4 });
+    expect(temperatures).toEqual([0.4, 0.1]);
+  });
+
+  it('retries hotter after being told it repeated itself', async () => {
+    const temperatures: (number | undefined)[] = [];
+    const llm: NovelLLM = async (_prompt, _system, options) => {
+      temperatures.push(options?.temperature);
+      return '{"title":"A name"}';
+    };
+    let seen = 0;
+    await structuredResponse('PROMPT', 'system', llm, ['title'], raw => {
+      if (++seen === 1) throw new Error('This plan repeats chapter 2.');
+      return raw.title as string;
+    }, { temperature: 0.4 });
+    expect(temperatures[1]).toBeGreaterThan(0.5);
+  });
+});
+
 describe('Prose that will not fit in a JSON string', () => {
   it('asks for the prose alone when the envelope comes back unterminated, and keeps the same checks', async () => {
     const story = 'Марина открыла дверь. За порогом никого не было.';

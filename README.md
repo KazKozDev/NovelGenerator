@@ -79,9 +79,19 @@ writer judges its own prose, which is the weakest configuration this engine allo
 Thinking is a property of the role, not of a model name. A reasoning model asked to judge
 with thinking off returns an empty review, so the editor may think while the writer never
 does — and Ollama returns that reasoning in a separate field that never reaches the
-manuscript. Deterministic gates run before the sampled one: unfilled slots, chapters under
-80% of their target, and characters from a script the book is not written in fail
-outright.
+manuscript. Deterministic gates run before the sampled one: unfilled slots, chapters
+outside their planned length, characters from a script the book is not written in, a
+planned exchange written without a spoken line, and paragraphs that restate the one before
+them all fail outright.
+
+Prose texture is counted rather than judged. Every candidate chapter is measured for
+comparison density, paragraph shape, dialogue share, and repetition found through
+embeddings — the last catching a beat retold in new words, which no lexical check can see.
+Repetition and missing dialogue fail a chapter; the style budgets only report, and they are
+calibrated against this pipeline's own output rather than against published fiction, which
+nothing here has measured. A repair is compared against the text it came from: one that
+silences the chapter's dialogue, fuses its paragraphs or quietly cuts a sixth of it is sent
+back with the damage named.
 
 ```
 premise → outline → blueprint → chapter plan → scenes → review → canon → book audit → export
@@ -106,6 +116,7 @@ Set in the app before generation starts.
 | Writer provider | gemini | `gemini` or `ollama`; the Ollama model is chosen from the models it reports |
 | Editor model | same as writer | A second model for review, canon extraction and the book audits |
 | Editor thinking | on | Lets the editor reason before judging; its reasoning never enters the manuscript |
+| Embedding model | `qwen3-embedding:4b` | Local Ollama model used to catch a beat retold in new words; headless runs set it with `--embed`, `--embed off` skips the check |
 
 ### Environment variables
 

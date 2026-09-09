@@ -110,4 +110,29 @@ describe('ThreeZoneGenerationView', () => {
     expect(html).toContain('Show full plan');
     expect(html).not.toContain('The doubling becomes undeniable.');
   });
+
+  it('shows the measured texture of the chapter on screen, findings included', () => {
+    const measured = [{
+      title: 'Chapter 1: The Awakening',
+      content: 'Elena opened her eyes to the dark room.',
+      plan: 'Scene 1: Waking up in Neo-Veridia.',
+      texture: {
+        dialogueShare: 0.12, medianParagraphWords: 79, similesPer1000: 3.4, taggedSpeechShare: 1,
+        findings: [{ id: 'speech-tag-bloat', description: '100% of spoken lines arrive with an attached gesture.' }],
+      },
+    }];
+    const html = renderToStaticMarkup(
+      <ThreeZoneGenerationView
+        currentStep={GenerationStep.GeneratingChapters}
+        currentChapterProcessing={1}
+        totalChaptersToProcess={1}
+        generatedChapters={measured}
+        agentLogs={[]}
+      />
+    );
+    expect(html).toContain('12%');
+    expect(html).toContain('79w');
+    expect(html).toContain('3.4');
+    expect(html).toContain('speech-tag-bloat');
+  });
 });

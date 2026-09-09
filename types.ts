@@ -30,6 +30,14 @@ export interface ChapterData {
   timelineEntry?: string; // Raw text from LLM for timeline
   emotionalArcEntry?: string; // Raw text from LLM for emotional arc
   plan?: string; // Individual chapter plan
+  /** Measured prose texture of the shown revision, and what the measurements said about it. */
+  texture?: {
+    dialogueShare: number;
+    medianParagraphWords: number;
+    similesPer1000?: number;
+    taggedSpeechShare?: number;
+    findings: { id: string; description: string }[];
+  };
   // Extended analysis metrics
   pacingScore?: number; // 1-10
   dialogueRatio?: number; // 0-100%
