@@ -391,6 +391,9 @@ describe('planned exchanges must reach the page as speech', () => {
     const issues = dialogueIssues(1, version(wrapped), speechScene);
     expect(issues[0].id).toBe('speech-tag-bloat');
     expect(issues[0].severity).toBe('major');
+    // A share is not repaired by editing three quoted lines: two live revisions left it at 100%.
+    expect(issues[0].instruction).toContain('a pattern across the whole chapter');
+    expect(issues[0].instruction).toContain('At least half of the chapter');
     expect(issues[0].evidence).toHaveLength(3);
     expect(prosodyMetrics(wrapped, 'Russian').taggedSpeechShare).toBe(1);
   });

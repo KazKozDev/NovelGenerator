@@ -201,7 +201,7 @@ export function dialogueIssues(chapter: number, version: ChapterVersion, scenes:
   if (speech.length >= 6 && tagged.length / speech.length > taggedSpeechCeiling) return [{
     id: 'speech-tag-bloat', category: 'dialogue', severity: 'major',
     description: `${Math.round((tagged.length / speech.length) * 100)}% of spoken lines arrive with an attached gesture or attribution; the exchange never runs as speech alone.`,
-    instruction: 'Delete the attribution and the gesture from the lines that do not need them: once the reader knows who is speaking, a line stands on its own. Keep a beat only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and where a gesture stays, cut the clause that names its anatomy and the clause that explains its meaning. Change no spoken words.',
+    instruction: `This is a pattern across the whole chapter, not the ${Math.min(tagged.length, 3)} lines quoted below: they are examples. Go through every spoken line in the chapter and delete the attribution and the gesture from those that do not need them — once the reader knows who is speaking, a line stands on its own. At least half of the chapter's spoken lines must end up bare. Keep a beat only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and where a gesture stays, cut the clause that names its anatomy and the clause that explains its meaning. Change no spoken words, and change nothing that is not a speech attribution or its gesture.`,
     evidence: tagged.slice(0, 3).map(quote => ({ chapter, revision: version.revision, quote })),
   }];
   if (share < dialogueFloor) return [{
