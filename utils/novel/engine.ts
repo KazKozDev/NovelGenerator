@@ -195,13 +195,29 @@ export const distributedIssues = ['speech-tag-bloat', 'simile-density', 'adjecti
  * produced four revisions that moved almost nothing: comparisons fell half a point and the other three
  * measures stood. Passing one at a time keeps a repair to a single sweep; the rest return next round,
  * still measured, still failing, until each has had its turn.
+ *
+ * Severity alone never gave them that turn. The same sweep is the gravest one every round, so a chapter
+ * held up by its meaning spent every round of a long repair on that one measure while the four others
+ * stood untouched from the first draft to the last. `served` records which sweeps this chapter has
+ * already had a round for; the next round goes to one that has not, and when all of them have, the
+ * rotation starts again on whatever is still measured.
  */
-export function oneDistributedAtATime(issues: ReviewIssue[]): ReviewIssue[] {
+export function nextSweep(issues: ReviewIssue[], served: string[] = []): { issues: ReviewIssue[]; served: string[] } {
   const spread = issues.filter(issue => distributedIssues.includes(issue.id));
-  if (spread.length < 2) return issues;
+  if (!spread.length) return { issues, served };
+  const waiting = spread.filter(issue => !served.includes(issue.id));
+  const round = waiting.length ? waiting : spread;
   const rank = { critical: 0, major: 1, minor: 2 } as const;
-  const chosen = [...spread].sort((first, second) => rank[first.severity] - rank[second.severity])[0];
-  return issues.filter(issue => !distributedIssues.includes(issue.id) || issue === chosen);
+  const chosen = [...round].sort((first, second) => rank[first.severity] - rank[second.severity])[0];
+  return {
+    issues: spread.length < 2 ? issues : issues.filter(issue => !distributedIssues.includes(issue.id) || issue === chosen),
+    served: waiting.length ? [...served, chosen.id] : [chosen.id],
+  };
+}
+
+/** The findings a repair should carry when the sweeps take their turns in order. */
+export function oneDistributedAtATime(issues: ReviewIssue[], served: string[] = []): ReviewIssue[] {
+  return nextSweep(issues, served).issues;
 }
 
 /** Whether a revision left the prose as it was: sentence sets identical, whitespace aside. */
@@ -436,8 +452,11 @@ export class NovelEngine {
       let extra = '';
       // Cutting is the repair some issues actually ask for; only then may a revision come back shorter.
       let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage');
-      if (!repetition.length) content = await this.repair(run, chapter, version, oneDistributedAtATime(version.review!.issues));
-      else {
+      const sweep = nextSweep(version.review!.issues, chapter.distributedServed);
+      if (!repetition.length) {
+        chapter.distributedServed = sweep.served;
+        content = await this.repair(run, chapter, version, sweep.issues);
+      } else {
         try { content = await this.removeRedundancy(run, chapter, version, repetition); }
         catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
@@ -450,7 +469,8 @@ export class NovelEngine {
       // counter watches the findings, which drift in wording every round, so six revisions of
       // byte-identical prose passed for progress and spent the budget.
       if (unchanged(version.content, content)) {
-        content = await this.repair(run, chapter, version, oneDistributedAtATime(version.review!.issues),
+        chapter.distributedServed = sweep.served;
+        content = await this.repair(run, chapter, version, sweep.issues,
           `${extra}Your previous attempt returned this chapter unchanged, sentence for sentence. If an issue cannot be answered inside this chapter, answer the ones that can and leave that one; returning the chapter as it stands answers nothing.`, allowShortening);
         // The stuck counter resets whenever the findings are worded differently, which they always
         // are, so a repair that does nothing needs its own count or it spends the whole budget.

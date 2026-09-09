@@ -116,6 +116,8 @@ export interface ChapterRecord {
   repairVersionStart?: number;
   /** The findings the last round faced, so a round that fixed something is not counted against it. */
   lastFindings?: string;
+  /** Chapter-wide sweeps that have already had a repair round, so the next one goes to a sweep that has not. */
+  distributedServed?: string[];
   literaryPlan?: import('./literaryState').LiteraryPlan;
   /** Recorded when a planning rule could not be satisfied; never a reason to lose the run. */
   planningNote?: string;

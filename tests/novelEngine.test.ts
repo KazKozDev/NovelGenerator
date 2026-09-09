@@ -2,7 +2,7 @@ import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
-import { createRun, NovelEngine, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
+import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, endingIssues, nextUnacceptedChapter } from '../utils/novel/storyState';
 import { generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
@@ -512,6 +512,26 @@ describe('A defect that is a proportion, not a place', () => {
     const passed = oneDistributedAtATime(issues).map(issue => issue.id);
     // The most severe sweep goes first; the others come back next round, still measured.
     expect(passed).toEqual(['knowledge-01', 'speech-tag-bloat']);
+  });
+
+  it('gives each sweep a round instead of spending every round on the gravest one', () => {
+    const issues = [spread('simile-density', 'minor'), spread('speech-tag-bloat'), spread('serial-explanation')];
+    const first = nextSweep(issues, []);
+    expect(first.issues.map(issue => issue.id)).toEqual(['speech-tag-bloat']);
+    const second = nextSweep(issues, first.served);
+    // The gravest sweep had its round; the next goes to one still waiting, not to the same measure again.
+    expect(second.issues.map(issue => issue.id)).toEqual(['serial-explanation']);
+    const third = nextSweep(issues, second.served);
+    expect(third.issues.map(issue => issue.id)).toEqual(['simile-density']);
+    // Every sweep has had a turn and all three are still measured: the rotation begins again.
+    expect(nextSweep(issues, third.served).issues.map(issue => issue.id)).toEqual(['speech-tag-bloat']);
+  });
+
+  it('remembers a lone sweep, so a second one that appears later gets the next round', () => {
+    const served = nextSweep([spread('speech-tag-bloat')], []).served;
+    expect(served).toEqual(['speech-tag-bloat']);
+    const issues = [spread('speech-tag-bloat'), spread('simile-density', 'minor')];
+    expect(nextSweep(issues, served).issues.map(issue => issue.id)).toEqual(['simile-density']);
   });
 
   it('changes nothing when there is only one sweep to make', () => {
