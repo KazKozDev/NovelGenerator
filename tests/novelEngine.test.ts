@@ -435,6 +435,10 @@ describe('A review is allowed to find nothing', () => {
     // A live review flagged a sentence lifted from the author's own premise as a knowledge leak.
     expect(seen).toContain('the premise in the author contract above is established ground');
     expect(seen).toContain('repeating it is never a violation');
+    // A live review called an explicitly unplaceable memory a knowledge leak, quoting the sentence
+    // that said it could not take the form of a concrete event.
+    expect(seen).toContain('a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge');
+    expect(seen).toContain('requires a smoother transition');
   });
 
   it('discards a finding whose own quoted subject is not in the prose', async () => {
