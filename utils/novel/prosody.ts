@@ -239,7 +239,7 @@ const cosine = (a: number[], b: number[]) => a.reduce((sum, value, index) => sum
  * Measured against six generated chapters: adjacent paragraphs sit at a median cosine of 0.585 and a
  * 95th percentile of 0.785, so 0.80 is the tail where one beat is genuinely told twice.
  */
-export const defaultRepetitionThresholds = { adjacent: 0.8, crossChapter: 0.8, minimumCharacters: 200 };
+export const defaultRepetitionThresholds = { adjacent: 0.8, crossChapter: 0.8, distant: 0.8, minimumCharacters: 200 };
 
 export interface PriorProse { chapter: number; revision: number; content: string }
 
@@ -263,17 +263,25 @@ export async function repetitionIssues(
   const historyVectors = vectors.slice(current.length);
 
   const issues: ReviewIssue[] = [];
-  const adjacent: Evidence[] = [];
+  // Neighbours and distant pairs are the same defect at different distances. Checking only neighbours
+  // left a scene repeated twenty paragraphs later invisible: a live chapter carried 55 such passages
+  // while this report said the prose was clean, and only the lexical check saw them.
+  const doubled: Evidence[] = [];
+  const seen = new Set<number>();
   for (let index = 0; index < current.length - 1; index++) {
-    if (cosine(currentVectors[index], currentVectors[index + 1]) < thresholds.adjacent) continue;
-    // The later telling is the one the deletion pass should weigh first.
-    adjacent.push({ chapter, revision: version.revision, quote: current[index + 1] });
+    for (let other = index + 1; other < current.length; other++) {
+      const threshold = other === index + 1 ? thresholds.adjacent : thresholds.distant;
+      if (seen.has(other) || cosine(currentVectors[index], currentVectors[other]) < threshold) continue;
+      // The later telling is the one the deletion pass should weigh first.
+      seen.add(other);
+      doubled.push({ chapter, revision: version.revision, quote: current[other] });
+    }
   }
-  if (adjacent.length) issues.push({
+  if (doubled.length) issues.push({
     id: 'duplicated-passage', category: 'format', severity: 'critical',
-    description: `${adjacent.length} paragraph(s) restate the beat immediately before them in different words.`,
+    description: `${doubled.length} paragraph(s) tell again, in different words, a beat this chapter has already told.`,
     instruction: 'Delete the weaker telling of each doubled beat outright. Do not merge the two into a third version.',
-    evidence: adjacent.slice(0, 4),
+    evidence: doubled.slice(0, 4),
   });
 
   const crossed: Evidence[] = [];

@@ -12,7 +12,9 @@ import { stampLiterary } from './helpers/literaryFixture';
 const version = (content: string, revision = 1): ChapterVersion => ({ revision, content, reason: 'test', createdAt: 0 });
 
 /** Vectors chosen so cosine similarity is exact and the thresholds, not an embedder, are under test. */
-const unit = (angle: number) => [Math.cos(angle), Math.sin(angle)];
+const unit = (angle: number) => [Math.cos(angle), Math.sin(angle), 0, 0, 0, 0, 0, 0];
+/** Mutually orthogonal: unlike points on a circle, these stay dissimilar at every distance. */
+const axis = (index: number) => Array.from({ length: 8 }, (_, position) => (position === index ? 1 : 0));
 const embedderFor = (map: Record<string, number[]>): Embedder => async inputs => inputs.map(input => {
   const key = Object.keys(map).find(prefix => input.startsWith(prefix));
   if (!key) throw new Error(`No vector for: ${input.slice(0, 30)}`);
@@ -91,6 +93,16 @@ describe('semantic repetition', () => {
     expect(doubled?.evidence[0].quote).toBe(b);
   });
 
+  it('finds a beat told again twenty paragraphs later, not only next door', async () => {
+    const filler = Array.from({ length: 6 }, (_, i) => long(`Он считал минуты до утра, номер ${i}.`));
+    const embed = embedderFor({ 'Ваза начала': axis(0), 'Ваза медленно': [0.96, 0.28, 0, 0, 0, 0, 0, 0],
+      ...Object.fromEntries(filler.map((_, i) => [`Он считал минуты до утра, номер ${i}`, axis(i + 2)])) });
+    const issues = await repetitionIssues(1, version([a, ...filler, b].join('\n\n')), [], embed);
+    const doubled = issues.find(issue => issue.id === 'duplicated-passage');
+    expect(doubled?.evidence).toHaveLength(1);
+    expect(doubled?.evidence[0].quote).toBe(b);
+  });
+
   it('leaves consecutive paragraphs that do different work alone', async () => {
     const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4) });
     expect(await repetitionIssues(1, version([a, c].join('\n\n')), [], embed)).toEqual([]);
@@ -150,7 +162,9 @@ describe('report mode inside the engine', () => {
   it('keeps budget findings advisory: a chapter over every budget is still accepted', async () => {
     const { run, candidate } = ready();
     // Orthogonal vectors: nothing in this chapter repeats, so only the fitted budgets have anything to say.
-    const embed: Embedder = async inputs => inputs.map((_, index) => [Math.cos(index), Math.sin(index)]);
+    // One dimension per paragraph: nothing here resembles anything else at any distance.
+    const embed: Embedder = async inputs =>
+      inputs.map((_, index) => Array.from({ length: inputs.length }, (_, position) => (position === index ? 1 : 0)));
     await (new NovelEngine(extractOnly, new MemoryRunStore(), () => {}, embed) as any).acceptOrRepair(run, run.chapters[0], candidate);
     expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
     expect(candidate.review!.issues).toEqual([]);
