@@ -130,7 +130,7 @@ const MAX_TEXTURE_RETRIES = 1;
  * it came from, so it needs no fitted threshold: silencing the dialogue a chapter had, or fusing its
  * paragraphs into far longer blocks, is a regression whatever the absolute numbers are.
  */
-export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics, shorteningExpected = false): string | undefined {
+export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics, shorteningExpected = false, origin?: ProsodyMetrics): string | undefined {
   const damage: string[] = [];
   // Between "do not pad" and "do not condense" a repair could quietly take a fifth of the chapter.
   if (!shorteningExpected && after.words < before.words * 0.85) {
@@ -147,6 +147,18 @@ export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics,
   }
   if (after.longestParagraphWords > before.longestParagraphWords * 1.5 && after.longestParagraphWords > 250) {
     damage.push(`it grew the longest paragraph from ${before.longestParagraphWords} to ${after.longestParagraphWords} words.`);
+  }
+  // Nine revisions of one chapter raised comparison density from 3.4 to 4.8 per 1000 words without a
+  // single step large enough to notice. Drift is only visible against where the chapter started.
+  const drifted = (name: string, from: number | undefined, to: number | undefined) =>
+    // A chapter that began with none of a device and acquired it through repairs has drifted too, so
+    // the rise is relative with an absolute floor rather than a ratio that division by zero silences.
+    from !== undefined && to !== undefined && to > from * 1.25 && to > 1
+      ? `it has carried ${name} from ${from.toFixed(1)} to ${to.toFixed(1)} per 1000 words across this chapter's revisions.` : undefined;
+  if (origin) {
+    for (const note of [drifted('comparisons', origin.similesPer1000, after.similesPer1000),
+      drifted('modifier pairs', origin.stackedAdjectivesPer1000, after.stackedAdjectivesPer1000),
+      drifted('coordinate series', origin.serialExplanationsPer1000, after.serialExplanationsPer1000)]) if (note) damage.push(note);
   }
   return damage.length ? damage.join(' ') : undefined;
 }
@@ -369,14 +381,15 @@ export class NovelEngine {
           content = await this.repair(run, chapter, version, version.review!.issues, extra, true);
         }
       }
-      const damage = textureRegression(prosodyMetrics(version.content, run.spec.language), prosodyMetrics(content, run.spec.language), allowShortening);
+      const origin = chapter.versions[0] && chapter.versions[0] !== version ? prosodyMetrics(chapter.versions[0].content, run.spec.language) : undefined;
+      const damage = textureRegression(prosodyMetrics(version.content, run.spec.language), prosodyMetrics(content, run.spec.language), allowShortening, origin);
       if (damage && repairsRetried < MAX_TEXTURE_RETRIES) {
         // The repair closed its issue by making the prose worse. Ask again, naming what it destroyed,
         // before this version becomes the one every later revision builds on.
         repairsRetried++;
         content = await this.repair(run, chapter, version, candidate.review.issues,
           `${extra}A previous attempt at this repair damaged the chapter: ${damage} Repair the issues without doing that: keep the dialogue, the paragraph shapes and the scene rhythm this chapter already has.`, allowShortening);
-        if (textureRegression(prosodyMetrics(version.content, run.spec.language), prosodyMetrics(content, run.spec.language), allowShortening)) {
+        if (textureRegression(prosodyMetrics(version.content, run.spec.language), prosodyMetrics(content, run.spec.language), allowShortening, origin)) {
           // Two attempts damaged it the same way. Keep the repair rather than loop; the report records it.
           repairsRetried = MAX_TEXTURE_RETRIES;
         }
@@ -447,7 +460,7 @@ export class NovelEngine {
       : missingContent
         ? `\nLENGTH CONTRACT: the current version has ${words} words and the chapter target is ${target} words. The issues name content that is missing or undramatized, so add that content and return at least ${Math.ceil(target * 0.8)} words. Add the named material only; do not restate what the chapter already tells.`
         : `\nLENGTH CONTRACT: the current version has ${words} words. Keep every scene, event and clue at full length and do not condense, trim or summarize anything the issues do not name. Do not add length either: no new description, comparison or interior passage beyond what the issues require. A revision of roughly ${words} words is correct.`;
-    const raw = await generateProse(this.llm, `${specPrompt(run.spec)}${genreCraft(run.spec)}${proseCraft(run, chapter)}\nLITERARY STATE AND INTENT:\n${JSON.stringify({ history: literaryLedger(run, chapter.number), plan: chapter.literaryPlan })}\nPLAN:\n${JSON.stringify(chapter.plan)}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nREPAIR ONLY THESE ISSUES:\n${JSON.stringify(issues)}\nEach issue carries the exact passages it refers to. Locate those passages in the prose below and rewrite those passages. Reproduce every other sentence unchanged, word for word: a rewrite that regenerates the whole chapter reintroduces the same defect. The cited wording must not survive in the revision.\n${extra}\nFULL CURRENT PROSE:\n${version.content}\nReturn ONLY the complete revised chapter in the story's language. Do not output planning lists, outline scaffolding, working draft variants, or English commentary. Start directly with the story prose. Preserve all unaffected events, clues, names, scene outcomes and intentional voice. Do not add stock gestures, rename characters or impose synonym variation. Do not summarize or omit scenes.${budget}`, 'You perform targeted fiction revision. Return only the final revised story prose without scaffolding.', { temperature: 0.3, maxTokens: Math.max(8192, version.content.length) });
+    const raw = await generateProse(this.llm, `${specPrompt(run.spec)}${genreCraft(run.spec)}${proseCraft(run, chapter)}\nLITERARY STATE AND INTENT:\n${JSON.stringify({ history: literaryLedger(run, chapter.number), plan: chapter.literaryPlan })}\nPLAN:\n${JSON.stringify(chapter.plan)}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nREPAIR ONLY THESE ISSUES:\n${JSON.stringify(issues)}\nEach issue carries the exact passages it refers to. Locate those passages in the prose below and rewrite those passages. Reproduce every other sentence unchanged, word for word: a rewrite that regenerates the whole chapter reintroduces the same defect. The cited wording must not survive in the revision.\n${extra}\nFULL CURRENT PROSE:\n${version.content}\nReturn ONLY the complete revised chapter in the story's language. Do not output planning lists, outline scaffolding, working draft variants, or English commentary. Start directly with the story prose. Add no new memory, backstory or explanation of how something came to be: a character may not recall an origin the story has not given, and inventing one is the defect this review keeps finding. Preserve all unaffected events, clues, names, scene outcomes and intentional voice. Do not add stock gestures, rename characters or impose synonym variation. Do not summarize or omit scenes.${budget}`, 'You perform targeted fiction revision. Return only the final revised story prose without scaffolding.', { temperature: 0.3, maxTokens: Math.max(8192, version.content.length) });
     return this.extractProse(raw).trim();
   }
 

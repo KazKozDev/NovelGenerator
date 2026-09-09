@@ -225,6 +225,15 @@ describe('texture regression between revisions', () => {
     expect(textureRegression(metrics(full), metrics(cut), true)).toBeUndefined();
   });
 
+  it('sees the drift that no single revision was large enough to show', () => {
+    const plain = Array.from({ length: 12 }, (_, i) => `Он вышел на лестницу и прислушался, номер ${i}.`).join('\n\n');
+    const denser = plain.split('\n\n').map((line, i) => i % 3 ? line : `${line} Тишина стояла словно вода.`).join('\n\n');
+    // Against its immediate predecessor the step is small; against where the chapter began it is not.
+    const nearlySame = plain.split('\n\n').map((line, i) => i === 0 ? `${line} Тишина стояла словно вода.` : line).join('\n\n');
+    expect(textureRegression(metrics(nearlySame), metrics(denser), false)).toBeUndefined();
+    expect(textureRegression(metrics(nearlySame), metrics(denser), false, metrics(plain))).toMatch(/carried comparisons from/);
+  });
+
   it('accepts a revision that keeps the chapter\'s shape', () => {
     const revised = withDialogue.replace('— Уходи.', '— Уходи сейчас же.');
     expect(textureRegression(metrics(withDialogue), metrics(revised))).toBeUndefined();
