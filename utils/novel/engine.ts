@@ -383,14 +383,14 @@ export class NovelEngine {
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || candidate.review.issues.map(issue => issue.description).join('; ')}`);
       }
       await this.checkpoint(run);
-      const repetition = candidate.review.issues.filter(issue => !issue.id.startsWith('literary-') && (issue.id === 'duplicated-passage' || /redundan|repetit|duplicat|identical|overlapping/i.test(issue.description)));
+      const repetition = candidate.review.issues.filter(issue => !issue.id.startsWith('literary-') && (issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || /redundan|repetit|duplicat|identical|overlapping/i.test(issue.description)));
       // A draft too repetitive to survive deletion is a chapter to rewrite, not a run to abandon:
       // fall back to the ordinary repair and let the repair budget end it if nothing improves.
       const version = candidate;
       let content: string;
       let extra = '';
       // Cutting is the repair some issues actually ask for; only then may a revision come back shorter.
-      let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'recycled-passage');
+      let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage');
       if (!repetition.length) content = await this.repair(run, chapter, version, version.review!.issues);
       else {
         try { content = await this.removeRedundancy(run, chapter, version, repetition); }

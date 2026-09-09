@@ -87,7 +87,7 @@ describe('semantic repetition', () => {
   it('flags an adjacent paragraph that retells the beat before it, for deletion', async () => {
     const embed = embedderFor({ 'Ваза начала': unit(0), 'Ваза медленно': unit(0.3), 'За окном': unit(1.4) });
     const issues = await repetitionIssues(1, version([a, b, c].join('\n\n')), [], embed);
-    const doubled = issues.find(issue => issue.id === 'duplicated-passage');
+    const doubled = issues.find(issue => issue.id === 'restated-passage');
     expect(doubled?.severity).toBe('critical');
     // Both tellings, in the order they appear: one copy alone proves nothing to a reader or a repair.
     expect(doubled?.evidence.map(item => item.quote)).toEqual([a, b]);
@@ -98,7 +98,7 @@ describe('semantic repetition', () => {
     const embed = embedderFor({ 'Ваза начала': axis(0), 'Ваза медленно': [0.96, 0.28, 0, 0, 0, 0, 0, 0],
       ...Object.fromEntries(filler.map((_, i) => [`Он считал минуты до утра, номер ${i}`, axis(i + 2)])) });
     const issues = await repetitionIssues(1, version([a, ...filler, b].join('\n\n')), [], embed);
-    const doubled = issues.find(issue => issue.id === 'duplicated-passage');
+    const doubled = issues.find(issue => issue.id === 'restated-passage');
     expect(doubled?.evidence.map(item => item.quote)).toEqual([a, b]);
   });
 
@@ -173,6 +173,20 @@ describe('report mode inside the engine', () => {
     expect(report.metrics.similesPer1000).toBeGreaterThan(2.5);
   });
 
+  it('reaches the repair even when the lexical duplicate check fired first', async () => {
+    const { run, candidate } = ready();
+    candidate.review = undefined;
+    // The lexical check owns 'duplicated-passage'; a reworded repetition must not be dropped as a
+    // finding the editor already reported, which is what a shared id did.
+    const editor: NovelLLM = async (prompt, system) => system.includes('continuity and developmental') ? '{"issues":[]}' : extractOnly(prompt, system);
+    const embed: Embedder = async inputs => inputs.map(() => [1, 0]);
+    await expect((new NovelEngine(editor, new MemoryRunStore(), () => {}, embed) as any)
+      .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow();
+    const reported = candidate.review!.issues.map(issue => issue.id);
+    expect(reported).toContain('duplicated-passage');
+    expect(reported).toContain('restated-passage');
+  });
+
   it('sends measured defects into a repair the editor already triggered', async () => {
     const { run, candidate } = ready();
     // The editor finds its own defect, so the chapter is failing anyway; the doubled paragraphs must
@@ -188,7 +202,7 @@ describe('report mode inside the engine', () => {
       .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow();
     const reported = candidate.review!.issues.map(issue => issue.id);
     expect(reported).toContain('knowledge-01');
-    expect(reported).toContain('duplicated-passage');
+    expect(reported).toContain('restated-passage');
     expect(candidate.review!.status).toBe('failed');
   });
 
@@ -200,14 +214,14 @@ describe('report mode inside the engine', () => {
       .acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow();
     expect(run.chapters[0].acceptedRevision).toBeUndefined();
     expect(candidate.review!.status).toBe('failed');
-    expect(candidate.review!.issues.map(issue => issue.id)).toContain('duplicated-passage');
+    expect(candidate.review!.issues.map(issue => issue.id)).toContain('restated-passage');
   });
 
   it('says repetition was not checked when no embedder is configured', async () => {
     const { run, candidate } = ready();
     await (new NovelEngine(extractOnly, new MemoryRunStore()) as any).acceptOrRepair(run, run.chapters[0], candidate);
     expect(candidate.prosody!.repetitionChecked).toBe(false);
-    expect(candidate.prosody!.findings.map(issue => issue.id)).not.toContain('duplicated-passage');
+    expect(candidate.prosody!.findings.map(issue => issue.id)).not.toContain('restated-passage');
     expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
   });
 

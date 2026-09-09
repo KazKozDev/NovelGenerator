@@ -280,7 +280,10 @@ export async function repetitionIssues(
     }
   }
   if (doubled.length) issues.push({
-    id: 'duplicated-passage', category: 'format', severity: 'critical',
+    // Its own id: the lexical duplicate check owns 'duplicated-passage', and sharing it meant that
+    // whenever that check fired first, every reworded repetition was dropped as an already-reported
+    // finding and never reached the deletion pass.
+    id: 'restated-passage', category: 'format', severity: 'critical',
     description: `${doubled.length / 2} paragraph(s) tell again a beat this chapter has already told; each pair below is the first telling followed by the second.`,
     instruction: 'Delete the weaker telling of each doubled beat outright. Do not merge the two into a third version.',
     evidence: doubled.slice(0, 8),
