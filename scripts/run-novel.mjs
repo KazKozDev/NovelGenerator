@@ -104,7 +104,10 @@ try {
     : async inputs => embedOllama(inputs, embeddingModel, writer.ollamaEndpoint);
   log(`embeddings=${embeddingModel}`);
 
-  const reported = new Set();
+  // Versions already on disk were reported by the run that produced them; a resume should not replay
+  // the whole history into the log every time.
+  const reported = new Set((run.chapters || []).flatMap(chapter =>
+    (chapter.versions || []).map(version => `${chapter.number}.${version.revision}`)));
   let lastStage = '';
   const engine = new NovelEngine(llm, store, state => {
     const accepted = state.chapters.filter(chapter => chapter.acceptedRevision !== undefined && chapter.candidateRevision === undefined).length;
