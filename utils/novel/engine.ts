@@ -221,7 +221,10 @@ export class NovelEngine {
     try {
       candidate.prosody = await prosodyReport(chapter.number, candidate, earlier, run.spec.language, this.embed, undefined, chapter.plan.detailedScenes || []);
     } catch (error) {
-      candidate.prosody = { checkedRevision: candidate.revision, metrics: prosodyMetrics(candidate.content, run.spec.language), findings: [], repetitionChecked: false, error: error instanceof Error ? error.message : String(error) };
+      // Only repetition needs the embedder. Dropping every finding when the network hiccups let a
+      // chapter measured at 6.0 comparisons per 1000 report itself clean, ceiling and all.
+      const offline = await prosodyReport(chapter.number, candidate, [], run.spec.language, undefined, undefined, chapter.plan.detailedScenes || []);
+      candidate.prosody = { ...offline, error: error instanceof Error ? error.message : String(error) };
     }
     await this.checkpoint(run);
   }

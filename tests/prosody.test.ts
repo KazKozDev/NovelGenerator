@@ -290,14 +290,17 @@ describe('report mode inside the engine', () => {
     expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
   });
 
-  it('keeps a reviewed chapter when the embedder fails and says so', async () => {
+  it('keeps every finding the embedder was not needed for when it fails', async () => {
     const { run, candidate } = ready();
     const broken: Embedder = async () => { throw new Error('embedding endpoint unreachable'); };
+    // The purple fixture breaks the comparison budget. That budget is advisory, so the chapter is
+    // still accepted — but a network fault must not erase the finding from the record.
     await (new NovelEngine(extractOnly, new MemoryRunStore(), () => {}, broken) as any).acceptOrRepair(run, run.chapters[0], candidate);
+    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
     expect(candidate.prosody!.error).toMatch(/unreachable/);
     expect(candidate.prosody!.repetitionChecked).toBe(false);
+    expect(candidate.prosody!.findings.map(issue => issue.id)).toContain('simile-density');
     expect(candidate.prosody!.metrics.words).toBeGreaterThan(0);
-    expect(run.chapters[0].acceptedRevision).toBe(candidate.revision);
   });
 });
 
