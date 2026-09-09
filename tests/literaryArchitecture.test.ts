@@ -164,4 +164,17 @@ describe('Versioned literary architecture', () => {
     expect(acceptedVersion.literary?.status).toBe('passed');
     expect(online.mock.calls.some(([, system]) => system.includes('targeted fiction revision'))).toBe(true);
   });
+
+  it('asks the ledger for what the chapter established, not one entry per dimension', async () => {
+    const run = setup();
+    const candidate = prepare(run, 1);
+    let seen = '';
+    await assessLiteraryDevelopment(run, run.chapters[0], candidate, async prompt => { seen = prompt; return JSON.stringify(report()); });
+    // Six observations produced every time, one per kind, is a ledger padded to cover the list.
+    expect(seen).toContain('Do not write one observation per dimension');
+    expect(seen).toContain('a chapter that establishes two things must produce two observations');
+    // Six assessments across three runs reported zero defects; a defect must be as sayable as none.
+    expect(seen).toContain('Six clean dimensions and six defects are both possible results');
+    expect(seen).toContain('does not collect suggestions');
+  });
 });
