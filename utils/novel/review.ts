@@ -1,4 +1,4 @@
-import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport } from './contracts';
+import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport, StoryState } from './contracts';
 import { specPrompt } from './contracts';
 import { dialogueIssues, type PriorProse } from './prosody';
 import { acceptedVersion, beatKey, canonBefore, canonForPrompt, endingIssues, evidenceExists, plannedBeats, unplayedBeats, validateAnalysis } from './storyState';
@@ -380,16 +380,47 @@ const measured = /^(?:foreign-script-|duplicated-passage|copied-passage|restated
 /** The dimensions a second reader can legitimately see differently. */
 const tasteful = new Set(['character', 'plot', 'pacing', 'dialogue', 'voice', 'hook']);
 
-const significant = (issue: ReviewIssue) => new Set(issue.description.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(word => word.length > 3));
+/**
+ * Words reduced to something an inflected language can match on. "Колонне" and "Колонна", "убийстве"
+ * and "убийства" are the same word to a reader and different strings to a comparison, and a finding
+ * never repeats a fact in the case the fact was written in. Six letters is not stemming; it is enough
+ * to make the two nouns meet without letting unrelated ones collide.
+ */
+const stems = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/)
+  .filter(word => word.length > 3).map(word => word.slice(0, 6)));
+
+const significant = (issue: ReviewIssue) => stems(issue.description);
 
 /** The same finding, worded differently. Across rounds the wording always drifts; the words do not. */
 function sameFinding(earlier: ReviewIssue, current: ReviewIssue): boolean {
   if (earlier.category !== current.category) return false;
   const before = significant(earlier), now = significant(current);
-  if (!before.size || !now.size) return false;
+  // Too few words to judge by overlap: "Defect number 6" and "Defect number 7" share everything they
+  // have. Below that, only the same sentence is the same finding.
+  if (before.size < 4 || now.size < 4) return earlier.description === current.description;
   let shared = 0;
   for (const word of now) if (before.has(word)) shared++;
   return shared / Math.min(before.size, now.size) >= 0.5;
+}
+
+/**
+ * Whether a round faced the findings the round before it faced.
+ *
+ * The stuck counter used to compare the reports word for word, and the wording drifts every round —
+ * "uses knowledge of the exact mechanism", "uses specific knowledge of the mechanism of acceleration"
+ * — so two chapters burned a full budget each without ever being counted as stuck once. What holds
+ * still across rounds is what the finding is about, so that is what is compared.
+ */
+export function sameFindingSet(current: ReviewIssue[], previous: ReviewIssue[]): boolean {
+  const blocking = (issues: ReviewIssue[]) => issues.filter(issue => issue.severity !== 'minor');
+  const now = blocking(current), before = blocking(previous);
+  if (!now.length || now.length !== before.length) return false;
+  // Same id is the same finding when the application produced it; everything else is matched by what
+  // it says, since a model rewords its own report every time it writes it.
+  // An id is proof of identity only for the findings the application issues itself; a model reuses one
+  // id across unrelated reports and invents a new one for a defect it has raised five times.
+  return now.every(issue => before.some(earlier =>
+    (measured.test(issue.id) && earlier.id === issue.id) || sameFinding(earlier, issue)));
 }
 
 /**
@@ -413,6 +444,37 @@ export function confirmedFindings(issues: ReviewIssue[], previous: ReviewIssue[]
   });
 }
 
+/**
+ * A leak reported against something the canon already records, and records as known to the character
+ * named in the finding, is demoted to advisory.
+ *
+ * On a live run the review demanded proof that Alexei could know about Column 305 while the canon
+ * held, two lines from the question it was asked: "Column 305 — contains: the record of the
+ * journalist's murder, known by: Alexei". The canon travels into that same prompt. This is not a
+ * reviewer who lacks the fact; it is a reviewer who did not look, and no wording makes it look.
+ *
+ * Matching is deliberately blunt — the words of the finding against the words of the fact, and the
+ * knower's name against the finding's text — because a fact and a complaint about it are written in
+ * different sentences but about the same things.
+ */
+export function demoteKnownCanon(issues: ReviewIssue[], canon: StoryState): ReviewIssue[] {
+  return issues.map(issue => {
+    if (issue.category !== 'knowledge' || issue.severity === 'minor') return issue;
+    const complaint = stems(issue.description);
+    if (!complaint.size) return issue;
+    const recorded = canon.facts.some(fact => {
+      // The character the finding is about must be one the canon says already knows this.
+      if (!fact.knownBy.some(name => issue.description.toLowerCase().includes(name.toLowerCase()))) return false;
+      const stated = stems(`${fact.subject} ${fact.predicate} ${fact.value}`);
+      if (!stated.size) return false;
+      let shared = 0;
+      for (const word of stated) if (complaint.has(word)) shared++;
+      return shared / Math.min(stated.size, complaint.size) >= 0.5;
+    });
+    return recorded ? { ...issue, severity: 'minor' as const } : issue;
+  });
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
@@ -425,7 +487,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const earlier = run.chapters.filter(item => item.number < chapter.number)
       .map(item => ({ item, accepted: acceptedVersion(item) }))
       .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteSuggestions(demoteHedgedKnowledge(report.issues))];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteSuggestions(demoteHedgedKnowledge(demoteKnownCanon(report.issues, canonBefore(run, chapter.number))))];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
@@ -441,6 +503,18 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     // Across every stored run the ceiling was the only thing blocking a version once in 264, so as a
     // blocker it buys almost nothing — but nine versions did run past it, the worst at 1.64 of target,
     // and repairs drift upward on their own. Advisory in the first band, blocking in the second.
+    // The chapter's own first draft is the baseline the repairs drift from. Measured on a live run:
+    // chapter 4 went from 4271 words to 5231 in ten rounds, each round adding a little and none of
+    // them crossing an absolute ceiling until the last. A target says what the chapter was planned
+    // for; the first candidate says what this chapter actually is.
+    const first = chapter.versions[0];
+    const origin = first && first.revision !== version.revision ? first.content.split(/\s+/).filter(Boolean).length : 0;
+    if (origin && words > origin * 1.15 && words <= target * 1.5) issues.push({
+      id: 'length-drift', category: 'pacing', severity: 'minor',
+      description: `Chapter has grown from ${origin} words in its first draft to ${words}; the repairs are adding, not repairing.`,
+      instruction: 'Repair the findings without lengthening the chapter: replace the passage a finding names rather than writing another one beside it, and let the chapter come back at about the length it already had.',
+      evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
+    });
     if (words > target * 1.25) issues.push({
       id: 'excess-length', category: 'pacing', severity: words > target * 1.5 ? 'major' : 'minor',
       description: `Chapter contains ${words} words against a target of ${target}; it runs past the length this chapter was planned for.`,

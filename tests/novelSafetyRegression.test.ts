@@ -1,10 +1,10 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteSuggestions, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
-import { acceptCandidate, addCandidate, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint } from '../utils/novel/storyState';
+import { acceptCandidate, addCandidate, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint } from '../utils/novel/storyState';
 
 function fixture() {
   const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
@@ -393,5 +393,49 @@ describe('A judgement of taste seen once', () => {
     const first = confirmedFindings([issue('Елена соглашается слишком охотно.')]);
     const other = confirmedFindings([issue('Алексей входит в архив без причины, которую глава назвала.')], first);
     expect(other[0].severity).toBe('minor');
+  });
+});
+
+describe('A leak the canon already answers', () => {
+  const canon = (knownBy: string[]) => ({ ...emptyStoryState(), facts: [{
+    id: 'c305', subject: 'Колонна №305', predicate: 'содержит', value: 'запись убийства журналиста',
+    knownBy, evidence: { chapter: 1, revision: 1, quote: 'q' },
+  }] });
+  const leak = (description: string) => ({ id: 'k', category: 'knowledge' as const, severity: 'critical' as const, description, instruction: 'Fix.', evidence: [{ chapter: 5, revision: 5, quote: 'q' }] });
+
+  it('is demoted when the fact is recorded and the character is one who knows it', () => {
+    // Quoted from a live run: the review demanded proof of exactly what the canon was holding.
+    const issue = leak('Алексей использует знание о Колонне №305 и убийстве журналиста без подтверждения.');
+    expect(demoteKnownCanon([issue], canon(['Алексей']))[0].severity).toBe('minor');
+  });
+
+  it('leaves it alone when the canon records the fact for somebody else', () => {
+    const issue = leak('Алексей использует знание о Колонне №305 и убийстве журналиста без подтверждения.');
+    expect(demoteKnownCanon([issue], canon(['Елена']))[0].severity).toBe('critical');
+  });
+
+  it('leaves it alone when the canon holds nothing about it', () => {
+    const issue = leak('Алексей называет адрес Марии Соколовой, который ему никто не давал.');
+    expect(demoteKnownCanon([issue], canon(['Алексей']))[0].severity).toBe('critical');
+  });
+});
+
+describe('The stuck counter', () => {
+  const finding = (description: string, id = 'issue-1') =>
+    ({ id, category: 'knowledge' as const, severity: 'major' as const, description, instruction: 'Fix.', evidence: [] });
+
+  it('sees the same finding through a rewording, which is how it always comes back', () => {
+    // Both quoted from a live run, four rounds apart, reported as different findings by the model.
+    const first = [finding('Алексей использует знание о точном механизме ускорения света, которого нет в тексте.')];
+    const later = [finding('Алексей использует конкретное знание о механизме ускорения света, не установленное ранее.', 'issue-003')];
+    expect(sameFindingSet(later, first)).toBe(true);
+  });
+
+  it('does not call a different defect the same one, or count a round that answered something', () => {
+    const before = [finding('Алексей использует знание о механизме ускорения света, которого нет в тексте.')];
+    const other = [finding('Елена знает о комнате отдыха Алексея, хотя планов помещений ей никто не давал.')];
+    expect(sameFindingSet(other, before)).toBe(false);
+    // Two findings answered by one is progress, not a repeat.
+    expect(sameFindingSet(before, [...before, ...other])).toBe(false);
   });
 });

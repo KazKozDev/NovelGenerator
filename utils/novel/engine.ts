@@ -7,7 +7,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, confirmedFindings, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, confirmedFindings, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -466,10 +466,13 @@ export class NovelEngine {
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || 'Review failed or was offline.'}`);
       }
       // A round that answered the previous findings made progress, whatever it uncovered next. The
-      // budget counts rounds that faced the same findings again, which is what being stuck means.
-      const findings = JSON.stringify(candidate.review.issues.map(issue => issue.description).sort());
-      chapter.repairAttempts = findings === chapter.lastFindings ? chapter.repairAttempts + 1 : 0;
-      chapter.lastFindings = findings;
+      // budget counts rounds that faced the same findings again, which is what being stuck means —
+      // and "the same" is what a finding is about, not how it was worded this time. Comparing the
+      // reports as text let two chapters spend a full budget each without ever counting as stuck.
+      const shapes = candidate.review.issues.map(({ id, category, description, severity }) => ({ id, category, description, severity }));
+      chapter.repairAttempts = sameFindingSet(candidate.review.issues, (chapter.lastFindingShapes || []) as typeof candidate.review.issues) ? chapter.repairAttempts + 1 : 0;
+      chapter.lastFindingShapes = shapes;
+      chapter.lastFindings = JSON.stringify(candidate.review.issues.map(issue => issue.description).sort());
       if (chapter.repairAttempts >= MAX_CHAPTER_REPAIRS || chapter.versions.length - (chapter.repairVersionStart || 0) >= MAX_CHAPTER_VERSIONS) {
         chapter.status = 'needs_revision';
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || candidate.review.issues.map(issue => issue.description).join('; ')}`);
@@ -696,6 +699,7 @@ export class NovelEngine {
           if (chapter.candidateRevision === undefined && chapter.status !== 'needs_revision') continue;
           chapter.repairAttempts = 0;
           chapter.lastFindings = undefined;
+          chapter.lastFindingShapes = undefined;
           chapter.repairVersionStart = chapter.versions.length;
         }
         await this.checkpoint(run);
