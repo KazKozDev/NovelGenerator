@@ -218,6 +218,41 @@ export function copiedFromEarlier(content: string, earlier: PriorProse[], thresh
   return found;
 }
 
+/**
+ * Sentences a new scene repeats from the scenes already written for this chapter.
+ *
+ * The writer is given earlier scenes as a line each — id, objective, outcome — plus the last 1200
+ * characters of prose, never their full text, because handing over the whole chapter makes a model
+ * rewrite other people's paragraphs instead of writing its own. The cost of that trade is restatement:
+ * "scene 2: objective persuade, outcome refused" does not stop scene 3 from dramatizing the refusal
+ * again in new words.
+ *
+ * Measured across both runs: twelve of the twenty-five blocking findings on first drafts were repeated
+ * or restated passages, and every one of them was found after the chapter was finished, when the
+ * answer is to rewrite four thousand words. Compared here, the answer is to write one scene again.
+ *
+ * The threshold is the one the chapter-level duplicate check uses, because it is the same defect at a
+ * different moment.
+ */
+export function restatedFromEarlierScenes(scene: string, earlier: string[], threshold = 0.7): { sentence: string; source: string }[] {
+  const split = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.split(/\s+/).length >= 8);
+  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
+  const history = earlier.flatMap(split).map(sentence => ({ sentence, bag: words(sentence) }));
+  if (!history.length) return [];
+  const found: { sentence: string; source: string }[] = [];
+  for (const sentence of split(scene)) {
+    const bag = words(sentence);
+    for (const previous of history) {
+      let shared = 0;
+      for (const word of previous.bag) if (bag.has(word)) shared++;
+      if (shared / Math.min(bag.size, previous.bag.size) < threshold) continue;
+      found.push({ sentence, source: previous.sentence });
+      break;
+    }
+  }
+  return found;
+}
+
 /** The whole sentence carrying an offset, so a repair has a unit with a beginning and an end. */
 function sentenceAround(content: string, index: number): string {
   const start = Math.max(content.lastIndexOf('.', index), content.lastIndexOf('!', index), content.lastIndexOf('?', index), content.lastIndexOf('\n', index));

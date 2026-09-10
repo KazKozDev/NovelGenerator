@@ -5,7 +5,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -1163,5 +1163,41 @@ describe('A repair that touches one passage', () => {
     // The rest of the chapter is the same text, and the whole-chapter repair was never asked for.
     expect(repaired.startsWith(prose(1))).toBe(true);
     expect(wholeChapterRepairs).toBe(0);
+  });
+});
+
+describe('A scene that tells again what an earlier scene told', () => {
+  const first = 'She set the case down on the step and listened to the water for a long while. The keeper did not come out to meet her, and the light went round twice before the door opened at all.';
+
+  it('is caught while it is still one scene, not after the chapter is finished', () => {
+    const second = 'She set the case down on the step and listened to the water for a long while. Inside, the piano stood under a sheet nobody had lifted in six years.';
+    const restated = restatedFromEarlierScenes(second, [first]);
+    expect(restated).toHaveLength(1);
+    expect(restated[0].sentence).toContain('listened to the water');
+    // A scene that carries the chapter forward is not a restatement of it.
+    expect(restatedFromEarlierScenes('Inside, the piano stood under a sheet nobody had lifted in six years, and the keeper would not say why today was different.', [first])).toEqual([]);
+  });
+
+  it('is written again once, and the second attempt is kept only if it repeats less', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [...chapter.plan.detailedScenes!, { ...chapter.plan.detailedScenes![0], sceneId: 'scene-1b' }];
+    let scenes = 0;
+    const base = fixtureLLM();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('single prose writer')) {
+        scenes++;
+        // First scene; then the same prose again; then, told what it repeated, something of its own.
+        if (scenes === 1) return JSON.stringify({ prose: `${first} ${FILLER}` });
+        if (scenes === 2) return JSON.stringify({ prose: `${first} ${FILLER}` });
+        expect(prompt).toContain('told again what earlier scenes');
+        return JSON.stringify({ prose: `Inside, the piano stood under a sheet nobody had lifted in six years. ${FILLER}` });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+    expect(scenes).toBe(3);
+    expect(chapter.sceneDrafts?.[1]).toContain('under a sheet nobody had lifted');
+    expect(chapter.sceneDrafts?.[1]).not.toContain('listened to the water');
   });
 });

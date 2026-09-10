@@ -8,7 +8,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, confirmedFindings, findingStreaks, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, confirmedFindings, findingStreaks, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -739,6 +739,17 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
             if (copyOfEarlierScene(scene, chapter.sceneDrafts)) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} came back as a copy of an earlier scene twice.`);
           }
           if (!scene) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} is empty.`);
+          // Not the whole scene copied, but passages of it told again. Compared now, the answer is to
+          // write one scene of eight hundred words; found after the chapter is finished — where twelve
+          // of the twenty-five blocking findings on first drafts were found — the answer is to rewrite
+          // the chapter around it. One attempt: a second restatement is the chapter review's business.
+          const restated = restatedFromEarlierScenes(scene, chapter.sceneDrafts);
+          if (restated.length) {
+            const retold = restated.slice(0, 4).map(item => `"${item.sentence}" repeats "${item.source}"`).join('; ');
+            const rewritten = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm,
+              `Your previous attempt told again what earlier scenes of this chapter have already put on the page: ${retold}. Those events happened; this scene begins after them. Write this scene's own material, and refer to what is already told only as something the characters take for granted.`));
+            if (rewritten && restatedFromEarlierScenes(rewritten, chapter.sceneDrafts).length < restated.length) scene = rewritten;
+          }
           chapter.sceneDrafts.push(scene);
           chapter.status = 'draft';
           await this.checkpoint(run);
