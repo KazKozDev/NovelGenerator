@@ -123,7 +123,7 @@ export interface ChapterRecord {
   /** The findings the last round faced, so a round that fixed something is not counted against it. */
   lastFindings?: string;
   /** Those findings in the shape the stuck counter compares: what they are about, not their wording. */
-  lastFindingShapes?: { id: string; category: ReviewIssue['category']; description: string }[];
+  lastFindingShapes?: { id: string; category: ReviewIssue['category']; description: string; streak?: number }[];
   /** Findings local revision tried and failed to answer; advisory for the rest of this chapter's life. */
   unrepairable?: { id: string; category: ReviewIssue['category']; description: string }[];
   /** Chapter-wide sweeps that have already had a repair round, so the next one goes to a sweep that has not. */

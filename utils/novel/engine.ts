@@ -8,7 +8,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, confirmedFindings, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, confirmedFindings, findingStreaks, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -478,9 +478,26 @@ export class NovelEngine {
       // budget counts rounds that faced the same findings again, which is what being stuck means —
       // and "the same" is what a finding is about, not how it was worded this time. Comparing the
       // reports as text let two chapters spend a full budget each without ever counting as stuck.
-      const shapes = candidate.review.issues.map(({ id, category, description, severity }) => ({ id, category, description, severity }));
-      chapter.repairAttempts = sameFindingSet(candidate.review.issues, (chapter.lastFindingShapes || []) as typeof candidate.review.issues) ? chapter.repairAttempts + 1 : 0;
-      chapter.lastFindingShapes = shapes;
+      // Per finding, not per report: a finding that outlives three rounds has outlived local repair,
+      // whatever else came and went beside it. One chapter carried the same measurement through nine
+      // consecutive rounds because the set around it changed every time and the set was what counted.
+      const previousShapes = chapter.lastFindingShapes;
+      const streaks = findingStreaks(candidate.review.issues, previousShapes);
+      chapter.lastFindingShapes = streaks;
+      const worn = streaks.filter(item => item.streak >= LOCAL_REPAIR_ATTEMPTS + 1 && item.category !== 'canon' && item.category !== 'format');
+      if (worn.length) {
+        chapter.planningNote = `Findings no local repair could answer after ${LOCAL_REPAIR_ATTEMPTS + 1} rounds: ${worn.map(item => item.description).join('; ')}`;
+        chapter.unrepairable = [...(chapter.unrepairable || []), ...worn.map(({ id, category, description }) => ({ id, category, description }))];
+        chapter.lastFindingShapes = streaks.filter(item => !worn.includes(item));
+        candidate.review = {
+          ...candidate.review,
+          issues: candidate.review.issues.map(issue => worn.some(item => item.id === issue.id && item.description === issue.description) ? { ...issue, severity: 'minor' as const } : issue),
+        };
+        candidate.review.status = candidate.review.issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed';
+        await this.checkpoint(run);
+        continue;
+      }
+      chapter.repairAttempts = sameFindingSet(candidate.review.issues, (previousShapes || []) as typeof candidate.review.issues) ? chapter.repairAttempts + 1 : 0;
       chapter.lastFindings = JSON.stringify(candidate.review.issues.map(issue => issue.description).sort());
       // A finding that survived two repairs is not going to yield to a third of the same kind. Local
       // revision is the only tool this loop has, so when it has failed twice the honest move is to

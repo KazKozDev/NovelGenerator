@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, mergeFindings, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, findingStreaks, mergeFindings, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -519,5 +519,29 @@ describe('A one-word paragraph', () => {
     expect(seen.every(text => text.length >= 40)).toBe(true);
     expect(analysis.events[0].evidence.quote).toContain('Salt.');
     expect(analysis.events[0].evidence.quote.length).toBeGreaterThan(40);
+  });
+});
+
+describe('A finding that outlives the report it came in', () => {
+  const issue = (description: string, id = 'speech-tag-bloat', category: 'dialogue' | 'knowledge' = 'dialogue') =>
+    ({ id, category, severity: 'major' as const, description, instruction: 'Strip the attributions.', evidence: [] });
+
+  it('is counted per finding, so a changing set around it does not reset the count', () => {
+    // Quoted from a live English run, where this measurement survived nine consecutive rounds while
+    // the findings beside it changed every time, and the chapter was never once counted as stuck.
+    const bloat = issue('88% of spoken lines arrive with an attached gesture or attribution.');
+    let shapes = findingStreaks([bloat, issue('Elias knows about the tremor nobody told him of.', 'k1', 'knowledge')]);
+    expect(shapes.find(item => item.id === 'speech-tag-bloat')?.streak).toBe(1);
+    // A different neighbour this round; the measurement itself is the same one.
+    shapes = findingStreaks([issue('The chapter says the same thing twice.', 'duplicated-passage'), bloat], shapes);
+    expect(shapes.find(item => item.id === 'speech-tag-bloat')?.streak).toBe(2);
+    shapes = findingStreaks([bloat], shapes);
+    expect(shapes.find(item => item.id === 'speech-tag-bloat')?.streak).toBe(3);
+    // And the neighbour that came and went never accumulated one.
+    expect(shapes.find(item => item.id === 'duplicated-passage')).toBeUndefined();
+  });
+
+  it('does not count an advisory finding, which is not blocking anything', () => {
+    expect(findingStreaks([{ ...issue('88% of spoken lines carry an attribution.'), severity: 'minor' }])).toHaveLength(0);
   });
 });

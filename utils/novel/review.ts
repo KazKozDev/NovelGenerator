@@ -458,6 +458,25 @@ export function mergeFindings(issues: ReviewIssue[]): ReviewIssue[] {
  * leak, and everything the application measured itself still block on sight, because none of them are
  * a matter of opinion.
  */
+/**
+ * How many rounds in a row each finding has survived, counted per finding rather than per report.
+ *
+ * The stuck counter compares whole reports, and a report is never the same twice: one live chapter
+ * carried "88% of spoken lines arrive with an attribution" through nine consecutive rounds while the
+ * findings beside it changed every time, so the set never matched and the chapter was never counted
+ * as stuck once. Eighteen of that run's fifty-five blocking findings were that one measurement.
+ */
+export function findingStreaks(
+  issues: ReviewIssue[],
+  previous: { id: string; category: ReviewIssue['category']; description: string; streak?: number }[] = [],
+): { id: string; category: ReviewIssue['category']; description: string; streak: number }[] {
+  return issues.filter(issue => issue.severity !== 'minor').map(issue => {
+    const earlier = previous.find(item => item.id === issue.id
+      || sameFinding({ ...issue, ...item, evidence: [] } as ReviewIssue, issue));
+    return { id: issue.id, category: issue.category, description: issue.description, streak: (earlier?.streak || 0) + 1 };
+  });
+}
+
 export function confirmedFindings(issues: ReviewIssue[], previous: ReviewIssue[] = []): ReviewIssue[] {
   return issues.map(issue => {
     if (issue.severity === 'minor' || measured.test(issue.id) || !tasteful.has(issue.category)) return issue;
