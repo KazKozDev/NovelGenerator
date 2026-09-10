@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, demoteHedgedKnowledge, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, demoteHedgedKnowledge, demoteSuggestions, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -350,5 +350,23 @@ describe('A leak reported against a sentence that hedges itself', () => {
     expect(demoteHedgedKnowledge([issue('Возможно, дверь была открыта.', 'plot')])[0].severity).toBe('critical');
     // An issue with no evidence at all cannot be judged hedged.
     expect(demoteHedgedKnowledge([{ ...issue('x'), evidence: [] }])[0].severity).toBe('critical');
+  });
+});
+
+describe('A finding written as a suggestion', () => {
+  const issue = (description: string, category: 'character' | 'plot' | 'canon' | 'knowledge' = 'character', severity: 'major' | 'minor' = 'major') =>
+    ({ id: 'x', category, severity, description, instruction: 'Rework it.', evidence: [{ chapter: 4, revision: 14, quote: 'q' }] });
+
+  it('is demoted where taste lives, quoting the two that burned a chapter budget', () => {
+    expect(demoteSuggestions([issue('Елена слишком быстро соглашается, что делает её решение недостаточно мотивированным.')])[0].severity).toBe('minor');
+    expect(demoteSuggestions([issue('Момент выбора должен быть более напряжённым.', 'plot')])[0].severity).toBe('minor');
+    expect(demoteSuggestions([issue('The choice should be more tense and internally contradictory.')])[0].severity).toBe('minor');
+  });
+
+  it('leaves a stated defect alone, and never touches canon, knowledge or format', () => {
+    expect(demoteSuggestions([issue('Елена знает о колонне до того, как ей о ней сказали.')])[0].severity).toBe('major');
+    // A contradiction of canon is a defect however it is worded; taste has no vote there.
+    expect(demoteSuggestions([issue('Недостаточно мотивировано: герой противоречит установленному факту.', 'canon')])[0].severity).toBe('major');
+    expect(demoteSuggestions([issue('Слишком быстро раскрывает знание, которого у него нет.', 'knowledge')])[0].severity).toBe('major');
   });
 });

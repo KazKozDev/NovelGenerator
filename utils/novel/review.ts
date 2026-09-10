@@ -346,6 +346,34 @@ export function demoteHedgedKnowledge(issues: ReviewIssue[]): ReviewIssue[] {
   });
 }
 
+/**
+ * The shapes a suggestion takes. The review is told in plain words that "insufficiently motivated",
+ * "could be developed further" and "would benefit from" are not defects; on a live run it reported
+ * exactly those and spent a chapter's whole budget on them — "Elena agrees too quickly, which makes
+ * her decision insufficiently motivated", "the moment of choice should be more tense".
+ */
+const suggestionShapes = [
+  /(?<!\p{L})(?:недостаточно|слишком (?:быстро|легко|резко|поспешно)|должен быть более|должна быть более|должно быть более|мог[лао]? бы быть|не хватает|стоило бы|хотелось бы|более убедительн|глубже раскры)(?!\p{L})/iu,
+  /(?<!\p{L})(?:insufficiently|should be more|could be more|could be developed|would benefit|lacks (?:a )?(?:clear|sufficient)|needs more|too (?:quickly|easily|abruptly))(?!\p{L})/iu,
+];
+
+/**
+ * A finding written as a suggestion is demoted to advisory.
+ *
+ * Only the dimensions where taste lives: a contradiction of canon, a leak, a duplicated passage or a
+ * broken format is a defect however it is worded, and those categories are left alone. Demoted rather
+ * than dropped, for the same reason as a hedged leak — if the reader saw something real, it still
+ * travels with the chapter; what it cannot do is block one over prose that could merely be better.
+ */
+export function demoteSuggestions(issues: ReviewIssue[]): ReviewIssue[] {
+  const tasteful = new Set(['character', 'plot', 'pacing', 'dialogue', 'voice', 'hook']);
+  return issues.map(issue => {
+    if (!tasteful.has(issue.category) || issue.severity === 'minor') return issue;
+    const wording = `${issue.description} ${issue.instruction}`;
+    return suggestionShapes.some(pattern => pattern.test(wording)) ? { ...issue, severity: 'minor' as const } : issue;
+  });
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
@@ -358,7 +386,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const earlier = run.chapters.filter(item => item.number < chapter.number)
       .map(item => ({ item, accepted: acceptedVersion(item) }))
       .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteHedgedKnowledge(report.issues)];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteSuggestions(demoteHedgedKnowledge(report.issues))];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
@@ -370,8 +398,12 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
       instruction: `Find which of the chapter's planned beats are named but never dramatized on the page, and dramatize those: ${JSON.stringify((chapter.plan.detailedScenes || []).map(scene => ({ sceneId: scene.sceneId, objective: scene.objective, keyMoments: scene.keyMoments })))}. Reaching at least ${Math.ceil(target * 0.8)} words is the consequence of putting the missing beats on the page, not the goal. If every planned beat is already dramatized, say so by leaving the chapter as it is rather than restating what it already tells.`,
       evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
     });
+    // Over the ceiling by a quarter is a chapter that ran long; over by half is a chapter and a half.
+    // Across every stored run the ceiling was the only thing blocking a version once in 264, so as a
+    // blocker it buys almost nothing — but nine versions did run past it, the worst at 1.64 of target,
+    // and repairs drift upward on their own. Advisory in the first band, blocking in the second.
     if (words > target * 1.25) issues.push({
-      id: 'excess-length', category: 'pacing', severity: 'major',
+      id: 'excess-length', category: 'pacing', severity: words > target * 1.5 ? 'major' : 'minor',
       description: `Chapter contains ${words} words against a target of ${target}; it runs past the length this chapter was planned for.`,
       instruction: `Cut back to about ${target} words by removing the passages that add no event, no changed relation and no new information: restatement, decoration and aftermath that only echoes the outcome. Delete rather than compress, and keep every planned beat, clue and line of dialogue.`,
       evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }],
