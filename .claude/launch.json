@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "novelgenerator", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "3021"], "port": 3021 }
+  ]
+}

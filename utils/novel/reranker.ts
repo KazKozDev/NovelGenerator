@@ -41,7 +41,15 @@ export const defaultRerankerModel = 'onnx-community/bge-reranker-v2-m3-ONNX';
 export function createReranker(model = defaultRerankerModel, dtype: 'q8' | 'fp32' = 'q8'): Reranker {
   let ready: Promise<{ tokenize: (current: string, earlier: string) => unknown; score: (input: unknown) => Promise<number> }> | undefined;
   const load = async () => {
-    const { AutoTokenizer, AutoModelForSequenceClassification } = await import('@huggingface/transformers');
+    const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers');
+    // In a browser the cross-encoder runs on the CPU for about a second per pair, forty pairs to a
+    // chapter, and onnxruntime-web executes on whatever thread calls it: on the main thread that is
+    // the interface frozen for the length of the check. Proxying moves execution into a worker, so
+    // the page keeps answering while a chapter is measured.
+    if (typeof window !== 'undefined' && env?.backends?.onnx?.wasm) {
+      env.backends.onnx.wasm.proxy = true;
+      env.backends.onnx.wasm.numThreads = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    }
     const [tokenizer, sequence] = await Promise.all([
       AutoTokenizer.from_pretrained(model),
       AutoModelForSequenceClassification.from_pretrained(model, { dtype }),

@@ -26,12 +26,21 @@ const DEFAULT_SETTINGS: StorySettings = {
  * check nobody switched on is a check that never ran: the repetitions it finds were sitting in
  * finished books. If it cannot load, the cosine decides alone rather than the run losing the check.
  */
+export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
+
 function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
   const config = getStoredProviderConfig();
   // Without a local Ollama there is nothing to nominate pairs with, and the cross-encoder alone would
   // have to score every paragraph against every earlier one.
   if (config.provider !== 'ollama') return {};
-  return { embed: (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint), rerank: sharedReranker() };
+  const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
+  // The cross-encoder runs in a worker, but it is still a 600MB download and a second of CPU per pair
+  // on the reader's own machine. Setting this key to "off" leaves the cosine deciding alone, which is
+  // what the check did before the cross-encoder existed.
+  try {
+    if (localStorage.getItem(RERANK_STORAGE_KEY) === 'off') return { embed };
+  } catch { /* a browser that refuses storage is a browser with the default */ }
+  return { embed, rerank: sharedReranker() };
 }
 
 /** React presents snapshots; the engine owns execution state and durable transactions. */
@@ -49,7 +58,15 @@ export default function useBookGenerator() {
   const epoch = useRef(0);
   const busy = useRef(false);
 
-  function update(run: NovelRun) { setSnapshot(structuredClone(run)); }
+  /**
+   * A snapshot for React, not a copy of the manuscript. Cloning the whole run took 10ms once it held
+   * five chapters and their revisions — 9.4MB of prose — and it runs after every scene, every
+   * revision and every checkpoint. New objects down to the chapter are enough for React to see the
+   * change; the versions beneath are large, and the engine only ever appends to them.
+   */
+  function update(run: NovelRun) {
+    setSnapshot({ ...run, chapters: run.chapters.map(chapter => ({ ...chapter })) });
+  }
 
   useEffect(() => {
     if (busy.current) return; // Hot reload must not replace the running engine with an older checkpoint.
