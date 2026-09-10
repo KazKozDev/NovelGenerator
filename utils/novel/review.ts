@@ -321,8 +321,8 @@ export function beatCoverageIssue(chapter: ChapterRecord, analysis: ChapterAnaly
 // \b is an ASCII word boundary in JavaScript and matches nothing useful next to Cyrillic, so the
 // edges are spelled out as "not a letter" instead.
 const hedges = [
-  /(?<!\p{L})(?:возможно|наверное|кажется|казалось|похоже|напоминал[аио]?|словно|будто|как будто|вероятно|по крайней мере|мог[лао]? быть|если это вообще)(?!\p{L})/iu,
-  /(?<!\p{L})(?:possibly|perhaps|maybe|seemed|resembled|as if|as though|might have|probably|at least|or so)(?!\p{L})/iu,
+  /(?<!\p{L})(?:возможно|наверное|кажется|казалось|похоже|напоминал[аио]?|словно|будто|как будто|вероятно|по крайней мере|мог[лао]? быть|если это вообще|предполага\p{L}*|подозрева\p{L}*|догадыва\p{L}*|допуска\p{L}*|гипотез\p{L}*)(?!\p{L})/iu,
+  /(?<!\p{L})(?:possibly|perhaps|maybe|seemed|resembled|as if|as though|might have|probably|at least|or so|suspect\p{L}*|guess\p{L}*|assum\p{L}*)(?!\p{L})/iu,
 ];
 
 /**
@@ -341,7 +341,10 @@ const hedges = [
 export function demoteHedgedKnowledge(issues: ReviewIssue[]): ReviewIssue[] {
   return issues.map(issue => {
     if (issue.category !== 'knowledge' || issue.severity === 'minor') return issue;
-    const hedged = issue.evidence.length > 0 && issue.evidence.every(item => hedges.some(pattern => pattern.test(item.quote)));
+    // Either the passage hedges itself, or the review's own account of it does: a finding that says
+    // "he assumes the senator is behind it" has already said this is a guess, whatever it concludes.
+    const hedged = hedges.some(pattern => pattern.test(issue.description))
+      || (issue.evidence.length > 0 && issue.evidence.every(item => hedges.some(pattern => pattern.test(item.quote))));
     return hedged ? { ...issue, severity: 'minor' as const } : issue;
   });
 }

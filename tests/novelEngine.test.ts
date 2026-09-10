@@ -1098,3 +1098,34 @@ describe('A finding local repair cannot answer', () => {
     expect(chapter.unrepairable?.[0].category).toBe('knowledge');
   });
 });
+
+describe('A repair that returns the chapter unchanged twice', () => {
+  it('records the findings as unanswerable and goes on, instead of ending the run', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, prose(1), 'fixture');
+    const base = fixtureLLM();
+    let reviewed = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      // The writer answers every request with the chapter exactly as it stands: it has nothing to
+      // change, which is the same answer as failing twice.
+      if (system.includes('targeted fiction revision')) return JSON.stringify({ prose: candidate.content });
+      if (system.includes('continuity and developmental')) {
+        reviewed++;
+        return JSON.stringify({ issues: [{
+          // knowledge blocks on sight, so the loop reaches the repair rather than accepting at once.
+          id: 'knowledge-1', category: 'knowledge', severity: 'major',
+          description: 'Алексей называет имя заказчика колонны, которое глава ему не давала.',
+          instruction: 'Дать объяснение.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }],
+        }] });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    expect(chapter.status).toBe('accepted');
+    // Either route reaches the same place: two failed attempts, or two attempts that changed nothing.
+    expect(chapter.planningNote).toMatch(/no local repair could answer|returned the chapter unchanged/);
+    expect(chapter.unrepairable?.[0].category).toBe('knowledge');
+    expect(reviewed).toBeGreaterThan(1);
+  });
+});

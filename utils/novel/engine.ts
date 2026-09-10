@@ -540,6 +540,24 @@ export class NovelEngine {
         // The stuck counter resets whenever the findings are worded differently, which they always
         // are, so a repair that does nothing needs its own count or it spends the whole budget.
         if (unchanged(version.content, content)) {
+          // Twice asked, twice nothing changed: the writer has already answered that these findings
+          // cannot be met by editing this chapter. That is the same answer the repair budget arrives
+          // at after two failed attempts, so it gets the same treatment — the findings become
+          // advisory and the chapter goes on — rather than ending the run over prose nobody touched.
+          const unanswerable = candidate.review.issues.filter(issue => issue.severity !== 'minor'
+            && issue.category !== 'canon' && issue.category !== 'format');
+          if (unanswerable.length) {
+            chapter.planningNote = `Findings no local repair could answer, and two attempts returned the chapter unchanged: ${unanswerable.map(issue => issue.description).join('; ')}`;
+            chapter.unrepairable = [...(chapter.unrepairable || []), ...unanswerable.map(({ id, category, description }) => ({ id, category, description }))];
+            candidate.review = {
+              ...candidate.review,
+              issues: candidate.review.issues.map(issue => unanswerable.includes(issue) ? { ...issue, severity: 'minor' as const } : issue),
+            };
+            chapter.repairAttempts = 0;
+            chapter.lastFindingShapes = undefined;
+            await this.checkpoint(run);
+            continue;
+          }
           chapter.status = 'needs_revision';
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row returned the chapter unchanged against ${candidate.review.issues.map(issue => issue.description).join('; ')}`);
         }
