@@ -291,13 +291,20 @@ export function beatCoverageIssue(chapter: ChapterRecord, analysis: ChapterAnaly
   if (!planned.length) return undefined;
   const unplayed = unplayedBeats(chapter, analysis);
   if (!unplayed.length) return undefined;
+  // A scene is not written because one of its beats survived. Measured on a live run: a confrontation
+  // planned in four beats reached the page as one — no blueprints, no refusal to sign — and the
+  // chapter was accepted, because "every beat missing" was the only shape this check could see. A
+  // scene that kept fewer than half of three or more planned beats is the same failure with a
+  // survivor. Two beats of three, or three of four, stay silent: that is a scene written differently,
+  // not a scene missing.
   const silentScenes = (chapter.plan.detailedScenes || []).filter(scene => {
     const own = planned.filter(item => item.sceneId === scene.sceneId);
-    return own.length >= 2 && own.every(item => unplayed.some(gap => gap.sceneId === item.sceneId && gap.beat === item.beat));
+    const lost = own.filter(item => unplayed.some(gap => gap.sceneId === item.sceneId && gap.beat === item.beat)).length;
+    return (own.length >= 2 && lost === own.length) || (own.length >= 3 && lost > own.length / 2);
   });
   if (!silentScenes.length && unplayed.length < planned.length / 2) return undefined;
   const scope = silentScenes.length
-    ? `Scene(s) ${silentScenes.map(scene => scene.sceneId).join(', ')} reached the page with none of their planned beats.`
+    ? `Scene(s) ${silentScenes.map(scene => scene.sceneId).join(', ')} reached the page with most of their planned beats missing.`
     : `${unplayed.length} of ${planned.length} planned beats never reached the page.`;
   return {
     id: 'undramatized-beat', category: 'plot', severity: 'major',

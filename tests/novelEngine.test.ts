@@ -958,6 +958,20 @@ describe('The beat registry', () => {
     expect(issue?.instruction).toContain('cost');
   });
 
+  it('reports a scene that kept one beat of four, and stays quiet at two of three', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, prose(1), 'fixture');
+    const analysis = (beats: ReturnType<typeof beat>[]) => ({ summary: 's', facts: [], events: [], promises: [], beats });
+    // Measured on a live run: a confrontation planned in four beats reached the page as one, and the
+    // chapter was accepted because a single survivor stopped the scene from counting as unwritten.
+    chapter.plan.detailedScenes = [{ ...chapter.plan.detailedScenes![0], keyMoments: ['choice', 'consequence', 'cost', 'refusal'] }];
+    expect(beatCoverageIssue(chapter, analysis([beat('scene-1', 'choice', version.revision)]), version)?.id).toBe('undramatized-beat');
+    // Two of three is a scene written differently, not a scene missing.
+    chapter.plan.detailedScenes = [{ ...chapter.plan.detailedScenes![0], keyMoments: ['choice', 'consequence', 'cost'] }];
+    expect(beatCoverageIssue(chapter, analysis([beat('scene-1', 'choice', version.revision), beat('scene-1', 'consequence', version.revision)]), version)).toBeUndefined();
+  });
+
   it('reads a missing registry as silence about the beats, not as beats that never reached the page', () => {
     const run = runWithPlans();
     const chapter = run.chapters[0];
