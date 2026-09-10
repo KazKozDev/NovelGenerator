@@ -209,13 +209,33 @@ export function nextUnacceptedChapter(run: NovelRun): ChapterRecord | undefined 
   return run.chapters.find(chapter => chapter.candidateRevision !== undefined || !acceptedVersion(chapter));
 }
 
-/** Older checkpoints used permissive review parsing. Preserve every draft but revalidate claims. */
+/**
+ * Older checkpoints used permissive review parsing. Preserve every draft but revalidate claims.
+ *
+ * A chapter goes back for revalidation when its own literary record no longer holds — and so does
+ * every chapter after it, because their records were written against a ledger that has moved. Not the
+ * ones before it: chapter one's record is built from the chapters before chapter one, and nothing
+ * that happens later in the book can make it stale.
+ *
+ * This used to invalidate the whole book on any staleness at all, and staleness is ordinary: repairing
+ * chapter four and accepting it again moves the ledger chapter five was judged against. A live run
+ * lost all five accepted chapters and its whole canon that way, on every resume, and the loss looked
+ * like the structural pass cascading rather than the checkpoint being thrown away.
+ *
+ * A version migration is different: nothing recorded under the old rules can be trusted, so that case
+ * still revalidates the book from its first chapter.
+ */
 export function reconcileCheckpoint(run: NovelRun): boolean {
-  if (run.validationVersion === 2 && run.literaryValidationVersion === 1 && !run.chapters.some(chapter => chapter.status === 'accepted' && (!acceptedVersion(chapter) || !literaryCurrent(run, chapter.number, acceptedVersion(chapter)) || acceptedVersion(chapter).literary?.status !== 'passed'))) return false;
+  const migrating = run.validationVersion !== 2 || run.literaryValidationVersion !== 1;
+  const stale = run.chapters.filter(chapter => chapter.status === 'accepted'
+    && (!acceptedVersion(chapter) || !literaryCurrent(run, chapter.number, acceptedVersion(chapter)!) || acceptedVersion(chapter)!.literary?.status !== 'passed'));
+  if (!migrating && !stale.length) return false;
+  const from = migrating ? 0 : Math.min(...stale.map(chapter => chapter.number));
   for (const chapter of run.chapters) {
-    if (chapter.versions.length) chapter.status = 'invalidated';
+    if (chapter.versions.length && chapter.number >= from) chapter.status = 'invalidated';
   }
-  run.canon = emptyStoryState();
+  // The chapters before the first stale one keep their canon; rebuildCanon stops at the first gap.
+  run.canon = rebuildCanon(run.chapters);
   run.structuralReview = undefined;
   run.finalReview = undefined;
   run.structuralAttempts = 0;

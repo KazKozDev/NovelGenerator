@@ -5,6 +5,7 @@ import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { acceptCandidate, addCandidate, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint } from '../utils/novel/storyState';
+import { stampLiterary } from './helpers/literaryFixture';
 
 function fixture() {
   const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
@@ -450,5 +451,30 @@ describe('The whole-book review and its suggestions', () => {
     const [first, second] = demoteSuggestions([wish, structural]);
     expect(first.severity).toBe('minor');
     expect(second.severity).toBe('major');
+  });
+});
+
+describe('Reconciling a checkpoint whose ledger has moved', () => {
+  it('revalidates from the first stale chapter, not from the first chapter of the book', () => {
+    const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
+    run.validationVersion = 2;
+    run.literaryValidationVersion = 1;
+    run.chapters = [1, 2, 3].map(number => {
+      const chapter: ChapterRecord = { number, plan: { title: 't', summary: 's', sceneBreakdown: 'b', characterDevelopmentFocus: 'c', plotAdvancement: 'p', timelineIndicators: 'i', emotionalToneTension: 'e', connectionToNextChapter: 'n' }, versions: [], status: 'draft', repairAttempts: 0 };
+      const version = addCandidate(chapter, `Chapter ${number} prose that stands on its own.`, 'fixture');
+      version.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: version.revision };
+      version.analysis = { summary: `Chapter ${number}.`, facts: [], events: [], promises: [], beats: [] };
+      stampLiterary(run, number, version);
+      chapter.status = 'accepted';
+      chapter.acceptedRevision = version.revision;
+      return chapter;
+    });
+    // Chapter 3's literary record no longer matches the ledger — the ordinary consequence of repairing
+    // and re-accepting a chapter before it.
+    run.chapters[2].versions[0].literary!.contextKey = 'a ledger this record was not written against';
+    expect(reconcileCheckpoint(run)).toBe(true);
+    expect(run.chapters.map(chapter => chapter.status)).toEqual(['accepted', 'accepted', 'invalidated']);
+    // And the canon of the chapters that kept their standing is kept with them.
+    expect(Object.keys(run.canon.summaries)).toEqual(['1', '2']);
   });
 });
