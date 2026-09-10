@@ -314,6 +314,38 @@ export function beatCoverageIssue(chapter: ChapterRecord, analysis: ChapterAnaly
   };
 }
 
+/**
+ * Hedges that mark a sentence as a guess. The list is per language because the check reads the prose
+ * as written; a book in a language not covered here simply keeps the reviewer's own judgement.
+ */
+// \b is an ASCII word boundary in JavaScript and matches nothing useful next to Cyrillic, so the
+// edges are spelled out as "not a letter" instead.
+const hedges = [
+  /(?<!\p{L})(?:возможно|наверное|кажется|казалось|похоже|напоминал[аио]?|словно|будто|как будто|вероятно|по крайней мере|мог[лао]? быть|если это вообще)(?!\p{L})/iu,
+  /(?<!\p{L})(?:possibly|perhaps|maybe|seemed|resembled|as if|as though|might have|probably|at least|or so)(?!\p{L})/iu,
+];
+
+/**
+ * A knowledge finding whose own evidence hedges itself is demoted to advisory.
+ *
+ * The prompt already tells the review that a guess is not a leak, and on a live run it ignored that
+ * for five rounds: it quoted "the figure resembled someone whose face had been in the news, or at
+ * least what he wanted to believe" as a critical leak, and instructed the repair to replace it with
+ * a less hedged sentence it had itself rejected the round before. The chapter could not satisfy the
+ * finding by any edit, and burned two full budgets on it.
+ *
+ * Demoted rather than dropped: if the reader was right after all, the finding still travels with the
+ * chapter and still reaches a repair that some other defect triggered. What it can no longer do is
+ * block a chapter forever over a sentence that says it is unsure.
+ */
+export function demoteHedgedKnowledge(issues: ReviewIssue[]): ReviewIssue[] {
+  return issues.map(issue => {
+    if (issue.category !== 'knowledge' || issue.severity === 'minor') return issue;
+    const hedged = issue.evidence.length > 0 && issue.evidence.every(item => hedges.some(pattern => pattern.test(item.quote)));
+    return hedged ? { ...issue, severity: 'minor' as const } : issue;
+  });
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
@@ -326,7 +358,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const earlier = run.chapters.filter(item => item.number < chapter.number)
       .map(item => ({ item, accepted: acceptedVersion(item) }))
       .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...report.issues];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteHedgedKnowledge(report.issues)];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({

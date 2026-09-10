@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, demoteHedgedKnowledge, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -329,5 +329,26 @@ describe('Source-indexed evidence extraction', () => {
     ];
     const analysis = await analyseChapter(run, chapter, version, async () => JSON.stringify(responses.shift()));
     expect(analysis.promises).toEqual([]);
+  });
+});
+
+describe('A leak reported against a sentence that hedges itself', () => {
+  const issue = (quote: string, category: 'knowledge' | 'plot' = 'knowledge', severity: 'critical' | 'minor' = 'critical') =>
+    ({ id: 'leak', category, severity, description: 'The character uses knowledge the story has not given.', instruction: 'Remove it.', evidence: [{ chapter: 3, revision: 15, quote }] });
+
+  it('demotes it to advisory, whatever the guess is about', () => {
+    // Quoted verbatim from a live run, where this sentence blocked a chapter through two full budgets.
+    const hedged = 'Фигура с этим предметом напоминала кого-то, чье лицо мелькало в новостях год назад.';
+    expect(demoteHedgedKnowledge([issue(hedged)])[0].severity).toBe('minor');
+    expect(demoteHedgedKnowledge([issue('The figure seemed to be someone he had seen in the news.')])[0].severity).toBe('minor');
+  });
+
+  it('leaves a plain assertion, and every other category, exactly as reported', () => {
+    const stated = 'Алексей набрал номер Марии Соколовой, дочери журналиста из Колонны №305.';
+    expect(demoteHedgedKnowledge([issue(stated)])[0].severity).toBe('critical');
+    // A guess about the plot is the reviewer's business, not this rule's: it only answers leaks.
+    expect(demoteHedgedKnowledge([issue('Возможно, дверь была открыта.', 'plot')])[0].severity).toBe('critical');
+    // An issue with no evidence at all cannot be judged hedged.
+    expect(demoteHedgedKnowledge([{ ...issue('x'), evidence: [] }])[0].severity).toBe('critical');
   });
 });
