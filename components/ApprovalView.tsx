@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
+import { MarkdownView } from './common/MarkdownView';
 
 interface ApprovalViewProps {
   title: string;
@@ -19,21 +20,47 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
   onRegenerate,
   isLoading,
 }) => {
+  const [tab, setTab] = useState<'edit' | 'preview'>('edit');
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-semibold text-center text-sky-400">{title}</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+        <h2 className="text-base font-semibold text-zinc-100 uppercase">{title}</h2>
+        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setTab('edit')}
+            className={`px-3 py-1 rounded transition-colors ${tab === 'edit' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            Edit Outline
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('preview')}
+            className={`px-3 py-1 rounded transition-colors ${tab === 'preview' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            Preview Markdown
+          </button>
+        </div>
+      </div>
       
-      <div className="p-4 bg-slate-700 rounded-md shadow">
-        <p className="text-sm text-slate-300 mb-4">
-          The AI has generated the following outline for your story. Please review it carefully. You can edit the text directly in the box below to make any changes you see fit. When you are satisfied with the outline, click "Approve & Continue" to proceed with character and chapter generation.
+      <div className="p-4 border border-zinc-800 rounded">
+        <p className="text-xs text-zinc-400 mb-3">
+          The outline defines the narrative arc and chapter milestones. You may edit the structure directly below before approving generation.
         </p>
-        <TextArea
-          value={content}
-          onChange={(e) => onContentChange(e.target.value)}
-          rows={30}
-          className="bg-slate-900/50 border-slate-600 focus:ring-sky-500 focus:border-sky-500 min-h-[600px]"
-          disabled={isLoading}
-        />
+        {tab === 'edit' ? (
+          <TextArea
+            value={content}
+            onChange={(e) => onContentChange(e.target.value)}
+            rows={30}
+            className="min-h-[550px] font-mono text-xs text-zinc-300"
+            disabled={isLoading}
+          />
+        ) : (
+          <div className="min-h-[550px] max-h-[70vh] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded text-left">
+            <MarkdownView content={content} className="font-serif text-prose max-w-[62ch] mx-auto" />
+          </div>
+        )}
       </div>
       
       <div className="flex justify-between items-center mt-6">

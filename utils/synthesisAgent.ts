@@ -2,8 +2,9 @@
  * Synthesis Agent - Integration specialist for combining specialist agent outputs
  */
 
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { StructureAgentOutput, CharacterAgentOutput, SceneAgentOutput } from './specialistAgents';
+import { cleanProseArtifacts } from './parserUtils';
 
 // =================== INTERFACES ===================
 
@@ -95,39 +96,42 @@ export class SynthesisAgent {
   private mapAllSlots(input: SynthesisInput): Record<string, SlotMapping> {
     const mappings: Record<string, SlotMapping> = {};
 
+    const addSlot = (slotId: string, content: any, sourceAgent: 'structure' | 'character' | 'scene', priority: number) => {
+      if (!content || typeof content !== 'string') return;
+      const trimmed = content.trim();
+      if (!trimmed) return;
+      // Skip dummy coordinator wrapper keys
+      if (slotId === 'characterContent' || slotId === 'sceneDescriptions' || slotId === 'structure') return;
+      mappings[slotId] = {
+        slotId,
+        content: trimmed,
+        sourceAgent,
+        priority
+      };
+    };
+
     // Map structure slots (highest priority - framework)
-    for (const [slotId, content] of Object.entries(input.structureOutput.content)) {
-      if (slotId !== 'structure') { // Skip the main structure template
-        mappings[slotId] = {
-          slotId,
-          content,
-          sourceAgent: 'structure',
-          priority: 3
-        };
+    if (input.structureOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.structureOutput.content)) {
+        addSlot(slotId, content, 'structure', 3);
       }
     }
 
     // Map character slots (high priority - dialogue and thoughts)
-    for (const [slotId, content] of Object.entries(input.characterOutput.content)) {
-      mappings[slotId] = {
-        slotId,
-        content,
-        sourceAgent: 'character',
-        priority: 2
-      };
+    if (input.characterOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.characterOutput.content)) {
+        addSlot(slotId, content, 'character', 2);
+      }
     }
 
     // Map scene slots (medium priority - descriptions and action)
-    for (const [slotId, content] of Object.entries(input.sceneOutput.content)) {
-      mappings[slotId] = {
-        slotId,
-        content,
-        sourceAgent: 'scene',
-        priority: 1
-      };
+    if (input.sceneOutput?.content) {
+      for (const [slotId, content] of Object.entries(input.sceneOutput.content)) {
+        addSlot(slotId, content, 'scene', 1);
+      }
     }
 
-    console.log(`📋 Mapped ${Object.keys(mappings).length} slots from specialist agents`);
+    console.log(`📋 Mapped ${Object.keys(mappings).length} valid slots from specialist agents`);
     return mappings;
   }
 
@@ -224,7 +228,9 @@ export class SynthesisAgent {
         undefined,
         0.6, // Lower creativity for transitions - should be subtle
         0.8,
-        30
+        30,
+        undefined,
+        1500
       );
 
       return this.parseTransitions(transitionsContent);
@@ -332,10 +338,12 @@ Generate transitions now:`;
         undefined,
         0.3, // Very low creativity - this is assembly, not creation
         0.7,
-        20
+        20,
+        undefined,
+        8192
       );
 
-      return integratedContent;
+      return cleanProseArtifacts(integratedContent);
     } catch (error) {
       console.warn('AI integration failed, using simple slot replacement:', error);
       return this.performSimpleIntegration(structureTemplate, mappings, transitions);
@@ -347,44 +355,52 @@ Generate transitions now:`;
     mappings: Record<string, SlotMapping>,
     transitions: string[]
   ): { systemPrompt: string; userPrompt: string } {
-    const systemPrompt = `You are a text integration specialist. Your ONLY job is to:
+    const validEntries = Object.entries(mappings).filter(
+      ([slotId, mapping]) =>
+        mapping.content &&
+        typeof mapping.content === 'string' &&
+        mapping.content.trim().length > 0 &&
+        slotId !== 'characterContent' &&
+        slotId !== 'sceneDescriptions'
+    );
+    const hasSpecialistSlots = validEntries.length > 0;
 
-1. Replace [SLOT] markers with provided content
-2. Add smooth transitions between different content types
-3. Ensure natural flow and readability
+    const systemPrompt = `You are a master fiction author and chapter synthesis specialist. Your job is to transform narrative frameworks into complete, immersive, publication-quality chapter prose.
 
-DO NOT:
-- Rewrite or modify the specialist content
-- Add new plot elements or descriptions
-- Change the tone or style of existing content
-- Create new dialogue or action
+CRITICAL INSTRUCTIONS:
+- Start immediately with the chapter title (e.g. "# Chapter 1") or narrative prose.
+- Output ONLY the story chapter prose.
+- NEVER output reasoning steps, inner monologue, prompt analysis, options, or meta-commentary (such as "Let me look at this carefully", "The user has given me a task", "My role is...", etc.).
+- DO NOT output slot counting, checklists, notes, or verification steps (such as "Now let me count slots", "Dialogue slots:", "Final draft:", etc.).`;
 
-ONLY:
-- Fill slots with exact provided content
-- Add minimal connecting words for flow
-- Ensure proper punctuation and formatting`;
-
-    const userPrompt = `Integrate the following content:
+    const userPrompt = hasSpecialistSlots
+      ? `Synthesize the complete chapter prose by integrating the structure template and specialist slot content:
 
 **STRUCTURE TEMPLATE:**
 ${structureTemplate}
 
-**SLOT CONTENT:**
-${Object.entries(mappings)
+**SLOT CONTENT TO INTEGRATE:**
+${validEntries
   .map(([slotId, mapping]) => `[${slotId}]: ${mapping.content}`)
   .join('\n\n')}
 
-**AVAILABLE TRANSITIONS:**
-${transitions.join('\n')}
-
+${transitions.length > 0 ? `**AVAILABLE TRANSITIONS:**\n${transitions.join('\n')}\n` : ''}
 **INTEGRATION RULES:**
-1. Replace each [SLOT] marker with its corresponding content
-2. Add transitions where content feels disconnected
-3. Maintain natural paragraph breaks
-4. Preserve all specialist content exactly as provided
-5. Only add minimal connecting words if absolutely necessary
+1. Replace each [SLOT] marker with its corresponding specialist content.
+2. Weave specialist content into natural, immersive paragraph flow.
+3. Start directly with the story narrative (e.g. "# Chapter 1" or opening sentence).
+4. Output ONLY the story chapter prose.`
+      : `Write the complete, immersive chapter prose based on the narrative structure template below:
 
-Perform the integration now:`;
+**STRUCTURE TEMPLATE:**
+${structureTemplate}
+
+${transitions.length > 0 ? `**AVAILABLE TRANSITIONS:**\n${transitions.join('\n')}\n` : ''}
+**WRITING RULES:**
+1. Expand and develop the structure template into a full, atmospheric, emotionally resonant chapter.
+2. Resolve any slot descriptions into vivid narrative, authentic dialogue, and sensory details.
+3. Start directly with the story narrative (e.g. "# Chapter 1" or opening sentence).
+4. Output ONLY the story chapter prose without any introductory notes or meta-deliberations.`;
 
     return { systemPrompt, userPrompt };
   }
@@ -441,7 +457,7 @@ Perform the integration now:`;
 
     console.log(`📊 Integration summary: ${filledSlots.size} slots filled, ${unfilledSlots.length} unfilled`);
 
-    return integrated.trim();
+    return cleanProseArtifacts(integrated.trim());
   }
 
   // =================== HELPER METHODS ===================

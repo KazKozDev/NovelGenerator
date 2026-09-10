@@ -13,7 +13,7 @@ interface DiffViewerProps {
  */
 const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, strategy }) => {
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
-  const [showFullText, setShowFullText] = useState(false);
+  const [showFullText, setShowFullText] = useState(true);
 
   // Simple word-level diff algorithm
   const computeWordDiff = (oldText: string, newText: string) => {
@@ -62,39 +62,41 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
   const totalChanges = stats.added + stats.removed;
   const changePercentage = ((totalChanges / (stats.added + stats.removed + stats.unchanged)) * 100).toFixed(1);
 
-  // Truncate for preview
-  const previewLength = 1000;
+  // Preview lengths
+  const previewLength = 1500;
   const beforePreview = before.substring(0, previewLength);
   const afterPreview = after.substring(0, previewLength);
   const isTruncated = before.length > previewLength || after.length > previewLength;
 
   const renderUnifiedDiff = () => {
-    const displayDiff = showFullText ? diff : diff.slice(0, 200);
+    const displayDiff = showFullText ? diff : diff.slice(0, 500);
     
     return (
       <div style={{
-        backgroundColor: '#1f2937',
-        padding: '15px',
+        backgroundColor: '#09090b',
+        padding: '12px',
         borderRadius: '6px',
+        border: '1px solid #27272a',
         fontFamily: 'monospace',
-        fontSize: '13px',
+        fontSize: '12px',
         lineHeight: '1.6',
         overflowX: 'auto',
-        maxHeight: showFullText ? 'none' : '400px',
+        maxHeight: showFullText ? '650px' : '400px',
         overflowY: 'auto'
       }}>
         {displayDiff.map((change, idx) => {
           if (change.type === 'unchanged') {
-            return <span key={idx} style={{ color: '#d1d5db' }}>{change.text}</span>;
+            return <span key={idx} style={{ color: '#a1a1aa' }}>{change.text}</span>;
           } else if (change.type === 'removed') {
             return (
               <span
                 key={idx}
                 style={{
-                  backgroundColor: '#7f1d1d',
+                  backgroundColor: 'rgba(220, 38, 38, 0.15)',
                   color: '#fca5a5',
                   textDecoration: 'line-through',
-                  padding: '2px 0'
+                  padding: '1px 2px',
+                  borderRadius: '2px'
                 }}
               >
                 {change.text}
@@ -105,9 +107,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
               <span
                 key={idx}
                 style={{
-                  backgroundColor: '#14532d',
-                  color: '#86efac',
-                  padding: '2px 0'
+                  backgroundColor: 'rgba(5, 150, 105, 0.15)',
+                  color: '#6ee7b7',
+                  padding: '1px 2px',
+                  borderRadius: '2px'
                 }}
               >
                 {change.text}
@@ -116,7 +119,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
           }
         })}
         {!showFullText && diff.length > 200 && (
-          <div style={{ marginTop: '10px', color: '#9ca3af', fontStyle: 'italic' }}>
+          <div style={{ marginTop: '10px', color: '#71717a', fontStyle: 'italic' }}>
             ... (showing first 200 words)
           </div>
         )}
@@ -126,30 +129,34 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
 
   const renderSplitDiff = () => {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
         <div>
           <div style={{
-            backgroundColor: '#374151',
-            padding: '8px',
+            backgroundColor: '#18181b',
+            padding: '6px 10px',
             borderRadius: '4px 4px 0 0',
-            fontWeight: 'bold',
-            fontSize: '12px',
-            color: '#fca5a5'
+            border: '1px solid #27272a',
+            borderBottom: 'none',
+            fontWeight: '600',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: '#f87171'
           }}>
-            Before (Original)
+            Original Draft
           </div>
           <pre style={{
-            backgroundColor: '#1f2937',
-            padding: '15px',
+            backgroundColor: '#09090b',
+            padding: '12px',
             borderRadius: '0 0 4px 4px',
+            border: '1px solid #27272a',
             fontFamily: 'monospace',
-            fontSize: '13px',
+            fontSize: '12px',
             lineHeight: '1.6',
             overflowX: 'auto',
             maxHeight: showFullText ? 'none' : '400px',
             overflowY: 'auto',
             margin: 0,
-            color: '#d1d5db',
+            color: '#a1a1aa',
             whiteSpace: 'pre-wrap'
           }}>
             {showFullText ? before : beforePreview}
@@ -158,27 +165,31 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
         </div>
         <div>
           <div style={{
-            backgroundColor: '#374151',
-            padding: '8px',
+            backgroundColor: '#18181b',
+            padding: '6px 10px',
             borderRadius: '4px 4px 0 0',
-            fontWeight: 'bold',
-            fontSize: '12px',
-            color: '#86efac'
+            border: '1px solid #27272a',
+            borderBottom: 'none',
+            fontWeight: '600',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: '#4ade80'
           }}>
-            After (Edited)
+            Edited Draft
           </div>
           <pre style={{
-            backgroundColor: '#1f2937',
-            padding: '15px',
+            backgroundColor: '#09090b',
+            padding: '12px',
             borderRadius: '0 0 4px 4px',
+            border: '1px solid #27272a',
             fontFamily: 'monospace',
-            fontSize: '13px',
+            fontSize: '12px',
             lineHeight: '1.6',
             overflowX: 'auto',
             maxHeight: showFullText ? 'none' : '400px',
             overflowY: 'auto',
             margin: 0,
-            color: '#d1d5db',
+            color: '#a1a1aa',
             whiteSpace: 'pre-wrap'
           }}>
             {showFullText ? after : afterPreview}
@@ -191,62 +202,64 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
 
   return (
     <div style={{
-      marginTop: '15px',
-      padding: '15px',
-      backgroundColor: '#374151',
+      marginTop: '10px',
+      padding: '12px',
+      backgroundColor: '#18181b',
       borderRadius: '8px',
-      border: '1px solid #4b5563'
+      border: '1px solid #27272a'
     }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '15px'
+        marginBottom: '10px'
       }}>
         <div>
-          <h4 style={{ color: '#f3f4f6', margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-            📝 Chapter {chapterNumber} - Text Changes ({strategy})
+          <h4 style={{ color: '#e4e4e7', margin: 0, fontSize: '13px', fontWeight: '600', letterSpacing: '-0.01em' }}>
+            Chapter {chapterNumber} — Text Modifications ({strategy})
           </h4>
-          <div style={{ color: '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
-            <span style={{ color: '#86efac' }}>+{stats.added} added</span>
+          <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px', fontFamily: 'monospace' }}>
+            <span style={{ color: '#6ee7b7' }}>+{stats.added} added</span>
             {' • '}
-            <span style={{ color: '#fca5a5' }}>-{stats.removed} removed</span>
+            <span style={{ color: '#f87171' }}>-{stats.removed} removed</span>
             {' • '}
             <span>{changePercentage}% changed</span>
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
           <button
             onClick={() => setViewMode(viewMode === 'unified' ? 'split' : 'unified')}
             style={{
-              padding: '6px 12px',
-              backgroundColor: '#4b5563',
-              color: '#f3f4f6',
-              border: 'none',
+              padding: '4px 10px',
+              backgroundColor: '#27272a',
+              color: '#d4d4d8',
+              border: '1px solid #3f3f46',
               borderRadius: '4px',
               cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500'
+              fontSize: '10px',
+              fontWeight: '600',
+              fontFamily: 'monospace'
             }}
           >
-            {viewMode === 'unified' ? '📊 Split View' : '📄 Unified View'}
+            {viewMode === 'unified' ? 'Split View' : 'Unified View'}
           </button>
           
           <button
             onClick={() => setShowFullText(!showFullText)}
             style={{
-              padding: '6px 12px',
-              backgroundColor: '#4b5563',
-              color: '#f3f4f6',
-              border: 'none',
+              padding: '4px 10px',
+              backgroundColor: '#27272a',
+              color: '#d4d4d8',
+              border: '1px solid #3f3f46',
               borderRadius: '4px',
               cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500'
+              fontSize: '10px',
+              fontWeight: '600',
+              fontFamily: 'monospace'
             }}
           >
-            {showFullText ? '📉 Show Less' : '📈 Show Full Text'}
+            {showFullText ? 'Show Less' : 'Show Full Text'}
           </button>
         </div>
       </div>

@@ -13,12 +13,12 @@ export const Button: React.FC<ButtonProps> = ({
   className = '',
   ...props
 }) => {
-  const baseStyles = "font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg";
+  const baseStyles = "font-medium rounded focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed shadow-sm";
   
   const variantStyles = {
-    primary: 'bg-sky-600 hover:bg-sky-500 focus:ring-sky-500 text-white',
-    secondary: 'bg-slate-600 hover:bg-slate-500 focus:ring-slate-500 text-slate-100',
-    danger: 'bg-red-600 hover:bg-red-500 focus:ring-red-500 text-white',
+    primary: 'bg-zinc-100 hover:bg-zinc-50 text-zinc-900 focus:ring-zinc-400 border border-zinc-200',
+    secondary: 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 focus:ring-zinc-500',
+    danger: 'bg-red-950/60 hover:bg-red-900/60 text-red-200 border border-red-800/80 focus:ring-red-500',
   };
 
   const sizeStyles = {

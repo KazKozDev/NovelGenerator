@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
+import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
+import { fetchOllamaModels } from '../services/ollamaService';
+import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
   storyPremise: string;
@@ -13,6 +16,8 @@ interface UserInputProps {
   setNumChapters: (value: number) => void;
   genre: string;
   setGenre: (value: string) => void;
+  storySettings: StorySettings;
+  setStorySettings: (settings: StorySettings) => void;
   onSubmit: () => void;
   isLoading: boolean;
 }
@@ -24,9 +29,55 @@ const UserInput: React.FC<UserInputProps> = ({
   setNumChapters,
   genre,
   setGenre,
+  storySettings,
+  setStorySettings,
   onSubmit,
   isLoading,
 }) => {
+  const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
+  const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
+    const stored = getStoredValidatorConfig();
+    return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? true, enabled: Boolean(stored) };
+  });
+
+  const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
+    const next = { ...validator, ...change };
+    setValidator(next);
+    saveStoredValidatorConfig(next.enabled ? next : undefined);
+  };
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
+  const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleFetchOllamaModels = async () => {
+    setIsFetchingModels(true);
+    setFetchStatus(null);
+    try {
+      const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
+      setOllamaModels(models);
+      if (models.length > 0) {
+        setFetchStatus({ success: true, message: `Found ${models.length} models in Ollama` });
+        if (!models.includes(providerConfig.ollamaModel)) {
+          const updated = { ...providerConfig, ollamaModel: models[0] };
+          setProviderConfig(updated);
+          saveStoredProviderConfig(updated);
+        }
+      } else {
+        setFetchStatus({
+          success: false,
+          message: 'Ollama is reachable, but model list is empty. Pull a model via `ollama pull llama3.1`.'
+        });
+      }
+    } catch (err: any) {
+      setFetchStatus({
+        success: false,
+        message: err.message || 'Cannot connect to Ollama. Make sure Ollama server is running.'
+      });
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (numChapters >= MIN_CHAPTERS) {
@@ -38,45 +89,235 @@ const UserInput: React.FC<UserInputProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI Model Provider Section */}
+      <div className="border border-zinc-800 rounded p-4 md:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-zinc-400" />
+              <span>AI provider</span>
+            </h3>
+            <p className="text-xs text-zinc-500">Choose inference provider: Gemini or Ollama</p>
+          </div>
+          
+          <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...providerConfig, provider: 'gemini' as const };
+                setProviderConfig(updated);
+                saveStoredProviderConfig(updated);
+              }}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                providerConfig.provider === 'gemini'
+                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              Gemini
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...providerConfig, provider: 'ollama' as const };
+                setProviderConfig(updated);
+                saveStoredProviderConfig(updated);
+              }}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                providerConfig.provider === 'ollama'
+                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              Ollama
+            </button>
+          </div>
+        </div>
+
+        {/* Ollama Details */}
+        {providerConfig.provider === 'ollama' && (
+          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                  Ollama Endpoint / Proxy
+                </label>
+                <Input
+                  type="text"
+                  value={providerConfig.ollamaEndpoint}
+                  onChange={(e) => {
+                    const updated = { ...providerConfig, ollamaEndpoint: e.target.value };
+                    setProviderConfig(updated);
+                    saveStoredProviderConfig(updated);
+                  }}
+                  placeholder="/api/ollama"
+                  className="text-xs py-1.5"
+                />
+                <p className="text-xs text-zinc-500 mt-1">
+                  Default /api/ollama (proxied via Vite without CORS)
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-zinc-400">
+                    Ollama Model
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFetchOllamaModels}
+                    disabled={isFetchingModels}
+                    className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
+                  </button>
+                </div>
+
+                {ollamaModels.length > 0 ? (
+                  <Select
+                    value={providerConfig.ollamaModel}
+                    onChange={(e) => {
+                      const updated = { ...providerConfig, ollamaModel: e.target.value };
+                      setProviderConfig(updated);
+                      saveStoredProviderConfig(updated);
+                    }}
+                    className="text-xs py-1.5"
+                  >
+                    {ollamaModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    type="text"
+                    value={providerConfig.ollamaModel}
+                    onChange={(e) => {
+                      const updated = { ...providerConfig, ollamaModel: e.target.value };
+                      setProviderConfig(updated);
+                      saveStoredProviderConfig(updated);
+                    }}
+                    placeholder="llama3.1"
+                    className="text-xs py-1.5"
+                  />
+                )}
+                <p className="text-xs text-zinc-500 mt-1">
+                  {ollamaModels.length > 0
+                    ? `Selected from ${ollamaModels.length} models Ollama reports`
+                    : `Click "Fetch Ollama Models" to retrieve models`}
+                </p>
+              </div>
+            </div>
+
+            {fetchStatus && (
+              <div
+                className={`text-xs px-3 py-2 rounded ${
+                  fetchStatus.success
+                    ? 'bg-emerald-950/40 text-emerald-300/90 border border-emerald-900/60'
+                    : 'bg-red-950/40 text-red-300/90 border border-red-900/60'
+                }`}
+              >
+                {fetchStatus.message}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-base font-semibold text-zinc-100">Editor model</h4>
+              <p className="text-xs text-zinc-500">Reviews chapters, extracts canon and audits the book</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              <input type="checkbox" checked={validator.enabled}
+                onChange={event => updateValidator({ enabled: event.target.checked })} />
+              Use a separate model
+            </label>
+          </div>
+
+          {!validator.enabled ? (
+            <p className="text-xs text-zinc-400">
+              The writer will review its own prose. A second model catches contradictions the writer cannot see.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
+              <div>
+                <label htmlFor="validatorProvider" className="block text-sm font-medium text-zinc-400 mb-1.5">Provider</label>
+                <Select id="validatorProvider" value={validator.provider} className="text-xs py-1.5"
+                  onChange={event => updateValidator({ provider: event.target.value as LLMProviderConfig['provider'] })}>
+                  <option value="gemini">Gemini</option>
+                  <option value="ollama">Ollama</option>
+                </Select>
+              </div>
+              {validator.provider === 'ollama' && (
+                <div>
+                  <label htmlFor="validatorModel" className="block text-sm font-medium text-zinc-400 mb-1.5">Model</label>
+                  {ollamaModels.length > 0 ? (
+                    <Select id="validatorModel" value={validator.ollamaModel} className="text-xs py-1.5"
+                      onChange={event => updateValidator({ ollamaModel: event.target.value })}>
+                      {ollamaModels.map(model => <option key={model} value={model}>{model}</option>)}
+                    </Select>
+                  ) : (
+                    <Input id="validatorModel" type="text" value={validator.ollamaModel} className="text-xs py-1.5"
+                      placeholder="gemma4:31b-cloud"
+                      onChange={event => updateValidator({ ollamaModel: event.target.value })} />
+                  )}
+                </div>
+              )}
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-zinc-400">
+                  <input type="checkbox" checked={Boolean(validator.think)}
+                    onChange={event => updateValidator({ think: event.target.checked })} />
+                  Let the editor think before answering
+                </label>
+                <p className="text-xs text-zinc-500 mt-1">
+                  A reasoning model asked to judge with thinking off returns an empty review. Its reasoning is
+                  returned separately and never reaches the manuscript.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div>
-        <label htmlFor="storyPremise" className="block text-sm font-medium text-sky-300 mb-1">
-          Story Premise
+        <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-400 mb-1.5">
+          Story premise
         </label>
         <TextArea
           id="storyPremise"
           value={storyPremise}
           onChange={(e) => setStoryPremise(e.target.value)}
-          placeholder="Enter a paragraph describing your story idea (e.g., A detective uncovers a conspiracy that threatens everything they believe in...)"
+          placeholder="Describe your story idea (core conflict, protagonist goals, setting)..."
           rows={5}
           required
           maxLength={1200} 
-          className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
         />
-        <p className="text-xs text-slate-400 mt-1">Max 1200 characters. Be descriptive</p>
+        <p className="text-xs text-zinc-500 mt-1">Maximum 1200 characters.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="genre" className="block text-sm font-medium text-sky-300 mb-1">
+          <label htmlFor="genre" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Genre
           </label>
           <Select
             id="genre"
             value={genre}
             onChange={(e) => setGenre(e.target.value)}
-            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           >
             {Object.entries(GENRE_CONFIGS).map(([key, config]) => (
               <option key={key} value={key}>
-                {config.name} - {config.description}
+                {config.name} — {config.description}
               </option>
             ))}
           </Select>
-          <p className="text-xs text-slate-400 mt-1">Choose your story genre</p>
         </div>
 
         <div>
-          <label htmlFor="numChapters" className="block text-sm font-medium text-sky-300 mb-1">
+          <label htmlFor="numChapters" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Number of Chapters
           </label>
           <Input
@@ -85,72 +326,86 @@ const UserInput: React.FC<UserInputProps> = ({
             value={numChapters}
             onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
             min={MIN_CHAPTERS}
+            max={100}
             required
-            className="bg-slate-700 border-slate-600 focus:ring-sky-500 focus:border-sky-500"
           />
-           <p className="text-xs text-slate-400 mt-1">Minimum {MIN_CHAPTERS} chapters</p>
+           <p className="text-xs text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
+        </div>
+
+        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {([
+            ['language', 'Language', 'English'],
+            ['targetAudience', 'Target audience', 'adult'],
+            ['narrativeVoice', 'Narrative voice / POV', 'third-limited'],
+            ['tone', 'Tone', 'serious'],
+            ['writingStyle', 'Style and voice notes', 'descriptive'],
+          ] as const).map(([key, label, fallback]) => (
+            <div key={key}>
+              <label htmlFor={key} className="block text-sm font-medium text-zinc-400 mb-1.5">{label}</label>
+              <Input id={key} value={storySettings[key] || fallback}
+                onChange={event => setStorySettings({ ...storySettings, [key]: event.target.value })} />
+            </div>
+          ))}
+          <div>
+            <label htmlFor="targetWords" className="block text-sm font-medium text-zinc-400 mb-1.5">Target words per chapter</label>
+            <Input id="targetWords" type="number" min={300} max={10000} step={100}
+              value={storySettings.targetWordsPerChapter || 4000}
+              onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
+          </div>
+          <div>
+            <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>
+            <Select id="tense" value={storySettings.tense || 'past'} onChange={event => setStorySettings({ ...storySettings, tense: event.target.value as StorySettings['tense'] })}>
+              <option value="past">Past</option><option value="present">Present</option>
+            </Select>
+          </div>
+          <div>
+            <label htmlFor="ending" className="block text-sm font-medium text-zinc-400 mb-1.5">Ending</label>
+            <Select id="ending" value={storySettings.ending || 'closed'} onChange={event => setStorySettings({ ...storySettings, ending: event.target.value as StorySettings['ending'] })}>
+              <option value="closed">Resolved</option><option value="open">Intentionally open</option><option value="series">Part of a series</option>
+            </Select>
+          </div>
         </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end pt-2">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
-          {isLoading ? 'Weaving Your Tale...' : 'Start Weaving'}
+          {isLoading ? 'Generating Outline...' : 'Start Generation'}
         </Button>
       </div>
-       <div className="mt-12 pt-12 border-t border-slate-700 space-y-8 text-slate-300">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300 mb-2">
-            How to begin
+
+      <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
+        <div>
+          <h2 className="text-xs font-semibold text-zinc-400 uppercase">
+            How your manuscript develops
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">01. Start with your vision</h3>
-            <p className="text-sm text-slate-400">
-              Choose your genre. Set your chapter count. Share your story idea. That's all we need.
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Master Story Outline</h3>
+            <p className="text-xs text-zinc-500">
+              Establishes premise, characters, central conflicts, recurring motifs, and comprehensive chapter-by-chapter plans.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">02. Intelligence meets creativity</h3>
-            <p className="text-sm text-slate-400">
-              Our AI builds a complete story architecture — plot progression, character arcs, emotional beats. Every detail mapped before the first word is written.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Scene writing</h3>
+            <p className="text-xs text-zinc-500">
+              Each scene follows its characters’ goals, conflicts and consequential choices in your requested voice.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">03. You stay in control</h3>
-            <p className="text-sm text-slate-400">
-              Review the outline. Refine it. Approve when it feels right. This is your story. We're just here to help bring it to life.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Continuity and revision</h3>
+            <p className="text-xs text-zinc-500">
+              Accepted passages establish the story’s facts. Revisions trigger fresh checks of affected chapters.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">04. Three specialists. One masterpiece</h3>
-            <p className="text-sm text-slate-400">
-              Structure. Character. Scene. Each specialized AI agent focuses on what it does best, collaborating in real-time to craft every chapter with precision.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">05. Quality built in</h3>
-            <p className="text-sm text-slate-400">
-              Every chapter undergoes multiple editing passes. Consistency checks. Narrative flow analysis. We catch what humans miss.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">06. The final polish</h3>
-            <p className="text-sm text-slate-400">
-              Rhythm. Subtext. Emotional resonance. Our pipeline refines every sentence until your story doesn't just read well — it feels right.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-sky-300">07. In your format</h3>
-            <p className="text-sm text-slate-400">
-              Download your manuscript in PDF, TXT, or EPUB format. Ready for sharing or further editing.
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Quality & Export</h3>
+            <p className="text-xs text-zinc-500">
+              Whole-book review checks setup, payoff and the ending before EPUB, Markdown or PDF export.
             </p>
           </div>
         </div>

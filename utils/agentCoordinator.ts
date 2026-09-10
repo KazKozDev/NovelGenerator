@@ -7,7 +7,7 @@ import { coherenceManager, ChapterContext, RepetitionReport, RepetitionConstrain
 import { structureAgent, characterAgent, sceneAgent, DialogueRequirement } from './specialistAgents';
 import { synthesisAgent } from './synthesisAgent';
 import { agentEditChapter } from './editingAgent';
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { storyContextDB, SharedChapterState, RevelationValidation, ContentLimitCheck, ToneGuidance, BalanceReport } from './storyContextDatabase';
 
 // =================== INTERFACES ===================
@@ -20,6 +20,7 @@ export interface ChapterGenerationInput {
   storyOutline: string;
   targetLength: number;
   genre?: string; // User's selected genre
+  onDraftReady?: (content: string) => void; // Immediate UI update when synthesis produces draft
 }
 
 export interface GenerationPhaseResult {
@@ -61,7 +62,7 @@ export class AgentCoordinator {
 
   constructor(options: Partial<GenerationOptions> = {}) {
     this.options = {
-      enableLightPolish: true,
+      enableLightPolish: false, // Default to false in coordinated system to protect rich synthesis
       enableConsistencyCheck: true,
       enableFallbackToOldSystem: false, // Disable fallback to force coordinated system
       parallelProcessing: false, // Use sequential coordinated generation
@@ -130,8 +131,10 @@ export class AgentCoordinator {
       let finalContent = synthesisResult.integratedChapter;
 
       console.log(`🔗 Content synthesis completed with high-quality agent coordination`);
+      // Immediately notify UI of the full draft as soon as synthesis completes
+      input.onDraftReady?.(finalContent);
 
-      // Phase 4: Light Polish (Optional)
+      // Phase 4: Light Polish (Optional - skipped in Fast Mode to preserve full synthesized prose)
       if (this.options.enableLightPolish) {
         const polishPhase = await this.executePhase('Light Polish', async () => {
           return await this.applyLightPolish(finalContent, input);
@@ -140,6 +143,7 @@ export class AgentCoordinator {
 
         if (polishPhase.success && polishPhase.output) {
           finalContent = polishPhase.output;
+          input.onDraftReady?.(finalContent);
         }
       }
 
@@ -488,7 +492,18 @@ export class AgentCoordinator {
         generateGeminiText
       );
 
-      return editingResult.refinedContent;
+      const refined = editingResult.refinedContent;
+
+      // Protection: Never accept a polish that truncated the chapter or contains meta contamination
+      const isTruncated = (refined.length < content.length * 0.75) || refined.trim().endsWith('...(truncated)');
+      const hasMetaArtifacts = /Edit \d+|CHARACTER NAME|I understand the task|I'll return|first_appearance/i.test(refined);
+
+      if (isTruncated || hasMetaArtifacts) {
+        console.warn(`⚠️ Rejected polished content for Chapter ${input.chapterNumber}: truncated (${refined.length} vs original ${content.length}) or contains meta artifacts. Preserving original synthesis.`);
+        return content;
+      }
+
+      return refined;
     } catch (error) {
       console.warn('Light polish failed, returning original content:', error);
       return content;
@@ -656,8 +671,8 @@ Consequences: ${plan.consequencesOfChoices}`;
 
     return {
       structureOutput: structureOutput.framework,
-      characterOutput: characterOutput.content,
-      sceneOutput: sceneOutput.content,
+      characterOutput: characterOutput.slots || characterOutput.content,
+      sceneOutput: sceneOutput.slots || sceneOutput.content,
       coordinationMetadata: {
         sceneType,
         toneDetected: storyContextDB.getSharedState().currentTone,
@@ -762,7 +777,8 @@ Consequences: ${plan.consequencesOfChoices}`;
         genre: input.genre
       });
 
-      const content = result.content.characterContent || '';
+      const slots = (result.content && typeof result.content === 'object') ? result.content : {};
+      const content = Object.values(slots).filter((v): v is string => typeof v === 'string').join('\n\n') || (typeof result.content === 'string' ? result.content : '');
 
       // Check content limits
       const limitCheck = storyContextDB.checkContentLimits('character', content);
@@ -787,6 +803,7 @@ Consequences: ${plan.consequencesOfChoices}`;
         return {
           success: true,
           content: correctedContent,
+          slots,
           limitsApplied: [limitCheck.suggestedAction],
           originalLimitIssue: limitCheck.reason
         };
@@ -795,6 +812,7 @@ Consequences: ${plan.consequencesOfChoices}`;
       return {
         success: true,
         content: content,
+        slots,
         limitsApplied: []
       };
 
@@ -851,9 +869,13 @@ Consequences: ${plan.consequencesOfChoices}`;
         genre: input.genre
       });
 
+      const slots = (result.content && typeof result.content === 'object') ? result.content : {};
+      const content = Object.values(slots).filter((v): v is string => typeof v === 'string').join('\n\n') || (typeof result.content === 'string' ? result.content : '');
+
       return {
         success: true,
-        content: result.content.sceneDescriptions || '',
+        content: content,
+        slots,
         toneAdaptation: `Adapted to ${storyContextDB.getSharedState().currentTone} tone`
       };
 
@@ -867,6 +889,17 @@ Consequences: ${plan.consequencesOfChoices}`;
 
   private async synthesisWithValidation(input: any): Promise<any> {
     try {
+      // Extract clean slot dictionaries, ignoring empty placeholders
+      const characterSlots: Record<string, string> =
+        input.characterSlots && typeof input.characterSlots === 'object'
+          ? input.characterSlots
+          : (input.characterOutput && typeof input.characterOutput === 'object' ? input.characterOutput : {});
+
+      const sceneSlots: Record<string, string> =
+        input.sceneSlots && typeof input.sceneSlots === 'object'
+          ? input.sceneSlots
+          : (input.sceneOutput && typeof input.sceneOutput === 'object' ? input.sceneOutput : {});
+
       // Create compatible output objects for synthesis agent
       const structureAgentOutput = {
         chapterStructure: input.structureOutput,
@@ -889,15 +922,15 @@ Consequences: ${plan.consequencesOfChoices}`;
       };
 
       const characterAgentOutput = {
-        characterContent: input.characterOutput,
-        slotsFilled: [],
+        characterContent: typeof input.characterOutput === 'string' ? input.characterOutput : '',
+        slotsFilled: Object.keys(characterSlots),
         dialogueGenerated: [],
         internalMonologue: [],
-        dialogueContent: {},
+        dialogueContent: characterSlots,
         internalThoughts: {},
         characterMoments: [],
         emotionalProgression: [],
-        content: { characterContent: input.characterOutput },
+        content: characterSlots,
         metadata: {
           agentType: 'Character',
           processingTime: 0,
@@ -907,13 +940,13 @@ Consequences: ${plan.consequencesOfChoices}`;
       };
 
       const sceneAgentOutput = {
-        sceneDescriptions: input.sceneOutput,
+        sceneDescriptions: typeof input.sceneOutput === 'string' ? input.sceneOutput : '',
         atmosphericElements: [],
         sensoryDetails: [],
         settingEstablishment: '',
-        descriptions: {},
+        descriptions: sceneSlots,
         actionContent: {},
-        content: { sceneDescriptions: input.sceneOutput },
+        content: sceneSlots,
         metadata: {
           agentType: 'Scene',
           processingTime: 0,

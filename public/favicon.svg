@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="NovelGenerator">
+  <rect width="32" height="32" rx="7" fill="#18181B"/>
+  <!-- At 32px an interlocked pair eats itself: the letters stand side by side, one cap height.
+       The G's aperture is cut wide and its bar kept short, or the counter fills in at 16px. -->
+  <g fill="none" stroke="#FAFAFA" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5.3 22V10L12.3 22V10"/>
+    <path d="M26 12.2A5.7 5.7 0 1 0 26 19.8V16h-3.8"/>
+  </g>
+</svg>

@@ -1,3 +1,5 @@
+import JSZip from 'jszip';
+
 /**
  * Utilities for exporting book content in different formats
  */
@@ -65,8 +67,6 @@ export function extractBookTitle(content: string): string {
  * Creates a proper EPUB with all required files and structure
  */
 export async function exportAsEpub(content: string, metadata: any, filename: string = 'book.epub'): Promise<void> {
-  // Dynamic import of JSZip
-  const JSZip = (await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm')).default;
   
   const title = extractBookTitle(content);
   const author = metadata?.author || 'Unknown Author';

@@ -5,25 +5,134 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NovelGenerator</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Applied before the first paint so a reload does not flash the other theme.
+      (function () {
+        try {
+          var stored = localStorage.getItem('novelGenerator_theme');
+          if (stored === 'light') document.documentElement.classList.add('light');
+        } catch (error) { /* private mode: the dark default is fine */ }
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // The interface is written in one zinc scale. Both themes are that scale, resolved through
+      // variables, so a component never spells out a colour for a particular theme.
+      tailwind.config = {
+        theme: {
+          extend: {
+            // One scale for the whole interface. Four steps carry every label, control and reading
+            // in the UI; the manuscript has its own step because it is set for reading, not for use.
+            // Type scale from IBM Carbon's algorithm (12, 14, 16, 18, 20, 24...), with every line
+            // height snapped to the 4px baseline grid so text aligns across columns. Letter spacing
+            // opens up at small sizes and closes at large ones, as the same system prescribes.
+            fontSize: {
+              xs: ['12px', { lineHeight: '16px', letterSpacing: '0.32px' }],  // meta, counts, helper text
+              sm: ['14px', { lineHeight: '20px', letterSpacing: '0.16px' }],  // labels, secondary text
+              base: ['16px', { lineHeight: '24px', letterSpacing: '0' }],     // controls and body
+              lg: ['20px', { lineHeight: '28px', letterSpacing: '0' }],       // section and panel headings
+              prose: ['20px', { lineHeight: '32px', letterSpacing: '0' }],    // the manuscript
+              xl: ['24px', { lineHeight: '32px', letterSpacing: '0' }],       // wordmark in the studio
+              '2xl': ['28px', { lineHeight: '36px', letterSpacing: '0' }],    // wordmark on the entry screen
+            },
+            colors: {
+              zinc: {
+                50: 'rgb(var(--z-50) / <alpha-value>)',
+                100: 'rgb(var(--z-100) / <alpha-value>)',
+                200: 'rgb(var(--z-200) / <alpha-value>)',
+                300: 'rgb(var(--z-300) / <alpha-value>)',
+                400: 'rgb(var(--z-400) / <alpha-value>)',
+                500: 'rgb(var(--z-500) / <alpha-value>)',
+                600: 'rgb(var(--z-600) / <alpha-value>)',
+                700: 'rgb(var(--z-700) / <alpha-value>)',
+                800: 'rgb(var(--z-800) / <alpha-value>)',
+                900: 'rgb(var(--z-900) / <alpha-value>)',
+                950: 'rgb(var(--z-950) / <alpha-value>)',
+              },
+            },
+          },
+        },
+      };
+    </script>
     <style>
-      body {
-        font-family: 'Inter', sans-serif;
+      :root {
+        --z-50: 250 250 250;  --z-100: 244 244 245; --z-200: 228 228 231;
+        --z-300: 212 212 216; --z-400: 161 161 170; --z-500: 113 113 122;
+        --z-600: 82 82 91;    --z-700: 63 63 70;    --z-800: 39 39 42;
+        --z-900: 24 24 27;    --z-950: 9 9 11;
+        color-scheme: dark;
       }
-      /* For custom scrollbars if needed */
+      /* The same ramp, walked from the other end. */
+      /* One meaningful surface: the sheet the manuscript is written on. Lighter than its ground in
+         either theme, which a single palette step cannot express once the ramp is inverted. */
+      :root { --sheet: 20 20 23; }
+      html.light { --sheet: 255 255 255; }
+      .sheet { background-color: rgb(var(--sheet)); }
+
+      /* Light falling across type, now carrying blue: the highlights stay near-white so the letters
+         keep their contrast, while the body of the sweep runs through a saturated blue. Mirrored for
+         the light theme — dark blue letterforms with pale bands, not the dark version inverted. */
+      :root {
+        --mark-1: 96 116 160;  --mark-2: 255 255 255; --mark-3: 96 165 250;
+        --mark-4: 226 236 252; --mark-5: 96 140 220;
+      }
+      html.light {
+        --mark-1: 71 92 140;  --mark-2: 12 18 38;   --mark-3: 37 99 235;
+        --mark-4: 23 34 62;   --mark-5: 88 118 176;
+      }
+      .wordmark {
+        background-image: linear-gradient(104deg,
+          rgb(var(--mark-1)) 0%, rgb(var(--mark-2)) 24%, rgb(var(--mark-3)) 46%,
+          rgb(var(--mark-4)) 68%, rgb(var(--mark-5)) 100%);
+        background-size: 220% 100%;
+        background-position: 0% 0;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        transition: background-position 900ms ease;
+      }
+      .wordmark:hover { background-position: 100% 0; }
+      @media (prefers-reduced-motion: reduce) {
+        .wordmark { transition: none; }
+        .wordmark:hover { background-position: 0% 0; }
+      }
+
+      html.light {
+        --z-50: 9 9 11;       --z-100: 24 24 27;    --z-200: 39 39 42;
+        --z-300: 63 63 70;    --z-400: 82 82 91;    --z-500: 113 113 122;
+        --z-600: 161 161 170; --z-700: 212 212 216; --z-800: 228 228 231;
+        --z-900: 244 244 245; --z-950: 250 250 250;
+        color-scheme: light;
+      }
+      html, body, #root {
+        height: 100%;
+        min-height: 100%;
+      }
+      /* Form controls do not inherit typography by default, which drops them off the grid. */
+      button, input, select, textarea {
+        font: inherit;
+        letter-spacing: inherit;
+      }
+      body {
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 24px;
+      }
+      /* Custom scrollbars in zinc dark theme */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #1e293b; /* slate-800 */
+        background: rgb(var(--z-950)); /* zinc-950 */
       }
       ::-webkit-scrollbar-thumb {
-        background: #475569; /* slate-600 */
+        background: rgb(var(--z-800)); /* zinc-800 */
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #64748b; /* slate-500 */
+        background: rgb(var(--z-700)); /* zinc-700 */
       }
       /* Fade-in animation */
       @keyframes fadeIn {
@@ -33,20 +142,133 @@
       .animate-fade-in {
         animation: fadeIn 0.5s ease-out forwards;
       }
+      /* Markdown content typography */
+      .markdown-content h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: rgb(var(--z-100));
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid rgb(var(--z-800));
+        font-family: ui-serif, Georgia, Cambria, serif;
+      }
+      .markdown-content h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: rgb(var(--z-100));
+        margin-top: 1.25rem;
+        margin-bottom: 0.5rem;
+        font-family: ui-serif, Georgia, Cambria, serif;
+      }
+      .markdown-content h3 {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: rgb(var(--z-200));
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        font-family: ui-serif, Georgia, Cambria, serif;
+      }
+      .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: rgb(var(--z-300));
+        margin-top: 0.75rem;
+        margin-bottom: 0.25rem;
+      }
+      .markdown-content p {
+        color: rgb(var(--z-300));
+        line-height: 32px;
+        margin-bottom: 16px;
+        text-wrap: pretty;
+      }
+      .markdown-content p:last-child {
+        margin-bottom: 0;
+      }
+      .markdown-content strong {
+        font-weight: 600;
+        color: rgb(var(--z-50));
+      }
+      .markdown-content em {
+        font-style: italic;
+        color: rgb(var(--z-200));
+      }
+      .markdown-content ul {
+        list-style-type: disc;
+        padding-left: 1.25rem;
+        margin-top: 0.5rem;
+        margin-bottom: 0.75rem;
+        color: rgb(var(--z-300));
+      }
+      .markdown-content ol {
+        list-style-type: decimal;
+        padding-left: 1.25rem;
+        margin-top: 0.5rem;
+        margin-bottom: 0.75rem;
+        color: rgb(var(--z-300));
+      }
+      .markdown-content li {
+        margin-bottom: 0.25rem;
+        line-height: 24px;
+      }
+      .markdown-content blockquote {
+        border-left: 3px solid rgb(var(--z-700));
+        padding-left: 1rem;
+        padding-top: 0.25rem;
+        padding-bottom: 0.25rem;
+        margin-top: 0.75rem;
+        margin-bottom: 0.75rem;
+        color: rgb(var(--z-400));
+        background: rgb(var(--z-900) / 0.4);
+        font-style: italic;
+        border-radius: 0 0.25rem 0.25rem 0;
+      }
+      .markdown-content hr {
+        border: 0;
+        border-top: 1px solid rgb(var(--z-800));
+        margin: 1.5rem 0;
+      }
+      .markdown-content code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.85em;
+        background: rgb(var(--z-900));
+        border: 1px solid rgb(var(--z-800));
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.25rem;
+        color: rgb(var(--z-200));
+      }
+      .markdown-content pre {
+        background: rgb(var(--z-950));
+        border: 1px solid rgb(var(--z-800));
+        padding: 0.75rem 1rem;
+        border-radius: 0.375rem;
+        overflow-x: auto;
+        margin: 1rem 0;
+      }
+      .markdown-content pre code {
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+      .markdown-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.875rem;
+      }
+      .markdown-content th, .markdown-content td {
+        border: 1px solid rgb(var(--z-800));
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+      }
+      .markdown-content th {
+        background: rgb(var(--z-900));
+        color: rgb(var(--z-100));
+        font-weight: 600;
+      }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.1.0/",
-    "react": "https://esm.sh/react@^19.1.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.1.0"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
-  <body class="bg-slate-900 text-slate-100">
+  </head>
+  <body class="bg-zinc-950 text-zinc-100">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

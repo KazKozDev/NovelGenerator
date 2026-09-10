@@ -1,19 +1,20 @@
 
 
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
+import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
-import ProgressBar from './components/ProgressBar';
+import ThemeToggle from './components/ThemeToggle';
+import ModelSwitch from './components/ModelSwitch';
 import BookDisplay from './components/BookDisplay';
+import SaveBook from './components/SaveBook';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
-import { Button } from './components/common/Button';
 import ApprovalView from './components/ApprovalView';
-import StreamingContentView from './components/StreamingContentView';
 import AgentActivityLog from './components/AgentActivityLog';
-import FeatureGrid from './components/FeatureGrid';
-import SaveStatusIndicator from './components/SaveStatusIndicator';
+import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
+import { installConsoleBridge, logToTerminal } from './utils/terminalLogger';
 
 const App: React.FC = () => {
   const {
@@ -41,10 +42,14 @@ const App: React.FC = () => {
     isResumable,
     agentLogs,
     lastSavedAt,
+    reviseChapter,
   } = useBookGenerator();
 
-  // Debug logging
-  console.log('🎨 App render - currentStep:', currentStep, 'isLoading:', isLoading);
+  useEffect(() => {
+    installConsoleBridge();
+    logToTerminal('Client interface connected & ready', 'System', 'info');
+  }, []);
+
 
   const handleStartGeneration = () => {
     if (storyPremise && numChapters >= 3) {
@@ -74,40 +79,66 @@ const App: React.FC = () => {
                        currentStep !== GenerationStep.Idle && 
                        currentStep !== GenerationStep.Done &&
                        currentStep !== GenerationStep.Error &&
-                       currentStep !== GenerationStep.WaitingForOutlineApproval;
+                       currentStep !== GenerationStep.WaitingForOutlineApproval &&
+                       currentStep !== GenerationStep.GeneratingOutline;
+
+  const isStudioLayout = showProgress;
+
+  const saveControl = finalBookContent ? (
+    <SaveBook content={finalBookContent} metadata={finalMetadataJson ? JSON.parse(finalMetadataJson) : {}} />
+  ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
+    <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
+  ) : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-sky-900 text-slate-100 flex flex-col items-center p-4 md:p-8 selection:bg-sky-500 selection:text-white">
-      <header className="w-full max-w-4xl mb-8 text-center">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-cyan-300 to-teal-400 py-2">
-            NovelGenerator
-          </h1>
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg animate-pulse">
-            v4.1
-          </span>
+    <div className={`w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
+      {!isStudioLayout && (
+      <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-2xl font-semibold wordmark">
+              NovelGenerator
+            </h1>
+            <span className="font-mono text-xs text-zinc-500">v4.2</span>
+          </div>
+          <div className="flex items-center gap-3">
+          <ThemeToggle />
+          {saveControl}
+          <button
+            type="button"
+            onClick={handleReset}
+            title="Wipe all temporary generation state and start from clean slate"
+            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+          >
+            Clean Slate
+          </button>
+          </div>
         </div>
-        <p className="text-slate-400 mt-2 text-sm md:text-base">
-          Become an author. Before your coffee gets cold. <br />Turn ideas into books. With one prompt.
+        <p className="text-zinc-500 text-xs  text-left">
+          From an approved outline to a reviewed manuscript in your voice.
         </p>
       </header>
+      )}
 
-      <main className="w-full max-w-4xl bg-slate-800 shadow-2xl rounded-lg p-6 md:p-8 animate-fade-in">
+      <main className={`w-full ${isStudioLayout ? 'max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
         {error && (
-          <div className="mb-4 p-4 bg-red-700 border border-red-500 text-white rounded-md">
-            <p className="font-semibold">Error:</p>
-            <p>{error}</p>
+          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
+            <p className="font-semibold mb-1">Error:</p>
+            <p className="whitespace-pre-wrap">{error}</p>
+            {isResumable && <ModelSwitch />}
+            {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry with these models</button>}
+
             <button
               onClick={handleReset}
-              className="mt-2 px-3 py-1 bg-red-500 hover:bg-red-400 rounded text-sm"
+              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
             >
-              Try Again
+              Start a new book
             </button>
           </div>
         )}
 
         {(() => {
-          console.log('🔍 Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
+          console.log('[App] Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
           return currentStep === GenerationStep.Idle && !finalBookContent && !isResumable;
         })() &&(
           <>
@@ -118,35 +149,24 @@ const App: React.FC = () => {
               setNumChapters={setNumChapters}
               genre={storySettings.genre || 'fantasy'}
               setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
+              storySettings={storySettings}
+              setStorySettings={setStorySettings}
               onSubmit={handleStartGeneration}
               isLoading={isLoading}
             />
-            <div className="mt-12 border-t border-slate-700 pt-6">
-              <p className="text-[10px] text-slate-500 mb-4 text-left leading-relaxed">
-                * Time to create: Several minutes to several hours, depending on length. Each chapter receives multiple AI passes for professional quality. Patience creates perfection.
-              </p>
-              <p className="text-[10px] text-slate-500 mb-2 text-left">** Technical Process:</p>
-              <div className="text-[10px] text-slate-500 leading-relaxed text-left space-y-1">
-                <p>Specialist Coordination: Three LLM agents (Structure, Character, Scene) work sequentially, each receiving full context and previous outputs.</p>
-                <p>Slot-Based Architecture: Structure agent creates prose framework with embedded slots, specialists fill them with dialogue, action, descriptions.</p>
-                <p>Real-Time Validation: Automatic checks for repetition patterns, tone consistency, content balance during generation.</p>
-                <p>Persistent Context: Story Context Database tracks character states, plot threads, world facts across all chapters for coherence.</p>
-                <p>Synthesis Integration: Advanced merging engine resolves conflicts, generates transitions, performs slot replacement with fallback handling.</p>
-                <p>Multi-Pass Refinement: Light polish → repetition fixes → continuity checks → professional polish for publication-ready quality.</p>
-              </div>
-            </div>
+
           </>
         )}
         
         {(() => {
           const shouldShow = currentStep === GenerationStep.GeneratingOutline;
-          console.log('🔍 Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
+          console.log('[App] Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
           return shouldShow;
         })() && (
           <div className="text-center py-12">
             <LoadingSpinner />
-            <p className="mt-4 text-sky-300 text-lg">Generating story outline...</p>
-            <p className="mt-2 text-slate-400 text-sm">This may take 10-30 seconds</p>
+            <p className="mt-4 text-zinc-300 text-sm font-medium">Generating story outline...</p>
+            <p className="mt-1 text-zinc-500 text-xs">Formulating narrative arc and chapter milestones</p>
           </div>
         )}
 
@@ -163,69 +183,22 @@ const App: React.FC = () => {
 
 
         {showProgress && (
-           <div className="text-center">
-            {isLoading && <LoadingSpinner />}
-            
-            {isResumable && !isLoading && (
-              <div className="my-6 p-4 border border-sky-700 bg-sky-900/30 rounded-md">
-                  <p className="text-lg text-sky-300 mb-4">You have a book in progress.</p>
-                  <Button onClick={handleStartGeneration} variant="primary">
-                      Resume Generation
-                  </Button>
-              </div>
-            )}
-            
-            <ProgressBar
-              currentStep={currentStep}
-              currentChapterProcessing={currentChapterProcessing}
-              totalChaptersToProcess={totalChaptersToProcess}
-            />
-            
-            {/* Save status indicator */}
-            {generatedChapters.length > 0 && (
-              <SaveStatusIndicator 
-                generatedChapters={generatedChapters}
-                savedAt={lastSavedAt}
-              />
-            )}
-            
-            {currentStep === GenerationStep.GeneratingChapters && generatedChapters.length > 0 && currentChapterProcessing > 0 ? (
-                <StreamingContentView
-                    title={`Writing Chapter ${currentChapterProcessing}: ${generatedChapters[currentChapterProcessing - 1]?.title || '...'}`}
-                    content={generatedChapters[currentChapterProcessing - 1]?.content || ''}
-                />
-            ) : (
-              <>
-                {currentStoryOutline && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Story Outline (In Progress):</h3>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300">{currentStoryOutline.slice(0,1000)}...</pre>
-                  </div>
-                )}
-                {currentChapterPlan && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Chapter Plan (In Progress):</h3>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300">{currentChapterPlan.slice(0,1000)}...</pre>
-                  </div>
-                )}
-                {generatedChapters.length > 0 && (
-                  <div className="mt-4 p-4 bg-slate-700 rounded-md max-h-60 overflow-y-auto text-left">
-                    <h3 className="font-semibold mb-2 text-sky-400">Generated Chapters Progress:</h3>
-                    <ul className="list-disc list-inside text-sm text-slate-300">
-                      {generatedChapters.map((ch, idx) => (
-                        <li key={idx}>Chapter {idx + 1}: {ch.title || `Generating...`} ({(ch.content?.length || 0) > 0 ? 'Content generated' : 'Pending'})</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Agent Activity Log */}
-            {agentLogs.length > 0 && (
-              <AgentActivityLog logs={agentLogs} />
-            )}
-          </div>
+          <ThreeZoneGenerationView
+            currentStep={currentStep}
+            currentChapterProcessing={currentChapterProcessing}
+            totalChaptersToProcess={totalChaptersToProcess}
+            currentStoryOutline={currentStoryOutline}
+            currentChapterPlan={currentChapterPlan}
+            generatedChapters={generatedChapters}
+            agentLogs={agentLogs}
+            lastSavedAt={lastSavedAt}
+            isResumable={isResumable}
+            isLoading={isLoading}
+            onResumeGeneration={handleStartGeneration}
+            headerActions={saveControl}
+            version="v4.2"
+            onReset={handleReset}
+          />
         )}
 
 
@@ -243,16 +216,17 @@ const App: React.FC = () => {
             )}
           </>
         )}
+        {!isLoading && generatedChapters.length > 0 && <div className="shrink-0 max-h-[60vh] overflow-auto"><ManuscriptRevision chapters={generatedChapters} onRevise={reviseChapter} /></div>}
       </main>
-      <footer className="w-full max-w-4xl mt-8">
-        <div className="text-center text-slate-500 text-[10px]">
+      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
+        <div className="text-center text-zinc-500 text-xs">
           <p>
             &copy; {new Date().getFullYear()}{' '}
             <a 
               href="https://github.com/KazKozDev" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-sky-400 hover:text-sky-300 transition-colors duration-200 underline decoration-dotted"
+              className="text-zinc-400 hover:text-zinc-300 transition-colors duration-200 underline decoration-dotted"
             >
               KazKozDev
             </a>

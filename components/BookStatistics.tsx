@@ -62,33 +62,33 @@ const BookStatistics: React.FC<BookStatisticsProps> = ({ bookContent, metadata }
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {/* Total Words */}
-      <div className="bg-gradient-to-br from-slate-700 to-slate-800 border border-sky-500/30 p-4 rounded-lg shadow-lg hover:border-sky-500/50 transition-colors">
-        <div className="text-sky-300 text-sm font-medium mb-1">Total Words</div>
-        <div className="text-white text-3xl font-bold">{stats.totalWords.toLocaleString()}</div>
-        <div className="text-slate-400 text-xs mt-1">{stats.characters.toLocaleString()} characters</div>
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded">
+        <div className="text-zinc-400 text-xs uppercase mb-1">Total Words</div>
+        <div className="text-zinc-100 text-lg font-semibold">{stats.totalWords.toLocaleString()}</div>
+        <div className="text-zinc-500 text-xs mt-1">{stats.characters.toLocaleString()} characters</div>
       </div>
 
       {/* Reading Time */}
-      <div className="bg-gradient-to-br from-slate-700 to-slate-800 border border-sky-500/30 p-4 rounded-lg shadow-lg hover:border-sky-500/50 transition-colors">
-        <div className="text-sky-300 text-sm font-medium mb-1">Reading Time</div>
-        <div className="text-white text-3xl font-bold">{formatReadingTime(stats.readingTimeMinutes)}</div>
-        <div className="text-slate-400 text-xs mt-1">~200 words/min</div>
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded">
+        <div className="text-zinc-400 text-xs uppercase mb-1">Reading Time</div>
+        <div className="text-zinc-100 text-lg font-semibold">{formatReadingTime(stats.readingTimeMinutes)}</div>
+        <div className="text-zinc-500 text-xs mt-1">~200 words/min</div>
       </div>
 
       {/* Chapters */}
-      <div className="bg-gradient-to-br from-slate-700 to-slate-800 border border-sky-500/30 p-4 rounded-lg shadow-lg hover:border-sky-500/50 transition-colors">
-        <div className="text-sky-300 text-sm font-medium mb-1">Chapters</div>
-        <div className="text-white text-3xl font-bold">{stats.chapterCount}</div>
-        <div className="text-slate-400 text-xs mt-1">{stats.avgWordsPerChapter.toLocaleString()} words avg</div>
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded">
+        <div className="text-zinc-400 text-xs uppercase mb-1">Chapters</div>
+        <div className="text-zinc-100 text-lg font-semibold">{stats.chapterCount}</div>
+        <div className="text-zinc-500 text-xs mt-1">{stats.avgWordsPerChapter.toLocaleString()} words avg</div>
       </div>
 
       {/* Dialogue Ratio */}
-      <div className="bg-gradient-to-br from-slate-700 to-slate-800 border border-sky-500/30 p-4 rounded-lg shadow-lg hover:border-sky-500/50 transition-colors">
-        <div className="text-sky-300 text-sm font-medium mb-1">Dialogue</div>
-        <div className="text-white text-3xl font-bold">{stats.dialogueRatio}%</div>
-        <div className="text-slate-400 text-xs mt-1">of content</div>
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded">
+        <div className="text-zinc-400 text-xs uppercase mb-1">Dialogue</div>
+        <div className="text-zinc-100 text-lg font-semibold">{stats.dialogueRatio}%</div>
+        <div className="text-zinc-500 text-xs mt-1">of content</div>
       </div>
     </div>
   );

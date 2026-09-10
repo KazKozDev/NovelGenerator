@@ -3,7 +3,7 @@
  * Specialized agents for different aspects of chapter generation
  */
 
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { ParsedChapterPlan } from '../types';
 import { StructureContext, CharacterContext, SceneContext, CoherenceConstraints } from './coherenceManager';
 import { getFormattedPrompt, PromptNames, formatPrompt } from './promptLoader';
@@ -66,7 +66,9 @@ export class StructureAgent {
       undefined, // No JSON schema needed for structure
       0.7, // Higher creativity for structure
       0.9,
-      40
+      40,
+      undefined,
+      2500 // Cap structure tokens to ~2500 for fast, focused skeleton
     );
 
     const output = this.parseStructureOutput(structureContent, input);
@@ -90,6 +92,7 @@ CRITICAL OUTPUT REQUIREMENTS:
 4. DO NOT use intensity markings like "*Intensity: 5/10*"
 5. DO NOT write "Here is the framework" or similar introductions
 6. START IMMEDIATELY with narrative prose
+7. LENGTH: Keep output concise and focused (approx. 800 to 1,500 words total). Do NOT generate endless repetitive narrative.
 
 MANDATORY EXAMPLES OF CORRECT OUTPUT:
 ✅ CORRECT: "Delilah stepped into the hotel lobby. [DESCRIPTION_LOBBY_ATMOSPHERE] The receptionist's smile was too wide. [DIALOGUE_RECEPTIONIST_GREETING] Something cold settled in her stomach. [INTERNAL_DELILAH_UNEASE] Before she could turn to leave, footsteps echoed behind her. [ACTION_APPROACH]"
@@ -300,10 +303,16 @@ Chapter Ending: ${plan.chapterEnding || 'Not specified'}`;
   }
 
   private extractSlots(content: string): StructureAgentOutput['slots'] {
-    const dialogueSlots = (content.match(/\[DIALOGUE_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const actionSlots = (content.match(/\[ACTION_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const internalSlots = (content.match(/\[INTERNAL_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
-    const descriptionSlots = (content.match(/\[DESCRIPTION_[^\]]+\]/g) || []).map(s => s.slice(1, -1));
+    const cleanSlotTag = (s: string) => {
+      const inner = s.slice(1, -1).trim();
+      const match = inner.match(/^([A-Za-z0-9_]+)/);
+      return match ? match[1] : inner;
+    };
+
+    const dialogueSlots = (content.match(/\[DIALOGUE_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const actionSlots = (content.match(/\[ACTION_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const internalSlots = (content.match(/\[INTERNAL_[^\]]+\]/gi) || []).map(cleanSlotTag);
+    const descriptionSlots = (content.match(/\[DESCRIPTION_[^\]]+\]/gi) || []).map(cleanSlotTag);
 
     return {
       dialogueSlots,
@@ -370,7 +379,9 @@ export class CharacterAgent {
       undefined,
       0.8, // High creativity for character content
       0.9,
-      40
+      40,
+      undefined,
+      3000 // Cap character tokens to ~3000
     );
 
     const output = this.parseCharacterOutput(characterContent, input);
@@ -535,6 +546,7 @@ DO NOT:
 - Use numbered lists
 - Use markdown headers
 - Embed slots in narrative prose
+- Generate endless full chapters (keep each slot concise: 40-120 words per slot, total output under 2,000 words)
 
 DO:
 - Start each slot with [SLOT_NAME]: immediately followed by content
@@ -908,7 +920,9 @@ export class SceneAgent {
       undefined,
       0.8, // High creativity for atmospheric content
       0.9,
-      40
+      40,
+      undefined,
+      3000 // Cap scene tokens to ~3000
     );
 
     const output = this.parseSceneOutput(sceneContent, input);
@@ -1068,6 +1082,7 @@ DO NOT:
 - Use numbered lists
 - Use markdown headers
 - Embed slots in narrative prose
+- Generate endless full chapters (keep each slot concise and vivid: 50-120 words per slot, total output under 2,000 words)
 
 DO:
 - Start each slot with [SLOT_NAME]: immediately followed by content

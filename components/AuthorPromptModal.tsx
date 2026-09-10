@@ -24,14 +24,14 @@ const AuthorPromptModal: React.FC<AuthorPromptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-50 p-4 pt-20 overflow-y-auto">
-      <div className="bg-slate-800 rounded-lg shadow-2xl max-w-md w-full border border-sky-500/30 animate-fade-in">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-50 p-4 pt-20 overflow-y-auto">
+      <div className="bg-zinc-900 rounded shadow-2xl max-w-md w-full border border-zinc-800">
         <form onSubmit={handleSubmit}>
           <div className="p-6">
-            <h3 className="text-xl font-semibold text-sky-400 mb-4">
+            <h3 className="text-base font-semibold text-zinc-100 mb-2">
               Enter Author Name
             </h3>
-            <p className="text-slate-300 text-sm mb-4">
+            <p className="text-zinc-400 text-xs mb-4">
               This will be included in the EPUB metadata.
             </p>
             <input
@@ -39,11 +39,11 @@ const AuthorPromptModal: React.FC<AuthorPromptModalProps> = ({
               value={authorName}
               onChange={(e) => setAuthorName(e.target.value)}
               placeholder="e.g., John Smith"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-md text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
               autoFocus
             />
           </div>
-          <div className="flex justify-end gap-3 p-4 bg-slate-900/50 rounded-b-lg">
+          <div className="flex justify-end gap-3 p-4 bg-zinc-950/60 border-t border-zinc-800/80 rounded-b">
             <Button
               type="button"
               onClick={onCancel}

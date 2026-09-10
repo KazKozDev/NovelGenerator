@@ -317,7 +317,7 @@ export class StoryContextDatabase {
     };
   }
 
-  private isFactEstablished(fact: string): boolean {
+  public isFactEstablished(fact: string): boolean {
     return this.readerKnowledge.establishedFacts.some(f => f.fact === fact);
   }
 
@@ -373,9 +373,11 @@ export class StoryContextDatabase {
   private extractInternalWords(text: string): number {
     // Extract words from internal monologue sections
     const internalSections = text.match(/\[INTERNAL[^\]]*\]([^[]*)/g) || [];
-    return internalSections.reduce((total, section) =>
-      total + this.countWords(section), 0
-    );
+    let total = 0;
+    for (const section of internalSections) {
+      total += this.countWords(section);
+    }
+    return total;
   }
 
   private countSensoryDetails(text: string): number {
@@ -447,6 +449,19 @@ export class StoryContextDatabase {
 
   addForeshadowingHint(hint: ForeshadowingHint): void {
     this.foreshadowingHints.set(hint.id, hint);
+  }
+
+  resetDatabase(): void {
+    this.readerKnowledge = {
+      establishedFacts: [],
+      receivedHints: [],
+      currentExpectations: [],
+      unansweredQuestions: []
+    };
+    this.characterKnowledge = new Map();
+    this.plannedRevelations = new Map();
+    this.foreshadowingHints = new Map();
+    this.currentChapterState = this.initializeChapterState(1);
   }
 }
 

@@ -30,6 +30,14 @@ export interface ChapterData {
   timelineEntry?: string; // Raw text from LLM for timeline
   emotionalArcEntry?: string; // Raw text from LLM for emotional arc
   plan?: string; // Individual chapter plan
+  /** Measured prose texture of the shown revision, and what the measurements said about it. */
+  texture?: {
+    dialogueShare: number;
+    medianParagraphWords: number;
+    similesPer1000?: number;
+    taggedSpeechShare?: number;
+    findings: { id: string; description: string }[];
+  };
   // Extended analysis metrics
   pacingScore?: number; // 1-10
   dialogueRatio?: number; // 0-100%
@@ -59,7 +67,7 @@ export enum GenerationStep {
   GeneratingChapters = "Generating Chapters...",
   FinalEditingPass = "Final Editing Pass - Polishing All Chapters...",
   ProfessionalPolish = "Professional Polish - Final Refinement...",
-  FinalizingTransitions = "Finalizing Chapter Transitions & Openings...",
+  FinalizingTransitions = "Final Book Review...",
   CompilingBook = "Compiling Final Book...",
   Done = "Book Generation Complete!",
   Error = "An Error Occurred"
@@ -73,6 +81,9 @@ export interface DetailedScene {
   objective: string; // What the scene is trying to accomplish
   conflict: string; // Main tension or obstacle in the scene
   outcome: string; // How the scene resolves
+  narrativeWeight?: number; // Relative page space (1–5), not elapsed story time
+  /** How the scene's conflict reaches the page. 'speech' obliges the prose to dramatize it in direct speech. */
+  conflictCarriedBy?: 'speech' | 'action' | 'solitude';
   duration: string; // Estimated time span (e.g., "10 minutes", "several hours")
   mood: string; // Emotional atmosphere of the scene
   keyMoments: string[]; // Specific beats or events within the scene
@@ -181,13 +192,20 @@ export interface EmotionalArcEntry {
   unresolvedHook: string;
 }
 
+export type GenerationSpeedMode = 'fast' | 'thorough';
+
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
+  language?: string;
+  tense?: 'past' | 'present';
+  ending?: 'closed' | 'open' | 'series';
+  targetWordsPerChapter?: number;
   genre?: string;
   narrativeVoice?: string;
   tone?: string;
   targetAudience?: string;
   writingStyle?: string;
+  generationSpeedMode?: GenerationSpeedMode;
 }
 
 // Agent activity log for UI display
@@ -201,4 +219,18 @@ export interface AgentLogEntry {
   beforeText?: string;
   afterText?: string;
   strategy?: string;
+}
+
+export type LLMProviderType = 'gemini' | 'ollama';
+
+export interface LLMProviderConfig {
+  provider: LLMProviderType;
+  ollamaEndpoint: string;
+  ollamaModel: string;
+  /**
+   * Reasoning models judge poorly with thinking off and answer trivially instead. Ollama returns
+   * their reasoning in a separate field, so enabling it here never reaches the manuscript.
+   * Configured per role: enable it for a validator, never for the prose writer.
+   */
+  think?: boolean;
 }

@@ -187,8 +187,19 @@ export const GENRE_CONFIGS: Record<string, GenreConfig> = {
   }
 };
 
+/** Authors write "psychological thriller", not "thriller"; a qualifier must not lose the genre. */
+export function resolveGenreKey(genre: string): string | undefined {
+  const wanted = genre.trim().toLowerCase();
+  if (!wanted) return undefined;
+  if (GENRE_CONFIGS[wanted]) return wanted;
+  return Object.keys(GENRE_CONFIGS)
+    .filter(key => new RegExp(`\\b${key}\\b`).test(wanted))
+    .sort((first, second) => second.length - first.length)[0];
+}
+
 export function getGenreGuidelines(genre: string): string {
-  const config = GENRE_CONFIGS[genre.toLowerCase()];
+  const key = resolveGenreKey(genre);
+  const config = key ? GENRE_CONFIGS[key] : undefined;
   if (!config) {
     return ""; // Return empty string for unknown genres, use default guidelines
   }
@@ -211,6 +222,7 @@ export function getGenreList(): string[] {
 }
 
 export function getGenreDescription(genre: string): string {
-  const config = GENRE_CONFIGS[genre.toLowerCase()];
+  const key = resolveGenreKey(genre);
+  const config = key ? GENRE_CONFIGS[key] : undefined;
   return config ? config.description : "General fiction";
 }

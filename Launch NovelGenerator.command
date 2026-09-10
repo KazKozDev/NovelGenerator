@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# NovelGenerator v4.0 Launcher
+# NovelGenerator v4.2 Launcher
 # Double-click this file to start the application
 
 # Change to the script's directory
@@ -25,17 +25,26 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+DIM='\033[2m'
 NC='\033[0m'
 
 clear
 
-echo -e "${CYAN}"
-echo "╔════════════════════════════════════════╗"
-echo "║                                        ║"
-echo "║     NovelGenerator v4.0 Launcher       ║"
-echo "║                                        ║"
-echo "╚════════════════════════════════════════╝"
-echo -e "${NC}"
+printf "%b" "${WHITE}"
+cat <<'LOGO'
+█▄  █ ▄▀▀▀▄ █   █ █▀▀▀▀ █
+█▀▄ █ █   █ █   █ █▄▄▄  █
+█  ██ █   █ ▀▄ ▄▀ █     █
+▀   ▀  ▀▀▀    ▀   ▀▀▀▀▀ ▀▀▀▀▀
+
+▄▀▀▀▄ █▀▀▀▀ █▄  █ █▀▀▀▀ █▀▀▀▄ ▄▀▀▀▄ ▀▀█▀▀ ▄▀▀▀▄ █▀▀▀▄
+█ ▄▄▄ █▄▄▄  █▀▄ █ █▄▄▄  █▄▄▄▀ █▄▄▄█   █   █   █ █▄▄▄▀
+█   █ █     █  ██ █     █ ▀▄  █   █   █   █   █ █ ▀▄
+ ▀▀▀▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀   ▀   ▀    ▀▀▀  ▀   ▀
+LOGO
+printf "%b" "${NC}"
+echo -e "${DIM}  v4.2 · premise in, reviewed manuscript out${NC}"
 echo ""
 
 # Check if npm is installed
@@ -86,7 +95,7 @@ LOG_FILE="/tmp/novelgenerator-vite.log"
 
 # Start the development server using direct node call
 # We need to use the vite JS file directly, not the shell wrapper
-/usr/local/bin/node node_modules/vite/bin/vite.js > "$LOG_FILE" 2>&1 &
+"$NODE_BIN" node_modules/vite/bin/vite.js > "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -131,12 +140,30 @@ echo ""
 echo -e "${YELLOW}💡 Tips:${NC}"
 echo -e "   • The browser should open automatically"
 echo -e "   • If not, open: ${BLUE}$SERVER_URL${NC}"
+echo -e "   • Keep this window open to monitor real-time agent & generation logs"
 echo -e "   • Press ${RED}Ctrl+C${NC} to stop the server"
-echo -e "   • You can close this window after the browser opens"
-echo -e "   • Log file: ${BLUE}$LOG_FILE${NC}"
+echo -e "   • Full log saved to: ${BLUE}$LOG_FILE${NC}"
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════${NC}"
+echo -e "${CYAN}  Live Activity Log (Real-time Stream)${NC}"
+echo -e "${GRAY}  Time     │ Level   │ Agent              Message${NC}"
+echo -e "${CYAN}───────────────────────────────────────${NC}"
 echo ""
+
+# Stream logs in real-time to this terminal window
+tail -n 0 -f "$LOG_FILE" &
+TAIL_PID=$!
+
+# Clean up processes on exit or Ctrl+C
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}Stopping NovelGenerator server...${NC}"
+    kill $SERVER_PID 2>/dev/null
+    kill $TAIL_PID 2>/dev/null
+    exit 0
+}
+trap cleanup INT TERM EXIT
 
 # Keep the server running
 wait $SERVER_PID
+

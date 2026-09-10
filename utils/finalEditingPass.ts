@@ -3,7 +3,7 @@
  * This runs after all chapters are generated and individually edited
  */
 
-import { generateGeminiText } from '../services/geminiService';
+import { generateText as generateGeminiText } from '../services/llmService';
 import { ParsedChapterPlan, AgentLogEntry, ChapterData } from '../types';
 import { agentEditChapter, EditingContext } from './editingAgent';
 
