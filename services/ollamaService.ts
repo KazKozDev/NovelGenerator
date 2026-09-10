@@ -191,7 +191,18 @@ export async function generateOllamaTextStream(
   return text;
 }
 
-export const DEFAULT_OLLAMA_EMBEDDING_MODEL = 'qwen3-embedding:4b';
+/**
+ * The embedder stopped deciding when the cross-encoder arrived: it now nominates one earlier passage
+ * per paragraph and a reader judges the pair, so the question asked of it is only whether the right
+ * passage is the nearest one. Measured on the 525 cross-chapter pairs in runs/, the 0.6B model
+ * nominates the same passage as the 4B for six of the seven known repetitions and costs 6.0s per 96
+ * paragraphs against 32.8s — a chapter late in a book goes from about seventy seconds to thirteen.
+ *
+ * The seventh is a real loss: it nominates the wrong neighbour for a sentence copied whole out of the
+ * first chapter, and the reader then sees an unrelated pair. That one is already caught word for word
+ * by copiedFromEarlier, which is why the trade is worth taking rather than merely cheap.
+ */
+export const DEFAULT_OLLAMA_EMBEDDING_MODEL = 'qwen3-embedding:0.6b';
 
 /**
  * Embeddings for measured prose checks. Batched in one request; a short or ragged response is an

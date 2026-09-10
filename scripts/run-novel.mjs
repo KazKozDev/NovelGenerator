@@ -100,7 +100,7 @@ try {
   };
 
   // Report mode: measured prose texture is logged, never blocks a chapter.
-  const embeddingModel = arg('embed') ?? 'qwen3-embedding:4b';
+  const embeddingModel = arg('embed') ?? 'qwen3-embedding:0.6b';
   const embed = embeddingModel === 'off' ? undefined
     : async inputs => embedOllama(inputs, embeddingModel, writer.ollamaEndpoint);
   // The cross-encoder decides what the cosine only nominates. Its weights are a ~600MB download on
