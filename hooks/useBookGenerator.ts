@@ -34,12 +34,18 @@ function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>;
   // have to score every paragraph against every earlier one.
   if (config.provider !== 'ollama') return {};
   const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
-  // The cross-encoder runs in a worker, but it is still a 600MB download and a second of CPU per pair
-  // on the reader's own machine. Setting this key to "off" leaves the cosine deciding alone, which is
-  // what the check did before the cross-encoder existed.
+  // Off in the browser unless asked for, and this is measured rather than cautious: onnxruntime-web
+  // executes on the thread that calls it, and asking it to proxy into a worker did not move it. Timed
+  // in the running application, two pairs held the main thread for 706ms and the first call — the
+  // 600MB download and the model's first pass — for 35 seconds, during which a 50ms timer fired six
+  // times instead of seven hundred. A chapter asks about forty pairs. That is the interface stopped.
+  //
+  // The CLI keeps it on: onnxruntime-node runs natively and there is no interface to freeze. In the
+  // browser the cosine decides alone, as it did before the cross-encoder existed, until this key says
+  // otherwise.
   try {
-    if (localStorage.getItem(RERANK_STORAGE_KEY) === 'off') return { embed };
-  } catch { /* a browser that refuses storage is a browser with the default */ }
+    if (localStorage.getItem(RERANK_STORAGE_KEY) !== 'on') return { embed };
+  } catch { return { embed }; }
   return { embed, rerank: sharedReranker() };
 }
 
