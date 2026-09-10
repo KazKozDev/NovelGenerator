@@ -10,6 +10,7 @@ import { compileBook } from '../utils/novel/presentation';
 import { sceneWordTargets } from '../utils/novel/proseCraft';
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { literaryStillHolds } from '../utils/novel/literaryState';
+import { ledgerForPlanning } from '../utils/novel/literary';
 
 function setup() {
   const run = createRun(createBookSpec('A family chooses whether to disclose a letter.', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaModel: 'test', ollamaEndpoint: 'http://localhost:11434' });
@@ -159,6 +160,15 @@ describe('Versioned literary architecture', () => {
     const grown = addCandidate(run.chapters[0], `${first.content} ${Array.from({ length: 20 }, (_, i) => `Новая сцена, часть ${i}.`).join(' ')}`, 'grown');
     expect(grown.content).toContain(first.literary!.observations[0].evidence[0].quote);
     expect(literaryStillHolds(first, grown, 1)).toBe(false);
+  });
+
+  it('plans against what earlier chapters established, not against their full text', () => {
+    const long = 'x'.repeat(1800);
+    const ledger = ledgerForPlanning([{ chapter: 1, observations: [{ kind: 'ending', subject: 's', before: 'b', after: 'a', mechanism: 'm', evidence: [{ chapter: 1, revision: 1, quote: `The keeper opened the piano at last. ${long}` }] }] }] as never);
+    const rendered = JSON.stringify(ledger);
+    // The move is recognised by what it was; the 1800 characters that prove it stay in the record.
+    expect(rendered).toContain('The keeper opened the piano at last');
+    expect(rendered.length).toBeLessThan(900);
   });
 
   it('redraws a literary gate that cannot cite its evidence, instead of ending the run', async () => {

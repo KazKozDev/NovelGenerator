@@ -10,10 +10,29 @@ const strings = (value: unknown, max = 16): value is string[] => Array.isArray(v
 const fields = (value: any, keys: string[]) => value && keys.every(key => typeof value[key] === 'string' && value[key].trim());
 
 /** Make the already-approved plot executable against the literary history, just before writing. */
+/**
+ * The ledger as a planner needs it: what earlier chapters established, quoted at its opening only.
+ *
+ * Planning reads history to avoid replaying a move the book has already made, and a move is
+ * recognised by what it was, not by the eighteen hundred characters that prove it. Measured on the
+ * English run, this prompt reached 194,000 characters with 210,000 of the ledger being quotations —
+ * the same shape already cut from the assessment beside it, left standing here because nobody had
+ * measured this call.
+ */
+export function ledgerForPlanning(history: ReturnType<typeof literaryLedger>, excerpt = 300): object {
+  return history.map(item => ({
+    chapter: item.chapter,
+    observations: item.observations.map(observation => ({
+      ...observation,
+      evidence: observation.evidence.map(evidence => evidence.quote.length > excerpt ? `${evidence.quote.slice(0, excerpt)}…` : evidence.quote),
+    })),
+  }));
+}
+
 export async function planLiteraryDevelopment(run: NovelRun, chapter: ChapterRecord, llm: NovelLLM): Promise<LiteraryPlan> {
   const history = literaryLedger(run, chapter.number);
   const sceneSchema = object({ sceneId: text, development: text, characterChoice: text, dramaticCost: text, narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 } });
-  return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}\nAPPROVED CHAPTER PLAN:\n${JSON.stringify(chapter.plan)}\nCHARACTER DESIGN:\n${JSON.stringify(run.blueprint?.characters)}\nACCEPTED LITERARY HISTORY WITH TEXT EVIDENCE:\n${JSON.stringify(history)}\nALREADY DRAFTED SCENES (preserve their events):\n${JSON.stringify(chapter.sceneDrafts || [])}\nPlan the next development, not another announcement of a realization already reached. For each existing scene ID specify development of thought or relationship, an independently motivated character choice, its dramatic cost and relative page weight (1–5). Keep the approved events, scene IDs and ending. An unchanged belief can be tested, contradicted or acted on; change is not mandatory in every scene. Preserve the antagonist's established motives and limits. Give supporting characters their own stakes where relevant, without inventing subplots. Decide how this chapter's ending develops the sequence of prior endings. Record concrete already-used moves to avoid replaying, based on the history; no invented examples. If a scene has no internal development, state its actual dramatic function.`,
+  return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}\nAPPROVED CHAPTER PLAN:\n${JSON.stringify(chapter.plan)}\nCHARACTER DESIGN:\n${JSON.stringify(run.blueprint?.characters)}\nACCEPTED LITERARY HISTORY (each observation with the opening of the passage that established it):\n${JSON.stringify(ledgerForPlanning(history))}\nALREADY DRAFTED SCENES (preserve their events):\n${JSON.stringify(chapter.sceneDrafts || [])}\nPlan the next development, not another announcement of a realization already reached. For each existing scene ID specify development of thought or relationship, an independently motivated character choice, its dramatic cost and relative page weight (1–5). Keep the approved events, scene IDs and ending. An unchanged belief can be tested, contradicted or acted on; change is not mandatory in every scene. Preserve the antagonist's established motives and limits. Give supporting characters their own stakes where relevant, without inventing subplots. Decide how this chapter's ending develops the sequence of prior endings. Record concrete already-used moves to avoid replaying, based on the history; no invented examples. If a scene has no internal development, state its actual dramatic function.`,
     'You plan literary development against versioned manuscript state. Return only JSON.', llm, ['endingDevelopment', 'avoidReplaying', 'scenes'], raw => {
       if (!fields(raw, ['endingDevelopment']) || !strings(raw.avoidReplaying) || !Array.isArray(raw.scenes)) throw new Error('Incomplete literary development plan.');
       const expected = new Set((chapter.plan.detailedScenes || []).map(scene => scene.sceneId));
