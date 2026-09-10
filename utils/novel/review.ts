@@ -603,7 +603,24 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const earlier = run.chapters.filter(item => item.number < chapter.number)
       .map(item => ({ item, accepted: acceptedVersion(item) }))
       .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...mergeFindings(demoteSuggestions(demoteHedgedKnowledge(demoteKnownCanon(report.issues, canonBefore(run, chapter.number)))))];
+    // What each filter settled, and on what ground. A question this chapter has already answered
+    // should not be put to it again by the next reader, and a wish set aside is not a wish thrown
+    // away: it goes to the line edit, where wishes belong.
+    const canon = canonBefore(run, chapter.number);
+    const afterCanon = demoteKnownCanon(report.issues, canon);
+    const afterHedges = demoteHedgedKnowledge(afterCanon);
+    const afterWishes = demoteSuggestions(afterHedges);
+    const settled: NonNullable<ReviewReport['settled']> = [];
+    report.issues.forEach((raw, index) => {
+      const reason = afterCanon[index].severity !== raw.severity ? 'the canon already records this, and records the character as knowing it'
+        : afterHedges[index].severity !== raw.severity ? 'the passage it cites hedges itself, so it is a guess and not a leak'
+        : afterWishes[index].severity !== raw.severity ? 'written as a wish rather than a defect' : '';
+      if (reason) settled.push({ id: raw.id, category: raw.category, description: raw.description, reason });
+    });
+    const chapterSettled = chapter.settled || [];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []),
+      ...mergeFindings(afterWishes).map(issue => issue.severity !== 'minor' && chapterSettled.some(earlierSettled => sameFinding({ ...issue, ...earlierSettled }, issue))
+        ? { ...issue, severity: 'minor' as const } : issue)];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
@@ -639,7 +656,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     });
     // A report whose only findings were unverifiable is not a clean chapter; never pass it silently.
     if (!issues.length && report.discarded) return { validationVersion: 2, status: 'not_checked', checkedRevision: version.revision, issues: [], error: `The review cited ${report.discarded} passage(s) that do not appear in this revision.` };
-    return { validationVersion: 2, status: issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed', checkedRevision: version.revision, issues };
+    return { validationVersion: 2, status: issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed', checkedRevision: version.revision, issues, settled };
   } catch (error) {
     return { validationVersion: 2, status: 'not_checked', checkedRevision: version.revision, issues: [], error: String(error) };
   }

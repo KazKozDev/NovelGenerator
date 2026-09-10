@@ -76,7 +76,10 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
       objective: raw.objective || raw.goal, conflict: raw.conflict || raw.obstacle,
       outcome: raw.outcome || raw.result, participants: raw.participants || raw.characters,
       keyMoments: raw.keyMoments || raw.key_moments || raw.beats };
-    for (const field of ['sceneId', 'location', 'objective', 'conflict', 'outcome', 'duration', 'mood']) {
+    // duration and mood are not required: a scene is checked on its goal, its resistance and its
+    // outcome, and nothing in the engine reads how long it lasts or what mood it is in. A field a
+    // planner must invent and no reader consults is the appearance of thoroughness, not thoroughness.
+    for (const field of ['sceneId', 'location', 'objective', 'conflict', 'outcome']) {
       if (typeof scene[field] !== 'string' || !scene[field].trim()) throw new Error(`Scene missing ${field}.`);
     }
     // A scene may legitimately have no one in it — a room after everyone has gone, the closing image
@@ -114,7 +117,7 @@ export const chapterPlanSchema = {
   properties: {
     ...Object.fromEntries(planStrings.map(field => [field, text])),
     tensionLevel: { type: 'integer' },
-    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'duration', 'mood', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
+    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
   }, additionalProperties: false,
 };
 
@@ -290,7 +293,7 @@ export class NovelEngine {
       await this.checkpoint(run);
     }
     for (let number = run.chapters.length + 1; number <= run.spec.chapterCount; number++) {
-      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND PREVIOUS CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[names],objective,conflict,outcome,duration,mood,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude"}]. Set conflictCarriedBy to how the scene's conflict actually reaches the reader: "speech" when two or more characters press their opposing aims on each other in conversation, "action" when the decisive pressure is physical, "solitude" when the character faces it alone. A scene with several present characters whose interests differ is normally carried by speech; a novel in which no scene is carried by speech is a novel without dialogue. Allocate narrativeWeight by dramatic importance: brief connective scenes get less space than the decisive confrontation, its reversals and cost. These weights divide the chapter word budget; they are not tension scores or elapsed time. Use 1–8 scenes. For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
+      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND PREVIOUS CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude"}]. Set conflictCarriedBy to how the scene's conflict actually reaches the reader: "speech" when two or more characters press their opposing aims on each other in conversation, "action" when the decisive pressure is physical, "solitude" when the character faces it alone. A scene with several present characters whose interests differ is normally carried by speech; a novel in which no scene is carried by speech is a novel without dialogue. Allocate narrativeWeight by dramatic importance: brief connective scenes get less space than the decisive confrontation, its reversals and cost. These weights divide the chapter word budget; they are not tension scores or elapsed time. Use 1–8 scenes. For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
       const decode = (raw: any) => validateChapterPlan(raw, run.spec, run.blueprint!.chapters);
       const settings = { maxTokens: 8192, route: 'writer' as const, schema: chapterPlanSchema };
       let plan: ParsedChapterPlan;
@@ -380,6 +383,12 @@ export class NovelEngine {
           // What the round before this one saw, so a judgement of taste has to be seen twice before it
           // stops a chapter. The previous version's report is the second opinion; there is no need to
           // ask for one.
+          // A settled question stays settled for this chapter: the next reader does not get to raise
+          // it again from scratch, and a wish set aside is kept for the line edit rather than lost.
+          if (candidate.review.settled?.length) {
+            const known = new Set((chapter.settled || []).map(item => item.description));
+            chapter.settled = [...(chapter.settled || []), ...candidate.review.settled.filter(item => !known.has(item.description))];
+          }
           const earlier = chapter.versions.find(item => item.revision === candidate.revision - 1)?.review?.issues || [];
           candidate.review.issues = confirmedFindings(candidate.review.issues, earlier)
             .map(issue => (chapter.unrepairable || []).some(known => sameFinding(known as typeof issue, issue))
@@ -848,7 +857,19 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
       const version = acceptedVersion(chapter);
       if (chapter.lineEditedRevision === version.revision) continue;
       // Reuse the evidenced local review. No blanket rewrite for a chapter without actionable issues.
-      const issues = version.review?.issues.filter(issue => ['dialogue', 'voice', 'pacing', 'hook', 'audience'].includes(issue.category)) || [];
+      // The line edit is where wishes belong, so this is where the ones set aside during the chapter's
+      // revisions arrive: not blocking anything at the time, not thrown away either. Bounded, because
+      // a pass that answers every wish a book ever raised is the improvement loop we just left behind.
+      const tasteful = ['dialogue', 'voice', 'pacing', 'hook', 'audience'];
+      const current = version.review?.issues.filter(issue => tasteful.includes(issue.category)) || [];
+      const deferred = (chapter.settled || [])
+        .filter(item => item.reason === 'written as a wish rather than a defect' && tasteful.includes(item.category))
+        .filter(item => !current.some(issue => issue.description === item.description))
+        .slice(0, 3)
+        .map((item): ReviewIssue => ({ id: item.id, category: item.category, severity: 'minor', description: item.description,
+          instruction: 'Answer this if the passage it names can be improved without changing what the chapter establishes; leave it as it stands otherwise.',
+          evidence: [{ chapter: chapter.number, revision: version.revision, quote: version.content.slice(0, 200) }] }));
+      const issues = [...current, ...deferred];
       if (issues.length) {
         const content = await this.repair(run, chapter, version, issues);
         const candidate = addCandidate(chapter, content, 'Targeted line edit');

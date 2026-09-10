@@ -58,6 +58,8 @@ export interface ReviewReport {
   issues: ReviewIssue[];
   checkedRevision: number;
   error?: string;
+  /** Findings this pass settled rather than raised: what was demoted, and on what ground. */
+  settled?: { id: string; category: ReviewIssue['category']; description: string; reason: string }[];
 }
 export interface CanonFact {
   id: string;
@@ -128,6 +130,8 @@ export interface ChapterRecord {
   unrepairable?: { id: string; category: ReviewIssue['category']; description: string }[];
   /** Repairs refused because they damaged the prose, kept for diagnosis rather than for the manuscript. */
   rejectedRepairs?: { revision: number; reason: string; at: number }[];
+  /** Questions this chapter has already answered: a settled finding is not raised against it again. */
+  settled?: { id: string; category: ReviewIssue['category']; description: string; reason: string }[];
   /** Chapter-wide sweeps that have already had a repair round, so the next one goes to a sweep that has not. */
   distributedServed?: string[];
   literaryPlan?: import('./literaryState').LiteraryPlan;

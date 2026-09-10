@@ -661,3 +661,24 @@ describe('A refused repair and the record', () => {
     expect(JSON.stringify(canon)).not.toContain('broken open');
   });
 });
+
+describe('A question the chapter has already answered', () => {
+  it('is settled with its ground, and not raised again from scratch', async () => {
+    const { run, chapter, version } = fixture();
+    run.blueprint = { centralConflict: 'c', protagonistChange: 'p', endingPayoff: 'e', characters: {}, chapters: [], promises: [] };
+    const hedged = { id: 'leak', category: 'knowledge', severity: 'critical', description: 'Вера использует знание о письме, которого ей не давали.',
+      instruction: 'Fix.', evidence: [{ chapter: 1, revision: version.revision, quote: 'Vera read the letter.' }] };
+    const first = await reviewChapter(run, chapter, version, async () => JSON.stringify({ issues: [{ ...hedged, description: 'Вера, возможно, знает о письме, которого ей не давали.' }] }));
+    // The filter did the work and said on what ground.
+    expect(first.settled?.[0].reason).toContain('hedges itself');
+    expect(first.issues.find(issue => issue.id === 'leak')?.severity).toBe('minor');
+
+    chapter.settled = first.settled;
+    // The next reader raises the same thing without the hedge; the chapter has already answered it.
+    const second = await reviewChapter(run, chapter, version, async () => JSON.stringify({ issues: [hedged] }));
+    expect(second.issues.find(issue => issue.id === 'leak')?.severity).toBe('minor');
+    // A different question is not settled by it.
+    const third = await reviewChapter(run, chapter, version, async () => JSON.stringify({ issues: [{ ...hedged, id: 'other', description: 'Брат знает о деньгах, о которых ему никто не говорил.' }] }));
+    expect(third.issues.find(issue => issue.id === 'other')?.severity).toBe('critical');
+  });
+});

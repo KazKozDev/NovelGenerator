@@ -1285,3 +1285,16 @@ describe('A repair that breaks the prose open', () => {
     expect(attempts).toBe(2);
   });
 });
+
+describe('A scene plan without the fields nothing reads', () => {
+  it('is valid: a scene is judged on its goal, its resistance and its outcome', () => {
+    const run = runWithPlans();
+    const scene = { sceneId: 's1', location: 'the archive', participants: ['Thorne', 'the clerk'], objective: 'recover the letter',
+      conflict: 'the clerk refuses', outcome: 'she pays the price', keyMoments: ['the refusal'], narrativeWeight: 3, conflictCarriedBy: 'speech' };
+    const plan = validateChapterPlan({ ...run.chapters[0].plan, detailedScenes: [scene] }, run.spec) as { detailedScenes: { sceneId: string }[] };
+    expect(plan.detailedScenes[0].sceneId).toBe('s1');
+    // And what a scene is actually judged on is still required.
+    expect(() => validateChapterPlan({ ...run.chapters[0].plan, detailedScenes: [{ ...scene, outcome: '' }] }, run.spec)).toThrow();
+    expect(() => validateChapterPlan({ ...run.chapters[0].plan, detailedScenes: [{ ...scene, keyMoments: [] }] }, run.spec)).toThrow();
+  });
+});
