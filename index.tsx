@@ -1,10 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { initializePrompts } from './utils/promptRegistry';
-
-// Initialize prompts before rendering
-initializePrompts();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
