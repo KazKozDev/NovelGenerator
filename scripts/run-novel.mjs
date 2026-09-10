@@ -141,6 +141,25 @@ try {
     }
   }, embed, rerank);
 
+  // Observational: the speech map is built for each accepted chapter and written beside the run,
+  // read by nothing. It is here to be measured against chapters judged by hand before any check is
+  // allowed to depend on it. English only, and silent when the virtualenv is not installed.
+  const { readSpeechMap } = await server.ssrLoadModule('/utils/novel/speechMap.ts');
+  const mapped = new Set();
+  const mapAccepted = async state => {
+    for (const chapter of state.chapters) {
+      const version = (chapter.versions || []).find(item => item.revision === chapter.acceptedRevision);
+      const key = `${chapter.number}.${version?.revision}`;
+      if (!version || chapter.status !== 'accepted' || mapped.has(key)) continue;
+      mapped.add(key);
+      const map = await readSpeechMap(version.content, process.cwd());
+      if (!map) continue;
+      await mkdir(path.join(outDir, 'speech'), { recursive: true });
+      await writeFile(path.join(outDir, 'speech', `ch${chapter.number}.json`), JSON.stringify(map, null, 1));
+      log(`SPEECHMAP ch${chapter.number} ${map.characters.length} characters, ${map.quotes.length} attributed lines, ${map.coreference.length} chains`);
+    }
+  };
+
   if (!run.outline.trim()) { log('STAGE outline'); await engine.outline(run); }
   // --retry gives a chapter that exhausted its repair budget a fresh one, which is what a resume after
   // an editorial fix is for: without it the chapter is over budget the moment the run reopens.
@@ -148,6 +167,7 @@ try {
   if (retry) log('RETRY budgets reset for chapters awaiting editorial attention');
   await engine.continue(run, { retry });
 
+  await mapAccepted(run).catch(error => log(`SPEECHMAP unavailable: ${error.message}`));
   log(`COMPLETE stage=${run.stage} title=${run.title || '-'}`);
   const { compileBook, metadata } = await server.ssrLoadModule('/utils/novel/presentation.ts');
   await writeFile(path.join(outDir, 'book.md'), compileBook(run));
