@@ -439,3 +439,16 @@ describe('The stuck counter', () => {
     expect(sameFindingSet(before, [...before, ...other])).toBe(false);
   });
 });
+
+describe('The whole-book review and its suggestions', () => {
+  it('demotes a wish and keeps a structural defect, both quoted from a live run', () => {
+    const issue = (description: string, category: 'character' | 'plot') =>
+      ({ id: 'b', category, severity: 'major' as const, description, instruction: 'Rework.', evidence: [{ chapter: 4, revision: 15, quote: 'q' }] });
+    const wish = issue("Елена's betrayal of Алексей in Chapter 4 lacks sufficient motivation.", 'character');
+    // Only a reader of all five chapters can see this one, and no wording of it is a matter of taste.
+    const structural = issue('The plan to redirect the light from Column 402 is introduced in Chapter 4 without prior setup or foreshadowing.', 'plot');
+    const [first, second] = demoteSuggestions([wish, structural]);
+    expect(first.severity).toBe('minor');
+    expect(second.severity).toBe('major');
+  });
+});

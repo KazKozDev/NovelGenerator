@@ -618,6 +618,11 @@ export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure
     const ledger = sources.map(source => ({ chapter: source.chapter, revision: source.version.revision, analysis: source.version.analysis }));
     const prompt = `${specPrompt(run.spec)}\nBOOK BLUEPRINT:\n${JSON.stringify(run.blueprint)}\nCOMPLETE BOOK EVIDENCE LEDGER:\n${JSON.stringify(ledger)}\nDETERMINISTIC PROMISE CHECK:\n${JSON.stringify(endingIssues(run))}\nReview the ${phase === 'structure' ? 'whole-book structure before sentence-level editing' : 'final whole-book continuity and resolution'}. Check causal dependencies, escalation of the central conflict, protagonist agency and change, pacing variation, planted clues and earned payoffs, unresolved required promises, and the ending's emotional consequences. Distinguish intentionally open threads from broken promises. Propose precise affected passages, not a blind rewrite. All chapter prose has a separate full-content local review; here assess cross-chapter relationships.\n${issueFormat}`;
     const report = await structuredResponse(prompt, 'You are a developmental editor reviewing a complete novel through its verified evidence ledger. Respond only with JSON.', llm, ['issues'], raw => parseIssues(raw, sources as { chapter: number; version: ChapterVersion }[]), { schema: issueSchema });
+    // The same rule as a chapter review, for the same reason and against the same wording: this pass
+    // reported "Elena's betrayal lacks sufficient motivation" beside "the plan is introduced without
+    // prior setup". The second is a defect only a whole-book reader can see; the first is a matter of
+    // opinion no repair can finish arguing, and on a chapter it cost a full budget.
+    report.issues = demoteSuggestions(report.issues);
     const missing = endingIssues(run);
     if (!report.issues.length && !missing.length && report.discarded) return { validationVersion: 2, status: 'not_checked', checkedRevision: 0, issues: [], error: `The book review cited ${report.discarded} passage(s) that do not appear in the accepted revisions.` };
     return {
