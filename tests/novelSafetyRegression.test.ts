@@ -545,3 +545,23 @@ describe('A finding that outlives the report it came in', () => {
     expect(findingStreaks([{ ...issue('88% of spoken lines carry an attribution.'), severity: 'minor' }])).toHaveLength(0);
   });
 });
+
+describe('What a review is told about the version before this one', () => {
+  it('names what it established and what this revision dropped, not its whole text', async () => {
+    const { run, chapter } = fixture();
+    const first = addCandidate(chapter, 'Vera read the letter aloud to her brother in the hallway. He said nothing at all for a long moment. The clock behind them lost a second, as it always did.', 'first');
+    first.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: first.revision };
+    first.analysis = { summary: 'Vera reads the letter to her brother.', facts: [], events: [{ id: 'reading', description: 'Vera reads the letter aloud', consequences: [], evidence: { chapter: 1, revision: first.revision, quote: 'Vera read the letter aloud' } }], promises: [], beats: [] };
+    chapter.acceptedRevision = first.revision;
+    chapter.status = 'accepted';
+    const second = addCandidate(chapter, 'Vera read the letter aloud to her brother in the hallway. The clock behind them lost a second, as it always did.', 'repair');
+    let seen = '';
+    await reviewChapter(run, chapter, second, async (prompt: string) => { seen = prompt; return '{"issues":[]}'; });
+    // What it established travels; the passage that proves it does not.
+    expect(seen).toContain('WHAT THE PREVIOUS ACCEPTED VERSION ESTABLISHED');
+    expect(seen).toContain('Vera reads the letter aloud');
+    // And the sentence this revision dropped is named, which is the question that block exists to ask.
+    expect(seen).toContain('He said nothing at all for a long moment');
+    expect(seen).not.toContain('PREVIOUS ACCEPTED VERSION (preserve');
+  });
+});
