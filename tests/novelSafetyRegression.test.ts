@@ -4,7 +4,7 @@ import { analyseChapter, confirmedFindings, copiedFromEarlier, demoteHedgedKnowl
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
-import { acceptCandidate, addCandidate, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint } from '../utils/novel/storyState';
+import { acceptCandidate, addCandidate, emptyStoryState, evidenceExists, nextUnacceptedChapter, rebuildCanon, reconcileCheckpoint } from '../utils/novel/storyState';
 import { stampLiterary } from './helpers/literaryFixture';
 
 function fixture() {
@@ -640,5 +640,24 @@ describe('One measure of a repeated sentence, at every distance', () => {
   it('measures overlap against the shorter sentence, so a copy padded with a clause is still a copy', () => {
     const padded = `${line.replace('.', ', and he did not move for a long time.')}`;
     expect(copiedFromEarlier(`${padded} The night went on.`, [{ chapter: 1, revision: 1, content: line }])).toHaveLength(1);
+  });
+});
+
+describe('A refused repair and the record', () => {
+  it('never reaches canon, because a version is what canon is built from', () => {
+    const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
+    const { chapter, version } = fixture();
+    run.chapters = [chapter];
+    version.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: version.revision };
+    version.analysis = { summary: 'Vera reads the letter.', facts: [], events: [], promises: [], beats: [] };
+    stampLiterary(run, 1, version);
+    chapter.acceptedRevision = version.revision;
+    chapter.status = 'accepted';
+    chapter.rejectedRepairs = [{ revision: version.revision, reason: 'left 1 paragraph(s) broken open: Again."', at: Date.now() }];
+    const canon = rebuildCanon(run.chapters);
+    // The rejected text is a note on the chapter, not a version, so nothing downstream can read it.
+    expect(canon.summaries).toEqual({ 1: 'Vera reads the letter.' });
+    expect(chapter.versions).toHaveLength(1);
+    expect(JSON.stringify(canon)).not.toContain('broken open');
   });
 });

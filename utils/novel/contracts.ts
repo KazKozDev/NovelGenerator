@@ -126,6 +126,8 @@ export interface ChapterRecord {
   lastFindingShapes?: { id: string; category: ReviewIssue['category']; description: string; streak?: number }[];
   /** Findings local revision tried and failed to answer; advisory for the rest of this chapter's life. */
   unrepairable?: { id: string; category: ReviewIssue['category']; description: string }[];
+  /** Repairs refused because they damaged the prose, kept for diagnosis rather than for the manuscript. */
+  rejectedRepairs?: { revision: number; reason: string; at: number }[];
   /** Chapter-wide sweeps that have already had a repair round, so the next one goes to a sweep that has not. */
   distributedServed?: string[];
   literaryPlan?: import('./literaryState').LiteraryPlan;

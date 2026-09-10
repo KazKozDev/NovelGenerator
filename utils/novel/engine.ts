@@ -1,7 +1,7 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
 import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
 import { proseCraft, narrativeDesign } from './proseCraft';
-import { prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
+import { newlyBroken, prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
 import { applyPassages, repairableInPlace } from './patch';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
@@ -568,6 +568,26 @@ export class NovelEngine {
       // A repair that returns the chapter unchanged is not a repair, and nothing noticed: the stuck
       // counter watches the findings, which drift in wording every round, so six revisions of
       // byte-identical prose passed for progress and spent the budget.
+      // A repair is a candidate, not a fact. Before it becomes the version the chapter carries forward,
+      // it has to be whole: a live chapter was accepted with a paragraph reading `Again."` — the tail
+      // of a line whose body a repair had cut away — and no check saw it, because every check we have
+      // reads for meaning. A repair that breaks the prose open is refused, the previous text stands,
+      // the finding it was answering stands with it, and the next attempt is told what it did.
+      const broken = newlyBroken(version.content, content);
+      if (broken.length) {
+        chapter.rejectedRepairs = [...(chapter.rejectedRepairs || []), { revision: version.revision, reason: `left ${broken.length} paragraph(s) broken open: ${broken[0].slice(0, 80)}`, at: Date.now() }];
+        await this.checkpoint(run);
+        const retried = await this.repair(run, chapter, version, sweep.issues,
+          `${extra}Your previous attempt was refused: it left ${broken.length} paragraph(s) broken open, the first of them reading ${JSON.stringify(broken[0].slice(0, 120))}. That is the remains of a line of dialogue whose body was cut away. Answer the findings without severing a sentence or a spoken line from what closes it: every quotation mark that opens must close, and a paragraph must be a whole paragraph.`, allowShortening);
+        // Refused twice on the same ground, the repair is not going to be whole; the chapter keeps the
+        // text it has and the round ends rather than accepting damaged prose.
+        if (newlyBroken(version.content, retried).length) {
+          chapter.status = 'needs_revision';
+          await this.checkpoint(run);
+          throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row broke the prose open (${broken[0].slice(0, 80)}).`);
+        }
+        content = retried;
+      }
       if (unchanged(version.content, content)) {
         chapter.distributedServed = sweep.served;
         content = await this.repair(run, chapter, version, sweep.issues,

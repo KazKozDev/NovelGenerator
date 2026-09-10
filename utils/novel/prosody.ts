@@ -178,6 +178,40 @@ export function prosodyIssues(chapter: number, version: ChapterVersion, language
  * writing produced unprompted in matched samples, so it flags silence rather than legislating a style.
  * A chapter whose plan contains no speech-driven scene is never held to it.
  */
+/**
+ * Paragraphs a repair left broken open: a closing quotation mark with nothing it closes.
+ *
+ * Found by reading a finished book rather than by any check. Chapter two of a live English run
+ * contained a paragraph reading, in its entirety, `Again."` — the tail of a line of dialogue whose
+ * body a repair had cut away. Every check we have looks at meaning: repetition, knowledge, beats,
+ * texture. None of them looks at whether the text is still whole, and a reader sees it immediately.
+ *
+ * Deliberately narrow. Speech that runs over several paragraphs opens each one with a quotation mark
+ * and closes only the last, so an unclosed paragraph is legitimate whenever the next one carries the
+ * speech on — and a paragraph that opens speech, breaks for narration and resumes is indistinguishable
+ * by counting alone from that same shape damaged. It is left alone. Across 1,177 paragraphs of
+ * accepted chapters this rule fires once, on the seam above, and never on prose in another
+ * typography: Russian dialogue carries no quotation marks at all.
+ */
+export function brokenParagraphs(content: string): string[] {
+  const paragraphs = content.split(/\n\s*\n/).map(item => item.trim());
+  const broken: string[] = [];
+  paragraphs.forEach((paragraph, index) => {
+    if (!paragraph || paragraph.split('"').length % 2 === 1) return;
+    const next = paragraphs[index + 1] || '';
+    // An unclosed quotation is speech continuing into the paragraph below it.
+    if (paragraph.startsWith('"') && next.startsWith('"')) return;
+    broken.push(paragraph);
+  });
+  return broken;
+}
+
+/** What a repair broke that was whole before it: damage the previous version did not have. */
+export function newlyBroken(before: string, after: string): string[] {
+  const had = new Set(brokenParagraphs(before));
+  return brokenParagraphs(after).filter(paragraph => !had.has(paragraph));
+}
+
 export const dialogueFloor = 0.12;
 
 /** Direct speech, not reported speech: the paragraph opens with a dash or an opening quotation mark. */

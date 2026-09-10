@@ -1249,3 +1249,39 @@ describe('The plan a scene is given', () => {
     expect(intent).not.toContain('a scene not being written');
   });
 });
+
+describe('A repair that breaks the prose open', () => {
+  it('is refused, the previous text stands, and the next attempt is told what it did', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, `${prose(1)}\n\n"I will not," she said.`, 'fixture');
+    const base = fixtureLLM();
+    let attempts = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        attempts++;
+        // The first attempt does what a live repair did: cuts the body of a line and leaves its tail.
+        if (attempts === 1) return JSON.stringify({ prose: `${prose(1)}\n\nnot," she said.` });
+        expect(prompt).toContain('broken open');
+        return JSON.stringify({ prose: `${prose(1)}\n\n"I will not," she said, and meant it.` });
+      }
+      if (system.includes('continuity and developmental')) {
+        return prompt.includes('and meant it') ? '{"issues":[]}' : JSON.stringify({ issues: [{
+          id: 'knowledge-1', category: 'knowledge', severity: 'major',
+          description: 'Thorne names the clerk before the chapter gives the name to her.',
+          instruction: 'Take the knowledge away.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }],
+        }] });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    const accepted = acceptedVersion(chapter)!.content;
+    // The damaged attempt never became a version, and the chapter it left behind is whole.
+    expect(accepted).toContain('"I will not," she said, and meant it.');
+    expect(accepted).not.toContain('not," she said.\n');
+    expect(chapter.versions.some(version => version.content.includes('\n\nnot," she said.'))).toBe(false);
+    // It is kept as a reason, not as prose.
+    expect(chapter.rejectedRepairs?.[0].reason).toContain('broken open');
+    expect(attempts).toBe(2);
+  });
+});

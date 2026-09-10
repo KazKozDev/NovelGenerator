@@ -1,7 +1,7 @@
 import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
-import { defaultRepetitionThresholds, dialogueIssues, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
 import { createBookSpec } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
@@ -487,5 +487,32 @@ describe('planned exchanges must reach the page as speech', () => {
 
   it('counts direct speech, not reported speech', () => {
     expect(speechParagraphs('— Я знаю.\n\nОн сказал, что знает.\n\n«Я знаю», — подумала она.')).toHaveLength(2);
+  });
+});
+
+describe('Prose a repair broke open', () => {
+  it('finds the seam a live chapter was accepted with', () => {
+    // Quoted from chapter two of a finished English run: the tail of a line whose body was cut away.
+    const chapter = 'Elara looked from the rusted nail to his face. He was shaking.\n\nAgain."\n\nThe accusation landed with the force of a blow.';
+    expect(brokenParagraphs(chapter)).toEqual(['Again."']);
+  });
+
+  it('leaves whole dialogue alone, however it is punctuated', () => {
+    expect(brokenParagraphs('"Take it," she said. "You will need the street name."\n\nHe read it twice and said nothing.')).toEqual([]);
+    // Speech running over paragraphs opens each and closes only the last.
+    expect(brokenParagraphs('"I suspected, and I said nothing, because saying it would have made it true\n\n"and I was not ready for it to be true," he answered.')).toEqual([]);
+    // Russian dialogue carries no quotation marks at all.
+    expect(brokenParagraphs('— Не лгите, — сказала она.\n\n— Я и не лгу.')).toEqual([]);
+    // Narration interrupting a spoken line, closed properly on both sides.
+    expect(brokenParagraphs('"That is not why I am here," she said, gesturing at the piano, "and you know it."')).toEqual([]);
+  });
+
+  it('reports only what a repair broke, not what the chapter already carried', () => {
+    const before = 'He said nothing.\n\nAgain."\n\nShe waited.';
+    const after = 'He said nothing.\n\nAgain."\n\nShe waited.\n\nThe light went round twice."';
+    // The seam that was already there is not this repair's doing; the new one is.
+    expect(newlyBroken(before, after)).toEqual(['The light went round twice."']);
+    expect(newlyBroken(before, before)).toEqual([]);
+    expect(newlyBroken('"Take it," she said.', '"Take it," she said. He read it twice.')).toEqual([]);
   });
 });
