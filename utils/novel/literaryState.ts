@@ -80,6 +80,46 @@ export function literaryStillHolds(previous: ChapterVersion, candidate: ChapterV
   return cited.length > 0 && cited.every(evidence => candidate.content.includes(evidence.quote));
 }
 
+/**
+ * Threads that open a chapter where the chapter before them opened, instead of where it ended.
+ *
+ * Measured across four finished books: 9 of 12 tracked threads in one, 10 of 16 in another, and the
+ * matches are literal — the "before" of chapter three repeating the "before" of chapter two word for
+ * word. Read as prose, the same books argue the same argument three times with the same positions.
+ *
+ * What it cannot tell on its own is which of the two is true: a ledger that copies itself forward
+ * while the book moves, or a book that does not move. Both were happening in the run this came from.
+ * So this reports the threads, and reports them as something to look at.
+ */
+export function stalledThreads(history: { chapter: number; observations: LiteraryObservation[] }[]): { chapter: number; kind: LiteraryKind; subject: string }[] {
+  const stems = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 3).map(word => word.slice(0, 6)));
+  const near = (first: string, second: string) => {
+    const a = stems(first), b = stems(second);
+    const smaller = Math.min(a.size, b.size);
+    if (!smaller) return 0;
+    let shared = 0;
+    for (const word of b) if (a.has(word)) shared++;
+    return shared / smaller;
+  };
+  const stalled: { chapter: number; kind: LiteraryKind; subject: string }[] = [];
+  for (let index = 1; index < history.length; index++) {
+    const previous = history[index - 1], current = history[index];
+    for (const observation of current.observations) {
+      const sameThread = previous.observations
+        .filter(item => item.kind === observation.kind)
+        .sort((first, second) => near(second.subject, observation.subject) - near(first.subject, observation.subject))[0];
+      if (!sameThread || near(sameThread.subject, observation.subject) < 0.4) continue;
+      // Not "similar to where it was", but "closer to where it started than to where it got to", and
+      // close enough to be the same sentence: a thread carried forward rather than moved.
+      const toStart = near(observation.before, sameThread.before);
+      if (toStart >= 0.9 && toStart > near(observation.before, sameThread.after)) {
+        stalled.push({ chapter: current.chapter, kind: observation.kind, subject: observation.subject });
+      }
+    }
+  }
+  return stalled;
+}
+
 export function literaryCurrent(run: NovelRun, chapter: number, version: ChapterVersion): boolean {
   return version.literary?.version === 1 && version.literary.checkedRevision === version.revision &&
     version.literary.contextKey === literaryContextKey(run, chapter) && version.literary.observations.length > 0 &&

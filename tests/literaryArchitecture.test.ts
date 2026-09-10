@@ -9,7 +9,7 @@ import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook } from '../utils/novel/presentation';
 import { sceneWordTargets } from '../utils/novel/proseCraft';
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
-import { literaryStillHolds } from '../utils/novel/literaryState';
+import { literaryStillHolds, stalledThreads } from '../utils/novel/literaryState';
 import { ledgerForPlanning } from '../utils/novel/literary';
 
 function setup() {
@@ -274,5 +274,37 @@ describe('The order the checks run in', () => {
     // The most expensive call in the system runs last, on a version the cheap checks already accepted.
     expect(order).toEqual(['extraction', 'literary']);
     expect(run.chapters[0].status).toBe('accepted');
+  });
+});
+
+describe('A thread that does not move', () => {
+  const thread = (chapter: number, before: string, after: string) =>
+    ({ chapter, observations: [{ kind: 'thought' as const, subject: 'Elara Vance\'s belief in repair as a moral good', before, after, mechanism: 'm', evidence: [] }] });
+
+  it('is reported when a chapter opens where the one before it opened', () => {
+    // Quoted from a finished English run: chapter three's "before" repeated chapter two's word for word.
+    const opening = 'Elara views repair as an unquestioned virtue, a technical act that restores order to a broken machine.';
+    const stalled = stalledThreads([
+      thread(2, opening, 'Elara confronts the possibility that repair can be an act of violence.'),
+      thread(3, opening, 'Elara confronts the idea that repair can be an act of violence, erasing intention.'),
+    ]);
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]).toMatchObject({ chapter: 3, kind: 'thought' });
+  });
+
+  it('says nothing when a chapter opens where the one before it ended', () => {
+    const moved = stalledThreads([
+      thread(2, 'Elara views repair as an unquestioned virtue that restores order to a broken machine.', 'Elara sees that repair can erase what a person meant to keep.'),
+      thread(3, 'Elara sees that repair can erase what a person meant to keep, and does it anyway for money.', 'Elara refuses the work that would erase it.'),
+    ]);
+    expect(moved).toEqual([]);
+  });
+
+  it('does not compare threads that are not the same thread', () => {
+    const unrelated = [
+      { chapter: 2, observations: [{ kind: 'thought' as const, subject: 'Elara and repair', before: 'A state of things at the opening of the chapter.', after: 'Something else entirely.', mechanism: 'm', evidence: [] }] },
+      { chapter: 3, observations: [{ kind: 'thought' as const, subject: 'Elias and the sale of the tower', before: 'A state of things at the opening of the chapter.', after: 'Another thing.', mechanism: 'm', evidence: [] }] },
+    ];
+    expect(stalledThreads(unrelated)).toEqual([]);
   });
 });

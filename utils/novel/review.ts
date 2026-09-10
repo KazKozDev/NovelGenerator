@@ -2,6 +2,7 @@ import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun
 import { specPrompt } from './contracts';
 import { dialogueIssues, type PriorProse } from './prosody';
 import { acceptedVersion, beatKey, canonBefore, canonForPrompt, endingIssues, evidenceExists, plannedBeats, unplayedBeats, validateAnalysis } from './storyState';
+import { stalledThreads } from './literaryState';
 
 export type NovelLLMRoute = 'writer' | 'validator';
 export type NovelLLM = (prompt: string, system: string, options?: { json?: boolean; schema?: object; temperature?: number; maxTokens?: number; route?: NovelLLMRoute }) => Promise<string>;
@@ -764,6 +765,19 @@ export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure
     // prior setup". The second is a defect only a whole-book reader can see; the first is a matter of
     // opinion no repair can finish arguing, and on a chapter it cost a full budget.
     report.issues = demoteSuggestions(report.issues);
+    // Threads the ledger says a chapter opened where the one before it opened. Deterministic, and
+    // deliberately reported rather than judged: it cannot tell a ledger copying itself forward from a
+    // book that does not move, and on the run it came from both were true.
+    const stalled = stalledThreads(run.chapters.map(chapter => {
+      const accepted = acceptedVersion(chapter);
+      return { chapter: chapter.number, observations: accepted?.literary?.observations || [] };
+    }).filter(entry => entry.observations.length));
+    if (stalled.length) report.issues.push({
+      id: 'thread-not-moving', category: 'plot', severity: 'major',
+      description: `${stalled.length} thread(s) open a chapter where the chapter before them opened, not where it ended: ${stalled.map(item => `chapter ${item.chapter}, ${item.kind} — ${item.subject}`).join('; ')}.`,
+      instruction: 'For each thread, decide which is true and say so: the chapter did move it and the ledger failed to record the move, or the chapter left it where it found it. Where the chapter genuinely repeats the previous one — the same argument with the same positions, the same choice reached the same way — name the chapter and what would have to change in it.',
+      evidence: sources.slice(0, 1).map(source => ({ chapter: source.chapter, revision: source.version.revision, quote: source.version.content.slice(0, 200) })),
+    });
     const missing = endingIssues(run);
     if (!report.issues.length && !missing.length && report.discarded) return { validationVersion: 2, status: 'not_checked', checkedRevision: 0, issues: [], error: `The book review cited ${report.discarded} passage(s) that do not appear in the accepted revisions.` };
     return {
