@@ -488,7 +488,7 @@ describe('A repair that changes nothing', () => {
       if (system.includes('single prose writer') && /CHAPTER 1 OF/.test(prompt)) return JSON.stringify({ prose: prose(1) });
       if (system.includes('continuity and developmental')) {
         reviewed++;
-        return JSON.stringify({ issues: [{ id: `voice-${reviewed}`, category: 'voice', severity: 'major', description: `Something differently worded each round, ${reviewed}.`, instruction: 'Change it.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }] }] });
+        return JSON.stringify({ issues: [{ id: `canon-${reviewed}`, category: 'canon', severity: 'major', description: `Something differently worded each round, ${reviewed}.`, instruction: 'Change it.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }] }] });
       }
       return base(prompt, system, options);
     });
@@ -615,7 +615,7 @@ describe('Repair budget', () => {
         return JSON.stringify({ prose: `${prose(1)} Revision ${repairs} settled the matter.` });
       }
       if (system.includes('continuity and developmental')) return JSON.stringify({ issues: [{
-        id: 'voice', category: 'voice', severity: 'major', description: 'The same unresolved defect.',
+        id: 'canon', category: 'canon', severity: 'major', description: 'The same unresolved defect.',
         instruction: 'Fix it.', evidence: [{ chapter: 1, revision: repairs + 1, quote: 'Thorne opened door 1.' }],
       }] });
       return base(prompt, system, options);
@@ -643,7 +643,7 @@ describe('Repair budget', () => {
     let reviewed = 0;
     let repairs = 0;
     const issue = (description: string) => JSON.stringify({ issues: [{
-      id: 'voice', category: 'voice', severity: 'major', description,
+      id: 'canon', category: 'canon', severity: 'major', description,
       instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote: 'Thorne opened door 1.' }],
     }] });
 

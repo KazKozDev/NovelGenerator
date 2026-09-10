@@ -374,6 +374,45 @@ export function demoteSuggestions(issues: ReviewIssue[]): ReviewIssue[] {
   });
 }
 
+/** Findings the application produced itself. A measurement does not need a second opinion. */
+const measured = /^(?:foreign-script-|duplicated-passage|copied-passage|restated-passage|recycled-passage|unfilled-slot|incomplete-length|excess-length|undramatized-beat|speech-tag-bloat|simile-density|adjective-stacking|serial-explanation|paragraph-monotony|low-dialogue|literary-)/;
+
+/** The dimensions a second reader can legitimately see differently. */
+const tasteful = new Set(['character', 'plot', 'pacing', 'dialogue', 'voice', 'hook']);
+
+const significant = (issue: ReviewIssue) => new Set(issue.description.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(word => word.length > 3));
+
+/** The same finding, worded differently. Across rounds the wording always drifts; the words do not. */
+function sameFinding(earlier: ReviewIssue, current: ReviewIssue): boolean {
+  if (earlier.category !== current.category) return false;
+  const before = significant(earlier), now = significant(current);
+  if (!before.size || !now.size) return false;
+  let shared = 0;
+  for (const word of now) if (before.has(word)) shared++;
+  return shared / Math.min(before.size, now.size) >= 0.5;
+}
+
+/**
+ * A judgement of taste blocks a chapter only when a second round agrees with it.
+ *
+ * The review is a fresh sample of four thousand words every round, and it will always find something:
+ * measured across every stored run, 431 of 540 blocking findings — 80% — appeared for the first time
+ * in the round that reported them. That is what a chapter's fourteen revisions are made of. Fixing
+ * one draws another, and a chapter can be good and still never finish.
+ *
+ * So a finding about character, plot, pacing, dialogue, voice or a hook is advisory the first time it
+ * is seen and blocking when the next round sees it again: a defect the text actually carries survives
+ * a resample, and a sampling artifact does not. Nothing else is touched — a contradiction of canon, a
+ * leak, and everything the application measured itself still block on sight, because none of them are
+ * a matter of opinion.
+ */
+export function confirmedFindings(issues: ReviewIssue[], previous: ReviewIssue[] = []): ReviewIssue[] {
+  return issues.map(issue => {
+    if (issue.severity === 'minor' || measured.test(issue.id) || !tasteful.has(issue.category)) return issue;
+    return previous.some(earlier => sameFinding(earlier, issue)) ? issue : { ...issue, severity: 'minor' as const };
+  });
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {

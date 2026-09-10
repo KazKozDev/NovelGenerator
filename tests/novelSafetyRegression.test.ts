@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, demoteHedgedKnowledge, demoteSuggestions, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteSuggestions, duplicatePassages, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -368,5 +368,30 @@ describe('A finding written as a suggestion', () => {
     // A contradiction of canon is a defect however it is worded; taste has no vote there.
     expect(demoteSuggestions([issue('Недостаточно мотивировано: герой противоречит установленному факту.', 'canon')])[0].severity).toBe('major');
     expect(demoteSuggestions([issue('Слишком быстро раскрывает знание, которого у него нет.', 'knowledge')])[0].severity).toBe('major');
+  });
+});
+
+describe('A judgement of taste seen once', () => {
+  const issue = (description: string, category: 'character' | 'canon' = 'character', id = 'x') =>
+    ({ id, category, severity: 'major' as const, description, instruction: 'Rework it.', evidence: [{ chapter: 4, revision: 14, quote: 'q' }] });
+
+  it('is advisory the first round and blocking when the next round sees it again', () => {
+    const first = confirmedFindings([issue('Елена соглашается на условия, не показав борьбы с собой.')]);
+    expect(first[0].severity).toBe('minor');
+    // The same finding, worded differently — which is how it always comes back.
+    const again = confirmedFindings([issue('Елена принимает условия Алексея, не показав внутренней борьбы с собой.')], first);
+    expect(again[0].severity).toBe('major');
+  });
+
+  it('never softens a dimension where taste has no vote, or a measurement of our own', () => {
+    expect(confirmedFindings([issue('Противоречит установленному факту.', 'canon')])[0].severity).toBe('major');
+    expect(confirmedFindings([issue('The chapter says the same thing twice.', 'character', 'duplicated-passage')])[0].severity).toBe('major');
+    expect(confirmedFindings([issue('A planned scene never reached the page.', 'character', 'undramatized-beat')])[0].severity).toBe('major');
+  });
+
+  it('does not accept a different finding in the same dimension as confirmation', () => {
+    const first = confirmedFindings([issue('Елена соглашается слишком охотно.')]);
+    const other = confirmedFindings([issue('Алексей входит в архив без причины, которую глава назвала.')], first);
+    expect(other[0].severity).toBe('minor');
   });
 });

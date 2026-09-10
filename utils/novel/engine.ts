@@ -7,7 +7,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, confirmedFindings, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -368,6 +368,12 @@ export class NovelEngine {
         const superseded = candidate.review;
         candidate.review = await reviewChapter(run, chapter, candidate, this.llm);
         if (candidate.review.status !== 'not_checked') {
+          // What the round before this one saw, so a judgement of taste has to be seen twice before it
+          // stops a chapter. The previous version's report is the second opinion; there is no need to
+          // ask for one.
+          const earlier = chapter.versions.find(item => item.revision === candidate.revision - 1)?.review?.issues || [];
+          candidate.review.issues = confirmedFindings(candidate.review.issues, earlier);
+          candidate.review.status = candidate.review.issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed';
           const carried = this.carriedIssues(chapter, candidate, superseded);
           if (carried.length) {
             candidate.review.issues = [...candidate.review.issues, ...carried];
