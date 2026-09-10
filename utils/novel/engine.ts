@@ -7,7 +7,7 @@ import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../type
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, confirmedFindings, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, confirmedFindings, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -122,6 +122,8 @@ export const chapterPlanSchema = {
  * several rounds. This is patience, not leniency: acceptance still requires zero non-minor issues.
  */
 const MAX_CHAPTER_REPAIRS = 5;
+/** Repairs of the same finding before the loop admits that local revision is the wrong tool for it. */
+const LOCAL_REPAIR_ATTEMPTS = 2;
 
 /** An absolute ceiling, so a chapter that keeps producing new defects still ends. */
 const MAX_CHAPTER_VERSIONS = 14;
@@ -372,7 +374,9 @@ export class NovelEngine {
           // stops a chapter. The previous version's report is the second opinion; there is no need to
           // ask for one.
           const earlier = chapter.versions.find(item => item.revision === candidate.revision - 1)?.review?.issues || [];
-          candidate.review.issues = confirmedFindings(candidate.review.issues, earlier);
+          candidate.review.issues = confirmedFindings(candidate.review.issues, earlier)
+            .map(issue => (chapter.unrepairable || []).some(known => sameFinding(known as typeof issue, issue))
+              ? { ...issue, severity: 'minor' as const } : issue);
           candidate.review.status = candidate.review.issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed';
           const carried = this.carriedIssues(chapter, candidate, superseded);
           if (carried.length) {
@@ -477,6 +481,29 @@ export class NovelEngine {
       chapter.repairAttempts = sameFindingSet(candidate.review.issues, (chapter.lastFindingShapes || []) as typeof candidate.review.issues) ? chapter.repairAttempts + 1 : 0;
       chapter.lastFindingShapes = shapes;
       chapter.lastFindings = JSON.stringify(candidate.review.issues.map(issue => issue.description).sort());
+      // A finding that survived two repairs is not going to yield to a third of the same kind. Local
+      // revision is the only tool this loop has, so when it has failed twice the honest move is to
+      // stop spending the budget on it: the finding is recorded as one the chapter cannot answer
+      // locally and demoted, and the round after it faces whatever else is actually there. Two
+      // chapters spent a full budget each this way, on findings no local edit could satisfy.
+      if (chapter.repairAttempts >= LOCAL_REPAIR_ATTEMPTS) {
+        // A contradiction of canon or a broken format always has a local answer — deleting a repeated
+        // passage, removing a wedged character — so those keep their standing however long they take.
+        const stubborn = candidate.review.issues.filter(issue => issue.severity !== 'minor'
+          && issue.category !== 'canon' && issue.category !== 'format');
+        if (stubborn.length) {
+          chapter.planningNote = `Findings no local repair could answer after ${chapter.repairAttempts} attempts: ${stubborn.map(issue => issue.description).join('; ')}`;
+          chapter.unrepairable = [...(chapter.unrepairable || []), ...stubborn.map(({ id, category, description }) => ({ id, category, description }))];
+          candidate.review = {
+            ...candidate.review,
+            issues: candidate.review.issues.map(issue => stubborn.includes(issue) ? { ...issue, severity: 'minor' as const } : issue),
+          };
+          chapter.repairAttempts = 0;
+          chapter.lastFindingShapes = undefined;
+          await this.checkpoint(run);
+          continue;
+        }
+      }
       if (chapter.repairAttempts >= MAX_CHAPTER_REPAIRS || chapter.versions.length - (chapter.repairVersionStart || 0) >= MAX_CHAPTER_VERSIONS) {
         chapter.status = 'needs_revision';
         throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: ${candidate.review.error || candidate.review.issues.map(issue => issue.description).join('; ')}`);

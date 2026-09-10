@@ -392,7 +392,7 @@ const stems = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}
 const significant = (issue: ReviewIssue) => stems(issue.description);
 
 /** The same finding, worded differently. Across rounds the wording always drifts; the words do not. */
-function sameFinding(earlier: ReviewIssue, current: ReviewIssue): boolean {
+export function sameFinding(earlier: ReviewIssue, current: ReviewIssue): boolean {
   if (earlier.category !== current.category) return false;
   const before = significant(earlier), now = significant(current);
   // Too few words to judge by overlap: "Defect number 6" and "Defect number 7" share everything they

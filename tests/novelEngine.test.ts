@@ -1069,3 +1069,32 @@ describe('The canon a scene is given', () => {
     expect(scoped.facts.map(item => item.id)).toContain('bond');
   });
 });
+
+describe('A finding local repair cannot answer', () => {
+  it('stops blocking after two attempts, and the chapter records what it could not fix', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, prose(1), 'fixture');
+    let repairs = 0;
+    const base = fixtureLLM();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        repairs++;
+        return JSON.stringify({ prose: `${prose(1)} Попытка ${repairs} ничего не изменила по существу.` });
+      }
+      if (system.includes('continuity and developmental')) return JSON.stringify({ issues: [{
+        // The shape that cost two chapters a full budget each on a live run.
+        id: 'knowledge-1', category: 'knowledge', severity: 'major',
+        description: 'Алексей использует знание о точном механизме ускорения света, которого нет в тексте главы.',
+        instruction: 'Убрать знание.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }],
+      }] });
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    expect(chapter.status).toBe('accepted');
+    // Two repairs, where the same finding used to spend five and then fourteen versions.
+    expect(repairs).toBeLessThanOrEqual(3);
+    expect(chapter.planningNote).toContain('no local repair could answer');
+    expect(chapter.unrepairable?.[0].category).toBe('knowledge');
+  });
+});
