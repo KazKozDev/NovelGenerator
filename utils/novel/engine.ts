@@ -2,6 +2,7 @@ import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
 import { literaryContextKey, literaryCurrent } from './literaryState';
 import { proseCraft, narrativeDesign } from './proseCraft';
 import { prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
+import type { Reranker } from './reranker';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
@@ -230,7 +231,7 @@ export function unchanged(before: string, after: string): boolean {
 }
 
 export class NovelEngine {
-  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder) {}
+  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder, private rerank?: Reranker) {}
 
   /**
    * Report mode: measured prose texture is recorded on the version and never fails a chapter. The
@@ -244,7 +245,7 @@ export class NovelEngine {
       .filter((entry): entry is { item: ChapterRecord; version: ChapterVersion } => Boolean(entry.version))
       .map(entry => ({ chapter: entry.item.number, revision: entry.version.revision, content: entry.version.content }));
     try {
-      candidate.prosody = await prosodyReport(chapter.number, candidate, earlier, run.spec.language, this.embed, undefined, chapter.plan.detailedScenes || []);
+      candidate.prosody = await prosodyReport(chapter.number, candidate, earlier, run.spec.language, this.embed, undefined, chapter.plan.detailedScenes || [], this.rerank);
     } catch (error) {
       // Only repetition needs the embedder. Dropping every finding when the network hiccups let a
       // chapter measured at 6.0 comparisons per 1000 report itself clean, ceiling and all.

@@ -1,4 +1,5 @@
 import type { ChapterVersion, Evidence, ReviewIssue } from './contracts';
+import { rerankCandidateFloor, rerankRepetitionScore, type Reranker } from './reranker';
 
 /**
  * Measured prose texture, not a model's opinion of it. Every number here is computed from the
@@ -273,7 +274,7 @@ export interface PriorProse { chapter: number; revision: number; content: string
  */
 export async function repetitionIssues(
   chapter: number, version: ChapterVersion, earlier: PriorProse[], embed: Embedder,
-  thresholds = defaultRepetitionThresholds,
+  thresholds = defaultRepetitionThresholds, rerank?: Reranker,
 ): Promise<ReviewIssue[]> {
   const current = paragraphsOf(version.content).filter(paragraph => paragraph.length >= thresholds.minimumCharacters);
   if (current.length < 2) return [];
@@ -312,17 +313,28 @@ export async function repetitionIssues(
     evidence: doubled.slice(0, 8),
   });
 
-  const crossed: Evidence[] = [];
+  // With a reranker the cosine stops deciding and only nominates: it keeps the best match for each
+  // paragraph and lets anything plausibly related through, and the cross-encoder — which reads both
+  // passages together instead of comparing two summaries of them — says whether one retells the other.
+  // Without one the cosine decides alone, at the higher threshold its own distribution asks for.
+  const floor = rerank ? rerankCandidateFloor : thresholds.crossChapter;
+  const candidates: { paragraph: string; source: PriorProse & { paragraph: string } }[] = [];
   for (let index = 0; index < current.length; index++) {
     let best = { score: 0, source: -1 };
     for (let prior = 0; prior < history.length; prior++) {
       const score = cosine(currentVectors[index], historyVectors[prior]);
       if (score > best.score) best = { score, source: prior };
     }
-    if (best.score < thresholds.crossChapter) continue;
-    crossed.push({ chapter, revision: version.revision, quote: current[index] });
-    crossed.push({ chapter: history[best.source].chapter, revision: history[best.source].revision, quote: history[best.source].paragraph });
+    if (best.score < floor || best.source < 0) continue;
+    candidates.push({ paragraph: current[index], source: history[best.source] });
   }
+  const verdicts = rerank ? await rerank(candidates.map(item => [item.paragraph, item.source.paragraph])) : undefined;
+  const crossed: Evidence[] = [];
+  candidates.forEach((candidate, index) => {
+    if (verdicts && !(verdicts[index] >= rerankRepetitionScore)) return;
+    crossed.push({ chapter, revision: version.revision, quote: candidate.paragraph });
+    crossed.push({ chapter: candidate.source.chapter, revision: candidate.source.revision, quote: candidate.source.paragraph });
+  });
   if (crossed.length) issues.push({
     id: 'recycled-passage', category: 'voice', severity: 'major',
     description: `${crossed.length / 2} paragraph(s) repeat a passage from an earlier chapter in new wording.`,
@@ -357,10 +369,11 @@ export function referenceMetrics(earlier: PriorProse[], language: string): Proso
 export async function prosodyReport(
   chapter: number, version: ChapterVersion, earlier: PriorProse[], language: string,
   embed?: Embedder, budget = defaultProsodyBudget, scenes: { sceneId: string; conflictCarriedBy?: string }[] = [],
+  rerank?: Reranker,
 ): Promise<ProsodyReport> {
   const reference = referenceMetrics(earlier, language);
   const findings = [...prosodyIssues(chapter, version, language, budget, reference), ...dialogueIssues(chapter, version, scenes)];
   if (!embed) return { checkedRevision: version.revision, metrics: prosodyMetrics(version.content, language), findings, repetitionChecked: false };
-  const repetition = await repetitionIssues(chapter, version, earlier, embed);
+  const repetition = await repetitionIssues(chapter, version, earlier, embed, defaultRepetitionThresholds, rerank);
   return { checkedRevision: version.revision, metrics: prosodyMetrics(version.content, language), findings: [...findings, ...repetition], repetitionChecked: true };
 }

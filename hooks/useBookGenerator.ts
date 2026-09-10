@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry } from '../types';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { embedOllama } from '../services/ollamaService';
+import { sharedReranker } from '../utils/novel/reranker';
 import { createBookSpec, type NovelRun } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { BrowserRunStore, type RunStore } from '../utils/novel/runStore';
@@ -14,6 +16,25 @@ const DEFAULT_SETTINGS: StorySettings = {
   writingStyle: 'descriptive', language: 'English', tense: 'past',
   ending: 'closed', targetWordsPerChapter: 4000,
 };
+
+/** Set to "on" to let the browser download the cross-encoder and measure repetition. */
+export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
+
+/**
+ * The two optional halves of the repetition check: an embedder that nominates one earlier passage per
+ * paragraph, and the cross-encoder that decides whether it is a repetition. Both are absent by
+ * default — the embedder needs a local Ollama, and the model is a ~600MB download no reader should
+ * receive unasked. Absent, the report says repetition was not checked rather than reporting none.
+ */
+function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
+  const config = getStoredProviderConfig();
+  if (config.provider !== 'ollama') return {};
+  const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
+  try {
+    if (localStorage.getItem(RERANK_STORAGE_KEY) !== 'on') return { embed };
+  } catch { return { embed }; }
+  return { embed, rerank: sharedReranker() };
+}
 
 /** React presents snapshots; the engine owns execution state and durable transactions. */
 export default function useBookGenerator() {
@@ -94,7 +115,8 @@ export default function useBookGenerator() {
       clear: async () => { checkActive(); await storeRef.current.clear(); },
       save: async state => { checkActive(); await storeRef.current.save(state); },
     };
-    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); });
+    const { embed, rerank } = repetitionTools();
+    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); }, embed, rerank);
   }
 
   async function execute(action: (run: NovelRun, engine: NovelEngine) => Promise<void>) {

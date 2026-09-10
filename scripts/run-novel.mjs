@@ -45,6 +45,7 @@ try {
   const { createRun, NovelEngine } = await server.ssrLoadModule('/utils/novel/engine.ts');
   const { generateText } = await server.ssrLoadModule('/services/llmService.ts');
   const { embedOllama } = await server.ssrLoadModule('/services/ollamaService.ts');
+  const { sharedReranker } = await server.ssrLoadModule('/utils/novel/reranker.ts');
 
   const store = new FileRunStore();
   let run = await store.load();
@@ -102,7 +103,12 @@ try {
   const embeddingModel = arg('embed') ?? 'qwen3-embedding:4b';
   const embed = embeddingModel === 'off' ? undefined
     : async inputs => embedOllama(inputs, embeddingModel, writer.ollamaEndpoint);
-  log(`embeddings=${embeddingModel}`);
+  // The cross-encoder decides what the cosine only nominates, but its weights are a ~600MB download,
+  // so it stays off until asked for. Without it the cosine decides alone at its own threshold.
+  const rerankModel = arg('rerank') ?? 'off';
+  const rerank = rerankModel === 'off' ? undefined
+    : sharedReranker(rerankModel === 'on' ? undefined : rerankModel);
+  log(`embeddings=${embeddingModel} rerank=${rerankModel}`);
 
   // Versions already on disk were reported by the run that produced them; a resume should not replay
   // the whole history into the log every time.
@@ -133,7 +139,7 @@ try {
         for (const issue of version.prosody.findings) log(`  · ${issue.id}: ${issue.description}`);
       }
     }
-  }, embed);
+  }, embed, rerank);
 
   if (!run.outline.trim()) { log('STAGE outline'); await engine.outline(run); }
   await engine.continue(run);

@@ -1,7 +1,7 @@
 import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
-import { dialogueIssues, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { defaultRepetitionThresholds, dialogueIssues, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
 import { createBookSpec } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
@@ -112,6 +112,26 @@ describe('semantic repetition', () => {
   it('leaves consecutive paragraphs that do different work alone', async () => {
     const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4) });
     expect(await repetitionIssues(1, version([a, c].join('\n\n')), [], embed)).toEqual([]);
+  });
+
+  it('lets the cross-encoder decide what the cosine only nominates', async () => {
+    // A pair the cosine would never reach — 0.71 is far under any threshold it can be given — is the
+    // pair the reranker ranked second of 525: the same light switch clicked twice in the same figure
+    // of speech, a chapter apart.
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.78) });
+    const asked: [string, string][] = [];
+    const rerank = async (pairs: [string, string][]) => { asked.push(...pairs); return pairs.map(() => 5.0); };
+    const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed, defaultRepetitionThresholds, rerank);
+    expect(asked).toHaveLength(1);
+    expect(issues.find(issue => issue.id === 'recycled-passage')?.evidence.map(item => item.chapter)).toEqual([3, 1]);
+  });
+
+  it('drops a nominated pair the cross-encoder calls a motif rather than a repetition', async () => {
+    // Cosine 0.955: high enough that the cosine alone would report it. The decision is no longer its own.
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.3) });
+    const rerank = async (pairs: [string, string][]) => pairs.map(() => 4.49);
+    const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed, defaultRepetitionThresholds, rerank);
+    expect(issues.find(issue => issue.id === 'recycled-passage')).toBeUndefined();
   });
 
   it('holds cross-chapter pairs to their own distribution, not the one measured inside a chapter', async () => {
