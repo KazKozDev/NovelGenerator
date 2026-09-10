@@ -9,6 +9,7 @@ import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook } from '../utils/novel/presentation';
 import { sceneWordTargets } from '../utils/novel/proseCraft';
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
+import { literaryStillHolds } from '../utils/novel/literaryState';
 
 function setup() {
   const run = createRun(createBookSpec('A family chooses whether to disclose a letter.', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaModel: 'test', ollamaEndpoint: 'http://localhost:11434' });
@@ -131,6 +132,33 @@ describe('Versioned literary architecture', () => {
     expect(run.chapters.every(chapter => chapter.status === 'invalidated')).toBe(true);
     expect(run.chapters.map(chapter => chapter.versions[0].content)).toEqual(contents);
     expect(reconcileCheckpoint(run)).toBe(false);
+  });
+
+  const longChapter = (marker = 'Он запер дверь.') =>
+    `${Array.from({ length: 60 }, (_, i) => `Смотритель прошёл вдоль ряда колонн и отметил показание номер ${i}.`).join(' ')} ${marker}`;
+
+  it('keeps an assessment across a repair that left every cited passage on the page', () => {
+    const run = setup();
+    const first = prepare(run, 1, longChapter());
+    stampLiterary(run, 1, first);
+    const quote = first.literary!.observations[0].evidence[0].quote;
+    // A repair at the median size measured on a live run: one sentence of sixty replaced.
+    const repaired = addCandidate(run.chapters[0], first.content.replace('показание номер 3.', 'показание номер три, впервые за смену.'), 'repair');
+    expect(repaired.content).toContain(quote);
+    expect(literaryStillHolds(first, repaired, 1)).toBe(true);
+  });
+
+  it('assesses again when the cited passage is gone, or when the revision is not small', () => {
+    const run = setup();
+    const first = prepare(run, 1, longChapter());
+    stampLiterary(run, 1, first);
+    // The ending it cited is no longer on the page.
+    const cut = addCandidate(run.chapters[0], longChapter('Он ушёл, не запирая ничего.'), 'ending rewritten');
+    expect(literaryStillHolds(first, cut, 1)).toBe(false);
+    // Every quotation survives here; the chapter simply grew too much to be the same reading.
+    const grown = addCandidate(run.chapters[0], `${first.content} ${Array.from({ length: 20 }, (_, i) => `Новая сцена, часть ${i}.`).join(' ')}`, 'grown');
+    expect(grown.content).toContain(first.literary!.observations[0].evidence[0].quote);
+    expect(literaryStillHolds(first, grown, 1)).toBe(false);
   });
 
   it('redraws a literary gate that cannot cite its evidence, instead of ending the run', async () => {

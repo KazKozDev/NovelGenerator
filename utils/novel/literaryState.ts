@@ -54,6 +54,32 @@ function fingerprint(text: string): string {
 export function literaryContextKey(run: NovelRun, before: number): string {
   return fingerprint(JSON.stringify(literaryHistory(run, before).map(item => [item.chapter, literaryContribution(item.version)])));
 }
+/**
+ * Whether an assessment made of one revision still stands for the next one.
+ *
+ * Measured over a live run: a repair replaces 1% of a chapter's sentences at the median and never
+ * more than 15%, and the literary gate — the most expensive call in the system — was rerun in full
+ * every time. It reads the chapter through the passages it cites, so when every passage it cited is
+ * still there word for word and the revision barely moved, the reading it produced has not changed.
+ *
+ * The size limit is what keeps this honest: a small edit cannot have introduced a chapter's worth of
+ * new material for the gate to miss. A larger one is assessed again however intact its quotations are.
+ */
+export const literaryReuseCeiling = 0.05;
+
+export function literaryStillHolds(previous: ChapterVersion, candidate: ChapterVersion, chapter: number): boolean {
+  if (!previous.literary || previous.literary.version !== 1) return false;
+  const sentences = (text: string) => new Set(text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(Boolean));
+  const before = sentences(previous.content), after = sentences(candidate.content);
+  if (!after.size) return false;
+  let fresh = 0;
+  for (const sentence of after) if (!before.has(sentence)) fresh++;
+  if (fresh / after.size > literaryReuseCeiling) return false;
+  const cited = [...previous.literary.observations, ...previous.literary.issues]
+    .flatMap(item => item.evidence).filter(evidence => evidence.chapter === chapter);
+  return cited.length > 0 && cited.every(evidence => candidate.content.includes(evidence.quote));
+}
+
 export function literaryCurrent(run: NovelRun, chapter: number, version: ChapterVersion): boolean {
   return version.literary?.version === 1 && version.literary.checkedRevision === version.revision &&
     version.literary.contextKey === literaryContextKey(run, chapter) && version.literary.observations.length > 0 &&

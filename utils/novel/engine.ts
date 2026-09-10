@@ -1,5 +1,5 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
-import { literaryContextKey, literaryCurrent } from './literaryState';
+import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
 import { proseCraft, narrativeDesign } from './proseCraft';
 import { prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
@@ -396,8 +396,12 @@ export class NovelEngine {
       }
       if (candidate.review.status === 'passed') {
         if (!literaryCurrent(run, chapter.number, candidate)) {
-          const identicalLiterary = chapter.versions.find(version => version !== candidate && version.content === candidate.content && literaryCurrent(run, chapter.number, version));
-          if (identicalLiterary) {
+          // Byte-identical prose, or a revision so small that every passage the assessment cites is
+          // still on the page: either way the reading it produced still describes this chapter.
+          const reusable = chapter.versions.find(version => version !== candidate && literaryCurrent(run, chapter.number, version)
+            && (version.content === candidate.content || literaryStillHolds(version, candidate, chapter.number)));
+          if (reusable) {
+            const identicalLiterary = reusable;
             candidate.literary = structuredClone(identicalLiterary.literary);
             candidate.literary.checkedRevision = candidate.revision;
             for (const item of [...candidate.literary.observations, ...candidate.literary.issues]) {
