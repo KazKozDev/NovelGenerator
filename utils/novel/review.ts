@@ -157,29 +157,67 @@ const foreignScripts = [
 ];
 
 /**
+ * One measure of a sentence repeated, used at every distance the book has.
+ *
+ * Rewording is the usual disguise — "Ray stood at the counter" against "Ray stood in the dark" — so
+ * sentences are compared by how much vocabulary they share rather than letter for letter, and the
+ * overlap is taken against the shorter of the two: a copy padded with a clause is still a copy.
+ *
+ * The three checks built on it differ only in what they compare against and where their threshold
+ * sits, and each threshold was measured on its own material: 0.7 inside a chapter and between its
+ * scenes, where restatement is the defect, and 0.9 across chapters, where 2442 measured sentences put
+ * every match at or above it as an exact copy and the band below it as ordinary echo.
+ */
+export function sentencesOf(text: string, minimumWords = 8): string[] {
+  return text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.split(/\s+/).length >= minimumWords);
+}
+
+const vocabulary = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
+
+/** How much of the shorter sentence the two have in common. */
+export function sentenceOverlap(first: Set<string>, second: Set<string>): number {
+  const smaller = Math.min(first.size, second.size);
+  if (!smaller) return 0;
+  let shared = 0;
+  for (const word of second) if (first.has(word)) shared++;
+  return shared / smaller;
+}
+
+/**
+ * Each sentence of `text` that repeats one of `earlier`, with the sentence it repeats. Callers decide
+ * what "earlier" means: the chapter's own preceding sentences, the scenes already written, or the
+ * chapters already accepted.
+ */
+function repeatedSentences<T>(text: string, earlier: { sentence: string; source: T }[], threshold: number): { sentence: string; source: T }[] {
+  const history = earlier.map(item => ({ ...item, bag: vocabulary(item.sentence) }));
+  if (!history.length) return [];
+  const found: { sentence: string; source: T }[] = [];
+  for (const sentence of sentencesOf(text)) {
+    const bag = vocabulary(sentence);
+    const match = history.find(previous => sentenceOverlap(bag, previous.bag) >= threshold);
+    if (match) found.push({ sentence, source: match.source });
+  }
+  return found;
+}
+
+/**
  * Passages a chapter says twice. Repairs return the whole chapter, and a model asked to fix a
  * passage tends to set its improved version beside the old one rather than replace it, so the same
  * beat accumulates. Rewording is the usual disguise — "Ray stood at the counter" against "Ray stood
  * in the dark" — so sentences are compared by how much vocabulary they share, not letter for letter.
  */
 export function duplicatePassages(content: string, threshold = 0.7): { first: string; second: string }[] {
-  const sentences = content.split(/(?<=[.!?…])\s+/).map(text => text.trim()).filter(text => text.split(/\s+/).length >= 8);
-  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
-  const bags = sentences.map(words);
+  const sentences = sentencesOf(content);
+  const bags = sentences.map(vocabulary);
   const found: { first: string; second: string }[] = [];
   const paired = new Set<number>();
   for (let i = 0; i < sentences.length; i++) {
     if (paired.has(i)) continue;
     for (let j = i + 1; j < sentences.length; j++) {
-      if (paired.has(j)) continue;
-      let shared = 0;
-      for (const word of bags[j]) if (bags[i].has(word)) shared++;
-      // Overlap against the smaller sentence: an expanded restatement is still a restatement.
-      if (shared / Math.min(bags[i].size, bags[j].size) >= threshold) {
-        found.push({ first: sentences[i], second: sentences[j] });
-        paired.add(j);
-        break;
-      }
+      if (paired.has(j) || sentenceOverlap(bags[i], bags[j]) < threshold) continue;
+      found.push({ first: sentences[i], second: sentences[j] });
+      paired.add(j);
+      break;
     }
   }
   return found;
@@ -198,24 +236,7 @@ export function duplicatePassages(content: string, threshold = 0.7): { first: st
  * formula, not a chapter copying a passage.
  */
 export function copiedFromEarlier(content: string, earlier: PriorProse[], threshold = 0.9): { sentence: string; source: PriorProse & { sentence: string } }[] {
-  const split = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.split(/\s+/).length >= 8);
-  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
-  const history = earlier.flatMap(prior => split(prior.content).map(sentence => ({ ...prior, sentence, bag: words(sentence) })));
-  if (!history.length) return [];
-  const found: { sentence: string; source: PriorProse & { sentence: string } }[] = [];
-  for (const sentence of split(content)) {
-    const bag = words(sentence);
-    for (const prior of history) {
-      let shared = 0;
-      for (const word of prior.bag) if (bag.has(word)) shared++;
-      // Overlap against the shorter sentence, as inside a chapter: a copy padded with a clause is a copy.
-      if (shared / Math.min(bag.size, prior.bag.size) < threshold) continue;
-      const { bag: _bag, ...source } = prior;
-      found.push({ sentence, source });
-      break;
-    }
-  }
-  return found;
+  return repeatedSentences(content, earlier.flatMap(prior => sentencesOf(prior.content).map(sentence => ({ sentence, source: { ...prior, sentence } }))), threshold);
 }
 
 /**
@@ -235,22 +256,7 @@ export function copiedFromEarlier(content: string, earlier: PriorProse[], thresh
  * different moment.
  */
 export function restatedFromEarlierScenes(scene: string, earlier: string[], threshold = 0.7): { sentence: string; source: string }[] {
-  const split = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(item => item.split(/\s+/).length >= 8);
-  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean));
-  const history = earlier.flatMap(split).map(sentence => ({ sentence, bag: words(sentence) }));
-  if (!history.length) return [];
-  const found: { sentence: string; source: string }[] = [];
-  for (const sentence of split(scene)) {
-    const bag = words(sentence);
-    for (const previous of history) {
-      let shared = 0;
-      for (const word of previous.bag) if (bag.has(word)) shared++;
-      if (shared / Math.min(bag.size, previous.bag.size) < threshold) continue;
-      found.push({ sentence, source: previous.sentence });
-      break;
-    }
-  }
-  return found;
+  return repeatedSentences(scene, earlier.flatMap(sentencesOf).map(sentence => ({ sentence, source: sentence })), threshold);
 }
 
 /** The whole sentence carrying an offset, so a repair has a unit with a beginning and an end. */

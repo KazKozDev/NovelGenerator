@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, findingStreaks, mergeFindings, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, confirmedFindings, copiedFromEarlier, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, findingStreaks, mergeFindings, restatedFromEarlierScenes, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -621,5 +621,24 @@ describe('A book review whose quotations cannot be located', () => {
     expect(prompts.length).toBeGreaterThan(1);
     expect(prompts[0]).toContain('copied out of that ledger character for character');
     expect(prompts[1]).toContain('YOUR PREVIOUS REPORT ON THIS BOOK WAS DISCARDED');
+  });
+});
+
+describe('One measure of a repeated sentence, at every distance', () => {
+  const line = 'Ray stood at the counter of the clinic and felt the night press against the glass.';
+  const reworded = 'Ray stood in the dark of the clinic and felt the night press against the glass.';
+
+  it('reads the same overlap the same way whether the repeat is a chapter, a scene or a paragraph away', () => {
+    // Inside a chapter and between scenes the threshold is 0.7, where restatement is the defect.
+    expect(duplicatePassages(`${line} He waited a while longer. ${reworded}`)).toHaveLength(1);
+    expect(restatedFromEarlierScenes(`${reworded} The night went on.`, [line])).toHaveLength(1);
+    // Across chapters it is 0.9, where only an exact copy counts, so the same reworded pair is not one.
+    expect(copiedFromEarlier(`${reworded} The night went on.`, [{ chapter: 1, revision: 1, content: line }])).toEqual([]);
+    expect(copiedFromEarlier(`${line} The night went on.`, [{ chapter: 1, revision: 1, content: line }])).toHaveLength(1);
+  });
+
+  it('measures overlap against the shorter sentence, so a copy padded with a clause is still a copy', () => {
+    const padded = `${line.replace('.', ', and he did not move for a long time.')}`;
+    expect(copiedFromEarlier(`${padded} The night went on.`, [{ chapter: 1, revision: 1, content: line }])).toHaveLength(1);
   });
 });
