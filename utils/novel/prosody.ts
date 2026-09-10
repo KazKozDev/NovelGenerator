@@ -196,6 +196,22 @@ export function speechParagraphs(text: string): string[] {
 export const taggedSpeechCeiling = 0.85;
 
 /**
+ * Where the measure stops describing a habit and starts describing a chapter that cannot be read as
+ * conversation at all.
+ *
+ * Measured over 180 versions with real dialogue: the share runs at 0.81 at the median and 0.85 at the
+ * third quartile, so the ceiling sat exactly on a quartile of our own distribution and fired on one
+ * version in four by construction. And it does not repair: one live chapter carried this finding
+ * through nine consecutive rounds, another six, eighteen of the English run's fifty-five blocking
+ * findings. A writer's standing habit is not a defect of the chapter it shows up in.
+ *
+ * So the band from the ceiling to here informs a repair without blocking one, and past 0.95 — 16% of
+ * versions, where all but one line in twenty arrives wrapped — it blocks, because a chapter whose
+ * speech never once stands alone is not a stylistic preference.
+ */
+export const taggedSpeechBlocking = 0.95;
+
+/**
  * The plan says which scenes are argued out loud; this checks the prose kept that promise. Deterministic
  * on purpose: a scene planned as an exchange and written without a spoken line is a defect no model
  * needs to adjudicate. Scenes planned before this field existed are not judged.
@@ -214,7 +230,7 @@ export function dialogueIssues(chapter: number, version: ChapterVersion, scenes:
   }];
   const tagged = speech.filter(isTagged);
   if (speech.length >= 6 && tagged.length / speech.length > taggedSpeechCeiling) return [{
-    id: 'speech-tag-bloat', category: 'dialogue', severity: 'major',
+    id: 'speech-tag-bloat', category: 'dialogue', severity: tagged.length / speech.length > taggedSpeechBlocking ? 'major' : 'minor',
     description: `${Math.round((tagged.length / speech.length) * 100)}% of spoken lines arrive with an attached gesture or attribution; the exchange never runs as speech alone.`,
     instruction: `This is a pattern across the whole chapter, not the ${Math.min(tagged.length, 3)} lines quoted below: they are examples. Go through every spoken line in the chapter and delete the attribution and the gesture from those that do not need them — once the reader knows who is speaking, a line stands on its own. At least half of the chapter's spoken lines must end up bare. Keep a beat only where it changes the exchange — a hesitation, a refusal to answer, an action that contradicts the words — and where a gesture stays, cut the clause that names its anatomy and the clause that explains its meaning. Change no spoken words, and change nothing that is not a speech attribution or its gesture.`,
     evidence: tagged.slice(0, 3).map(quote => ({ chapter, revision: version.revision, quote })),

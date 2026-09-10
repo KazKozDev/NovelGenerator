@@ -146,6 +146,22 @@ describe('semantic repetition', () => {
     expect(quiet.find(issue => issue.id === 'recycled-passage')).toBeUndefined();
   });
 
+  it('informs a repair about attribution, and blocks only where speech never stands alone', () => {
+    const line = (n: number, bare: boolean) => bare ? `— Реплика номер ${n}.` : `— Реплика номер ${n}, — сказал он, не поднимая глаз.`;
+    const chapter = (tagged: number, bare: number) => [
+      ...Array.from({ length: tagged }, (_, i) => line(i, false)),
+      ...Array.from({ length: bare }, (_, i) => line(100 + i, true)),
+    ].join('\n\n');
+    // 0.90 of spoken lines tagged: over the third quartile of 180 measured versions, and still a
+    // writer's habit rather than a defect of this chapter.
+    const scenes = [{ sceneId: 's1', conflictCarriedBy: 'speech' }];
+    const habit = dialogueIssues(1, version(chapter(18, 2)), scenes).find(issue => issue.id === 'speech-tag-bloat');
+    expect(habit?.severity).toBe('minor');
+    // All but one line in twenty arrives wrapped: this chapter cannot be read as conversation.
+    const wrapped = dialogueIssues(1, version(chapter(39, 1)), scenes).find(issue => issue.id === 'speech-tag-bloat');
+    expect(wrapped?.severity).toBe('major');
+  });
+
   it('holds cross-chapter pairs to their own distribution, not the one measured inside a chapter', async () => {
     // Paragraphs from different chapters of the same novel sit a tenth higher than paragraphs inside
     // one: at 0.80 the band is the book's own echoes — a scene continued across the break, a later
