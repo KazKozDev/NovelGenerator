@@ -42,7 +42,12 @@ function alreadyOnThePage(chapter: ChapterRecord): string {
  */
 export function planForScene(chapter: ChapterRecord, sceneIndex: number): object {
   const scenes = chapter.plan.detailedScenes || [];
-  const { detailedScenes: _scenes, ...frame } = chapter.plan;
+  // sceneBreakdown is the same chapter told again in prose — arrival, confession, discovery,
+  // confrontation, choice, aftermath, all of it already in the scenes below it, and 774 characters of
+  // a measured plan. Two accounts of one plan cost tokens and can disagree with each other; the
+  // structured one is the account the engine checks against, so it is the one a prompt carries. The
+  // field stays in the plan, for the plan screen and for whoever plans the chapters after this one.
+  const { detailedScenes: _scenes, sceneBreakdown: _breakdown, ...frame } = chapter.plan;
   return {
     ...frame,
     thisScene: scenes[sceneIndex],

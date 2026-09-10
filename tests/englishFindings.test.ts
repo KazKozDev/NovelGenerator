@@ -45,3 +45,34 @@ describe('The finding filters, on English prose', () => {
     expect(confirmedFindings([issue('Elena accepts his terms without showing an inner struggle of her own.', 'character')], first)[0].severity).toBe('major');
   });
 });
+
+describe('The silent-failure shapes, in Cyrillic and mixed text', () => {
+  const leak = (description: string, quote = description): ReviewIssue =>
+    ({ id: 'k', category: 'knowledge', severity: 'critical', description, instruction: 'Fix.', evidence: [{ chapter: 3, revision: 7, quote }] });
+
+  it('reads a Russian hedge, which an ASCII word boundary could not', () => {
+    // The exact failure: \b is a Latin word boundary in JavaScript and matches nothing beside Cyrillic,
+    // so this rule once existed and did nothing at all on the books it was written for.
+    expect(demoteHedgedKnowledge([leak('Марина посмотрела на фигуру, возможно, того самого журналиста.')])[0].severity).toBe('minor');
+    expect(demoteHedgedKnowledge([leak('Алексей предполагает, что за этим стоит сенатор.')])[0].severity).toBe('minor');
+    expect(demoteHedgedKnowledge([leak('Алексей набрал номер Марии Соколовой, дочери журналиста.')])[0].severity).toBe('critical');
+  });
+
+  it('reads a hedge at the very edges of a sentence, where a boundary rule is easiest to get wrong', () => {
+    expect(demoteHedgedKnowledge([leak('Возможно, он знал её имя.')])[0].severity).toBe('minor');
+    expect(demoteHedgedKnowledge([leak('Он знал её имя — по крайней мере')])[0].severity).toBe('minor');
+    // A word that merely contains a hedge inside it is not a hedge: "невозможно" is not "возможно".
+    expect(demoteHedgedKnowledge([leak('Невозможное стало фактом: он знал её имя.')])[0].severity).toBe('critical');
+  });
+
+  it('reads a mixed-script sentence, where half the words are Latin', () => {
+    expect(demoteHedgedKnowledge([leak('Elias seemed to recognise то самое имя, которого ему никто не называл.')])[0].severity).toBe('minor');
+    expect(demoteSuggestions([{ ...leak('Мотивация Елены недостаточна for the scene to land.'), category: 'character', severity: 'major' }])[0].severity).toBe('minor');
+  });
+
+  it('matches inflected forms, which exact comparison could not', () => {
+    // "Колонне" against "Колонна", "убийстве" against "убийства": the same word to a reader.
+    const canon = { ...emptyStoryState(), facts: [{ id: 'c', subject: 'Колонна №305', predicate: 'содержит', value: 'запись убийства журналиста', knownBy: ['Алексей'], evidence: { chapter: 1, revision: 1, quote: 'q' } }] };
+    expect(demoteKnownCanon([leak('Алексей использует знание о Колонне №305 и убийстве журналиста.')], canon)[0].severity).toBe('minor');
+  });
+});
