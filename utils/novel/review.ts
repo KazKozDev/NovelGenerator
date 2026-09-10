@@ -718,7 +718,7 @@ export async function analyseChapter(run: NovelRun, chapter: ChapterRecord, vers
   return combined;
 }
 
-export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure' | 'final'): Promise<ReviewReport> {
+export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure' | 'final', retry = ''): Promise<ReviewReport> {
   const sources = run.chapters.map(chapter => ({ chapter: chapter.number, version: acceptedVersion(chapter) }));
   if (run.chapters.length !== run.spec.chapterCount || sources.some(source => !source.version) || run.chapters.some(chapter => chapter.candidateRevision !== undefined)) return { validationVersion: 2, status: 'not_checked', checkedRevision: 0, issues: [], error: 'Every chapter must be accepted before book review.' };
   try {
@@ -738,7 +738,7 @@ export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure
         beats: excerpt(source.version.analysis.beats),
       },
     }));
-    const prompt = `${specPrompt(run.spec)}\nBOOK BLUEPRINT:\n${JSON.stringify(run.blueprint)}\nCOMPLETE BOOK EVIDENCE LEDGER:\n${JSON.stringify(ledger)}\nDETERMINISTIC PROMISE CHECK:\n${JSON.stringify(endingIssues(run))}\nReview the ${phase === 'structure' ? 'whole-book structure before sentence-level editing' : 'final whole-book continuity and resolution'}. Check causal dependencies, escalation of the central conflict, protagonist agency and change, pacing variation, planted clues and earned payoffs, unresolved required promises, and the ending's emotional consequences. Distinguish intentionally open threads from broken promises. Propose precise affected passages, not a blind rewrite. All chapter prose has a separate full-content local review; here assess cross-chapter relationships.\n${issueFormat}`;
+    const prompt = `${specPrompt(run.spec)}\nBOOK BLUEPRINT:\n${JSON.stringify(run.blueprint)}\nCOMPLETE BOOK EVIDENCE LEDGER:\n${JSON.stringify(ledger)}\nDETERMINISTIC PROMISE CHECK:\n${JSON.stringify(endingIssues(run))}\nReview the ${phase === 'structure' ? 'whole-book structure before sentence-level editing' : 'final whole-book continuity and resolution'}. Check causal dependencies, escalation of the central conflict, protagonist agency and change, pacing variation, planted clues and earned payoffs, unresolved required promises, and the ending's emotional consequences. Distinguish intentionally open threads from broken promises. Propose precise affected passages, not a blind rewrite. All chapter prose has a separate full-content local review; here assess cross-chapter relationships.\nYou are reading the book through the ledger above and not through its prose, so every quotation you give must be copied out of that ledger character for character — an evidence quote exactly as it stands there, not extended, not tidied, not joined to a neighbour. A finding whose quotation cannot be located in the accepted chapters is discarded entirely, and a report of nothing but discarded findings is a review that did not happen.\n${issueFormat}${retry}`;
     const report = await structuredResponse(prompt, 'You are a developmental editor reviewing a complete novel through its verified evidence ledger. Respond only with JSON.', llm, ['issues'], raw => parseIssues(raw, sources as { chapter: number; version: ChapterVersion }[]), { schema: issueSchema });
     // The same rule as a chapter review, for the same reason and against the same wording: this pass
     // reported "Elena's betrayal lacks sufficient motivation" beside "the plan is introduced without

@@ -774,11 +774,23 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
   private async globalReview(run: NovelRun, phase: 'structure' | 'final') {
     const field = phase === 'structure' ? 'structuralReview' : 'finalReview';
     const attempts = phase === 'structure' ? 'structuralAttempts' : 'finalAttempts';
+    let redrawn = 0;
     for (;;) {
       run[field] = await reviewBook(run, this.llm, phase);
       await this.checkpoint(run);
       if (run[field].status === 'passed') return;
-      const report = run[field];
+      let report = run[field];
+      // A book review reads the ledger rather than the prose, so its quotations are the likeliest
+      // thing to go wrong: a passage extended by a word cannot be located, and a report whose every
+      // finding was discarded is a review that did not happen, not a book that needs attention.
+      if (report.status === 'not_checked' && redrawn < MAX_REVIEW_REDRAWS) {
+        redrawn++;
+        run[field] = await reviewBook(run, this.llm, phase, report.error
+          ? `\nYOUR PREVIOUS REPORT ON THIS BOOK WAS DISCARDED: ${report.error} Copy each quotation out of the ledger exactly as it appears there and add nothing to it. Quote less and quote exactly: one accurate quotation carries a finding, an approximate one loses it.` : '');
+        await this.checkpoint(run);
+        if (run[field].status === 'passed') return;
+        report = run[field];
+      }
       if (report.status === 'not_checked' || (run[attempts] || 0) >= 2) throw new NeedsRevisionError(`Book ${phase} review needs attention: ${report.error || report.issues.map(issue => issue.description).join('; ')}`);
       run[attempts] = (run[attempts] || 0) + 1;
       await this.checkpoint(run);

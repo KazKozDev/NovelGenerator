@@ -591,3 +591,35 @@ describe('A review whose quotations cannot be found', () => {
     expect(prompts[1]).toContain('copied character for character');
   });
 });
+
+describe('A book review whose quotations cannot be located', () => {
+  it('is asked again with the reason, since it reads the ledger and not the prose', async () => {
+    const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });
+    run.outline = 'Vera recovers the letter.';
+    run.blueprint = { centralConflict: 'c', protagonistChange: 'p', endingPayoff: 'e', characters: {}, chapters: [], promises: [] };
+    run.chapters = [1, 2, 3].map(number => {
+      const { chapter, version } = fixture();
+      chapter.number = number;
+      version.review = { validationVersion: 2, status: 'passed', issues: [], checkedRevision: version.revision };
+      version.analysis = { summary: `Chapter ${number}.`, facts: [], events: [], promises: [], beats: [] };
+      stampLiterary(run, number, version);
+      chapter.status = 'accepted';
+      chapter.acceptedRevision = version.revision;
+      chapter.candidateRevision = undefined;
+      return chapter;
+    });
+    run.canon = { facts: [], events: [], promises: [], beats: [], summaries: {} };
+    const prompts: string[] = [];
+    const llm = async (prompt: string, system: string) => {
+      if (!system.includes('complete novel')) return '{"issues":[]}';
+      prompts.push(prompt);
+      // A passage extended past what the ledger holds: unlocatable, so the finding is discarded.
+      return JSON.stringify({ issues: [{ id: 'b', category: 'plot', severity: 'major', description: 'The promise is never paid.', instruction: 'Pay it.', evidence: [{ chapter: 1, revision: 1, quote: 'Vera read the letter and then walked out into a street this book never described' }] }] });
+    };
+    await (new NovelEngine(llm, new MemoryRunStore()) as never as { globalReview: (r: unknown, p: string) => Promise<void> })
+      .globalReview(run, 'structure').catch(() => {});
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts[0]).toContain('copied out of that ledger character for character');
+    expect(prompts[1]).toContain('YOUR PREVIOUS REPORT ON THIS BOOK WAS DISCARDED');
+  });
+});
