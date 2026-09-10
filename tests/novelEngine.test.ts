@@ -1,5 +1,6 @@
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
+import { literaryIntentForScene, planForScene } from '../utils/novel/writer';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { plannedBeatsFrom } from './beatStub';
@@ -1199,5 +1200,41 @@ describe('A scene that tells again what an earlier scene told', () => {
     expect(scenes).toBe(3);
     expect(chapter.sceneDrafts?.[1]).toContain('under a sheet nobody had lifted');
     expect(chapter.sceneDrafts?.[1]).not.toContain('listened to the water');
+  });
+});
+
+describe('The plan a scene is given', () => {
+  it('carries this scene entire and its neighbours as a line each', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-a' },
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-b', objective: 'confront the clerk', outcome: 'the letter changes hands', keyMoments: ['the refusal', 'the price named'] },
+    ];
+    const plan = planForScene(chapter, 0) as { thisScene: { sceneId: string; keyMoments: string[] }; otherScenes: { sceneId: string; position: string; keyMoments?: string[] }[]; title: string };
+    expect(plan.thisScene.sceneId).toBe('scene-a');
+    expect(plan.thisScene.keyMoments.length).toBeGreaterThan(0);
+    // The frame of the chapter stays; the other scene arrives as a line, without its beats.
+    expect(plan.title).toBe(chapter.plan.title);
+    expect(plan.otherScenes).toHaveLength(1);
+    expect(plan.otherScenes[0]).toMatchObject({ sceneId: 'scene-b', position: 'later' });
+    expect(plan.otherScenes[0].keyMoments).toBeUndefined();
+  });
+
+  it('carries the literary intent of this scene, not of every scene in the chapter', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.literaryPlan = {
+      version: 1, contextKey: 'k', chapterPlanKey: 'p', endingDevelopment: 'A choice narrows what can happen next.',
+      avoidReplaying: ['the same realization announced twice'],
+      scenes: [
+        { sceneId: 'scene-1', development: 'the intent of this scene', characterChoice: 'she stays', dramaticCost: 'she loses the train', narrativeWeight: 2 },
+        { sceneId: 'scene-2', development: 'the intent of a scene not being written', characterChoice: 'he refuses', dramaticCost: 'the letter burns', narrativeWeight: 3 },
+      ],
+    };
+    const intent = JSON.stringify(literaryIntentForScene(chapter, 'scene-1'));
+    expect(intent).toContain('the intent of this scene');
+    expect(intent).toContain('A choice narrows what can happen next');
+    expect(intent).not.toContain('a scene not being written');
   });
 });
