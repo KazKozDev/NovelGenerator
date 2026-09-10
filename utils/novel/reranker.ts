@@ -38,18 +38,46 @@ export const defaultRerankerModel = 'onnx-community/bge-reranker-v2-m3-ONNX';
  * A reranker backed by transformers.js. The model is fetched on first use and cached by the runtime,
  * so a caller that never reaches the repetition check never downloads it.
  */
+/**
+ * In a browser the model runs on a worker of its own, and the page exchanges text for numbers.
+ * onnxruntime-web executes on the thread that calls it — measured in the running application, two
+ * pairs held the main thread for 706ms and the first call for 35 seconds — and asking it to proxy
+ * itself into a worker did not move it. Owning the thread is the only arrangement that does.
+ */
+function browserReranker(model: string, dtype: 'q8' | 'fp32'): Reranker {
+  let worker: Worker | undefined;
+  let sequence = 0;
+  const waiting = new Map<number, { resolve: (scores: number[]) => void; reject: (error: Error) => void }>();
+  return pairs => new Promise<number[]>((resolve, reject) => {
+    if (!pairs.length) return resolve([]);
+    if (!worker) {
+      worker = new Worker(new URL('./reranker.worker.ts', import.meta.url), { type: 'module' });
+      worker.addEventListener('message', (event: MessageEvent<{ id: number; scores?: number[]; error?: string }>) => {
+        const pending = waiting.get(event.data.id);
+        if (!pending) return;
+        waiting.delete(event.data.id);
+        if (event.data.error) pending.reject(new Error(event.data.error));
+        else pending.resolve(event.data.scores || []);
+      });
+      // A worker that dies takes its pending questions with it; the repetition check then reports that
+      // it could not be made, and the cosine decides alone, which is what it does without a reranker.
+      worker.addEventListener('error', () => {
+        for (const pending of waiting.values()) pending.reject(new Error('The reranker worker stopped.'));
+        waiting.clear();
+        worker = undefined;
+      });
+    }
+    const id = ++sequence;
+    waiting.set(id, { resolve, reject });
+    worker.postMessage({ id, model, dtype, pairs });
+  });
+}
+
 export function createReranker(model = defaultRerankerModel, dtype: 'q8' | 'fp32' = 'q8'): Reranker {
+  if (typeof window !== 'undefined' && typeof Worker !== 'undefined') return browserReranker(model, dtype);
   let ready: Promise<{ tokenize: (current: string, earlier: string) => unknown; score: (input: unknown) => Promise<number> }> | undefined;
   const load = async () => {
-    const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers');
-    // In a browser the cross-encoder runs on the CPU for about a second per pair, forty pairs to a
-    // chapter, and onnxruntime-web executes on whatever thread calls it: on the main thread that is
-    // the interface frozen for the length of the check. Proxying moves execution into a worker, so
-    // the page keeps answering while a chapter is measured.
-    if (typeof window !== 'undefined' && env?.backends?.onnx?.wasm) {
-      env.backends.onnx.wasm.proxy = true;
-      env.backends.onnx.wasm.numThreads = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
-    }
+    const { AutoTokenizer, AutoModelForSequenceClassification } = await import('@huggingface/transformers');
     const [tokenizer, sequence] = await Promise.all([
       AutoTokenizer.from_pretrained(model),
       AutoModelForSequenceClassification.from_pretrained(model, { dtype }),

@@ -34,18 +34,14 @@ function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>;
   // have to score every paragraph against every earlier one.
   if (config.provider !== 'ollama') return {};
   const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
-  // Off in the browser unless asked for, and this is measured rather than cautious: onnxruntime-web
-  // executes on the thread that calls it, and asking it to proxy into a worker did not move it. Timed
-  // in the running application, two pairs held the main thread for 706ms and the first call — the
-  // 600MB download and the model's first pass — for 35 seconds, during which a 50ms timer fired six
-  // times instead of seven hundred. A chapter asks about forty pairs. That is the interface stopped.
-  //
-  // The CLI keeps it on: onnxruntime-node runs natively and there is no interface to freeze. In the
-  // browser the cosine decides alone, as it did before the cross-encoder existed, until this key says
-  // otherwise.
+  // The cross-encoder now runs on a worker of its own, so the page keeps answering while a chapter is
+  // measured; onnxruntime-web executes on whichever thread calls it, and owning that thread was the
+  // only arrangement that moved it off this one. It is still a 600MB download on first use and a
+  // second of CPU per pair, so "off" in this key leaves the cosine deciding alone, as it did before
+  // the cross-encoder existed.
   try {
-    if (localStorage.getItem(RERANK_STORAGE_KEY) !== 'on') return { embed };
-  } catch { return { embed }; }
+    if (localStorage.getItem(RERANK_STORAGE_KEY) === 'off') return { embed };
+  } catch { /* a browser that refuses storage gets the default */ }
   return { embed, rerank: sharedReranker() };
 }
 
