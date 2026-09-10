@@ -1,6 +1,6 @@
 import { literaryResponse } from './helpers/literaryFixture';
 import { describe, expect, it, vi } from 'vitest';
-import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
+import { analyseChapter, confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, duplicatePassages, mergeFindings, sameFindingSet, parseObject, reviewBook, reviewChapter } from '../utils/novel/review';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { createBookSpec, genreCraft, specPrompt, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
@@ -476,5 +476,27 @@ describe('Reconciling a checkpoint whose ledger has moved', () => {
     expect(run.chapters.map(chapter => chapter.status)).toEqual(['accepted', 'accepted', 'invalidated']);
     // And the canon of the chapters that kept their standing is kept with them.
     expect(Object.keys(run.canon.summaries)).toEqual(['1', '2']);
+  });
+});
+
+describe('One defect said twice', () => {
+  const issue = (description: string, severity: 'critical' | 'major' = 'major', id = 'a') =>
+    ({ id, category: 'knowledge' as const, severity, description, instruction: 'Fix.', evidence: [{ chapter: 3, revision: 7, quote: 'q' }] });
+
+  it('reaches the repair once, at the severity the review gave it at its sharpest', () => {
+    const merged = mergeFindings([
+      issue('Алексей использует имя жертвы из Колонны №305 до того, как оно ему доступно.'),
+      issue('Алексей использует имя жертвы из Колонны №305, хотя оно ещё не было ему доступно.', 'critical', 'b'),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].severity).toBe('critical');
+  });
+
+  it('leaves two different defects as two', () => {
+    const both = mergeFindings([
+      issue('Алексей использует имя жертвы из Колонны №305 до того, как оно ему доступно.'),
+      issue('Елена знает о комнате отдыха Алексея, хотя планов помещений ей никто не давал.'),
+    ]);
+    expect(both).toHaveLength(2);
   });
 });

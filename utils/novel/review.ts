@@ -424,6 +424,24 @@ export function sameFindingSet(current: ReviewIssue[], previous: ReviewIssue[]):
 }
 
 /**
+ * One defect said twice is one defect. A repair handed both spends a pass on each and reports the
+ * second as already fixed, and the round after reads that as a finding that would not go away.
+ *
+ * Rare — two pairs in a whole five-chapter run — and cheap enough to be worth having anyway. The
+ * severer of the pair survives, since the review that saw it twice saw it most sharply once.
+ */
+export function mergeFindings(issues: ReviewIssue[]): ReviewIssue[] {
+  const rank = { critical: 0, major: 1, minor: 2 } as const;
+  const kept: ReviewIssue[] = [];
+  for (const issue of issues) {
+    const twin = kept.findIndex(existing => sameFinding(existing, issue));
+    if (twin === -1) { kept.push(issue); continue; }
+    if (rank[issue.severity] < rank[kept[twin].severity]) kept[twin] = issue;
+  }
+  return kept;
+}
+
+/**
  * A judgement of taste blocks a chapter only when a second round agrees with it.
  *
  * The review is a fresh sample of four thousand words every round, and it will always find something:
@@ -487,7 +505,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const earlier = run.chapters.filter(item => item.number < chapter.number)
       .map(item => ({ item, accepted: acceptedVersion(item) }))
       .flatMap(entry => entry.accepted ? [{ chapter: entry.item.number, revision: entry.accepted.revision, content: entry.accepted.content }] : []);
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...demoteSuggestions(demoteHedgedKnowledge(demoteKnownCanon(report.issues, canonBefore(run, chapter.number))))];
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []), ...mergeFindings(demoteSuggestions(demoteHedgedKnowledge(demoteKnownCanon(report.issues, canonBefore(run, chapter.number)))))];
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({
