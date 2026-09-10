@@ -551,7 +551,18 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
 }
 
 export async function analyseChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM): Promise<ChapterAnalysis> {
-  const passages = version.content.split(/\n\s*\n/).filter(text => text.trim()).map((text, index) => ({ sourceId: `p${index + 1}`, text }));
+  // A one-word paragraph is a paragraph — "Salt." — and it is not a passage anything can be located
+  // by: evidence that short is rejected as unidentifiable, and a live run died with the extraction
+  // pointing at exactly that. Short paragraphs join the one that follows them, so every source a
+  // model can name is long enough to prove something.
+  const paragraphs = version.content.split(/\n\s*\n/).map(text => text.trim()).filter(Boolean);
+  const grouped: string[] = [];
+  for (const paragraph of paragraphs) {
+    const previous = grouped.length - 1;
+    if (previous >= 0 && grouped[previous].length < 40) grouped[previous] = `${grouped[previous]}\n\n${paragraph}`;
+    else grouped.push(paragraph);
+  }
+  const passages = grouped.map((text, index) => ({ sourceId: `p${index + 1}`, text }));
   const context = `${specPrompt(run.spec)}\nExtract only established information. Do not turn planned actions or predictions into completed events. Use concise, nonredundant entries.\nSOURCE PASSAGES (complete chapter=${chapter.number}, revision=${version.revision}):\n${JSON.stringify(passages)}\nReference the sourceId of an existing supporting passage in each evidence field. Do not copy quotations; the application resolves IDs to exact prose. Never invent a source or an event. An empty array is valid only when no relevant information is established.`;
   const schemas = {
     facts: '{"summary":"concise factual synopsis including the ending","facts":[{"id":"stable-id","subject":"name","predicate":"status/location/relationship:Name/belief/knowledge","value":"established value","knownBy":["name"],"evidence":{"sourceId":"p1"}}]}',

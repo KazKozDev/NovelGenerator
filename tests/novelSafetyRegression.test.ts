@@ -500,3 +500,24 @@ describe('One defect said twice', () => {
     expect(both).toHaveLength(2);
   });
 });
+
+describe('A one-word paragraph', () => {
+  it('cannot be a source on its own, because evidence that short proves nothing', async () => {
+    const { run, chapter } = fixture();
+    // The shape that killed a live English run: a paragraph reading "Salt." offered as evidence.
+    const version = addCandidate(chapter, 'Salt.\n\nShe tasted it on the wind before she saw the water at all, and knew the town by that alone.\n\nThe piano had not been opened in six years, and the keeper did not say why he wanted it playable now.', 'fixture');
+    const seen: string[] = [];
+    const analysis = await analyseChapter(run, chapter, version, async (prompt: string) => {
+      const sources = JSON.parse(prompt.slice(prompt.indexOf('[{"sourceId"'), prompt.indexOf(']', prompt.indexOf('[{"sourceId"')) + 1));
+      seen.push(...sources.map((source: { text: string }) => source.text));
+      if (prompt.includes('TASK: Extract facts')) return JSON.stringify({ summary: 'She arrives.', facts: [] });
+      if (prompt.includes('TASK: Extract events')) return JSON.stringify({ events: [{ id: 'arrival', description: 'She arrives in the town.', consequences: [], evidence: { sourceId: 'p1' } }] });
+      if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: [] });
+      return JSON.stringify({ promises: [] });
+    });
+    // Every source offered to the model is long enough to locate; "Salt." travels with what follows it.
+    expect(seen.every(text => text.length >= 40)).toBe(true);
+    expect(analysis.events[0].evidence.quote).toContain('Salt.');
+    expect(analysis.events[0].evidence.quote.length).toBeGreaterThan(40);
+  });
+});
