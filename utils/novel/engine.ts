@@ -1,6 +1,6 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
 import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
-import { proseCraft, narrativeDesign } from './proseCraft';
+import { proseCraft, narrativeDesign, sceneCountGuidance } from './proseCraft';
 import { newlyBroken, prosodyMetrics, prosodyReport, spokenLinesLost, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
 import { applyPassages, repairableInPlace } from './patch';
@@ -11,6 +11,7 @@ import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPr
 import { analyseChapter, beatCoverageIssue, citedOnlyTheOpening, confirmedFindings, findingStreaks, planWithoutRetelling, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
+import { readSceneJournal } from './sceneJournal';
 
 export function createRun(spec: BookSpec, provider: LLMProviderConfig): NovelRun {
   return {
@@ -293,7 +294,7 @@ export class NovelEngine {
       await this.checkpoint(run);
     }
     for (let number = run.chapters.length + 1; number <= run.spec.chapterCount; number++) {
-      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND PREVIOUS CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude"}]. Set conflictCarriedBy to how the scene's conflict actually reaches the reader: "speech" when two or more characters press their opposing aims on each other in conversation, "action" when the decisive pressure is physical, "solitude" when the character faces it alone. A scene with several present characters whose interests differ is normally carried by speech; a novel in which no scene is carried by speech is a novel without dialogue. Allocate narrativeWeight by dramatic importance: brief connective scenes get less space than the decisive confrontation, its reversals and cost. These weights divide the chapter word budget; they are not tension scores or elapsed time. Use 1–8 scenes. For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
+      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND PREVIOUS CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude"}]. Set conflictCarriedBy to how the scene's conflict actually reaches the reader: "speech" when two or more characters press their opposing aims on each other in conversation, "action" when the decisive pressure is physical, "solitude" when the character faces it alone. A scene with several present characters whose interests differ is normally carried by speech; a novel in which no scene is carried by speech is a novel without dialogue. Allocate narrativeWeight by dramatic importance: brief connective scenes get less space than the decisive confrontation, its reversals and cost. These weights divide the chapter word budget; they are not tension scores or elapsed time. ${sceneCountGuidance(run.spec.targetWordsPerChapter)} For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
       const decode = (raw: any) => validateChapterPlan(raw, run.spec, run.blueprint!.chapters);
       const settings = { maxTokens: 8192, route: 'writer' as const, schema: chapterPlanSchema };
       let plan: ParsedChapterPlan;
@@ -824,6 +825,16 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
           }
           chapter.sceneDrafts.push(scene);
           chapter.status = 'draft';
+          // What this scene established, read off the page it was just written on, so the next scene
+          // inherits the chapter's actual state rather than the plan's intention for it. An entry is
+          // always recorded, empty if the reading failed: a missing continuity note costs the next
+          // scene some of its context, and a journal out of step with the drafts would cost it more.
+          chapter.sceneJournal ||= [];
+          try {
+            chapter.sceneJournal.push(await readSceneJournal(run, chapter, sceneIndex, scene, this.llm));
+          } catch {
+            chapter.sceneJournal.push({ sceneId: chapter.plan.detailedScenes[sceneIndex].sceneId, notes: [] });
+          }
           await this.checkpoint(run);
         }
         candidate = addCandidate(chapter, chapter.sceneDrafts.join('\n\n***\n\n'), 'Initial chapter draft');

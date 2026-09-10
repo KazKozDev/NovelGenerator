@@ -189,6 +189,10 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   chapter.acceptedRevision = version.revision;
   chapter.candidateRevision = undefined;
   chapter.status = 'accepted';
+  // The scene journal was a draft record for writing this chapter's later scenes. The chapter now
+  // speaks through the canon extracted from its accepted prose, so the notes go rather than sit in
+  // every later checkpoint as a second, unreviewed account of events the ledger already holds.
+  chapter.sceneJournal = undefined;
   chapter.repairAttempts = 0;
   chapter.lastFindings = undefined;
   chapter.lastFindingShapes = undefined;

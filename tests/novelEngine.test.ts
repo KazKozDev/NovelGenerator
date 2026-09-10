@@ -10,6 +10,8 @@ import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, re
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
+import { journalSoFar, quotedFrom, readSceneJournal } from '../utils/novel/sceneJournal';
+import { sceneCountGuidance } from '../utils/novel/proseCraft';
 
 const provider = { provider: 'ollama' as const, ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'fixture' };
 const FILLER = [
@@ -83,6 +85,10 @@ function fixtureLLM(count = 3): NovelLLM {
       const revision = Number(prompt.match(/revision=(\d+)/)?.[1]);
       const evidence = { chapter: number, revision, quote: `Thorne opened door ${number}.` };
       return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence })), summary: `Thorne opened door ${number} and paid the price.`, facts: [{ id: `door-${number}`, subject: 'Thorne', predicate: 'location', value: `door ${number}`, knownBy: ['Thorne'], evidence }], events: [{ id: `event-${number}`, description: 'Thorne chose to act', consequences: ['Paid a price'], evidence }], promises: number === 1 ? [{ promiseId: 'letter', kind: 'setup', evidence }] : number === count ? [{ promiseId: 'letter', kind: 'payoff', evidence }] : [] });
+    }
+    if (system.includes('continuity record')) {
+      const written = prompt.split('AS WRITTEN:\n')[1] || '';
+      return JSON.stringify({ notes: [{ kind: 'event', note: 'A door was opened.', quote: written.split(/(?<=[.!?…])\s+/)[0] }] });
     }
     if (system.includes('title completed')) return JSON.stringify({ title: 'The Letter' });
     throw new Error(`Unexpected fixture call: ${system}`);
@@ -1295,6 +1301,120 @@ describe('The plan a scene is given', () => {
     expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-a'))).not.toContain('HOW_THE_CHAPTER_LANDS');
     expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-a'))).toContain('the same realization announced twice');
     expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-b'))).toContain('HOW_THE_CHAPTER_LANDS');
+  });
+});
+
+// A second scene for a chapter whose fixture prose is keyed by chapter number. Its sentences share
+// little vocabulary with the filler, so the duplicate-passage measurement does not read the two
+// scenes of one chapter as the same scene written twice.
+const SECOND_SCENE = [
+  'The clerk turned the key on it.',
+  'A cart went past with nothing in it and nobody driving.',
+  'Somebody upstairs pulled a shutter closed against the weather.',
+  'She counted what was left in her purse and found it enough for the fare.',
+  'The yard gate had been painted over so many times it no longer met its post.',
+  'She went out that way and did not look back at the building.',
+].join(' ');
+
+describe('The journal a chapter keeps while it is written', () => {
+  const scenePair = (chapter: ChapterRecord) => [
+    { ...chapter.plan.detailedScenes![0], sceneId: 'scene-a' },
+    { ...chapter.plan.detailedScenes![0], sceneId: 'scene-b' },
+  ];
+
+  it('records only notes whose quotation is in the scene', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const scene = 'The clerk put the letter in the drawer and turned the key.\n\nThorne left by the yard door.';
+    const llm: NovelLLM = async () => JSON.stringify({ notes: [
+      { kind: 'possession', note: 'The letter is in the clerk\'s drawer.', quote: 'put the letter in the drawer' },
+      { kind: 'position', note: 'Thorne left through the yard.', quote: 'Thorne left by the yard\ndoor.' },
+      { kind: 'knowledge', note: 'Thorne knows who wrote the letter.', quote: 'She recognized the hand at once.' },
+      { kind: 'rumour', note: 'An unknown kind.', quote: 'turned the key' },
+    ] });
+    const journal = await readSceneJournal(run, chapter, 0, scene, llm);
+    expect(journal.sceneId).toBe(chapter.plan.detailedScenes![0].sceneId);
+    expect(journal.notes.map(note => note.kind)).toEqual(['possession', 'position']);
+    // The quotation the scene never contained goes, and with it the fact nothing on the page supports.
+    expect(JSON.stringify(journal.notes)).not.toContain('who wrote the letter');
+    expect(quotedFrom('turned the key', scene)).toBe(true);
+    expect(quotedFrom('turned the lock', scene)).toBe(false);
+  });
+
+  it('reaches the next scene of the chapter, and the plan is only the fallback', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = scenePair(chapter);
+    chapter.sceneDrafts = ['The clerk put the letter in the drawer.'];
+    chapter.sceneJournal = [{ sceneId: 'scene-a', notes: [{ kind: 'possession', note: 'THE_CLERK_HOLDS_THE_LETTER', quote: 'put the letter in the drawer' }] }];
+    let seen = '';
+    await writeScene(run, chapter, 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Next.' }); });
+    expect(seen).toContain('THE_CLERK_HOLDS_THE_LETTER');
+    expect(seen).toContain('WHERE THIS CHAPTER STANDS');
+    // With the page speaking for the written scene, its planned intention is not declared to have happened.
+    expect(seen).not.toContain('must not be told again');
+
+    chapter.sceneJournal = [];
+    seen = '';
+    await writeScene(run, chapter, 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Next.' }); });
+    expect(seen).toContain('must not be told again');
+    expect(seen).toContain(chapter.plan.detailedScenes[0].outcome);
+    expect(journalSoFar(chapter, 1)).toEqual([]);
+  });
+
+  it('is kept per written scene while the chapter is a draft, and dropped when it is accepted', async () => {
+    const store = new MemoryRunStore();
+    const run = runWithPlans();
+    run.chapters[0].plan.detailedScenes = scenePair(run.chapters[0]);
+    const base = fixtureLLM();
+    // The two scenes of chapter one need prose of their own; the fixture keys its prose by chapter.
+    const llm = vi.fn(async (prompt: string, system: string, options?: any) => {
+      if (system.includes('single prose writer') && /SCENE 2\/2/.test(prompt)) return JSON.stringify({ prose: SECOND_SCENE });
+      return base(prompt, system, options);
+    });
+    await new NovelEngine(llm, store).continue(run);
+    const journalled = (llm as any).mock.calls.filter((call: any[]) => String(call[1]).includes('continuity record'));
+    // One reading per written scene: two in the first chapter, one in each of the others.
+    expect(journalled.length).toBe(4);
+    expect(run.chapters.every(chapter => chapter.status === 'accepted')).toBe(true);
+    expect(run.chapters.every(chapter => chapter.sceneJournal === undefined)).toBe(true);
+  });
+
+  it('survives a reading the model cannot ground, without losing its place', async () => {
+    const run = runWithPlans();
+    run.chapters[0].plan.detailedScenes = scenePair(run.chapters[0]);
+    const base = fixtureLLM();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('continuity record')) return JSON.stringify({ notes: [{ kind: 'event', note: 'Invented.', quote: 'A line this scene does not contain.' }] });
+      if (system.includes('single prose writer') && /SCENE 2\/2/.test(prompt)) return JSON.stringify({ prose: SECOND_SCENE });
+      return base(prompt, system, options);
+    });
+    await new NovelEngine(llm, new MemoryRunStore()).continue(run);
+    expect(run.chapters[0].status).toBe('accepted');
+  });
+});
+
+describe('How many scenes a chapter is planned in', () => {
+  it('starts from the chapter\'s length and stays inside what a plan may contain', () => {
+    expect(sceneCountGuidance(4000)).toContain('about 4 scenes');
+    expect(sceneCountGuidance(4000)).toContain('800–1200 words');
+    expect(sceneCountGuidance(1200)).toContain('about 1 scene for');
+    expect(sceneCountGuidance(10000)).toContain('about 8 scenes');
+  });
+
+  it('reaches the planner', async () => {
+    const run = createRun(createBookSpec('Recover a letter', 3, { targetWordsPerChapter: 4000, language: 'English' }), provider);
+    run.outline = 'Thorne recovers the letter and accepts the cost.';
+    run.stage = 'planning';
+    let seen = '';
+    const base = fixtureLLM();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('plan causally')) seen ||= prompt;
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).plan(run);
+    expect(seen).toContain('about 4 scenes');
+    expect(seen).not.toContain('Use 1–8 scenes');
   });
 });
 

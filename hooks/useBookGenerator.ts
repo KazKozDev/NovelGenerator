@@ -35,6 +35,7 @@ export function stepName(system: string): string {
     ['targeted fiction revision on named passages', 'Repairing the passages a finding names'],
     ['targeted fiction revision', 'Repairing the chapter'],
     ['never write prose', 'Choosing what to delete'],
+    ['continuity record', 'Noting what the scene established'],
     ['continuity and developmental', 'Reviewing the chapter'],
     ['assess literary development', 'Assessing the chapter\'s development'],
     ['extract evidence', 'Extracting what the chapter established'],

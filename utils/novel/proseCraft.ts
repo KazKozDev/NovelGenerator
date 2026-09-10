@@ -22,6 +22,21 @@ ${JSON.stringify(samples)}
 Preserve established register and character speech. Notice constructions already used here and in earlier scenes of this chapter; do not mechanically reproduce their paragraph shapes or endings. Events in these excerpts are governed by the accepted canon, not inferred from stylistic analogy.\n`;
 }
 
+/**
+ * How many scenes a chapter of this length wants.
+ *
+ * The planner was told only "use 1–8 scenes", and the word budget was then divided by narrative
+ * weight over however many it happened to return. A four-thousand-word chapter planned as two scenes
+ * hands each of them two thousand words to fill after its action is over, and the length contract is
+ * paid in restatement — the repetition the redundancy pass afterwards has to cut. A scene of roughly
+ * a thousand words is the unit, so the count follows from the chapter's length; it stays a starting
+ * point, because a chapter's shape, not arithmetic, decides where its scenes break.
+ */
+export function sceneCountGuidance(targetWordsPerChapter: number): string {
+  const suggested = Math.max(1, Math.min(8, Math.round(targetWordsPerChapter / 1000)));
+  return `Plan about ${suggested} scene${suggested > 1 ? 's' : ''} for this chapter's ${targetWordsPerChapter} words, and never fewer than 1 or more than 8: a scene runs roughly 800–1200 words of finished prose. Depart from that count where the chapter's shape asks for it — a connective scene may be much shorter and the decisive confrontation longer — but do not plan so few scenes that one of them has to continue after its action is finished, nor so many that none has room to develop.`;
+}
+
 /** Give decisive scenes page space instead of dividing a chapter equally by scene count. */
 export function sceneWordTargets(chapter: ChapterRecord, fallback: number): number[] {
   const scenes = chapter.plan.detailedScenes || [];

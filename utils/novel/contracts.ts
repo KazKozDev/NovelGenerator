@@ -112,6 +112,23 @@ export interface ChapterVersion {
   /** Measured prose texture. Advisory in report mode: it never blocks acceptance on its own. */
   prosody?: import('./prosody').ProsodyReport;
 }
+/**
+ * What a finished scene actually put on the page, taken from the prose rather than from the plan.
+ *
+ * The next scene of a chapter used to be told what the earlier ones were *for* — their planned
+ * objective and outcome, declared to have happened — plus the last 1200 characters of prose. Between
+ * those two lies the whole scene: who ended up in which room, who is carrying the letter, what was
+ * said aloud and by whom, and what the scene left unanswered. A plan is not evidence that any of it
+ * reached the page, and the accepted canon starts only at the previous chapter.
+ *
+ * Each note carries a short quotation from the scene that establishes it, and a note whose quotation
+ * cannot be found in that scene is dropped: this is a record of the page, not a second plan.
+ */
+export const journalKinds = ['position', 'possession', 'event', 'knowledge', 'openQuestion'] as const;
+export type JournalKind = typeof journalKinds[number];
+export interface JournalNote { kind: JournalKind; note: string; quote: string }
+export interface SceneJournal { sceneId: string; notes: JournalNote[] }
+
 export interface ChapterRecord {
   number: number;
   plan: ParsedChapterPlan;
@@ -138,6 +155,13 @@ export interface ChapterRecord {
   /** Recorded when a planning rule could not be satisfied; never a reason to lose the run. */
   planningNote?: string;
   sceneDrafts?: string[];
+  /**
+   * The running record of what those drafts established, one entry per written scene. Draft until the
+   * chapter is accepted, and dropped then: from that point the chapter speaks through the canon
+   * extracted from its accepted prose, and a note taken from a scene a repair may still remove is a
+   * message to the next scene of this chapter, never a fact about the book.
+   */
+  sceneJournal?: SceneJournal[];
   lineEditedRevision?: number;
 }
 export interface BookBlueprint {

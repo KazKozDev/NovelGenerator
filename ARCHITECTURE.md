@@ -37,6 +37,30 @@ target) and almost no dialogue (3.8% against 16% of paragraphs), with no measure
 advantage. The shortfall it created is what the length contract then paid for in
 description.
 
+**A scene is written to its own contract, not to the whole plan.** The writer is given its
+scene entire, the scenes already written as a line each, and the ones still to come as a
+name only. The fields that say where the chapter arrives — its summary, its ending, what
+it advances, what follows it — go to the scene that arrives there, the opening hook to
+the scene that opens, and the chapter's ending development to the scene that ends it. The
+book's outline stays with the planner and the editor. What the scene is told instead is
+what it must put on the page, what changes by its end, where it stops, and what it may
+not disclose yet; theme, symbolism and motive are guidance for the writing, never
+something the prose states.
+
+**The chapter keeps a journal of what it has actually written.** After each scene, one
+call reads that scene and records where the characters are, who holds what, what
+happened, who learned what and what question is still open, each note with a short
+quotation from the scene. A note whose quotation is not in the scene is dropped. The next
+scene of the chapter reads the journal in place of the earlier scenes' planned objectives
+and outcomes, which said what those scenes were for rather than what reached the page.
+The journal is a draft record: it never enters the canon, and it is discarded when the
+chapter is accepted and its accepted prose is extracted instead.
+
+**Scene count follows chapter length.** A scene is roughly 800–1200 words, so a plan
+starts from about one scene per thousand words of the chapter's target and departs from
+that where the chapter's shape asks for it. Too few scenes leaves a scene with words to
+fill after its action is over, and that budget is paid in restatement.
+
 Measured prose texture is recorded on every candidate version: comparison density,
 paragraph length distribution, dialogue share, and semantic repetition found with
 embeddings. Three of these measurements act, and the rest only report.

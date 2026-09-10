@@ -144,6 +144,7 @@ describe('The agent log', () => {
   it('names the step instead of quoting its system prompt', () => {
     expect(stepName('You extract evidence from fiction, separating accepted events from intentions. Respond only with JSON. OUTPUT CONTRACT: Return exactly one complete JSON object.')).toBe('Extracting what the chapter established');
     expect(stepName('You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.')).toBe('Reviewing the chapter');
+    expect(stepName('You keep the continuity record for a novel in progress. You report only what the supplied prose establishes and compose nothing of your own.')).toBe('Noting what the scene established');
     expect(stepName('You perform targeted fiction revision on named passages. Return only the requested JSON.')).toBe('Repairing the passages a finding names');
     expect(stepName('You are the single prose writer for this novel.')).toBe('Writing a scene');
     // Anything unrecognised is shown as itself, shortened, rather than as nothing.
