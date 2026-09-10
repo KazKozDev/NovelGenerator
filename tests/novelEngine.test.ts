@@ -1129,3 +1129,39 @@ describe('A repair that returns the chapter unchanged twice', () => {
     expect(reviewed).toBeGreaterThan(1);
   });
 });
+
+describe('A repair that touches one passage', () => {
+  it('changes the paragraph the finding names and leaves the chapter otherwise identical', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const original = `${prose(1)}\n\nThorne already knew the name of the clerk, though nobody had said it aloud.`;
+    const candidate = addCandidate(chapter, original, 'fixture');
+    const base = fixtureLLM();
+    let wholeChapterRepairs = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision on named passages')) {
+        // One passage was named, and the writer is given only that passage to answer.
+        expect(prompt).toContain('Thorne already knew the name of the clerk');
+        return JSON.stringify({ replacements: [{ id: 'f1', prose: 'Thorne guessed at the name of the clerk, and did not ask whether she was right about it.' }] });
+      }
+      if (system.includes('targeted fiction revision')) { wholeChapterRepairs++; return JSON.stringify({ prose: original }); }
+      if (system.includes('continuity and developmental')) {
+        // The finding stands while its passage is on the page, and goes when the passage does.
+        return prompt.includes('already knew the name of the clerk') ? JSON.stringify({ issues: [{
+          id: 'knowledge-1', category: 'knowledge', severity: 'major',
+          description: 'Thorne uses the name of the clerk before the chapter gives it to her.',
+          instruction: 'Take the knowledge away.',
+          evidence: [{ chapter: 1, revision: 1, quote: 'Thorne already knew the name of the clerk' }],
+        }] }) : '{"issues":[]}';
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    const repaired = chapter.versions[chapter.versions.length - 1].content;
+    expect(repaired).toContain('Thorne guessed at the name of the clerk');
+    expect(repaired).not.toContain('already knew the name of the clerk');
+    // The rest of the chapter is the same text, and the whole-chapter repair was never asked for.
+    expect(repaired.startsWith(prose(1))).toBe(true);
+    expect(wholeChapterRepairs).toBe(0);
+  });
+});

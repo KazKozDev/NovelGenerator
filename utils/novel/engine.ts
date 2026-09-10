@@ -3,6 +3,7 @@ import { literaryContextKey, literaryCurrent, literaryStillHolds } from './liter
 import { proseCraft, narrativeDesign } from './proseCraft';
 import { prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
+import { applyPassages, repairableInPlace } from './patch';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
@@ -628,7 +629,52 @@ export class NovelEngine {
     return cleaned;
   }
 
+  /**
+   * Repairs the passages the findings name, leaving the rest of the chapter untouched because the
+   * writer never sees it. Falls back to the whole-chapter repair whenever the findings cannot be
+   * placed, describe a proportion rather than a place, or would cover half the chapter anyway.
+   */
+  private async repairInPlace(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[], extra: string): Promise<string | undefined> {
+    const passages = repairableInPlace(version.content, issues, distributedIssues);
+    if (!passages) return undefined;
+    const prompt = `${specPrompt(run.spec)}${genreCraft(run.spec)}
+CHAPTER ${chapter.number} PLAN:
+${JSON.stringify(chapter.plan)}
+ACCEPTED CANON BEFORE THIS CHAPTER:
+${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}
+You are repairing named passages of a chapter, not the chapter. Each passage below carries the findings against it. Return a replacement for each id.
+PASSAGES:
+${JSON.stringify(passages.map(passage => ({ id: passage.id, prose: passage.text, findings: passage.issues.map(issue => ({ description: issue.description, instruction: issue.instruction })) })))}
+${extra}
+A replacement is finished prose in the story's language, continuous with the chapter on either side of it: it begins where this passage began and ends where it ended, and the sentences around it do not change and are not yours to change. Answer the findings and nothing else — do not improve, extend or explain what they do not name, and do not add memory, backstory or an account of how something came to be. Where a finding says a character uses knowledge the story has not given them, take the knowledge away: let them guess, wonder, be wrong or say nothing. A replacement may be shorter than what it replaces; it must not be a summary of it.
+Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id above, and nothing else.`;
+    try {
+      const answer = await structuredResponse(prompt, 'You perform targeted fiction revision on named passages. Return only the requested JSON.', this.llm, ['replacements'], raw => {
+        if (!Array.isArray(raw.replacements)) throw new Error('The repair returned no replacements.');
+        const given: Record<string, string> = {};
+        for (const item of raw.replacements) {
+          if (!item || typeof item.id !== 'string' || typeof item.prose !== 'string' || !item.prose.trim()) throw new Error('A replacement is missing its id or its prose.');
+          given[item.id] = this.extractProse(item.prose);
+        }
+        // Every passage answered, and none of them answered with a synopsis of itself: a replacement
+        // at a fifth of the length is a summary, and summarising is how a chapter loses its scenes.
+        for (const passage of passages) {
+          if (given[passage.id] === undefined) throw new Error(`No replacement for passage ${passage.id}.`);
+          if (given[passage.id].length < passage.text.length * 0.2) throw new Error(`The replacement for ${passage.id} is a summary of it.`);
+        }
+        return given;
+      }, { temperature: 0.3, maxTokens: Math.max(2048, passages.reduce((total, passage) => total + passage.text.length, 0)) });
+      return applyPassages(version.content, passages, answer);
+    } catch {
+      // A targeted repair that could not be validated is not a reason to lose the round: the chapter
+      // falls back to the repair that rewrites it whole, which is what it did before this existed.
+      return undefined;
+    }
+  }
+
   private async repair(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, issues: ReviewIssue[], extra = '', allowShortening = false): Promise<string> {
+    const inPlace = await this.repairInPlace(run, chapter, version, issues, extra);
+    if (inPlace && inPlace !== version.content) return inPlace;
     // Findings about a share of the chapter rather than a place in it. "Change nothing uncited" and
     // "half the lines must end up bare" cannot both be obeyed, and the model obeys the cautious one.
     const distributed = distributedIssues;
