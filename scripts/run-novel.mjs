@@ -142,7 +142,11 @@ try {
   }, embed, rerank);
 
   if (!run.outline.trim()) { log('STAGE outline'); await engine.outline(run); }
-  await engine.continue(run);
+  // --retry gives a chapter that exhausted its repair budget a fresh one, which is what a resume after
+  // an editorial fix is for: without it the chapter is over budget the moment the run reopens.
+  const retry = argv.includes('--retry');
+  if (retry) log('RETRY budgets reset for chapters awaiting editorial attention');
+  await engine.continue(run, { retry });
 
   log(`COMPLETE stage=${run.stage} title=${run.title || '-'}`);
   const { compileBook, metadata } = await server.ssrLoadModule('/utils/novel/presentation.ts');
