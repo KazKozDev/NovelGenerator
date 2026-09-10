@@ -1248,6 +1248,77 @@ describe('The plan a scene is given', () => {
     expect(intent).toContain('A choice narrows what can happen next');
     expect(intent).not.toContain('a scene not being written');
   });
+
+  it('keeps the chapter\'s ending out of every scene but the one that ends it', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.chapterEnding = 'THE_CHOICE_IS_MADE';
+    chapter.plan.connectionToNextChapter = 'WHAT_COMES_AFTER';
+    chapter.plan.summary = 'HOW_THE_CHAPTER_GOES';
+    chapter.plan.openingHook = 'THE_DOOR_IS_LOCKED';
+    chapter.plan.detailedScenes = [
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-a' },
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-b', outcome: 'THE_LETTER_CHANGES_HANDS' },
+    ];
+    const first = JSON.stringify(planForScene(chapter, 0));
+    expect(first).not.toContain('THE_CHOICE_IS_MADE');
+    expect(first).not.toContain('WHAT_COMES_AFTER');
+    expect(first).not.toContain('HOW_THE_CHAPTER_GOES');
+    // Nor the outcome the later scene is being saved for; only that a scene follows this one.
+    expect(first).not.toContain('THE_LETTER_CHANGES_HANDS');
+    expect(first).toContain('scene-b');
+    expect(first).toContain('THE_DOOR_IS_LOCKED');
+    const last = JSON.stringify(planForScene(chapter, 1));
+    expect(last).toContain('THE_CHOICE_IS_MADE');
+    expect(last).toContain('WHAT_COMES_AFTER');
+    // The opening hook belongs to the scene that opens the chapter, and the earlier scene, already
+    // written, keeps its outcome: that is what happened, not what is still to come.
+    expect(last).not.toContain('THE_DOOR_IS_LOCKED');
+    expect(JSON.parse(last).otherScenes[0]).toMatchObject({ sceneId: 'scene-a', position: 'earlier' });
+  });
+
+  it('gives the ending development only to the scene that carries the ending', () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-a' },
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-b' },
+    ];
+    chapter.literaryPlan = {
+      version: 1, contextKey: 'k', chapterPlanKey: 'p', endingDevelopment: 'HOW_THE_CHAPTER_LANDS',
+      avoidReplaying: ['the same realization announced twice'],
+      scenes: [
+        { sceneId: 'scene-a', development: 'the first movement', characterChoice: 'she stays', dramaticCost: 'she loses the train', narrativeWeight: 2 },
+        { sceneId: 'scene-b', development: 'the second movement', characterChoice: 'he refuses', dramaticCost: 'the letter burns', narrativeWeight: 3 },
+      ],
+    };
+    expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-a'))).not.toContain('HOW_THE_CHAPTER_LANDS');
+    expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-a'))).toContain('the same realization announced twice');
+    expect(JSON.stringify(literaryIntentForScene(chapter, 'scene-b'))).toContain('HOW_THE_CHAPTER_LANDS');
+  });
+});
+
+describe('The contract a scene is written to', () => {
+  it('names the obligatory events, the stopping point and what is not yet disclosable', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-a', outcome: 'she pays the price' },
+      { ...chapter.plan.detailedScenes![0], sceneId: 'scene-b' },
+    ];
+    let seen = '';
+    await writeScene(run, chapter, 0, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Prose.' }); });
+    expect(seen).toContain('WHAT THIS SCENE MUST PUT ON THE PAGE');
+    expect(seen).toContain('recover letter');
+    expect(seen).toContain('WHAT CHANGES BY THE END: she pays the price');
+    expect(seen).toContain('WHERE THE SCENE STOPS');
+    expect(seen).toContain('1 more scene of this chapter follows this one');
+    // The outline is the planner's and the editor's; a scene writer that has it writes towards an
+    // ending it has not reached, and the mechanical "every planned beat" order is gone with it.
+    expect(seen).not.toContain(run.outline);
+    expect(seen).not.toContain('Dramatize every planned beat');
+    expect(seen).toContain('Recover the letter at a cost');
+  });
 });
 
 describe('A repair that breaks the prose open', () => {
