@@ -153,6 +153,17 @@ describe('Novel contracts and accepted canon', () => {
     // The book text still changed, so the whole-book verdict is never carried over.
     expect(run.finalReview).toBeUndefined();
   });
+  it('leaves later chapters alone when a repair changed the wording but not what the chapter establishes', () => {
+    const run = runWithPlans();
+    [1, 2, 3].forEach(number => approve(run, number));
+    const first = acceptedVersion(run.chapters[0])!;
+    // A repair at the opening of chapter one: different sentences, the same events, the same last words.
+    approve(run, 1, prose(1).replace('Thorne opened door 1.', 'Thorne opened the first of the doors.'));
+    const endingNow = acceptedVersion(run.chapters[0])!.literary!.observations.find(item => item.kind === 'ending')!.evidence[0].quote;
+    expect(endingNow).toBe(first.literary!.observations.find(item => item.kind === 'ending')!.evidence[0].quote);
+    expect(run.chapters.map(chapter => chapter.status)).toEqual(['accepted', 'accepted', 'accepted']);
+  });
+
   it('requires evidence for the ending rather than planned promises', () => {
     const run = runWithPlans();
     expect(endingIssues(run)).toHaveLength(2);

@@ -173,7 +173,18 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   const delta = superseded ? canonDelta(superseded, version.analysis) : undefined;
   const canonMoved = !superseded || canonContribution(superseded) !== canonContribution(version.analysis);
   const previousLiterary = chapter.versions.find(item => item.revision === chapter.acceptedRevision)?.literary;
-  const contribution = (assessment: typeof previousLiterary) => JSON.stringify(assessment?.observations.map(({ evidence, ...rest }) => ({ ...rest, quotes: evidence.map(item => item.quote) })));
+  // What a chapter contributes to the book's literary state is what it establishes, not the sentences
+  // that prove it. Counting the quotations made every repair a change of contribution — a repair
+  // always disturbs some quoted line — so every chapter after it was invalidated on every accepted
+  // revision, and the subject-level narrowing below could never apply. A live run revalidated its
+  // whole tail after each structural fix for that reason alone.
+  // What a chapter contributes to the book's literary state is what it establishes, not the sentences
+  // that prove it — with one exception: how a chapter ends is its last words, and every chapter after
+  // it is written against them. Counting every quotation made each repair a change of contribution,
+  // since a repair always disturbs some quoted line, so the whole tail of the book was invalidated on
+  // every accepted revision and the subject-level narrowing below could never apply.
+  const contribution = (assessment: typeof previousLiterary) => JSON.stringify(assessment?.observations
+    .map(({ evidence, ...rest }) => rest.kind === 'ending' ? { ...rest, ending: evidence.map(item => item.quote) } : rest));
   const literaryMoved = run.literaryValidationVersion === 1 && contribution(previousLiterary) !== contribution(version.literary);
   chapter.acceptedRevision = version.revision;
   chapter.candidateRevision = undefined;
