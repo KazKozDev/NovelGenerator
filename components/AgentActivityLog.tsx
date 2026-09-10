@@ -13,6 +13,17 @@ const ACCENT: Record<string, string> = {
   default: 'border-l-zinc-700',
 };
 
+/** What each kind of event is, in words. The tag was the internal name of the event type. */
+const LABEL: Record<string, string> = {
+  execution: 'Running',
+  evaluation: 'Checking',
+  decision: 'Decided',
+  iteration: 'Revising',
+  success: 'Done',
+  warning: 'Warning',
+  diff: 'Changed',
+};
+
 const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
   if (logs.length === 0) return null;
 
@@ -44,7 +55,7 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
               ) : (
                 <div className={`mb-1.5 pl-2.5 border-l-2 ${ACCENT[log.type] || ACCENT.default}`}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-zinc-500">{log.type}</span>
+                    <span className="text-xs font-semibold uppercase text-zinc-500">{LABEL[log.type] || log.type}</span>
                     {/* A timestamp is a machine value, so it keeps the monospaced face. */}
                     <span className="text-xs text-zinc-500 shrink-0">{formatTime(log.timestamp)}</span>
                   </div>
@@ -54,7 +65,7 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
                     <details className="mt-1">
                       <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-300">Details</summary>
                       <pre className="mt-1 p-2 text-xs text-zinc-400 border border-zinc-800 rounded overflow-auto">
-                        {JSON.stringify(log.details, null, 2)}
+                        {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
                       </pre>
                     </details>
                   )}

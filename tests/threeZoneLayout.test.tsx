@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
+import { stepName } from '../hooks/useBookGenerator';
 import { GenerationStep } from '../types';
 
 describe('ThreeZoneGenerationView', () => {
@@ -136,5 +137,16 @@ describe('ThreeZoneGenerationView', () => {
     expect(html).toContain('79w');
     expect(html).toContain('3.4');
     expect(html).toContain('speech-tag-bloat');
+  });
+});
+
+describe('The agent log', () => {
+  it('names the step instead of quoting its system prompt', () => {
+    expect(stepName('You extract evidence from fiction, separating accepted events from intentions. Respond only with JSON. OUTPUT CONTRACT: Return exactly one complete JSON object.')).toBe('Extracting what the chapter established');
+    expect(stepName('You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.')).toBe('Reviewing the chapter');
+    expect(stepName('You perform targeted fiction revision on named passages. Return only the requested JSON.')).toBe('Repairing the passages a finding names');
+    expect(stepName('You are the single prose writer for this novel.')).toBe('Writing a scene');
+    // Anything unrecognised is shown as itself, shortened, rather than as nothing.
+    expect(stepName('Some system prompt nobody has mapped yet')).toBe('Some system prompt nobody has mapped yet');
   });
 });

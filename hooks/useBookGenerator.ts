@@ -18,6 +18,34 @@ const DEFAULT_SETTINGS: StorySettings = {
 };
 
 /**
+ * What a call is for, in the words a reader of the log would use.
+ *
+ * The inspector was showing the system prompt of every call, so four consecutive extractions read as
+ * four identical paragraphs about JSON output contracts and Markdown fences. What a reader wants to
+ * know is which step of the book is running, and the system prompt is the one thing on hand that says
+ * so — but it says it in the first clause and then spends two hundred characters on formatting rules.
+ */
+export function stepName(system: string): string {
+  const steps: [string, string][] = [
+    ['novel architect', 'Outlining the book'],
+    ['explicit novel blueprint', 'Designing the book'],
+    ['plan causally', 'Planning the chapter'],
+    ['plan literary development', 'Planning the chapter\'s development'],
+    ['single prose writer', 'Writing a scene'],
+    ['targeted fiction revision on named passages', 'Repairing the passages a finding names'],
+    ['targeted fiction revision', 'Repairing the chapter'],
+    ['never write prose', 'Choosing what to delete'],
+    ['continuity and developmental', 'Reviewing the chapter'],
+    ['assess literary development', 'Assessing the chapter\'s development'],
+    ['extract evidence', 'Extracting what the chapter established'],
+    ['complete novel through', 'Reviewing the whole book'],
+    ['title completed', 'Naming the book'],
+  ];
+  const matched = steps.find(([key]) => system.toLowerCase().includes(key));
+  return matched ? matched[1] : system.slice(0, 60);
+}
+
+/**
  * The two halves of the repetition check: an embedder that nominates one earlier passage per
  * paragraph, and the cross-encoder that decides whether it is a repetition.
  *
@@ -28,12 +56,19 @@ const DEFAULT_SETTINGS: StorySettings = {
  */
 export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
 
-function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
+function repetitionTools(log: (entry: { type: AgentLogEntry['type']; message: string }) => void): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
   const config = getStoredProviderConfig();
   // Without a local Ollama there is nothing to nominate pairs with, and the cross-encoder alone would
   // have to score every paragraph against every earlier one.
   if (config.provider !== 'ollama') return {};
-  const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
+  // The models that run on the reader's own machine were invisible in the log: the page would sit for
+  // half a minute measuring repetition with nothing to show for it. They announce themselves now.
+  const embed = async (inputs: string[]) => {
+    log({ type: 'execution', message: `Measuring repetition: reading ${inputs.length} paragraphs` });
+    const vectors = await embedOllama(inputs, undefined, config.ollamaEndpoint);
+    log({ type: 'success', message: `Measuring repetition: ${inputs.length} paragraphs read` });
+    return vectors;
+  };
   // The cross-encoder now runs on a worker of its own, so the page keeps answering while a chapter is
   // measured; onnxruntime-web executes on whichever thread calls it, and owning that thread was the
   // only arrangement that moved it off this one. It is still a 600MB download on first use and a
@@ -42,7 +77,14 @@ function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>;
   try {
     if (localStorage.getItem(RERANK_STORAGE_KEY) === 'off') return { embed };
   } catch { /* a browser that refuses storage gets the default */ }
-  return { embed, rerank: sharedReranker() };
+  const model = sharedReranker();
+  const rerank = async (pairs: [string, string][]) => {
+    log({ type: 'execution', message: `Comparing ${pairs.length} passage pair(s) — the first use downloads the model, about 600MB` });
+    const scores = await model(pairs);
+    log({ type: 'success', message: `Compared ${pairs.length} passage pair(s)` });
+    return scores;
+  };
+  return { embed, rerank };
 }
 
 /** React presents snapshots; the engine owns execution state and durable transactions. */
@@ -115,7 +157,8 @@ export default function useBookGenerator() {
       const start = Date.now();
       let success = false;
       let result = '';
-      setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: run.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0, type: 'execution', message: system }]);
+      const chapterNumber = run.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0;
+      setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber, type: 'execution', message: stepName(system), details: system }]);
       try {
         const provider = options.route === 'validator' && run.validationProvider ? run.validationProvider : run.provider;
         result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
@@ -132,7 +175,8 @@ export default function useBookGenerator() {
       clear: async () => { checkActive(); await storeRef.current.clear(); },
       save: async state => { checkActive(); await storeRef.current.save(state); },
     };
-    const { embed, rerank } = repetitionTools();
+    const { embed, rerank } = repetitionTools(entry => setAgentLogs(previous => [...previous,
+      { timestamp: Date.now(), chapterNumber: runRef.current?.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0, ...entry }]));
     return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); }, embed, rerank);
   }
 
