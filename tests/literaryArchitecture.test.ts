@@ -203,8 +203,16 @@ describe('Versioned literary architecture', () => {
     const store = new MemoryRunStore();
     const raw = report();
     raw.issues.push({ kind: 'rhetoric', severity: 'major', description: 'The final explanation repeats what the action already establishes.', instruction: 'Replace the redundant explanation with its consequence.', sources: ['p1'] });
-    const offline = vi.fn(async (_prompt: string, system: string) => {
+    const offline = vi.fn(async (prompt: string, system: string) => {
       if (system.includes('assess literary development')) return JSON.stringify(raw);
+      // Extraction and the beat registry now run before the gate, so they have to answer for the
+      // chapter to reach it at all; only the writer is offline.
+      if (system.includes('extract evidence')) {
+        if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        return '{"promises":[]}';
+      }
       throw new Error('writer offline');
     });
     await expect((new NovelEngine(offline, store) as any).acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow(/writer offline/);
@@ -242,5 +250,29 @@ describe('Versioned literary architecture', () => {
     // Six assessments across three runs reported zero defects; a defect must be as sayable as none.
     expect(seen).toContain('Six clean dimensions and six defects are both possible results');
     expect(seen).toContain('does not collect suggestions');
+  });
+});
+
+describe('The order the checks run in', () => {
+  it('reaches the literary gate only after extraction and the beat registry have accepted the version', async () => {
+    const run = setup();
+    const candidate = prepare(run, 1);
+    const order: string[] = [];
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('extract evidence')) {
+        if (prompt.includes('TASK: Extract facts')) { order.push('extraction'); return '{"summary":"Vera mailed the letter.","facts":[]}'; }
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        return '{"promises":[]}';
+      }
+      if (system.includes('assess literary development')) { order.push('literary'); return literaryResponse(prompt, system)!; }
+      if (system.includes('continuity and developmental')) return '{"issues":[]}';
+      throw new Error(system);
+    });
+    await (new NovelEngine(llm as never, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> })
+      .acceptOrRepair(run, run.chapters[0], candidate);
+    // The most expensive call in the system runs last, on a version the cheap checks already accepted.
+    expect(order).toEqual(['extraction', 'literary']);
+    expect(run.chapters[0].status).toBe('accepted');
   });
 });

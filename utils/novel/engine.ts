@@ -406,6 +406,32 @@ export class NovelEngine {
         if (acting.length) candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...acting] };
       }
       if (candidate.review.status === 'passed') {
+        const identical = chapter.versions.find(version =>
+          version.revision !== candidate.revision && version.content === candidate.content && version.analysis,
+        );
+        if (identical?.analysis) {
+          candidate.analysis = structuredClone(identical.analysis);
+          for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises, candidate.analysis.beats || []]) {
+            for (const item of items) item.evidence.revision = candidate.revision;
+          }
+          const knownPromiseIds = new Set(run.blueprint?.promises.map(promise => promise.id) || []);
+          candidate.analysis.promises = candidate.analysis.promises.filter(promise => knownPromiseIds.has(promise.promiseId));
+          validateAnalysis(candidate.analysis, chapter.number, candidate);
+        } else {
+          candidate.analysis = await analyseChapter(run, chapter, candidate, this.llm);
+        }
+        // A chapter is accepted on what it put on the page, not on what it was asked to put there.
+        // Accepting a chapter whose planned scene was never written writes the gap into canon, and
+        // every later chapter then builds on an event this book never told.
+        const gap = beatCoverageIssue(chapter, candidate.analysis, candidate);
+        if (gap) {
+          candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, gap] };
+          await this.checkpoint(run);
+        } else {
+        // The literary gate is the most expensive call in the system, and until this order changed it
+        // ran before the cheapest checks that could reject the version anyway: measured over both
+        // stored runs, 12 of 34 assessments passed a version that extraction or the beat registry
+        // then sent back. It runs last now, on a version everything else has already accepted.
         if (!literaryCurrent(run, chapter.number, candidate)) {
           // Byte-identical prose, or a revision so small that every passage the assessment cites is
           // still on the page: either way the reading it produced still describes this chapter.
@@ -438,30 +464,11 @@ export class NovelEngine {
         if (candidate.literary.status === 'failed') {
           candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...candidate.literary.issues] };
         }
-      }
-      if (candidate.review.status === 'passed') {
-        const identical = chapter.versions.find(version =>
-          version.revision !== candidate.revision && version.content === candidate.content && version.analysis,
-        );
-        if (identical?.analysis) {
-          candidate.analysis = structuredClone(identical.analysis);
-          for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises, candidate.analysis.beats || []]) {
-            for (const item of items) item.evidence.revision = candidate.revision;
+          if (candidate.literary.status === 'failed') {
+            candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...candidate.literary.issues] };
+            await this.checkpoint(run);
+            continue;
           }
-          const knownPromiseIds = new Set(run.blueprint?.promises.map(promise => promise.id) || []);
-          candidate.analysis.promises = candidate.analysis.promises.filter(promise => knownPromiseIds.has(promise.promiseId));
-          validateAnalysis(candidate.analysis, chapter.number, candidate);
-        } else {
-          candidate.analysis = await analyseChapter(run, chapter, candidate, this.llm);
-        }
-        // A chapter is accepted on what it put on the page, not on what it was asked to put there.
-        // Accepting a chapter whose planned scene was never written writes the gap into canon, and
-        // every later chapter then builds on an event this book never told.
-        const gap = beatCoverageIssue(chapter, candidate.analysis, candidate);
-        if (gap) {
-          candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, gap] };
-          await this.checkpoint(run);
-        } else {
           acceptCandidate(run, chapter.number);
           await this.checkpoint(run);
           return;
