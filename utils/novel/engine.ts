@@ -362,6 +362,7 @@ export class NovelEngine {
   private async acceptOrRepair(run: NovelRun, chapter: ChapterRecord, candidate: ChapterVersion): Promise<void> {
     let repairsRetried = 0;
     let reviewsRedrawn = 0;
+    let literaryRedrawn = 0;
     for (;;) {
       if (candidate.review?.validationVersion !== 2 || candidate.review.status !== 'passed' || candidate.review.checkedRevision !== candidate.revision) {
         const superseded = candidate.review;
@@ -396,7 +397,21 @@ export class NovelEngine {
             for (const item of [...candidate.literary.observations, ...candidate.literary.issues]) {
               for (const evidence of item.evidence) if (evidence.chapter === chapter.number) evidence.revision = candidate.revision;
             }
-          } else candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm);
+          } else {
+            // A gate that cannot cite its evidence has failed to judge, not judged the chapter badly.
+            // The assessment is sampled like the review, so an unusable draw deserves another; what it
+            // must never do is end the run by exception, losing every accepted chapter behind it.
+            try { candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm); }
+            catch (error) {
+              if (literaryRedrawn >= MAX_REVIEW_REDRAWS) {
+                chapter.status = 'needs_revision';
+                await this.checkpoint(run);
+                throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: the literary assessment could not be completed (${error instanceof Error ? error.message : String(error)}).`);
+              }
+              literaryRedrawn++;
+              candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm);
+            }
+          }
           await this.checkpoint(run);
         }
         if (candidate.literary.status === 'failed') {

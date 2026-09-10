@@ -133,6 +133,32 @@ describe('Versioned literary architecture', () => {
     expect(reconcileCheckpoint(run)).toBe(false);
   });
 
+  it('redraws a literary gate that cannot cite its evidence, instead of ending the run', async () => {
+    const run = setup();
+    const candidate = prepare(run, 1);
+    let drawn = 0;
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('assess literary development')) {
+        // The first draw cites a source that does not exist; the gate cannot judge, and a run that
+        // died here would lose every chapter already accepted behind it.
+        if (++drawn <= 2) return JSON.stringify({ ...report(), observations: [{ ...report().observations[0], sources: ['p999'] }] });
+        return literaryResponse(prompt, system);
+      }
+      if (system.includes('continuity and developmental')) return '{"issues":[]}';
+      if (system.includes('extract evidence')) {
+        if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        return '{"promises":[]}';
+      }
+      throw new Error(system);
+    });
+    await (new NovelEngine(llm as never, new MemoryRunStore()) as never as { acceptOrRepair: (run: unknown, chapter: unknown, candidate: unknown) => Promise<void> })
+      .acceptOrRepair(run, run.chapters[0], candidate);
+    expect(drawn).toBeGreaterThan(2);
+    expect(run.chapters[0].status).toBe('accepted');
+  });
+
   it('persists a failed literary gate and repairs through the engine before accepting', async () => {
     const run = setup();
     const candidate = prepare(run, 1);
