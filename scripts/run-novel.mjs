@@ -103,9 +103,9 @@ try {
   const embeddingModel = arg('embed') ?? 'qwen3-embedding:4b';
   const embed = embeddingModel === 'off' ? undefined
     : async inputs => embedOllama(inputs, embeddingModel, writer.ollamaEndpoint);
-  // The cross-encoder decides what the cosine only nominates, but its weights are a ~600MB download,
-  // so it stays off until asked for. Without it the cosine decides alone at its own threshold.
-  const rerankModel = arg('rerank') ?? 'off';
+  // The cross-encoder decides what the cosine only nominates. Its weights are a ~600MB download on
+  // first use and cached afterwards; --rerank=off skips it and leaves the cosine deciding alone.
+  const rerankModel = arg('rerank') ?? 'on';
   const rerank = rerankModel === 'off' ? undefined
     : sharedReranker(rerankModel === 'on' ? undefined : rerankModel);
   log(`embeddings=${embeddingModel} rerank=${rerankModel}`);

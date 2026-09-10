@@ -17,23 +17,21 @@ const DEFAULT_SETTINGS: StorySettings = {
   ending: 'closed', targetWordsPerChapter: 4000,
 };
 
-/** Set to "on" to let the browser download the cross-encoder and measure repetition. */
-export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
-
 /**
- * The two optional halves of the repetition check: an embedder that nominates one earlier passage per
- * paragraph, and the cross-encoder that decides whether it is a repetition. Both are absent by
- * default — the embedder needs a local Ollama, and the model is a ~600MB download no reader should
- * receive unasked. Absent, the report says repetition was not checked rather than reporting none.
+ * The two halves of the repetition check: an embedder that nominates one earlier passage per
+ * paragraph, and the cross-encoder that decides whether it is a repetition.
+ *
+ * The cross-encoder is a ~600MB download on first use, fetched while the first chapter that has a
+ * chapter before it is measured, and cached by the browser afterwards. It is on by default because a
+ * check nobody switched on is a check that never ran: the repetitions it finds were sitting in
+ * finished books. If it cannot load, the cosine decides alone rather than the run losing the check.
  */
 function repetitionTools(): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
   const config = getStoredProviderConfig();
+  // Without a local Ollama there is nothing to nominate pairs with, and the cross-encoder alone would
+  // have to score every paragraph against every earlier one.
   if (config.provider !== 'ollama') return {};
-  const embed = (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint);
-  try {
-    if (localStorage.getItem(RERANK_STORAGE_KEY) !== 'on') return { embed };
-  } catch { return { embed }; }
-  return { embed, rerank: sharedReranker() };
+  return { embed: (inputs: string[]) => embedOllama(inputs, undefined, config.ollamaEndpoint), rerank: sharedReranker() };
 }
 
 /** React presents snapshots; the engine owns execution state and durable transactions. */

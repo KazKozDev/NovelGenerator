@@ -134,6 +134,18 @@ describe('semantic repetition', () => {
     expect(issues.find(issue => issue.id === 'recycled-passage')).toBeUndefined();
   });
 
+  it('lets the cosine decide when the cross-encoder cannot load, instead of losing the check', async () => {
+    const embed = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.3) });
+    const offline = async () => { throw new Error('The model weights could not be fetched.'); };
+    // Cosine 0.955, over its own threshold: a reader who did not come is not a verdict of "no repetition".
+    const issues = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], embed, defaultRepetitionThresholds, offline);
+    expect(issues.find(issue => issue.id === 'recycled-passage')?.evidence.map(item => item.chapter)).toEqual([3, 1]);
+    // And a pair the cosine would never have reported stays unreported when nobody could judge it.
+    const faint = embedderFor({ 'Ваза начала': unit(0), 'За окном': unit(1.4), 'Ваза медленно': unit(0.78) });
+    const quiet = await repetitionIssues(3, version([c, b].join('\n\n'), 2), [{ chapter: 1, revision: 4, content: a }], faint, defaultRepetitionThresholds, offline);
+    expect(quiet.find(issue => issue.id === 'recycled-passage')).toBeUndefined();
+  });
+
   it('holds cross-chapter pairs to their own distribution, not the one measured inside a chapter', async () => {
     // Paragraphs from different chapters of the same novel sit a tenth higher than paragraphs inside
     // one: at 0.80 the band is the book's own echoes — a scene continued across the break, a later

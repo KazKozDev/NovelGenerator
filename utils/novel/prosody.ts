@@ -318,7 +318,7 @@ export async function repetitionIssues(
   // passages together instead of comparing two summaries of them — says whether one retells the other.
   // Without one the cosine decides alone, at the higher threshold its own distribution asks for.
   const floor = rerank ? rerankCandidateFloor : thresholds.crossChapter;
-  const candidates: { paragraph: string; source: PriorProse & { paragraph: string } }[] = [];
+  const candidates: { paragraph: string; score: number; source: PriorProse & { paragraph: string } }[] = [];
   for (let index = 0; index < current.length; index++) {
     let best = { score: 0, source: -1 };
     for (let prior = 0; prior < history.length; prior++) {
@@ -326,12 +326,20 @@ export async function repetitionIssues(
       if (score > best.score) best = { score, source: prior };
     }
     if (best.score < floor || best.source < 0) continue;
-    candidates.push({ paragraph: current[index], source: history[best.source] });
+    candidates.push({ paragraph: current[index], score: best.score, source: history[best.source] });
   }
-  const verdicts = rerank ? await rerank(candidates.map(item => [item.paragraph, item.source.paragraph])) : undefined;
+  // A cross-encoder that cannot load — no weights cached, no network to fetch them — is a reader who
+  // did not come, not a verdict of "no repetition". The cosine then decides alone, at the threshold
+  // its own distribution asks for, and the nominations below that line go back to being nothing.
+  let verdicts: number[] | undefined;
+  if (rerank && candidates.length) {
+    try { verdicts = await rerank(candidates.map(item => [item.paragraph, item.source.paragraph])); }
+    catch { verdicts = undefined; }
+  }
   const crossed: Evidence[] = [];
   candidates.forEach((candidate, index) => {
-    if (verdicts && !(verdicts[index] >= rerankRepetitionScore)) return;
+    const repeated = verdicts ? verdicts[index] >= rerankRepetitionScore : candidate.score >= thresholds.crossChapter;
+    if (!repeated) return;
     crossed.push({ chapter, revision: version.revision, quote: candidate.paragraph });
     crossed.push({ chapter: candidate.source.chapter, revision: candidate.source.revision, quote: candidate.source.paragraph });
   });
