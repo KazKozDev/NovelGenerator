@@ -133,7 +133,13 @@ const MAX_CHAPTER_VERSIONS = 14;
 const MAX_TEXTURE_RETRIES = 1;
 
 /** One redraw of an unusable review: two samples that both miss the prose are a verdict, not bad luck. */
-const MAX_REVIEW_REDRAWS = 1;
+/**
+ * Redraws of a review that could not be used. It was one, which meant two attempts asked the same
+ * question the same way; the second now carries the reason the first was discarded, so a third is
+ * worth having. A live chapter died here with every measured check clean, because a reader quoted
+ * three passages from memory.
+ */
+const MAX_REVIEW_REDRAWS = 2;
 
 /**
  * A repair may not buy its fix with the chapter's texture. This compares a revision against the text
@@ -467,7 +473,11 @@ export class NovelEngine {
         // prose ended a run whose measured texture was clean of every defect this engine can see.
         if (reviewsRedrawn < MAX_REVIEW_REDRAWS) {
           reviewsRedrawn++;
-          candidate.review = await reviewChapter(run, chapter, candidate, this.llm);
+          // Tell the reader why its last report was thrown away. A redraw that repeats the question
+          // word for word invites the same answer, and the usual reason is quotation: a passage
+          // remembered rather than copied cannot be found in the prose and voids the finding with it.
+          candidate.review = await reviewChapter(run, chapter, candidate, this.llm,
+            candidate.review.error ? `\nYOUR PREVIOUS REPORT ON THIS CHAPTER WAS DISCARDED: ${candidate.review.error} Every quotation must be copied character for character out of the prose above — open the passage, copy it, do not retype it from memory and do not tidy its punctuation. A finding whose quotation cannot be found is lost entirely, so quote less and quote exactly: a single accurate sentence is worth more than a paragraph approximately recalled.` : '');
           await this.checkpoint(run);
           if (candidate.review.status !== 'not_checked') continue;
         }

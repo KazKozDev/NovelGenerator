@@ -565,3 +565,29 @@ describe('What a review is told about the version before this one', () => {
     expect(seen).not.toContain('PREVIOUS ACCEPTED VERSION (preserve');
   });
 });
+
+describe('A review whose quotations cannot be found', () => {
+  it('is asked again with the reason, not asked again identically', async () => {
+    const { run, chapter, version } = fixture();
+    run.stage = 'writing';
+    run.blueprint = { centralConflict: 'c', protagonistChange: 'p', endingPayoff: 'e', characters: {}, chapters: [], promises: [] };
+    chapter.candidateRevision = version.revision;
+    const prompts: string[] = [];
+    const llm = async (prompt: string, system: string) => {
+      const literary = literaryResponse(prompt, system);
+      if (literary) return literary;
+      if (system.includes('continuity and developmental')) {
+        prompts.push(prompt);
+        // A passage remembered rather than copied: the finding is discarded and the report unusable.
+        return JSON.stringify({ issues: [{ id: 'x', category: 'plot', severity: 'major', description: 'The timeline slips.', instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote: 'a sentence this chapter never contained at all' }] }] });
+      }
+      return '{"issues":[]}';
+    };
+    await (new NovelEngine(llm, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> })
+      .acceptOrRepair(run, chapter, version).catch(() => {});
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts[0]).not.toContain('YOUR PREVIOUS REPORT');
+    expect(prompts[1]).toContain('YOUR PREVIOUS REPORT ON THIS CHAPTER WAS DISCARDED');
+    expect(prompts[1]).toContain('copied character for character');
+  });
+});
