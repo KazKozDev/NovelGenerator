@@ -591,6 +591,21 @@ export function planWithoutRetelling(plan: ChapterRecord['plan']): object {
   return rest;
 }
 
+/**
+ * Whether a report read the chapter or the top of it.
+ *
+ * A review that finds three defects and cites all of them in the first half has either found a
+ * chapter whose second half is clean, or stopped reading. Across the stored runs that is 24 reports
+ * of 217, and there is no way to tell the two apart from outside — so this does not decide anything.
+ * It asks for the report again, saying where the citations fell.
+ */
+export function citedOnlyTheOpening(content: string, issues: ReviewIssue[]): boolean {
+  const located = issues.flatMap(issue => issue.evidence.map(item => content.indexOf(item.quote.slice(0, 40))))
+    .filter(at => at >= 0)
+    .map(at => at / Math.max(1, content.length));
+  return located.length >= 3 && Math.max(...located) < 0.5;
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM, retry = ''): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {

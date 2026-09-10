@@ -1,14 +1,14 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
 import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
 import { proseCraft, narrativeDesign } from './proseCraft';
-import { newlyBroken, prosodyMetrics, prosodyReport, type Embedder, type ProsodyMetrics } from './prosody';
+import { newlyBroken, prosodyMetrics, prosodyReport, spokenLinesLost, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
 import { applyPassages, repairableInPlace } from './patch';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
-import { analyseChapter, beatCoverageIssue, confirmedFindings, findingStreaks, planWithoutRetelling, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import { analyseChapter, beatCoverageIssue, citedOnlyTheOpening, confirmedFindings, findingStreaks, planWithoutRetelling, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { RunStore } from './runStore';
 import { writeScene } from './writer';
 
@@ -394,6 +394,16 @@ export class NovelEngine {
             .map(issue => (chapter.unrepairable || []).some(known => sameFinding(known as typeof issue, issue))
               ? { ...issue, severity: 'minor' as const } : issue);
           candidate.review.status = candidate.review.issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed';
+          // A report that cited only the opening may have read a chapter whose second half is clean,
+          // or may have stopped reading. Asked once, with where its citations fell; whatever comes
+          // back is the answer, because there is no telling those two apart from here.
+          if (candidate.review.status === 'failed' && reviewsRedrawn < MAX_REVIEW_REDRAWS
+            && citedOnlyTheOpening(candidate.content, candidate.review.issues.filter(issue => issue.evidence.length && !issue.id.startsWith('foreign-script')))) {
+            reviewsRedrawn++;
+            const reread = await reviewChapter(run, chapter, candidate, this.llm,
+              '\nYOUR PREVIOUS REPORT ON THIS CHAPTER CITED ONLY ITS FIRST HALF. If the rest of the chapter holds, say so by reporting only what is actually wrong; if it was not read, read it now. Either answer is acceptable; a report that covers half a chapter is not.');
+            if (reread.status !== 'not_checked') candidate.review = reread;
+          }
           const carried = this.carriedIssues(chapter, candidate, superseded);
           if (carried.length) {
             candidate.review.issues = [...candidate.review.issues, ...carried];
@@ -596,6 +606,22 @@ export class NovelEngine {
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row broke the prose open (${broken[0].slice(0, 80)}).`);
         }
         content = retried;
+      }
+      // Cutting is the answer to some findings and to no others. A repair that quietly takes the
+      // dialogue out of a scene while answering something else has changed what the chapter is, and
+      // the review that reads it next sees a chapter, not a loss.
+      const spokenLost = allowShortening ? 0 : spokenLinesLost(version.content, content);
+      if (spokenLost) {
+        chapter.rejectedRepairs = [...(chapter.rejectedRepairs || []), { revision: version.revision, reason: `removed ${spokenLost} spoken line(s) that no finding asked it to remove`, at: Date.now() }];
+        await this.checkpoint(run);
+        const kept = await this.repair(run, chapter, version, sweep.issues,
+          `${extra}Your previous attempt was refused: it removed ${spokenLost} spoken line(s) from this chapter, and none of the findings asked for dialogue to be cut. Answer them without taking speech off the page — a line may be rewritten, but the exchange stays.`, allowShortening);
+        if (!spokenLinesLost(version.content, kept)) content = kept;
+        else {
+          chapter.status = 'needs_revision';
+          await this.checkpoint(run);
+          throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row removed spoken lines nothing asked them to remove.`);
+        }
       }
       if (unchanged(version.content, content)) {
         chapter.distributedServed = sweep.served;

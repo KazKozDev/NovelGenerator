@@ -206,6 +206,19 @@ export function brokenParagraphs(content: string): string[] {
   return broken;
 }
 
+/**
+ * Spoken lines a repair removed. Scenes live in their dialogue, and a repair holding the whole chapter
+ * removes what nobody asked it to: measured across the stored runs, twelve repairs dropped spoken
+ * paragraphs while answering findings that had nothing to do with speech or length — one of them took
+ * a chapter from twelve spoken paragraphs to six, another took the only line a chapter had.
+ *
+ * Counted, not compared: a line rewritten is still a line, and this asks only whether the chapter
+ * still speaks as much as it did.
+ */
+export function spokenLinesLost(before: string, after: string): number {
+  return Math.max(0, speechParagraphs(before).length - speechParagraphs(after).length);
+}
+
 /** What a repair broke that was whole before it: damage the previous version did not have. */
 export function newlyBroken(before: string, after: string): string[] {
   const had = new Set(brokenParagraphs(before));

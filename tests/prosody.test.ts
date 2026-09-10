@@ -1,8 +1,9 @@
 import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
-import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, paragraphsOf, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
+import { citedOnlyTheOpening } from '../utils/novel/review';
 import { createBookSpec } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { addCandidate } from '../utils/novel/storyState';
@@ -514,5 +515,35 @@ describe('Prose a repair broke open', () => {
     expect(newlyBroken(before, after)).toEqual(['The light went round twice."']);
     expect(newlyBroken(before, before)).toEqual([]);
     expect(newlyBroken('"Take it," she said.', '"Take it," she said. He read it twice.')).toEqual([]);
+  });
+});
+
+describe('What a repair takes away without being asked', () => {
+  const chapter = ['She set the case down and listened to the water.', '"Take it," she said.', '"You will need the street name."', 'He read it twice and said nothing.'].join('\n\n');
+
+  it('counts spoken lines lost, and does not count a line rewritten', () => {
+    // The shape measured across the stored runs: a repair answering something else takes speech away.
+    const cut = ['She set the case down and listened to the water.', '"Take it," she said.', 'He read it twice and said nothing.'].join('\n\n');
+    expect(spokenLinesLost(chapter, cut)).toBe(1);
+    const reworded = chapter.replace('"You will need the street name."', '"You will need the name of the street."');
+    expect(spokenLinesLost(chapter, reworded)).toBe(0);
+    expect(spokenLinesLost(chapter, `${chapter}\n\n"And the number," she added.`)).toBe(0);
+  });
+});
+
+describe('A report that cited only the opening', () => {
+  const long = Array.from({ length: 40 }, (_, i) => `Paragraph number ${i} of a chapter that goes on for a while yet.`).join('\n\n');
+  const finding = (quote: string) => ({ id: `x${quote.length}`, category: 'plot' as const, severity: 'major' as const, description: 'A defect.', instruction: 'Fix it.', evidence: [{ chapter: 1, revision: 1, quote }] });
+
+  it('is recognised when every citation falls in the first half', () => {
+    const opening = [finding('Paragraph number 0 of a chapter'), finding('Paragraph number 2 of a chapter'), finding('Paragraph number 4 of a chapter')];
+    expect(citedOnlyTheOpening(long, opening)).toBe(true);
+  });
+
+  it('is not claimed for a report that read through, or for one too small to judge', () => {
+    const spread = [finding('Paragraph number 1 of a chapter'), finding('Paragraph number 20 of a chapter'), finding('Paragraph number 38 of a chapter')];
+    expect(citedOnlyTheOpening(long, spread)).toBe(false);
+    // Two findings in the opening say nothing: a chapter may simply have its defects at the front.
+    expect(citedOnlyTheOpening(long, [finding('Paragraph number 0 of a chapter'), finding('Paragraph number 1 of a chapter')])).toBe(false);
   });
 });
