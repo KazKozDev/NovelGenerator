@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { plannedBeatsFrom } from './beatStub';
 import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
-import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
+import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
 import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
@@ -1020,5 +1020,38 @@ describe('A passage carried out of an earlier chapter', () => {
     const version = addCandidate(chapter, `${prose(2)} ${line}`, 'fixture');
     const result = await reviewChapter(run, chapter, version, async () => '{"issues":[]}');
     expect(result.issues.some(item => item.id === 'copied-passage')).toBe(false);
+  });
+});
+
+describe('The canon a scene is given', () => {
+  const fact = (id: string, subject: string, value: string, chapter: number) =>
+    ({ id, subject, predicate: 'status', value, knownBy: [subject], evidence: { chapter, revision: 1, quote: 'q' } });
+  const bulk = (count: number, chapter: number) =>
+    Array.from({ length: count }, (_, index) => fact(`f${chapter}-${index}`, `Stranger${index}`, `a fact long enough to weigh on a prompt, number ${index}`, chapter));
+
+  it('hands over the whole ledger while it still fits in a prompt', () => {
+    const state = { ...emptyStoryState(), facts: [fact('a', 'Thorne', 'at the door', 1), fact('b', 'Vera', 'gone', 1)] };
+    expect(canonForScene(state, ['Thorne'], 3)).toEqual(canonForPrompt(state));
+  });
+
+  it('keeps the people in the scene and everything the previous chapter established', () => {
+    const state = { ...emptyStoryState(), summaries: { 1: 'Chapter one.' },
+      facts: [...bulk(120, 1), fact('thorne', 'Thorne', 'holds the letter', 1), fact('fresh', 'Nobody', 'happened just now', 4)] };
+    const scoped = canonForScene(state, ['Thorne'], 5) as { facts: { id: string }[]; summaries: Record<number, string> };
+    const ids = scoped.facts.map(item => item.id);
+    expect(JSON.stringify(scoped).length).toBeLessThan(JSON.stringify(canonForPrompt(state)).length);
+    expect(ids).toContain('thorne');
+    // A scene follows from what just happened as often as from who is standing in it.
+    expect(ids).toContain('fresh');
+    expect(ids).not.toContain('f1-7');
+    // Summaries are the thread the book hangs on, and they are short. They are never cut.
+    expect(scoped.summaries).toEqual({ 1: 'Chapter one.' });
+  });
+
+  it('keeps a fact that names the scene\'s people anywhere in it, not only as its subject', () => {
+    const state = { ...emptyStoryState(), facts: [...bulk(120, 1),
+      { ...fact('bond', 'Vera', 'relationship:Thorne is her debtor', 1) }] };
+    const scoped = canonForScene(state, ['Thorne'], 5) as { facts: { id: string }[] };
+    expect(scoped.facts.map(item => item.id)).toContain('bond');
   });
 });

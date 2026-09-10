@@ -237,6 +237,40 @@ export function canonForPrompt(state: StoryState): object {
   return { facts: strip(state.facts), events: strip(state.events), promises: strip(state.promises), beats: strip(state.beats || []), summaries: state.summaries };
 }
 
+/**
+ * Where a scene stops being given the whole book. Six accepted chapters of a live run carry 63 facts
+ * and 48 events, about 22000 characters, and the canon grows by roughly that much every six chapters:
+ * a thirty-chapter book would hand every scene a hundred thousand characters of ledger. Under this
+ * size the whole canon is cheaper to pass than to choose from, and choosing can only lose something.
+ */
+export const canonPromptBudget = 12000;
+
+/**
+ * The canon a scene actually needs: everything, until the ledger outgrows a prompt, and then the part
+ * that names the people in this scene, plus everything the chapter just before established.
+ *
+ * The recent chapter is kept whatever it is about, because a scene follows from what just happened
+ * more often than from who is standing in it, and the summaries and the promise ledger are kept whole
+ * — they are short, and they are the thread the book is held together by.
+ */
+export function canonForScene(state: StoryState, participants: string[], chapterNumber: number): object {
+  const whole = canonForPrompt(state);
+  if (JSON.stringify(whole).length <= canonPromptBudget) return whole;
+  const names = participants.map(name => name.toLowerCase().trim()).filter(Boolean);
+  const mentions = (text: string) => names.some(name => text.toLowerCase().includes(name));
+  const recent = (evidence: Evidence) => evidence.chapter >= chapterNumber - 1;
+  const strip = <T extends { evidence: Evidence }>(items: T[]) => items.map(({ evidence, ...rest }) => rest);
+  return {
+    facts: strip(state.facts.filter(fact => recent(fact.evidence)
+      || mentions(`${fact.subject} ${fact.predicate} ${fact.value} ${fact.knownBy.join(' ')}`))),
+    events: strip(state.events.filter(event => recent(event.evidence)
+      || mentions(`${event.description} ${event.consequences.join(' ')}`))),
+    promises: strip(state.promises),
+    beats: strip(state.beats || []),
+    summaries: state.summaries,
+  };
+}
+
 export function canonBefore(run: NovelRun, chapterNumber: number): StoryState {
   return rebuildCanon(run.chapters.filter(chapter => chapter.number < chapterNumber));
 }
