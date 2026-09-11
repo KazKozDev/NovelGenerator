@@ -52,12 +52,12 @@ const ApprovalView: React.FC<ApprovalViewProps> = ({
           <TextArea
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
-            rows={30}
-            className="min-h-[550px] font-mono text-xs text-zinc-300"
+            rows={48}
+            className="min-h-[calc(100vh-300px)] font-mono text-xs text-zinc-300"
             disabled={isLoading}
           />
         ) : (
-          <div className="min-h-[550px] max-h-[70vh] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded text-left">
+          <div className="min-h-[calc(100vh-300px)] overflow-y-auto p-6 bg-zinc-900 border border-zinc-800 rounded text-left">
             <MarkdownView content={content} className="font-serif text-prose max-w-[62ch] mx-auto" />
           </div>
         )}

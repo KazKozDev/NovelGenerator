@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
+import CoherencePanel from './CoherencePanel';
 import { MarkdownView } from './common/MarkdownView';
 
 interface BookDisplayProps {
@@ -57,6 +58,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         
         {/* Book Statistics */}
         <BookStatistics bookContent={bookContent} metadata={metadata} />
+        <CoherencePanel content={bookContent} />
       </div>
       
       <div className="flex border-b border-zinc-800">

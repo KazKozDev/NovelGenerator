@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Select } from './common/Select';
+import { Input } from './common/Input';
+import { GEMINI_MODEL_NAME } from '../constants';
 import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
 
@@ -30,6 +32,17 @@ export default function ModelSwitch() {
           onChange={event => { const next = { ...writer, ollamaModel: event.target.value }; setWriter(next); saveStoredProviderConfig(next); }}>
           {options.map(model => <option key={model} value={model}>{model}</option>)}
         </Select>
+        {writer.provider === 'gemini' && (
+          <Input id="switchWriterGemini" value={writer.geminiModel || ''} placeholder={GEMINI_MODEL_NAME}
+            onChange={event => {
+              const typed = event.target.value.trim();
+              const next = { ...writer };
+              if (typed) next.geminiModel = typed;
+              else delete next.geminiModel;
+              setWriter(next); saveStoredProviderConfig(next);
+            }}
+            className="mt-1.5 text-xs py-1.5 font-mono" />
+        )}
       </div>
       <div>
         <label htmlFor="switchEditor" className="block text-xs font-semibold uppercase text-zinc-500 mb-1">Editor</label>
@@ -41,6 +54,18 @@ export default function ModelSwitch() {
           }}>
           {options.map(model => <option key={model} value={model}>{model}</option>)}
         </Select>
+        {validator?.provider === 'gemini' && (
+          <Input id="switchEditorGemini" value={validator.geminiModel || ''} placeholder={GEMINI_MODEL_NAME}
+            onChange={event => {
+              if (!validator) return;
+              const typed = event.target.value.trim();
+              const next = { ...validator, enabled: true };
+              if (typed) next.geminiModel = typed;
+              else delete next.geminiModel;
+              setValidator(next); saveStoredValidatorConfig(next);
+            }}
+            className="mt-1.5 text-xs py-1.5 font-mono" />
+        )}
       </div>
     </div>
   );

@@ -592,6 +592,38 @@ describe('A review whose quotations cannot be found', () => {
   });
 });
 
+describe('A review report with one finding half-built', () => {
+  it('loses that finding and keeps the rest, rather than losing the chapter', async () => {
+    const { run, chapter, version } = fixture();
+    run.stage = 'writing';
+    run.blueprint = { centralConflict: 'c', protagonistChange: 'p', endingPayoff: 'e', characters: {}, chapters: [], promises: [] };
+    chapter.candidateRevision = version.revision;
+    const quote = version.content.slice(0, 40);
+    let reviews = 0;
+    const llm = async (prompt: string, system: string) => {
+      const literary = literaryResponse(prompt, system);
+      if (literary) return literary;
+      if (system.includes('continuity and developmental')) {
+        reviews++;
+        return JSON.stringify({ issues: [
+          // No instruction at all: half a finding, and it used to void the whole report.
+          { id: 'broken', category: 'plot', severity: 'major', description: 'Something is wrong.', evidence: [{ chapter: 1, revision: 1, quote }] },
+          { id: 'whole', category: 'knowledge', severity: 'major', description: 'Thorne names the clerk too early.', instruction: 'Take the knowledge away.', evidence: [{ chapter: 1, revision: 1, quote }] },
+        ] });
+      }
+      if (system.includes('targeted fiction revision')) return JSON.stringify({ prose: `${version.content} She said nothing more.` });
+      return '{"issues":[]}';
+    };
+    await (new NovelEngine(llm, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> })
+      .acceptOrRepair(run, chapter, version).catch(() => {});
+    // The review was read, not thrown away: the sound finding reached the chapter and was repaired.
+    const seen = chapter.versions.flatMap(item => item.review?.issues || []).map(issue => issue.id);
+    expect(seen).toContain('whole');
+    expect(seen).not.toContain('broken');
+    expect(reviews).toBeGreaterThan(0);
+  });
+});
+
 describe('A book review whose quotations cannot be located', () => {
   it('is asked again with the reason, since it reads the ledger and not the prose', async () => {
     const run = createRun(createBookSpec('A letter changes a family', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'test' });

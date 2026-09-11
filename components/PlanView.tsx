@@ -45,9 +45,22 @@ export default function PlanView({ content, className = '' }: { content: string;
 
   if (!all.length) return <MarkdownView content={content} className={className} />;
 
-  const digest = all.filter(entry => DIGEST.includes(entry.key));
-  const shown = expanded || !digest.length ? all : digest;
-  const hidden = all.length - shown.length;
+  const scenes = Array.isArray(parsed.detailedScenes)
+    ? (parsed.detailedScenes as Record<string, unknown>[]).filter(scene => scene && typeof scene === 'object')
+    : [];
+  const digest = all.filter(entry => DIGEST.includes(entry.key) || entry.key === 'detailedScenes');
+  const shown = (expanded || !digest.length ? all : digest).filter(entry => entry.key !== 'detailedScenes');
+  const hidden = all.length - shown.length - (scenes.length ? 1 : 0);
+
+  const sceneText = (scene: Record<string, unknown>, key: string): string | undefined => {
+    const value = scene[key];
+    if (typeof value === 'string') return value.trim() || undefined;
+    if (Array.isArray(value)) {
+      const parts = value.map(item => (typeof item === 'string' ? item : undefined)).filter(Boolean);
+      return parts.length ? parts.join(', ') : undefined;
+    }
+    return undefined;
+  };
 
   return (
     <div className={className}>
@@ -61,6 +74,34 @@ export default function PlanView({ content, className = '' }: { content: string;
           </div>
         ))}
       </dl>
+      {scenes.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <div className="text-xs font-semibold uppercase text-zinc-500">Scenes</div>
+          {scenes.map((scene, index) => {
+            const rows = [
+              ['Shape', sceneText(scene, 'sceneShape')],
+              ['Staging', sceneText(scene, 'staging')],
+              ['Objective', sceneText(scene, 'objective')],
+              ['Conflict', sceneText(scene, 'conflict')],
+              ['Carried by', sceneText(scene, 'conflictCarriedBy')],
+            ].filter((row): row is [string, string] => Boolean(row[1]));
+            return (
+              <div key={sceneText(scene, 'sceneId') || String(index)} className="border border-zinc-800 rounded p-2">
+                <div className="text-xs font-semibold text-zinc-200">
+                  {[sceneText(scene, 'sceneId'), sceneText(scene, 'location')].filter(Boolean).join(' · ')}
+                  {sceneText(scene, 'participants') ? ` — ${sceneText(scene, 'participants')}` : ''}
+                </div>
+                {rows.map(([label, value]) => (
+                  <div key={label} className="text-xs text-zinc-400 mt-1">
+                    <span className="uppercase text-zinc-500">{label}: </span>
+                    <span className="text-zinc-300">{value}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {hidden > 0 && (
         <button
           type="button"

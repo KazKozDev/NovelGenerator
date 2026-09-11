@@ -1,10 +1,10 @@
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
-import { proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
+import { manuscriptContract, proseCraft, sceneWordTargets } from '../utils/novel/proseCraft';
 import { literaryIntentForScene, planForScene } from '../utils/novel/writer';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { plannedBeatsFrom } from './beatStub';
-import { createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
+import { apparatusResidue, compactPlanningContext, createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
 import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
@@ -293,6 +293,21 @@ describe('Redundancy repair', () => {
 });
 
 describe('A chapter is planned against the book', () => {
+  it('rejects a participant corrupted with generated prose', () => {
+    const valid = runWithPlans(3).chapters[0].plan;
+    expect(() => validateChapterPlan(valid, createBookSpec('A letter', 3), [], ['Thorne'])).not.toThrow();
+    const corrupted = structuredClone(valid);
+    corrupted.detailedScenes[0].participants = ['Thorne headlights of security vans approaching'];
+    expect(() => validateChapterPlan(corrupted, createBookSpec('A letter', 3), [], ['Thorne'])).toThrow(/approved cast/);
+  });
+
+  it('keeps prior planning context bounded to outcomes rather than complete scene plans', () => {
+    const run = runWithPlans(3);
+    const context = JSON.stringify(compactPlanningContext(run));
+    expect(context).not.toContain('keyMoments');
+    expect(context).not.toContain('staging');
+    expect(context).toContain('she pays the price');
+  });
   const scene = (id: string, participants: string[], conflictCarriedBy?: string) => ({
     sceneId: id, location: 'house', participants, objective: 'Recover the letter', conflict: 'The clerk refuses',
     outcome: 'A choice is made', duration: 'an hour', mood: 'tense', keyMoments: ['the refusal'], narrativeWeight: 3,
@@ -767,7 +782,9 @@ describe('First-draft prose context', () => {
     expect(context).toContain('FIRST_ACCEPTED');
     expect(context).not.toContain('UNACCEPTED_SECRET');
     expect(context).not.toContain('FUTURE_SECRET');
-    expect(context.length).toBeLessThan(11000);
+    // Two excerpts of at most 3000 characters each, plus the fixed craft and manuscript contract:
+    // the number guards the excerpts against growing into the whole book, not the instructions.
+    expect(context.length).toBeLessThan(13500);
   });
 
   it('gives the next scene the events and the last words, not every finished scene in full', async () => {
@@ -798,6 +815,27 @@ describe('First-draft prose context', () => {
     await writeScene(run, run.chapters[1], 0, llm);
     expect(calls.length).toBe(1);
     for (const prompt of calls) expect(prompt).toContain('An earlier accepted prose sample with a distinctive register.');
+  });
+
+  it('includes full chapter plan and continuation contract for the opening scene of a new chapter', async () => {
+    const run = runWithPlans();
+    const endingProse = 'Valeria locked the archive doors from outside and vanished into the rain.';
+    approve(run, 1, `Opening scene of chapter one. Some middle paragraphs. ${endingProse}`);
+    run.chapters[1].plan.title = 'The Midnight Safe';
+    run.chapters[1].plan.openingHook = 'The streetlamp flickered in the cold drizzle.';
+    let seen = '';
+    await writeScene(run, run.chapters[1], 0, async prompt => {
+      seen = prompt;
+      return JSON.stringify({ prose: 'The rain continued.' });
+    });
+    // Check that chapter plan and openingHook are passed
+    expect(seen).toContain('The Midnight Safe');
+    expect(seen).toContain('The streetlamp flickered in the cold drizzle.');
+    expect(seen).toContain('CHAPTER PLAN');
+    // Check continuation contract from previous chapter's ending
+    expect(seen).toContain('CONTINUATION FROM PREVIOUS CHAPTER (Chapter 1)');
+    expect(seen).toContain(endingProse);
+    expect(seen).toContain('DO NOT repeat the previous chapter\'s opening hook');
   });
 });
 
@@ -1144,7 +1182,37 @@ describe('A repair that returns the chapter unchanged twice', () => {
     // Either route reaches the same place: two failed attempts, or two attempts that changed nothing.
     expect(chapter.planningNote).toMatch(/no local repair could answer|returned the chapter unchanged/);
     expect(chapter.unrepairable?.[0].category).toBe('knowledge');
-    expect(reviewed).toBeGreaterThan(1);
+    // One reading per revision. The prose never changed — the repair returned it verbatim — so there
+    // was never a second text to judge, and asking again about the same words is how a chapter used to
+    // spend thirteen calls a round on nothing.
+    expect(reviewed).toBe(1);
+  });
+
+  it('demotes a stubborn heuristic repeated passage finding after repairs fail, accepting the chapter', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, prose(1), 'fixture');
+    const base = fixtureLLM();
+    let repairs = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        repairs++;
+        return JSON.stringify({ prose: `${candidate.content} Revision ${repairs}.` });
+      }
+      if (system.includes('continuity and developmental')) {
+        return JSON.stringify({ issues: [{
+          id: 'restated-passage', category: 'format', severity: 'critical',
+          description: '1 paragraph(s) tell again a beat this chapter has already told.',
+          instruction: 'Delete the weaker telling.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }],
+        }] });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    expect(chapter.status).toBe('accepted');
+    expect(repairs).toBeLessThanOrEqual(3);
+    expect(chapter.planningNote).toContain('no local repair could answer');
+    expect(chapter.unrepairable?.[0].id).toBe('restated-passage');
   });
 });
 
@@ -1362,6 +1430,30 @@ describe('The journal a chapter keeps while it is written', () => {
     expect(journalSoFar(chapter, 1)).toEqual([]);
   });
 
+  it('tells the next scene what has already been said, and hands it no line to echo', async () => {
+    // The measured cause of scene repetition: 83% of the sentences a scene repeated matched prose the
+    // writer had never seen, so the record of what is true was never going to stop it — only a record
+    // of what has already been said can.
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = scenePair(chapter);
+    chapter.sceneDrafts = ['The archive smelled of wet paper. The clerk put the letter in the drawer.'];
+    chapter.sceneJournal = [{ sceneId: 'scene-a', notes: [
+      { kind: 'told', note: 'THE_ARCHIVE_IS_DESCRIBED', quote: 'The archive smelled of wet paper.' },
+      { kind: 'possession', note: 'THE_CLERK_HOLDS_THE_LETTER', quote: 'put the letter in the drawer' },
+    ] }];
+    let seen = '';
+    await writeScene(run, chapter, 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Next.' }); });
+    expect(seen).toContain('ALREADY ON THE PAGE, AND NOT YOURS TO WRITE AGAIN');
+    expect(seen).toContain('THE_ARCHIVE_IS_DESCRIBED');
+    expect(seen).toContain('THE_CLERK_HOLDS_THE_LETTER');
+    // The quotation is how a note earned its place in the record, not material for the next writer.
+    // The last words of the chapter still travel, so the sentence is checked where the notes are.
+    const notes = seen.slice(seen.indexOf('WHERE THIS CHAPTER STANDS'), seen.indexOf('THE LAST WORDS CURRENTLY ON THE PAGE'));
+    expect(notes).not.toContain('smelled of wet paper');
+    expect(notes).not.toContain('put the letter in the drawer');
+  });
+
   it('is kept per written scene while the chapter is a draft, and dropped when it is accepted', async () => {
     const store = new MemoryRunStore();
     const run = runWithPlans();
@@ -1441,6 +1533,63 @@ describe('The contract a scene is written to', () => {
   });
 });
 
+describe('The five marks of a draft that shows how it was made', () => {
+  it('reads the plan left standing on the page, and leaves prose that merely mentions a scene alone', () => {
+    expect(apparatusResidue('Scene 3: the corridor.')).toEqual(['Scene 3: the corridor.']);
+    expect(apparatusResidue('\u0421\u0446\u0435\u043d\u0430 2 \u2014 \u043e\u043d \u0432\u0445\u043e\u0434\u0438\u0442.')).toHaveLength(1);
+    expect(apparatusResidue('The keyMoments were three.')).toHaveLength(1);
+    expect(apparatusResidue('POV: Anna, evening.')).toHaveLength(1);
+    expect(apparatusResidue('[TODO: name the street]')).toHaveLength(1);
+    // Prose that says the word, or carries a number and a colon, is not a label.
+    expect(apparatusResidue('The scene at the window had cost her three years.')).toEqual([]);
+    expect(apparatusResidue('He counted them: four, and then a fifth.')).toEqual([]);
+    expect(apparatusResidue('\u0421\u0446\u0435\u043d\u0430 \u0432 \u043e\u043a\u043d\u0435 \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u043b\u0430\u0441\u044c \u043a\u0430\u0436\u0434\u044b\u0439 \u0432\u0435\u0447\u0435\u0440.')).toEqual([]);
+  });
+
+  it('binds tense, names, quantities, conditions and the negation formula in every prose call', () => {
+    const contract = manuscriptContract('past');
+    expect(contract).toContain('narrate in the past tense');
+    expect(contract).toContain('slips into the present');
+    expect(contract).toMatch(/Not X, but Y/);
+    expect(contract).toMatch(/NAMES ARE SPELLED AS THE BOOK SPELLS THEM/);
+    expect(contract).toMatch(/NUMBERS ATTACHED TO A PERSON OR AN INTERVAL/);
+    expect(contract).toMatch(/PHYSICAL CONDITIONS PERSIST/);
+    expect(manuscriptContract('present')).toContain('narrate in the present tense');
+    // Prompt blocks stay English-only so the validator can read them.
+    expect(contract).not.toMatch(/[\u0430-\u044f\u0451]/i);
+    const run = runWithPlans();
+    expect(proseCraft(run, run.chapters[0])).toContain('MANUSCRIPT CONTRACT');
+  });
+
+  it('sends a scene back once when the plan is standing on the page, and keeps only a clean rewrite', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    let scenes = 0;
+    const base = fixtureLLM();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('single prose writer')) {
+        scenes++;
+        if (scenes === 1) return JSON.stringify({ prose: `Scene 1: the corridor.\n\n${FILLER}` });
+        expect(prompt).toContain('left the planning apparatus standing on the page');
+        return JSON.stringify({ prose: `She went down the corridor without the light. ${FILLER}` });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+    expect(scenes).toBe(2);
+    expect(chapter.sceneDrafts?.[0]).not.toContain('Scene 1:');
+  });
+
+  it('gives the scene writer the spellings the book owns, and nothing to name a stranger by', async () => {
+    const run = runWithPlans();
+    let seen = '';
+    await writeScene(run, run.chapters[0], 0, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Prose.' }); });
+    expect(seen).toContain('EVERY NAME THIS BOOK OWNS');
+    expect(seen).toContain('MANUSCRIPT CONTRACT');
+    expect(seen).toContain(`Output only prose in the ${run.spec.tense} tense`);
+  });
+});
+
 describe('A repair that breaks the prose open', () => {
   it('is refused, the previous text stands, and the next attempt is told what it did', async () => {
     const run = runWithPlans();
@@ -1474,6 +1623,43 @@ describe('A repair that breaks the prose open', () => {
     // It is kept as a reason, not as prose.
     expect(chapter.rejectedRepairs?.[0].reason).toContain('broken open');
     expect(attempts).toBe(2);
+  });
+});
+
+describe('A repair that twice takes the dialogue off the page', () => {
+  it('does not end the run: the chapter stands on the prose it has and the finding turns advisory', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    const spoken = `${prose(1)}\n\n"I will not," she said.\n\n"Then we are finished here," he answered.`;
+    const candidate = addCandidate(chapter, spoken, 'fixture');
+    const base = fixtureLLM();
+    let attempts = 0;
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (system.includes('targeted fiction revision')) {
+        attempts++;
+        // Both attempts answer a knowledge finding by deleting the exchange, which nothing asked for.
+        if (attempts === 2) expect(prompt).toContain('none of the findings asked for dialogue to be cut');
+        return JSON.stringify({ prose: `${prose(1)} She said nothing at all.` });
+      }
+      if (system.includes('continuity and developmental')) {
+        return JSON.stringify({ issues: [{
+          id: 'knowledge-1', category: 'knowledge', severity: 'major',
+          description: 'Thorne names the clerk before the chapter gives the name to her.',
+          instruction: 'Take the knowledge away.', evidence: [{ chapter: 1, revision: 1, quote: prose(1).slice(0, 40) }],
+        }] });
+      }
+      return base(prompt, system, options);
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate);
+    // Twice refused, and the run lives: the chapter keeps the version that still speaks.
+    expect(chapter.status).not.toBe('needs_revision');
+    expect(acceptedVersion(chapter)!.content).toContain('"Then we are finished here," he answered.');
+    expect(chapter.versions.some(version => version.content.includes('She said nothing at all'))).toBe(false);
+    expect(attempts).toBe(2);
+    // What could not be repaired is recorded rather than waived in silence.
+    expect(chapter.unrepairable?.some(issue => issue.id === 'knowledge-1')).toBe(true);
+    expect(chapter.planningNote).toContain('spoken line');
+    expect(chapter.rejectedRepairs?.[0].reason).toContain('spoken line');
   });
 });
 

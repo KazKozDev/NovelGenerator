@@ -1,6 +1,9 @@
 import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport, StoryState } from './contracts';
 import { specPrompt } from './contracts';
 import { dialogueIssues, type PriorProse } from './prosody';
+import { REVIEW_COHERENCE } from './coherence';
+import { continuityIssues } from './continuity';
+import { scanChapterContradictions, type NLIScorer } from './nli';
 import { acceptedVersion, beatKey, canonBefore, canonForPrompt, endingIssues, evidenceExists, plannedBeats, unplayedBeats, validateAnalysis } from './storyState';
 import { stalledThreads } from './literaryState';
 
@@ -102,6 +105,14 @@ const issueFormat = `Return JSON {"issues":[{"id":"unique-id","category":"canon|
 /**
  * One sloppy paraphrase must not void an otherwise evidenced report, and must not be repaired either:
  * unverifiable citations are dropped, an issue left without evidence is discarded and counted.
+ *
+ * The same rule now covers a finding that arrives half-built. It used to throw — one missing
+ * instruction, one category outside the list, one id repeated, and the whole report was void; asked
+ * twice more and answered the same way, the chapter died. A live run lost chapter three exactly so,
+ * with "Incomplete editorial issue" as its last word. A report is a list of findings, and a broken
+ * entry in a list is one finding lost, not a failed review: it is discarded and counted like any
+ * other unusable one, and the rule that a report whose every finding was discarded is no report at
+ * all still stands, so a genuinely broken answer is still asked again.
  */
 /**
  * A finding often names its culprit in quotation marks — a word, a name, a phrase the prose is said to
@@ -123,7 +134,7 @@ function parseIssues(value: any, sources: { chapter: number; version: ChapterVer
   const issues: ReviewIssue[] = [];
   let discarded = 0;
   value.issues.forEach((raw: any, index: number) => {
-    if (!raw || typeof raw !== 'object') throw new Error('Malformed editorial issue.');
+    if (!raw || typeof raw !== 'object') { discarded++; return; }
     const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `issue-${index + 1}`;
     const category = typeof raw.category === 'string' ? raw.category.toLowerCase().trim() : '';
     const severity = typeof raw.severity === 'string' ? raw.severity.toLowerCase().trim() : '';
@@ -131,7 +142,7 @@ function parseIssues(value: any, sources: { chapter: number; version: ChapterVer
     const instruction = raw.instruction ?? raw.fix;
     if (ids.has(id) || !categories.includes(category) || !['critical', 'major', 'minor'].includes(severity) ||
         typeof description !== 'string' || !description.trim() || description === '...' ||
-        typeof instruction !== 'string' || !instruction.trim() || instruction === '...') throw new Error('Incomplete editorial issue.');
+        typeof instruction !== 'string' || !instruction.trim() || instruction === '...') { discarded++; return; }
     ids.add(id);
     const cited = Array.isArray(raw.evidence) ? raw.evidence : raw.evidence && typeof raw.evidence === 'object' ? [raw.evidence] : [];
     // The application knows which prose it submitted: locate each quotation itself and stamp the true
@@ -606,11 +617,11 @@ export function citedOnlyTheOpening(content: string, issues: ReviewIssue[]): boo
   return located.length >= 3 && Math.max(...located) < 0.5;
 }
 
-export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM, retry = ''): Promise<ReviewReport> {
+export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM, retry = '', nli?: NLIScorer): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
     const previous = chapter.versions.find(item => item.revision === chapter.acceptedRevision);
-    const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `WHAT THE PREVIOUS ACCEPTED VERSION ESTABLISHED (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${JSON.stringify(established(previous))}\nSENTENCES THAT VERSION HAD AND THIS ONE DOES NOT — a revision may cut, but not lose a scene:\n${JSON.stringify(sentencesLost(previous.content, version.content))}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\nCheck causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition (a character must not state or rely on a specific fact — a name, an event, a hidden detail — that the story has not yet given them; guessing, doubting, forming a wrong hypothesis, or reacting to something they directly perceive is not a violation, and neither is an action the character takes without certainty; a sentence that marks its own uncertainty — possibly, perhaps, seemed, resembled, as if, reminded him of — is a guess whatever it guesses at, and reporting "the figure resembled someone missing, possibly a journalist whose face had been in the news" as a leak is demanding that the character stop forming hypotheses, which is not a defect but the only way a mystery can be read; a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge either — a character failing to place a smell is the opposite of a character using a fact, and reporting it as a leak means reading past what the sentence says; the premise in the author contract above is established ground, the situation this book begins from, so everything it states is already known to the reader and to the characters it describes, and repeating it is never a violation; when you do report such a leak, the repair you ask for must take the knowledge away — turn the statement into a guess, a question, an uncertainty, or cut it — and never ask for a source to be invented for it, because a revision is forbidden to add memory, backstory or an account of how something came to be, so an instruction to explain where the knowledge came from cannot be carried out and the same finding returns round after round until the chapter runs out of budget), distinct dialogue voices, POV/tense/style/audience, scene completeness, intentional pacing and emotional hooks. Check setup/payoff timing against the plan: report a missing setup or payoff only for a promise scheduled for this chapter. A promise whose payoff belongs to a later chapter must not be reported as unresolved here, and this chapter is not required to escalate or conclude it. In the same way, a revelation this chapter makes that an earlier chapter did not prepare is a defect of the book and not of this chapter: nothing written here can plant a clue in a chapter that is already finished, and the whole-book review checks preparation across chapters. Report what this chapter does with the material it has. The final chapter must fulfill the requested ending without a forced next-chapter hook. These are the dimensions to look along, not a list to fill: most of them will be clean in most chapters, and finding one defect per dimension is a sign of a review inventing them rather than a chapter carrying them. Flag only concrete defects, not universal stylistic preferences.\n${issueFormat}${retry}`;
+    const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `WHAT THE PREVIOUS ACCEPTED VERSION ESTABLISHED (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${JSON.stringify(established(previous))}\nSENTENCES THAT VERSION HAD AND THIS ONE DOES NOT — a revision may cut, but not lose a scene:\n${JSON.stringify(sentencesLost(previous.content, version.content))}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\nCheck causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition (a character must not state or rely on a specific fact — a name, an event, a hidden detail — that the story has not yet given them; guessing, doubting, forming a wrong hypothesis, or reacting to something they directly perceive is not a violation, and neither is an action the character takes without certainty; a sentence that marks its own uncertainty — possibly, perhaps, seemed, resembled, as if, reminded him of — is a guess whatever it guesses at, and reporting "the figure resembled someone missing, possibly a journalist whose face had been in the news" as a leak is demanding that the character stop forming hypotheses, which is not a defect but the only way a mystery can be read; a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge either — a character failing to place a smell is the opposite of a character using a fact, and reporting it as a leak means reading past what the sentence says; the premise in the author contract above is established ground, the situation this book begins from, so everything it states is already known to the reader and to the characters it describes, and repeating it is never a violation; when you do report such a leak, the repair you ask for must take the knowledge away — turn the statement into a guess, a question, an uncertainty, or cut it — and never ask for a source to be invented for it, because a revision is forbidden to add memory, backstory or an account of how something came to be, so an instruction to explain where the knowledge came from cannot be carried out and the same finding returns round after round until the chapter runs out of budget), distinct dialogue voices, POV/tense/style/audience, scene completeness,${REVIEW_COHERENCE} intentional pacing and emotional hooks. Check setup/payoff timing against the plan: report a missing setup or payoff only for a promise scheduled for this chapter. A promise whose payoff belongs to a later chapter must not be reported as unresolved here, and this chapter is not required to escalate or conclude it. In the same way, a revelation this chapter makes that an earlier chapter did not prepare is a defect of the book and not of this chapter: nothing written here can plant a clue in a chapter that is already finished, and the whole-book review checks preparation across chapters. Report what this chapter does with the material it has. The final chapter must fulfill the requested ending without a forced next-chapter hook. These are the dimensions to look along, not a list to fill: most of them will be clean in most chapters, and finding one defect per dimension is a sign of a review inventing them rather than a chapter carrying them. Flag only concrete defects, not universal stylistic preferences.\n${issueFormat}${retry}`;
     
     const report = await structuredResponse(prompt, 'You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.', llm, ['issues'], raw => parseIssues(raw, [{ chapter: chapter.number, version }]), { schema: issueSchema });
     // The chapters this one may have copied from are the accepted ones before it; a draft nobody
@@ -633,9 +644,22 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
       if (reason) settled.push({ id: raw.id, category: raw.category, description: raw.description, reason });
     });
     const chapterSettled = chapter.settled || [];
-    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []),
+    const issues = [...mechanicalIssues(chapter.number, version, run.spec.language, earlier), ...continuityIssues(chapter, version, run.spec.tense), ...dialogueIssues(chapter.number, version, chapter.plan.detailedScenes || []),
       ...mergeFindings(afterWishes).map(issue => issue.severity !== 'minor' && chapterSettled.some(earlierSettled => sameFinding({ ...issue, ...earlierSettled }, issue))
         ? { ...issue, severity: 'minor' as const } : issue)];
+    if (nli) {
+      const people = new Set((chapter.plan.detailedScenes || []).flatMap(scene => scene.participants || []).map(name => name.toLowerCase()));
+      const claims = canonBefore(run, chapter.number).facts
+        .filter(fact => [fact.subject, ...fact.knownBy].some(name => [...people].some(person => person.includes(name.toLowerCase()) || name.toLowerCase().includes(person))))
+        .slice(0, 8).map(fact => `${fact.subject} ${fact.predicate}: ${fact.value}`);
+      const contradictions = await scanChapterContradictions(claims, version.content, nli);
+      for (const hit of contradictions.slice(0, 4)) issues.push({
+        id: `nli-canon-${issues.length + 1}`, category: 'canon', severity: 'minor',
+        description: `Local NLI finds the sentence inconsistent with established canon: ${hit.claim}`,
+        instruction: 'Resolve the contradiction by preserving the established canon, unless the prose explicitly and causally changes that fact on the page.',
+        evidence: [{ chapter: chapter.number, revision: version.revision, quote: hit.sentence }],
+      });
+    }
     const words = version.content.split(/\s+/).filter(Boolean).length;
     const target = chapter.plan.targetWordCount || run.spec.targetWordsPerChapter;
     if (words < target * 0.8) issues.push({

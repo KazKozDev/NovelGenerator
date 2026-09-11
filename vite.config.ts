@@ -3,6 +3,9 @@ import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 function terminalLoggerPlugin(): Plugin {
+  let lastKey = '';
+  let lastTime = 0;
+
   return {
     name: 'terminal-logger',
     configureServer(server) {
@@ -22,36 +25,42 @@ function terminalLoggerPlugin(): Plugin {
               const agent = data.agent ? `[${data.agent}]` : '[System]';
               const message = data.message || '';
 
-              // ANSI color formatting
+              const key = `${agent}|${level}|${message}`;
+              const nowMs = Date.now();
+              if (key === lastKey && (nowMs - lastTime) < 600) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                res.end(JSON.stringify({ ok: true, deduplicated: true }));
+                return;
+              }
+              lastKey = key;
+              lastTime = nowMs;
+
+              // ANSI color formatting - strict, cohesive slate/gray aesthetic
               const reset = '\x1b[0m';
-              const dim = '\x1b[2m';
-              const bold = '\x1b[1m';
-              const cyan = '\x1b[36m';
-              const magenta = '\x1b[35m';
-              const blue = '\x1b[34m';
-              const yellow = '\x1b[33m';
-              const green = '\x1b[32m';
-              const red = '\x1b[31m';
-              const gray = '\x1b[90m';
+              const dim = '\x1b[90m';
+              const slate = '\x1b[38;5;110m';
+              const muted = '\x1b[38;5;244m';
+              const text = '\x1b[38;5;252m';
+              const ok = '\x1b[38;5;108m';
+              const warn = '\x1b[38;5;179m';
+              const err = '\x1b[38;5;203m';
 
-              let levelColor = cyan;
-              if (level === 'STAGE') levelColor = magenta;
-              else if (level === 'AGENT') levelColor = blue;
-              else if (level === 'LLM') levelColor = yellow;
-              else if (level === 'STREAM') levelColor = cyan;
-              else if (level === 'SUCCESS') levelColor = green;
-              else if (level === 'WARN') levelColor = yellow;
-              else if (level === 'ERROR') levelColor = red;
+              let levelColor = muted;
+              if (level === 'ERROR' || level === 'ERR') levelColor = err;
+              else if (level === 'WARN' || level === 'WARNING') levelColor = warn;
+              else if (level === 'SUCCESS' || level === 'OK') levelColor = ok;
+              else if (level === 'STAGE' || level === 'AGENT') levelColor = slate;
 
-              const formattedLevel = `${levelColor}${bold}${level.padEnd(7)}${reset}`;
-              const formattedAgent = `${blue}${bold}${agent.padEnd(18)}${reset}`;
+              const formattedLevel = `${levelColor}${level.padEnd(7)}${reset}`;
+              const formattedAgent = `${slate}${agent.padEnd(18)}${reset}`;
 
               let detailStr = '';
               if (data.details !== undefined && data.details !== null && data.details !== '') {
                 detailStr = ` ${dim}${typeof data.details === 'object' ? JSON.stringify(data.details) : data.details}${reset}`;
               }
 
-              console.log(`${gray}${timeStr}${reset} ${dim}│${reset} ${formattedLevel} ${dim}│${reset} ${formattedAgent} ${message}${detailStr}`);
+              console.log(`  ${dim}${timeStr}${reset} ${dim}│${reset} ${formattedLevel} ${dim}│${reset} ${formattedAgent} ${text}${message}${reset}${detailStr}`);
             } catch {
               console.log('[TerminalLog]', body);
             }

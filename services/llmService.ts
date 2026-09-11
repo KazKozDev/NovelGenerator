@@ -25,7 +25,9 @@ export function getStoredProviderConfig(): LLMProviderConfig {
     return {
       provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
-      ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL
+      ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      // Only present when the author typed one: stored configs keep their exact shape otherwise.
+      ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
     return DEFAULT_LLM_CONFIG;
@@ -50,6 +52,7 @@ export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
       think: Boolean(parsed.think),
+      ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
     return undefined;
@@ -114,7 +117,7 @@ export async function generateText(
       config.think
     );
   } else {
-    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly);
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly, config.geminiModel);
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -164,7 +167,7 @@ export async function generateTextStream(
       config.ollamaEndpoint
     );
   } else {
-    result = await generateGeminiTextStream(prompt, wrappedOnChunk, systemInstruction, temperature);
+    result = await generateGeminiTextStream(prompt, wrappedOnChunk, systemInstruction, temperature, undefined, undefined, config.geminiModel);
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);

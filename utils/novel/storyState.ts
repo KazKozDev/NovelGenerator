@@ -1,7 +1,40 @@
 import { literaryCurrent } from './literaryState';
-import type { BeatEvidence, CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, StoryState } from './contracts';
+import type { BeatEvidence, CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, ContinuityState, Evidence, NovelRun, StoryState } from './contracts';
 
-export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], beats: [], summaries: {} });
+export const emptyContinuityState = (): ContinuityState => ({
+  currentTime: 'not established', currentLocation: 'not established', characterLocations: {}, characterKnowledge: {}, relationshipStates: {},
+  injuriesAndCondition: {}, inventory: {}, activePromisesAndThreats: [], unresolvedPlotThreads: [], completedSetupsAndPayoffs: [],
+  lastSignificantDecision: 'not established', expectedConsequences: [],
+});
+
+export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], beats: [], summaries: {}, continuity: emptyContinuityState() });
+
+/** Build a conservative continuity projection from evidence-backed canon only. */
+function applyContinuity(state: StoryState, analysis: ChapterAnalysis): void {
+  const ledger = state.continuity;
+  for (const fact of analysis.facts) {
+    const predicate = fact.predicate.toLowerCase();
+    if (/(location|where|at |in |went|arrived)/.test(predicate)) {
+      ledger.characterLocations[fact.subject] = fact.value;
+      ledger.currentLocation = fact.value;
+    }
+    if (/(know|learn|told|believe)/.test(predicate)) (ledger.characterKnowledge[fact.subject] ||= []).push(fact.value);
+    if (/(injur|wound|condition|health)/.test(predicate)) ledger.injuriesAndCondition[fact.subject] = fact.value;
+    if (/(has|hold|carry|possess|inventory|lost|destroy)/.test(predicate)) ledger.inventory[fact.subject] = fact.value;
+    if (/(relationship|trust|alliance|love|hostil)/.test(predicate)) ledger.relationshipStates[fact.subject] = fact.value;
+    if (/(time|date|day|hour)/.test(predicate)) ledger.currentTime = fact.value;
+  }
+  const last = analysis.events.at(-1);
+  if (last) {
+    ledger.lastSignificantDecision = last.description;
+    ledger.expectedConsequences.push(...last.consequences);
+  }
+  for (const promise of analysis.promises) {
+    const label = `${promise.promiseId}:${promise.kind}`;
+    if (promise.kind === 'payoff') ledger.completedSetupsAndPayoffs.push(label);
+    else ledger.activePromisesAndThreats.push(label);
+  }
+}
 
 /** The beats the chapter plan asks this chapter to dramatize, in plan order. */
 export function plannedBeats(chapter: ChapterRecord): { sceneId: string; beat: string }[] {
@@ -93,6 +126,7 @@ export function rebuildCanon(chapters: ChapterRecord[]): StoryState {
     state.promises.push(...version.analysis.promises);
     state.beats.push(...(version.analysis.beats || []));
     state.summaries[chapter.number] = version.analysis.summary;
+    applyContinuity(state, version.analysis);
   }
   return state;
 }
@@ -154,14 +188,14 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   const chapter = run.chapters.find(item => item.number === number);
   if (!chapter) throw new Error(`Unknown chapter ${number}.`);
   const version = chapter.versions.find(item => item.revision === chapter.candidateRevision);
-  if (!version || version.review?.status !== 'passed' || version.review.checkedRevision !== version.revision || !version.analysis || version.review.issues.some(issue => issue.severity !== 'minor')) {
+  if (!version || !version.content.trim() || !version.analysis || (!run.spec.skipEditing && (version.review?.status !== 'passed' || version.review.checkedRevision !== version.revision || version.review.issues.some(issue => issue.severity !== 'minor')))) {
     throw new Error('Only a reviewed, analysed candidate can be accepted.');
   }
   if (run.chapters.some(item => item.number < number && !acceptedVersion(item))) {
     throw new Error('Earlier chapters must be accepted before this chapter.');
   }
   validateAnalysis(version.analysis, number, version);
-  if (run.literaryValidationVersion === 1 && (!literaryCurrent(run, number, version) || version.literary?.status !== 'passed')) {
+  if (!run.spec.skipEditing && run.literaryValidationVersion === 1 && (!literaryCurrent(run, number, version) || version.literary?.status !== 'passed')) {
     throw new Error('Only a chapter with current passed literary review can be accepted.');
   }
 
@@ -198,7 +232,7 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   chapter.lastFindingShapes = undefined;
   // Re-reviewing a chapter whose premises did not move only invites a fresh sampled verdict on prose
   // nobody changed, and every such round can restart the cascade.
-  if (canonMoved || literaryMoved) {
+  if (!run.spec.skipEditing && (canonMoved || literaryMoved)) {
     for (const dependent of run.chapters.filter(item => item.number > number)) {
       if (!dependent.versions.length) continue;
       // When the move is confined to named subjects, only the chapters that speak about those
@@ -241,6 +275,7 @@ export function nextUnacceptedChapter(run: NovelRun): ChapterRecord | undefined 
  * still revalidates the book from its first chapter.
  */
 export function reconcileCheckpoint(run: NovelRun): boolean {
+  if (run.spec.skipEditing) return false;
   const migrating = run.validationVersion !== 2 || run.literaryValidationVersion !== 1;
   const stale = run.chapters.filter(chapter => chapter.status === 'accepted'
     && (!acceptedVersion(chapter) || !literaryCurrent(run, chapter.number, acceptedVersion(chapter)!) || acceptedVersion(chapter)!.literary?.status !== 'passed'));

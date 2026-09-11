@@ -60,6 +60,9 @@ describe('ThreeZoneGenerationView', () => {
     // Zone 3: Agent Activity & Telemetry
     expect(html).toContain('data-testid="zone-agent-inspector"');
     expect(html).toContain('Strategy: polish');
+    // Zone 3 is split: live chapter checks on top, the log below.
+    expect(html).toContain('data-testid="zone-checks"');
+    expect(html).toContain('Originality');
   });
 
   it('renders a long chapter plan without cutting its text', () => {

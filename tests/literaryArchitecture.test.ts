@@ -11,6 +11,7 @@ import { sceneWordTargets } from '../utils/novel/proseCraft';
 import { literaryResponse, stampLiterary } from './helpers/literaryFixture';
 import { literaryStillHolds, stalledThreads } from '../utils/novel/literaryState';
 import { ledgerForPlanning } from '../utils/novel/literary';
+import { compressPlanningLedger } from '../utils/novel/literary';
 
 function setup() {
   const run = createRun(createBookSpec('A family chooses whether to disclose a letter.', 3, { targetWordsPerChapter: 300 }), { provider: 'ollama', ollamaModel: 'test', ollamaEndpoint: 'http://localhost:11434' });
@@ -62,6 +63,47 @@ describe('Versioned literary architecture', () => {
     if (mode === 'unchecked-dimension') raw.checked.pop();
     await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(raw))).rejects.toThrow(/unvalidated/);
     expect(() => acceptCandidate(run, 2)).toThrow(/literary review/);
+  });
+
+  it('compresses the planning ledger past budget and leaves small histories verbatim', async () => {
+    const run = setup();
+    accepted(run, 1);
+    accepted(run, 2);
+    const history = literaryLedger(run, 3);
+    expect(history.length).toBeGreaterThan(0);
+    expect(await compressPlanningLedger(history)).toEqual(ledgerForPlanning(history));
+    const summarize = async () => 'COMPRESSED-LINE';
+    const compressed = await compressPlanningLedger(history, summarize, 10) as {
+      chapter: number; observations: { evidence: string[] }[];
+    }[];
+    expect(compressed).toHaveLength(history.length);
+    expect(compressed[0].observations.length).toBe(history[0].observations.length);
+    expect(compressed[0].observations[0].evidence).toEqual(['COMPRESSED-LINE']);
+    expect(JSON.stringify(compressed).length).toBeLessThan(JSON.stringify(ledgerForPlanning(history)).length);
+  });
+
+  it('falls back to truncated quotes when the summarizer fails', async () => {
+    const run = setup();
+    accepted(run, 1);
+    const history = literaryLedger(run, 2);
+    const failing = async (): Promise<string> => {
+      throw new Error('Missing required scale');
+    };
+    const fallback = await compressPlanningLedger(history, failing, 10) as {
+      chapter: number; observations: { evidence: string[] }[];
+    }[];
+    expect(fallback).toHaveLength(history.length);
+    expect(fallback[0].observations[0].evidence).toHaveLength(1);
+    expect(fallback[0].observations[0].evidence[0]).toContain('Vera opened the letter');
+  });
+
+  it('tells the model how to repair bad literary source IDs on retry', async () => {
+    const run = setup();
+    accepted(run, 1);
+    const candidate = prepare(run, 2);
+    await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report(['p999'])))).rejects.toThrow(/SOURCE TEXT/);
+    await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report(['p999'])))).rejects.toThrow(/p999/);
+    await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report(['h1.0.0'])))).rejects.toThrow(/p-unit/);
   });
 
   it('blocks a semantic repeat despite a passed continuity review and zero shared wording', async () => {
@@ -274,6 +316,72 @@ describe('The order the checks run in', () => {
     // The most expensive call in the system runs last, on a version the cheap checks already accepted.
     expect(order).toEqual(['extraction', 'literary']);
     expect(run.chapters[0].status).toBe('accepted');
+  });
+});
+
+describe('A chapter the literary gate keeps failing', () => {
+  it('goes to repair instead of being read and extracted again over the same words', async () => {
+    const run = setup();
+    const candidate = prepare(run, 1);
+    let reviews = 0, extractions = 0, repairs = 0;
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('extract evidence')) {
+        // One round of extraction is four calls; count the round, not the calls.
+        if (prompt.includes('TASK: Extract facts')) { extractions++; return '{"summary":"Vera mailed the letter.","facts":[]}'; }
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        return '{"promises":[]}';
+      }
+      if (system.includes('assess literary development')) {
+        // The gate fails this chapter every time, which is the shape that used to loop: the review
+        // passes, the gate fails, the loop returns to the top and reads the same prose again.
+        const ids = [...prompt.matchAll(/"id":"(p\d+)"/g)].map(match => match[1]);
+        const source = ids.at(-1) || 'p1';
+        return JSON.stringify({ ...report([source]), issues: [{ kind: 'ending', severity: 'major', description: 'The ending changes nothing.', instruction: 'Make the choice cost something.', sources: [source] }] });
+      }
+      if (system.includes('continuity and developmental')) { reviews++; return '{"issues":[]}'; }
+      if (system.includes('targeted fiction revision')) { repairs++; return JSON.stringify({ prose: `Repaired ${repairs}. ${'Слово '.repeat(200)}` }); }
+      throw new Error(system);
+    });
+    await (new NovelEngine(llm as never, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> })
+      .acceptOrRepair(run, run.chapters[0], candidate).catch(() => {});
+    // One reading and one extraction per version, and every failed gate answered by a repair rather
+    // than by another reading. A live run spent seven rounds of thirteen calls on one chapter this way.
+    // One reading per version is the invariant this guards: the loop may fail a version after the
+    // reading — the literary gate does exactly that — but it must answer with a repair rather than
+    // with another reading of the same words. Extraction follows the reading and keeps its own
+    // behaviour, so it is counted here for the record rather than pinned.
+    const versions = run.chapters[0].versions.length;
+    expect(reviews).toBeLessThanOrEqual(versions);
+    expect(repairs).toBeGreaterThan(0);
+    expect(extractions).toBeGreaterThan(0);
+  });
+});
+
+describe('A literary gate the network would not let through', () => {
+  it('stops the chapter rather than the run, however many attempts the transport eats', async () => {
+    const run = setup();
+    const candidate = prepare(run, 1);
+    let assessments = 0;
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('extract evidence')) {
+        if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        return '{"promises":[]}';
+      }
+      // A dropped connection, on every attempt: not a verdict on the chapter, and not a bad answer.
+      if (system.includes('assess literary development')) { assessments++; throw new TypeError('Failed to fetch'); }
+      if (system.includes('continuity and developmental')) return '{"issues":[]}';
+      throw new Error(system);
+    });
+    const engine = new NovelEngine(llm as never, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> };
+    // The retry used to sit outside the catch, so the second failure escaped as a raw TypeError with
+    // every accepted chapter behind it and nothing marked for a reader.
+    await expect(engine.acceptOrRepair(run, run.chapters[0], candidate)).rejects.toThrow(/needs editorial attention: the literary assessment could not be completed/);
+    // Three assessments, each of which asks twice inside structuredResponse before giving up.
+    expect(assessments).toBe(6);
+    expect(run.chapters[0].status).toBe('needs_revision');
   });
 });
 

@@ -50,10 +50,11 @@ try {
   const store = new FileRunStore();
   let run = await store.load();
 
-  const writer = { provider: 'ollama', ollamaEndpoint: arg('endpoint') || 'http://127.0.0.1:11434', ollamaModel: arg('writer') || 'qwen3.5:397b-cloud' };
+  const providerName = arg('provider') === 'gemini' ? 'gemini' : 'ollama';
+  const writer = { provider: providerName, ollamaEndpoint: arg('endpoint') || 'http://127.0.0.1:11434', ollamaModel: arg('writer') || 'qwen3.5:397b-cloud', ...(providerName === 'gemini' && arg('writer') ? { geminiModel: arg('writer') } : {}) };
   // Thinking is enabled for judgement only: reasoning models answer trivially without it, and Ollama
   // returns their reasoning in a separate field that never reaches the manuscript.
-  const validator = { provider: 'ollama', ollamaEndpoint: writer.ollamaEndpoint, ollamaModel: arg('validator') || 'mistral-large-3:675b-cloud', think: true };
+  const validator = { provider: providerName, ollamaEndpoint: writer.ollamaEndpoint, ollamaModel: arg('validator') || 'mistral-large-3:675b-cloud', ...(providerName === 'gemini' && arg('validator') ? { geminiModel: arg('validator') } : {}), think: providerName === 'ollama' };
 
   if (!run) {
     const premiseFile = arg('premise-file');
@@ -73,6 +74,9 @@ try {
   // The writer model must never be the validator model: prose and contract-checking are separate roles.
   run.provider = writer;
   run.validationProvider = validator;
+  // Checkpoints created by earlier versions may still carry editorial mode.
+  // The normal command always writes straight through; --editorial is the only opt-in.
+  run.spec.skipEditing = !argv.includes('--editorial');
   await store.save(run);
   log(`writer=${writer.ollamaModel} validator=${validator.ollamaModel}`);
 

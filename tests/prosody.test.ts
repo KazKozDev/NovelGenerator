@@ -529,6 +529,18 @@ describe('What a repair takes away without being asked', () => {
     expect(spokenLinesLost(chapter, reworded)).toBe(0);
     expect(spokenLinesLost(chapter, `${chapter}\n\n"And the number," she added.`)).toBe(0);
   });
+
+  it('does not count dialogue reflowed into fewer paragraphs, where every spoken word is still there', () => {
+    // Two lines by one speaker joined, and a line folded into the gesture that follows it: the shape
+    // 10 of 29 refusals across the stored runs actually had, one of them refused for 31% more speech.
+    const joined = ['She set the case down and listened to the water.', '"Take it," she said. "You will need the street name."', 'He read it twice and said nothing.'].join('\n\n');
+    expect(speechParagraphs(joined)).toHaveLength(1);
+    expect(spokenLinesLost(chapter, joined)).toBe(0);
+    const lengthened = ['She set the case down and listened to the water.', '"Take it, and take it now," she said. "You will need the name of the street and the number on the door."', 'He read it twice.'].join('\n\n');
+    expect(spokenLinesLost(chapter, lengthened)).toBe(0);
+    // Below the floor it is a loss however the paragraphs were arranged.
+    expect(spokenLinesLost(chapter, ['She set the case down and listened to the water.', '"Take it."', 'He read it twice and said nothing.'].join('\n\n'))).toBe(1);
+  });
 });
 
 describe('A report that cited only the opening', () => {

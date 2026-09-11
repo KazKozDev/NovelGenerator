@@ -3,8 +3,12 @@ import { structuredResponse, type NovelLLM } from './review';
 
 /** Long enough to identify the passage, short enough that a note cannot smuggle the scene back in. */
 const maxQuote = 200;
-/** A scene establishes a handful of things worth carrying. A longer list is the plan written again. */
-const maxNotes = 12;
+/**
+ * A scene establishes a handful of things worth carrying. A longer list is the plan written again.
+ * Raised from twelve when 'told' was added, so the new kind takes its own room rather than crowding
+ * out the facts the next scene needs for continuity.
+ */
+const maxNotes = 14;
 
 /**
  * Whether a quotation is actually in the prose it claims to come from.
@@ -52,7 +56,7 @@ const journalSchema = {
 export async function readSceneJournal(run: NovelRun, chapter: ChapterRecord, sceneIndex: number, prose: string, llm: NovelLLM): Promise<SceneJournal> {
   const scene = (chapter.plan.detailedScenes || [])[sceneIndex];
   const sceneId = scene?.sceneId || `scene-${sceneIndex + 1}`;
-  const notes = await structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}, SCENE ${sceneIndex + 1} AS WRITTEN:\n${prose}\nRecord what this scene, as written above, leaves true for the scene that follows it. Report only what the prose on this page establishes; the chapter plan is not evidence and nothing may be inferred from it.\nUse these kinds: "position" — where a character is, or has gone, when the scene ends; "possession" — who holds or has lost an object that matters; "event" — something that happened and cannot be undone; "knowledge" — what a named character now knows, believes or has been told, and who told them; "openQuestion" — a question the scene raised and did not answer.\nEach note is one short sentence, and "quote" is a passage of at most ${maxQuote} characters copied from the scene above exactly as it appears there, which establishes that note. A note whose quotation is not in the scene will be discarded. Return at most ${maxNotes} notes and no fewer than the scene supports: JSON {"notes":[{"kind":"position","note":"...","quote":"..."}]}.`,
+  const notes = await structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}, SCENE ${sceneIndex + 1} AS WRITTEN:\n${prose}\nRecord what this scene, as written above, leaves true for the scene that follows it. Report only what the prose on this page establishes; the chapter plan is not evidence and nothing may be inferred from it.\nUse these kinds: "position" — where a character is, or has gone, when the scene ends; "possession" — who holds or has lost an object that matters; "event" — something that happened and cannot be undone; "knowledge" — what a named character now knows, believes or has been told, and who told them; "openQuestion" — a question the scene raised and did not answer; "told" — material this scene has already put on the page and that the next scene must therefore not perform again: a place described, a motive or a piece of backstory explained, an atmosphere established, an emotional beat played out, an object or a face given its description. The first five say what is now true; "told" says what has already been said, and it is the one the next scene needs in order not to write the same passage a second time. Record a "told" note for every substantial description, explanation or emotional beat this scene performed, naming it in a few words — "the archive room is described", "Mara's guilt over the fire is played out" — never restating the passage itself.\nEach note is one short sentence, and "quote" is a passage of at most ${maxQuote} characters copied from the scene above exactly as it appears there, which establishes that note. A note whose quotation is not in the scene will be discarded. Return at most ${maxNotes} notes and no fewer than the scene supports: JSON {"notes":[{"kind":"position","note":"...","quote":"..."}]}.`,
     'You keep the continuity record for a novel in progress. You report only what the supplied prose establishes and compose nothing of your own.', llm, ['notes'], raw => {
       if (!Array.isArray(raw.notes)) throw new Error('Return a notes array.');
       const kept: JournalNote[] = [];

@@ -9,6 +9,8 @@ export interface BookSpec extends StorySettings {
   tense: 'past' | 'present';
   ending: 'closed' | 'open' | 'series';
   targetWordsPerChapter: number;
+  chapterMode?: 'full' | 'scene';
+  skipEditing?: boolean;
 }
 
 export function createBookSpec(premise: string, chapterCount: number, settings: StorySettings = {}): BookSpec {
@@ -26,6 +28,8 @@ export function createBookSpec(premise: string, chapterCount: number, settings: 
     language: settings.language || 'English', tense: settings.tense || 'past',
     ending: settings.ending || 'closed',
     targetWordsPerChapter: settings.targetWordsPerChapter || 4000,
+    chapterMode: settings.chapterMode,
+    skipEditing: settings.skipEditing,
   };
 }
 
@@ -39,7 +43,8 @@ export function genreCraft(spec: BookSpec): string {
 }
 
 export function specPrompt(spec: BookSpec): string {
-  return `AUTHOR CONTRACT (applies to planning, prose and every revision):\n${JSON.stringify(spec, null, 2)}\nPreserve proper names. Style preferences are contextual, not absolute word bans. Respect the requested audience, viewpoint, language and ending. Do not impose a cliffhanger on a resolved ending.`;
+  const { chapterMode: _, skipEditing: __, ...cleanSpec } = spec;
+  return `AUTHOR CONTRACT (applies to planning, prose and every revision):\n${JSON.stringify(cleanSpec, null, 2)}\nPreserve proper names. Style preferences are contextual, not absolute word bans. Respect the requested audience, viewpoint, language and ending. Do not impose a cliffhanger on a resolved ending.`;
 }
 
 export type ReviewStatus = 'passed' | 'failed' | 'not_checked';
@@ -100,6 +105,23 @@ export interface StoryState {
   /** Which planned beats the accepted chapters have already played, and where. */
   beats: BeatEvidence[];
   summaries: Record<number, string>;
+  /** A compact, serializable continuity ledger for scene-to-scene writing. */
+  continuity: ContinuityState;
+}
+
+export interface ContinuityState {
+  currentTime: string;
+  currentLocation: string;
+  characterLocations: Record<string, string>;
+  characterKnowledge: Record<string, string[]>;
+  relationshipStates: Record<string, string>;
+  injuriesAndCondition: Record<string, string>;
+  inventory: Record<string, string>;
+  activePromisesAndThreats: string[];
+  unresolvedPlotThreads: string[];
+  completedSetupsAndPayoffs: string[];
+  lastSignificantDecision: string;
+  expectedConsequences: string[];
 }
 export interface ChapterVersion {
   revision: number;
@@ -124,7 +146,21 @@ export interface ChapterVersion {
  * Each note carries a short quotation from the scene that establishes it, and a note whose quotation
  * cannot be found in that scene is dropped: this is a record of the page, not a second plan.
  */
-export const journalKinds = ['position', 'possession', 'event', 'knowledge', 'openQuestion'] as const;
+/**
+ * What a written scene leaves for the next one.
+ *
+ * The first five record what is now TRUE. They were not enough, and the measurement says why: across
+ * 141 scenes of stored first drafts, 83% of the sentences a scene repeated matched earlier prose the
+ * writer had never been shown. It was not copying — it was deriving the same material twice from the
+ * same plan, because each scene is handed the chapter's frame, canon and people and asked for a
+ * thousand words without knowing what the page already says. So the same room is described three
+ * times and the same grief explained three times, and every one of them is written as if first.
+ *
+ * 'told' is the record of what has been SAID rather than what is true: a place already described, a
+ * motive already explained, an atmosphere already established, an emotional beat already played. It
+ * is the one thing the next scene needs in order not to perform it again.
+ */
+export const journalKinds = ['position', 'possession', 'event', 'knowledge', 'openQuestion', 'told'] as const;
 export type JournalKind = typeof journalKinds[number];
 export interface JournalNote { kind: JournalKind; note: string; quote: string }
 export interface SceneJournal { sceneId: string; notes: JournalNote[] }
@@ -173,6 +209,8 @@ export interface BookBlueprint {
   chapters: ParsedChapterPlan[];
 }
 export interface NovelRun {
+  editorial?: { report: string; revisions: number[]; proposals?: { chapter: number; instruction: string }[] };
+  manuscriptHistory?: { title: string; content: string; at: number }[];
   literaryValidationVersion?: 1;
   schemaVersion: 1;
   validationVersion?: 2;

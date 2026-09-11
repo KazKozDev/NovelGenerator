@@ -26,7 +26,9 @@ const handleApiError = (error: unknown): Error => {
       message = "Gemini API Error: Service is temporarily overloaded. Retrying...";
     } else if (error.message.includes("RESOURCE_EXHAUSTED") || error.message.includes("429")) {
       message = "Gemini API Error: Rate limit exceeded. Waiting before retry...";
-    } else if (error.message.includes("RECITATION") || error.message.includes("blocked")) {
+    } else if (error.message.includes("SERVICE_DISABLED") || error.message.includes("API_KEY_SERVICE_BLOCKED") || error.message.includes("has not been used in project")) {
+      message = "Gemini API Error: Gemini API (generativelanguage.googleapis.com) is not enabled or is blocked for this API key/project. Enable it in Google Cloud Console.";
+    } else if (error.message.includes("RECITATION") || (error.message.includes("blocked") && !error.message.includes("SERVICE_BLOCKED"))) {
       message = "Gemini API Error: Content was blocked due to safety filters or copyright concerns. Try adjusting your prompt.";
       console.error("⚠️ Content blocked - this may indicate the prompt triggered safety filters");
     } else if (error.message.includes("timeout") || error.message.includes("DEADLINE_EXCEEDED")) {
@@ -58,7 +60,13 @@ async function retryWithBackoff<T>(
 
       // Don't retry on certain permanent errors
       if (lastError.message.includes("API key not valid") ||
-          lastError.message.includes("quota exceeded")) {
+          lastError.message.includes("quota exceeded") ||
+          lastError.message.includes("exceeded your API quota") ||
+          lastError.message.includes("FreeTier") ||
+          lastError.message.includes("requests per day") ||
+          lastError.message.includes("SERVICE_DISABLED") ||
+          lastError.message.includes("API_KEY_SERVICE_BLOCKED") ||
+          lastError.message.includes("has not been used in project")) {
         throw lastError;
       }
 
@@ -96,6 +104,83 @@ async function retryWithBackoff<T>(
 }
 
 
+/**
+ * Sanitizes a JSON Schema object for Google Gemini API compatibility.
+ * Google's Gemini API response_schema protobuf (google.ai.generativelanguage.v1beta.Schema)
+ * only supports: type, format, description, nullable, enum, properties, required, items.
+ *
+ * Keys like additionalProperties, minItems, maxItems, minLength, maxLength, minimum,
+ * maximum, uniqueItems, $schema, default, title, etc. are rejected by Google API with HTTP 400.
+ */
+export function sanitizeGeminiSchema(schema: unknown): any {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map(sanitizeGeminiSchema);
+  }
+
+  const raw = schema as Record<string, any>;
+  const cleaned: Record<string, any> = {};
+
+  if (typeof raw.type === 'string') {
+    cleaned.type = raw.type.toLowerCase();
+  }
+
+  if (typeof raw.description === 'string') {
+    cleaned.description = raw.description;
+  }
+
+  if (typeof raw.nullable === 'boolean') {
+    cleaned.nullable = raw.nullable;
+  }
+
+  if (typeof raw.format === 'string') {
+    cleaned.format = raw.format;
+  }
+
+  if (Array.isArray(raw.enum)) {
+    cleaned.enum = raw.enum.map(String);
+  }
+
+  if (raw.properties && typeof raw.properties === 'object' && !Array.isArray(raw.properties)) {
+    const cleanedProps: Record<string, any> = {};
+    for (const [key, propVal] of Object.entries(raw.properties)) {
+      cleanedProps[key] = sanitizeGeminiSchema(propVal);
+    }
+    cleaned.properties = cleanedProps;
+  }
+
+  if (Array.isArray(raw.required)) {
+    const requiredList = raw.required.filter((item): item is string => typeof item === 'string');
+    if (cleaned.properties) {
+      cleaned.required = requiredList.filter(key => Object.prototype.hasOwnProperty.call(cleaned.properties, key));
+    } else {
+      cleaned.required = requiredList;
+    }
+  }
+
+  if (raw.items && typeof raw.items === 'object') {
+    cleaned.items = sanitizeGeminiSchema(raw.items);
+  }
+
+  // Ensure type is present for valid schema nodes
+  if (!cleaned.type) {
+    if (cleaned.properties) {
+      cleaned.type = 'object';
+    } else if (cleaned.items) {
+      cleaned.type = 'array';
+    } else if (cleaned.enum) {
+      cleaned.type = 'string';
+    } else {
+      cleaned.type = 'string';
+    }
+  }
+
+  return cleaned;
+}
+
 export async function generateGeminiText(
   prompt: string,
   systemInstruction?: string,
@@ -104,7 +189,8 @@ export async function generateGeminiText(
   topP?: number,
   topK?: number,
   maxOutputTokens?: number,
-  jsonOnly = false
+  jsonOnly = false,
+  modelName?: string
 ): Promise<string> {
   if (!ai) {
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
@@ -118,9 +204,7 @@ export async function generateGeminiText(
 
   return withResilienceTracking(() => retryWithBackoff(async () => {
     try {
-      const generationConfig: any = {
-        thinkingConfig: { thinkingBudget: 0 }
-      };
+      const generationConfig: any = {};
       if (temperature !== undefined) {
           generationConfig.temperature = temperature;
       }
@@ -136,20 +220,21 @@ export async function generateGeminiText(
       if (jsonOnly) generationConfig.responseMimeType = "application/json";
       if (responseSchema) {
           generationConfig.responseMimeType = "application/json";
-          generationConfig.responseSchema = responseSchema;
+          generationConfig.responseSchema = sanitizeGeminiSchema(responseSchema);
       }
 
       const finalSystemInstruction = systemInstruction 
         ? `${systemInstruction}\n\n${NO_THINKING_DIRECTIVE}` 
         : NO_THINKING_DIRECTIVE;
 
+      const resolvedModel = modelName?.trim() || GEMINI_MODEL_NAME;
       const model = ai!.getGenerativeModel({
-        model: GEMINI_MODEL_NAME,
+        model: resolvedModel,
         generationConfig,
         systemInstruction: finalSystemInstruction
       });
 
-      console.log(`🔄 Sending request to Gemini API (model: ${GEMINI_MODEL_NAME})...`);
+      console.log(`🔄 Sending request to Gemini API (model: ${resolvedModel})...`);
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const rawText = response.text();
@@ -168,7 +253,8 @@ export async function generateGeminiTextStream(
   systemInstruction?: string,
   temperature?: number,
   topP?: number,
-  topK?: number
+  topK?: number,
+  modelName?: string
 ): Promise<string> {
   if (!ai) {
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
@@ -178,9 +264,7 @@ export async function generateGeminiTextStream(
 
   return retryWithBackoff(async () => {
     try {
-      const generationConfig: any = {
-        thinkingConfig: { thinkingBudget: 0 }
-      };
+      const generationConfig: any = {};
       if (temperature !== undefined) {
           generationConfig.temperature = temperature;
       }
@@ -196,7 +280,7 @@ export async function generateGeminiTextStream(
         : NO_THINKING_DIRECTIVE;
 
       const model = ai!.getGenerativeModel({
-        model: GEMINI_MODEL_NAME,
+        model: modelName?.trim() || GEMINI_MODEL_NAME,
         generationConfig,
         systemInstruction: finalSystemInstruction
       });

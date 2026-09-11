@@ -214,6 +214,11 @@ ${config.focusAreas.map(area => `- ${area}`).join('\n')}
 
 **COMMON PITFALLS TO AVOID:**
 ${config.commonPitfalls}
+
+**FRESHNESS RULES (all genres):**
+- No chosen-one prophecy, no tavern assembly, no mirror/weather/waking opening.
+- No two chapters may open or close with the same device.
+- Each scene declares one distinct shape (chase, confession, heist, trial, road, interrogation, negotiation, escape).
 `;
 }
 

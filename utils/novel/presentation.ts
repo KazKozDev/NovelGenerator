@@ -11,7 +11,7 @@ export function generationStep(run: NovelRun | undefined, busy: boolean): Genera
     case 'writing': return GenerationStep.GeneratingChapters;
     case 'structural_review': return GenerationStep.FinalEditingPass;
     case 'line_editing': return GenerationStep.ProfessionalPolish;
-    case 'final_review': return GenerationStep.FinalizingTransitions;
+    case 'final_review': return run.spec.skipEditing ? GenerationStep.GeneratingChapters : GenerationStep.FinalizingTransitions;
     case 'complete': return GenerationStep.Done;
     case 'needs_revision': return busy ? GenerationStep.GeneratingChapters : GenerationStep.Error;
   }
@@ -40,6 +40,10 @@ export function displayChapters(run?: NovelRun): ChapterData[] {
 }
 
 export function compileBook(run: NovelRun): string {
+  if (run.spec.skipEditing) {
+    if (run.stage !== 'complete' || run.chapters.length !== run.spec.chapterCount || run.chapters.some(c => c.candidateRevision !== undefined || !acceptedVersion(c)?.content.trim())) throw new Error('The manuscript is not complete.');
+    return `# ${run.title}\n\n` + run.chapters.map(c => `## Chapter ${c.number}: ${c.plan.title}\n\n${acceptedVersion(c)!.content}`).join('\n\n');
+  }
   if (run.literaryValidationVersion !== 1 || run.stage !== 'complete' || run.finalReview?.status !== 'passed' || run.chapters.length !== run.spec.chapterCount || run.chapters.some(chapter => chapter.candidateRevision !== undefined || !acceptedVersion(chapter) || (run.literaryValidationVersion === 1 && (!literaryCurrent(run, chapter.number, acceptedVersion(chapter)) || acceptedVersion(chapter).literary?.status !== 'passed')))) {
     throw new Error('Only a complete, reviewed manuscript can be exported as final.');
   }
@@ -53,6 +57,7 @@ export function metadata(run: NovelRun): string {
     literaryState: run.chapters.map(chapter => ({ number: chapter.number, plan: chapter.literaryPlan, assessment: acceptedVersion(chapter)?.literary })),
     prosody: run.chapters.map(chapter => ({ number: chapter.number, report: acceptedVersion(chapter)?.prosody })),
     canon: run.canon, promises: run.blueprint?.promises, finalReview: run.finalReview,
+    editorial: run.editorial, manuscriptHistory: run.manuscriptHistory,
     chapterVersions: run.chapters.map(chapter => ({ number: chapter.number, revision: chapter.acceptedRevision })),
     measurement: { calls: run.calls || [], note: 'Provider calls and duration are operational measurements, not literary quality scores.' },
   }, null, 2);

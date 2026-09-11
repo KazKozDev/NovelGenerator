@@ -8,13 +8,14 @@ import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import ModelSwitch from './components/ModelSwitch';
+import LocalModelToggles from './components/LocalModelToggles';
 import BookDisplay from './components/BookDisplay';
 import SaveBook from './components/SaveBook';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import ApprovalView from './components/ApprovalView';
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
-import { installConsoleBridge, logToTerminal } from './utils/terminalLogger';
+import { installConsoleBridge, logToTerminal, watchMainThreadStalls } from './utils/terminalLogger';
 
 const App: React.FC = () => {
   const {
@@ -43,11 +44,24 @@ const App: React.FC = () => {
     agentLogs,
     lastSavedAt,
     reviseChapter,
+    reviewCompleted, applyEditorial, editorial, manuscriptHistory,
   } = useBookGenerator();
+
+  const hasConnectedRef = React.useRef(false);
+  // What the application is doing, readable from outside a render. The stall watch reports the step a
+  // block happened during, and a ref is the only way to read the current one from a listener that
+  // outlives the render it was installed in.
+  const doingRef = React.useRef('starting up');
+  doingRef.current = `${currentStep}${currentChapterProcessing ? ` · chapter ${currentChapterProcessing}` : ''}${isLoading ? '' : ' · idle'}`;
 
   useEffect(() => {
     installConsoleBridge();
-    logToTerminal('Client interface connected & ready', 'System', 'info');
+    if (!hasConnectedRef.current) {
+      hasConnectedRef.current = true;
+      logToTerminal('Client interface connected & ready', 'System', 'info');
+    }
+    const watch = watchMainThreadStalls(() => doingRef.current);
+    return () => watch.stop();
   }, []);
 
 
@@ -84,8 +98,14 @@ const App: React.FC = () => {
 
   const isStudioLayout = showProgress;
 
+  // The metadata document runs to hundreds of kilobytes on a finished book, and this parsed it on every
+  // render — twice over, since BookDisplay parses it too and its memo missed on a string rebuilt each
+  // time. Parsed once per document now.
+  const savedMetadata = React.useMemo(() => {
+    try { return finalMetadataJson ? JSON.parse(finalMetadataJson) : {}; } catch { return {}; }
+  }, [finalMetadataJson]);
   const saveControl = finalBookContent ? (
-    <SaveBook content={finalBookContent} metadata={finalMetadataJson ? JSON.parse(finalMetadataJson) : {}} />
+    <SaveBook content={finalBookContent} metadata={savedMetadata} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
     <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
   ) : null;
@@ -115,7 +135,7 @@ const App: React.FC = () => {
           </div>
         </div>
         <p className="text-zinc-500 text-xs  text-left">
-          From an approved outline to a reviewed manuscript in your voice.
+          From your idea to a complete manuscript, with optional editing afterwards.
         </p>
       </header>
       )}
@@ -126,6 +146,7 @@ const App: React.FC = () => {
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{error}</p>
             {isResumable && <ModelSwitch />}
+            {isResumable && <LocalModelToggles />}
             {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry with these models</button>}
 
             <button
@@ -137,10 +158,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {(() => {
-          console.log('[App] Checking Idle condition:', currentStep === GenerationStep.Idle, !finalBookContent, !isResumable);
-          return currentStep === GenerationStep.Idle && !finalBookContent && !isResumable;
-        })() &&(
+        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && (
           <>
             <UserInput
               storyPremise={storyPremise}
@@ -158,11 +176,7 @@ const App: React.FC = () => {
           </>
         )}
         
-        {(() => {
-          const shouldShow = currentStep === GenerationStep.GeneratingOutline;
-          console.log('[App] Checking GeneratingOutline condition:', currentStep === GenerationStep.GeneratingOutline, 'shouldShow:', shouldShow);
-          return shouldShow;
-        })() && (
+        {currentStep === GenerationStep.GeneratingOutline && (
           <div className="text-center py-12">
             <LoadingSpinner />
             <p className="mt-4 text-zinc-300 text-sm font-medium">Generating story outline...</p>
@@ -202,8 +216,13 @@ const App: React.FC = () => {
         )}
 
 
-        {!isLoading && finalBookContent && finalMetadataJson && (
+        {finalBookContent && finalMetadataJson && (
           <>
+            <div className="mb-4 space-y-3">
+              <button className="underline" disabled={isLoading} onClick={() => void reviewCompleted()}>{isLoading ? 'Working…' : 'Review completed book'}</button>
+              {editorial && <><p className="whitespace-pre-wrap">{editorial.report}</p>{!!editorial.proposals?.length && <button className="underline" disabled={isLoading} onClick={() => void applyEditorial()}>Apply proposed edits as a new version</button>}</>}
+              {manuscriptHistory.map((version, index) => <details key={`${version.at}-${index}`}><summary>Original manuscript · version {index + 1}</summary><SaveBook content={version.content} metadata={{ title: version.title }} /><pre className="whitespace-pre-wrap">{version.content}</pre></details>)}
+            </div>
             <BookDisplay
               bookContent={finalBookContent}
               metadataJson={finalMetadataJson}

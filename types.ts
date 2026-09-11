@@ -84,9 +84,25 @@ export interface DetailedScene {
   narrativeWeight?: number; // Relative page space (1–5), not elapsed story time
   /** How the scene's conflict reaches the page. 'speech' obliges the prose to dramatize it in direct speech. */
   conflictCarriedBy?: 'speech' | 'action' | 'solitude';
+  /** Distinct dramatic shape of the scene (chase, confession, heist, trial, road, interrogation, negotiation, escape). */
+  sceneShape?: string;
+  /** Binding fresh-idea constraint for this scene (genre mix, setting card, ban). */
+  freshConstraint?: string;
+  /** One-line staging: positions, key objects within reach, and the physical conditions constraining action as the scene opens. */
+  staging?: string;
   duration: string; // Estimated time span (e.g., "10 minutes", "several hours")
   mood: string; // Emotional atmosphere of the scene
   keyMoments: string[]; // Specific beats or events within the scene
+  /** Explicit scene contract. Optional so saved plans created before v4.3 remain readable. */
+  initialState?: string;
+  characterDecisions?: string[];
+  consequenceForNextScene?: string;
+  continuityRequirements?: string[];
+  informationRevealed?: string[];
+  informationWithheld?: string[];
+  emotionalDelta?: string;
+  prohibitedShortcuts?: string[];
+  exitHook?: string;
 }
 
 // Specific events that drive the narrative forward
@@ -193,6 +209,7 @@ export interface EmotionalArcEntry {
 }
 
 export type GenerationSpeedMode = 'fast' | 'thorough';
+export type ChapterMode = 'full' | 'scene';
 
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
@@ -206,6 +223,8 @@ export interface StorySettings {
   targetAudience?: string;
   writingStyle?: string;
   generationSpeedMode?: GenerationSpeedMode;
+  chapterMode?: ChapterMode;
+  skipEditing?: boolean;
 }
 
 // Agent activity log for UI display
@@ -227,6 +246,8 @@ export interface LLMProviderConfig {
   provider: LLMProviderType;
   ollamaEndpoint: string;
   ollamaModel: string;
+  /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
+  geminiModel?: string;
   /**
    * Reasoning models judge poorly with thinking off and answer trivially instead. Ollama returns
    * their reasoning in a separate field, so enabling it here never reaches the manuscript.

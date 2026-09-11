@@ -8,6 +8,8 @@
  * 3, 21, 40 and 91 under the cosine — and one of them, a sentence carried whole into the next
  * chapter, sits at cosine 0.763, under every threshold the cosine could be given.
  */
+import { localModelWorker, type LocalModelClient } from './modelProgress';
+
 export type Reranker = (pairs: [string, string][]) => Promise<number[]>;
 
 /**
@@ -35,46 +37,43 @@ export const rerankCandidateFloor = 0.6;
 export const defaultRerankerModel = 'onnx-community/bge-reranker-v2-m3-ONNX';
 
 /**
+ * The one local model that is on by default, and by far the heaviest: 600MB resident in the worker and
+ * about a second of CPU per pair, some forty pairs a chapter. Anything but 'off' leaves it on, so the
+ * default stays what it was — but it is a switch a reader can find now, because a tab that stops
+ * answering wants exactly this one turned off first to see whether it was the cause.
+ */
+export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
+
+/**
+ * In a browser the model runs on the shared local-model worker, and the page exchanges text for
+ * numbers. onnxruntime-web executes on the thread that calls it — measured in the running application,
+ * two pairs held the main thread for 706ms and the first call for 35 seconds — and asking it to proxy
+ * itself into a worker did not move it. Owning a thread is the only arrangement that does, and one
+ * thread serves every local model rather than one each.
+ *
+ * The precision is named rather than negotiated: the thresholds above were fitted per build, and the
+ * int8 model reads about a point below the full-precision one, so a silent fall back to fp32 would
+ * move the line this check decides on. One pair at a time, as on the server: a batch would be padded
+ * to its longest paragraph, and a chapter asks about one pair per paragraph.
+ */
+function browserReranker(model: string, dtype: 'q8' | 'fp32', worker: LocalModelClient): Reranker {
+  return async pairs => {
+    const scores: number[] = [];
+    for (const [current, earlier] of pairs) {
+      const logits = await worker.pairLogits(model, current, earlier, dtype);
+      scores.push(logits[0] ?? 0);
+    }
+    return scores;
+  };
+}
+
+/**
  * A reranker backed by transformers.js. The model is fetched on first use and cached by the runtime,
  * so a caller that never reaches the repetition check never downloads it.
  */
-/**
- * In a browser the model runs on a worker of its own, and the page exchanges text for numbers.
- * onnxruntime-web executes on the thread that calls it — measured in the running application, two
- * pairs held the main thread for 706ms and the first call for 35 seconds — and asking it to proxy
- * itself into a worker did not move it. Owning the thread is the only arrangement that does.
- */
-function browserReranker(model: string, dtype: 'q8' | 'fp32'): Reranker {
-  let worker: Worker | undefined;
-  let sequence = 0;
-  const waiting = new Map<number, { resolve: (scores: number[]) => void; reject: (error: Error) => void }>();
-  return pairs => new Promise<number[]>((resolve, reject) => {
-    if (!pairs.length) return resolve([]);
-    if (!worker) {
-      worker = new Worker(new URL('./reranker.worker.ts', import.meta.url), { type: 'module' });
-      worker.addEventListener('message', (event: MessageEvent<{ id: number; scores?: number[]; error?: string }>) => {
-        const pending = waiting.get(event.data.id);
-        if (!pending) return;
-        waiting.delete(event.data.id);
-        if (event.data.error) pending.reject(new Error(event.data.error));
-        else pending.resolve(event.data.scores || []);
-      });
-      // A worker that dies takes its pending questions with it; the repetition check then reports that
-      // it could not be made, and the cosine decides alone, which is what it does without a reranker.
-      worker.addEventListener('error', () => {
-        for (const pending of waiting.values()) pending.reject(new Error('The reranker worker stopped.'));
-        waiting.clear();
-        worker = undefined;
-      });
-    }
-    const id = ++sequence;
-    waiting.set(id, { resolve, reject });
-    worker.postMessage({ id, model, dtype, pairs });
-  });
-}
-
 export function createReranker(model = defaultRerankerModel, dtype: 'q8' | 'fp32' = 'q8'): Reranker {
-  if (typeof window !== 'undefined' && typeof Worker !== 'undefined') return browserReranker(model, dtype);
+  const worker = localModelWorker();
+  if (worker) return browserReranker(model, dtype, worker);
   let ready: Promise<{ tokenize: (current: string, earlier: string) => unknown; score: (input: unknown) => Promise<number> }> | undefined;
   const load = async () => {
     const { AutoTokenizer, AutoModelForSequenceClassification } = await import('@huggingface/transformers');

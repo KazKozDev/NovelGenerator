@@ -36,3 +36,26 @@ describe('Editor model configuration', () => {
     expect(getStoredValidatorConfig()?.think).toBe(false);
   });
 });
+
+describe('Author-typed Gemini model', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal('window', { console });
+    vi.stubGlobal('localStorage', memoryStorage());
+  });
+
+  it('round-trips a typed Gemini model for writer and editor', async () => {
+    const { getStoredProviderConfig, saveStoredProviderConfig, getStoredValidatorConfig, saveStoredValidatorConfig } = await import('../services/llmService');
+    saveStoredProviderConfig({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', geminiModel: 'gemini-2.0-pro' });
+    expect(getStoredProviderConfig().geminiModel).toBe('gemini-2.0-pro');
+    saveStoredValidatorConfig({ enabled: true, provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', geminiModel: 'gemini-2.5-pro' });
+    expect(getStoredValidatorConfig()).toEqual({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', think: false, geminiModel: 'gemini-2.5-pro' });
+  });
+
+  it('keeps the exact stored shape when no Gemini model was typed', async () => {
+    const { getStoredProviderConfig, saveStoredProviderConfig } = await import('../services/llmService');
+    saveStoredProviderConfig({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1' });
+    expect(getStoredProviderConfig()).toEqual({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1' });
+    expect('geminiModel' in getStoredProviderConfig()).toBe(false);
+  });
+});

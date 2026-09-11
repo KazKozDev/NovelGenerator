@@ -212,11 +212,25 @@ export function brokenParagraphs(content: string): string[] {
  * paragraphs while answering findings that had nothing to do with speech or length — one of them took
  * a chapter from twelve spoken paragraphs to six, another took the only line a chapter had.
  *
- * Counted, not compared: a line rewritten is still a line, and this asks only whether the chapter
- * still speaks as much as it did.
+ * Paragraphs alone do not say that, though, and counting them alone refused work that had lost
+ * nothing. Across 277 stored revision pairs the paragraph count fell 29 times, and in 10 of those the
+ * spoken words were still there or there were more of them — two consecutive lines by one speaker
+ * joined, a line folded into the gesture that follows it, and in three cases a repair that both
+ * reflowed the dialogue and lengthened it, the worst of them refused for adding 31% more speech. The
+ * real losses are not subtle: they sit at a quarter to nine tenths of the words, and the reflows at
+ * 0.93 and above. So the paragraph count says where to look and the spoken words say whether anything
+ * went; below 95% of them the chapter has stopped speaking as much as it did, and a line rewritten,
+ * merged or re-attributed is still a line.
  */
+export const spokenWordFloor = 0.95;
+
 export function spokenLinesLost(before: string, after: string): number {
-  return Math.max(0, speechParagraphs(before).length - speechParagraphs(after).length);
+  const lost = speechParagraphs(before).length - speechParagraphs(after).length;
+  if (lost <= 0) return 0;
+  const spoken = (text: string) => wordsIn(speechParagraphs(text).join(' '));
+  const had = spoken(before);
+  if (had && spoken(after) >= had * spokenWordFloor) return 0;
+  return lost;
 }
 
 /** What a repair broke that was whole before it: damage the previous version did not have. */

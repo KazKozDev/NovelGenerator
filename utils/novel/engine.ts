@@ -1,17 +1,22 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
+import { BESTSELLER_REQUIREMENTS, SAMPLING, STRUCTURE_BANS, buildIdeaSeed, languageContract } from './diversity';
+import { PLANNING_COHERENCE } from './coherence';
 import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
 import { proseCraft, narrativeDesign, sceneCountGuidance } from './proseCraft';
 import { newlyBroken, prosodyMetrics, prosodyReport, spokenLinesLost, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
+import type { Summarizer } from './summarizer';
 import { applyPassages, repairableInPlace } from './patch';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
 import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
 import { analyseChapter, beatCoverageIssue, citedOnlyTheOpening, confirmedFindings, findingStreaks, planWithoutRetelling, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
+import type { NLIScorer } from './nli';
 import type { RunStore } from './runStore';
-import { writeScene } from './writer';
+import { writeFullChapter, writeScene } from './writer';
 import { readSceneJournal } from './sceneJournal';
+import { rememberChapter, writeDirect } from './memory';
 
 export function createRun(spec: BookSpec, provider: LLMProviderConfig): NovelRun {
   return {
@@ -54,7 +59,7 @@ export function validateBlueprint(value: any, spec: BookSpec): BookBlueprint {
  * may legitimately have nobody to talk to, and "two participants" does not mean two speakers when
  * one of them is a figure watched across a courtyard.
  */
-export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedChapterPlan[] = []): ParsedChapterPlan {
+export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedChapterPlan[] = [], cast: string[] = []): ParsedChapterPlan {
   if (!value || typeof value !== 'object') throw new Error('Invalid chapter plan object.');
   const target = value.chapter || value.chapterPlan || value.chapter_plan || value.plan || value;
   const aliases: Record<string, string[]> = {
@@ -89,10 +94,18 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
         !scene.participants.every((name: unknown) => typeof name === 'string' && name.trim()) ||
         !Array.isArray(scene.keyMoments) || !scene.keyMoments.length ||
         !scene.keyMoments.every((beat: unknown) => typeof beat === 'string' && beat.trim())) throw new Error('Invalid scene identity, participants or beats.');
+    if (cast.length) {
+      const allowed = new Set(cast.map(name => name.trim().toLocaleLowerCase()));
+      const unknown = scene.participants.find((name: string) => !allowed.has(name.trim().toLocaleLowerCase()));
+      if (unknown) throw new Error(`Scene participant is not in the approved cast: ${unknown}`);
+    }
     if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error('Scene narrativeWeight must be an integer from 1 to 5.');
     // Older checkpoints planned scenes before this field existed; their prose is not retroactively defective.
     if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error('Scene conflictCarriedBy must be speech, action or solitude.');
     if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) throw new Error('A scene carried by speech needs at least two characters present to speak.');
+    if (scene.sceneShape !== undefined && (typeof scene.sceneShape !== 'string' || !scene.sceneShape.trim())) throw new Error('Scene sceneShape must be a non-empty string when present.');
+    if (scene.freshConstraint !== undefined && typeof scene.freshConstraint !== 'string') throw new Error('Scene freshConstraint must be a string when present.');
+    if (scene.staging !== undefined && (typeof scene.staging !== 'string' || !scene.staging.trim())) throw new Error('Scene staging must be a non-empty string when present.');
     ids.add(scene.sceneId);
     return scene;
   });
@@ -100,6 +113,24 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
   const twin = earlier.findIndex(item => JSON.stringify(item.detailedScenes) === fingerprint || (item.title === plan.title && item.summary === plan.summary));
   if (twin !== -1) throw new Error(`This plan repeats chapter ${twin + 1}. Plan the next movement of the story: different scenes, a different situation at the end, and a title of its own.`);
   return { ...plan, targetWordCount: spec.targetWordsPerChapter };
+}
+
+export function compactPlanningContext(run: NovelRun) {
+  const blueprint = run.blueprint!;
+  return {
+    centralConflict: blueprint.centralConflict,
+    protagonistChange: blueprint.protagonistChange,
+    endingPayoff: blueprint.endingPayoff,
+    characters: Object.fromEntries(Object.entries(blueprint.characters).map(([name, character]) => [name, character.description])),
+    promises: blueprint.promises,
+    previousChapters: blueprint.chapters.map((chapter, index) => ({
+      number: index + 1,
+      title: chapter.title,
+      summary: chapter.summary,
+      outcome: chapter.detailedScenes?.at(-1)?.outcome,
+      consequences: chapter.consequencesOfChoices,
+    })),
+  };
 }
 
 const text = { type: 'string', minLength: 1 };
@@ -118,7 +149,7 @@ export const chapterPlanSchema = {
   properties: {
     ...Object.fromEntries(planStrings.map(field => [field, text])),
     tensionLevel: { type: 'integer' },
-    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
+    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneShape: { type: 'string' }, freshConstraint: { type: 'string' }, staging: { type: 'string' }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
   }, additionalProperties: false,
 };
 
@@ -201,6 +232,34 @@ export function copyOfEarlierScene(scene: string, earlier: string[] = []): boole
   });
 }
 
+/**
+ * Lines a freshly written scene kept from the apparatus that produced it, rather than from the story.
+ *
+ * The scene writer reads a plan as JSON, and what it reads it can echo: a chapter arrived with a bare
+ * "Scene 3:" standing where a paragraph should be, and another with an instruction to itself in the
+ * present tense in the middle of past narration. Both survived every check we have, because every
+ * check we have reads for meaning and these lines mean exactly what they say — they simply are not
+ * the book. Caught here, the answer is to write eight hundred words again; found after the chapter is
+ * assembled, it is a repair asked to delete a line it will write once more from the same plan.
+ *
+ * Deliberately narrow, and matched line by line rather than anywhere in a sentence. A camelCase
+ * identifier does not occur in narrative prose in any language, and a label followed by a colon
+ * standing alone at the head of a line is a heading whatever language it is in; ordinary prose that
+ * happens to contain the word scene, or a number, or a colon, is left alone.
+ */
+const apparatusMarkers: RegExp[] = [
+  /(?:sceneId|keyMoments|narrativeWeight|conflictCarriedBy|sceneShape|freshConstraint|detailedScenes|targetWordCount|openingHook|chapterEnding|plotAdvancement|characterDevelopmentFocus|emotionalToneTension|connectionToNextChapter|timelineIndicators|rhythmPacing|tensionLevel|endingDevelopment|avoidReplaying|sceneBreakdown)/,
+  /^[*#>\s]*(?:scene|chapter|beat|act|part|\u0441\u0446\u0435\u043d\u0430|\u0433\u043b\u0430\u0432\u0430|\u044d\u043f\u0438\u0437\u043e\u0434|\u0447\u0430\u0441\u0442\u044c)\s*[\u2116#]?\s*\d+\s*[:.)\u2013\u2014-]/i,
+  /^[*#>\s]*(?:pov|target (?:scene )?length|word count|narrative weight|scene shape|staging|objective|outcome|key moments?|\u0446\u0435\u043b\u044c \u0441\u0446\u0435\u043d\u044b|\u043a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u043c\u043e\u043c\u0435\u043d\u0442\u044b|\u043c\u0438\u0437\u0430\u043d\u0441\u0446\u0435\u043d\u0430|\u0438\u0441\u0445\u043e\u0434 \u0441\u0446\u0435\u043d\u044b)\s*[:\u2014-]/i,
+  /^[\[(](?:note|todo|placeholder|\u043f\u0440\u0438\u043c\.|\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435|\u0437\u0430\u043c\u0435\u0442\u043a\u0430)/i,
+];
+
+export function apparatusResidue(scene: string): string[] {
+  return scene.split(/\n+/).map(line => line.trim())
+    .filter(line => line && apparatusMarkers.some(marker => marker.test(line)))
+    .slice(0, 5);
+}
+
 /** Findings about a share of the chapter rather than a place in it. */
 export const distributedIssues = ['speech-tag-bloat', 'simile-density', 'adjective-stacking', 'serial-explanation', 'paragraph-monotony'];
 
@@ -244,7 +303,7 @@ export function unchanged(before: string, after: string): boolean {
 }
 
 export class NovelEngine {
-  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder, private rerank?: Reranker) {}
+  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder, private rerank?: Reranker, private summarize?: Summarizer, private nli?: NLIScorer) {}
 
   /**
    * Report mode: measured prose texture is recorded on the version and never fails a chapter. The
@@ -271,7 +330,11 @@ export class NovelEngine {
   private async checkpoint(run: NovelRun) {
     run.updatedAt = Date.now();
     await this.store.save(run); // Never report a saved stage before its transaction commits.
-    this.onUpdate(structuredClone(run));
+    // New identities down to the chapter, not a copy of the manuscript: React needs to see that
+    // something changed, and a deep clone of five chapters and their revisions is 5ms of the page's
+    // own thread every time the engine saves. The versions beneath are large and only ever appended
+    // to, which is the same trade the hook's snapshot already makes.
+    this.onUpdate({ ...run, chapters: run.chapters.map(chapter => ({ ...chapter })) });
   }
 
   /**
@@ -279,10 +342,10 @@ export class NovelEngine {
    * The schema pins outline to a string; a nested chapter object is not a usable outline.
    */
   async outline(run: NovelRun): Promise<void> {
-    run.outline = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\nDevelop a complete outline for exactly ${run.spec.chapterCount} chapters. Establish the central conflict, protagonist desire and inner need, opposition, causal escalation, major choices and their costs, planted clues and payoffs, differentiated character voices, and an earned ending. Describe the actual ending, not a teaser.` + '\nReturn JSON {"outline":"the complete outline"}.', 'You are a novel architect developing the author\'s story.', this.llm, ['outline'], raw => {
+    run.outline = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\n${languageContract(run.spec.language)}\n${STRUCTURE_BANS}\nDevelop a complete outline for exactly ${run.spec.chapterCount} chapters. Establish the central conflict, protagonist desire and inner need, opposition, causal escalation, major choices and their costs, planted clues and payoffs, differentiated character voices, and an earned ending. Describe the actual ending, not a teaser. Give every chapter its own dramatic move: no two chapters may share the same opening device or the same closing device.` + '\nReturn JSON {"outline":"the complete outline"}.', 'You are a novel architect developing the author\'s story.', this.llm, ['outline'], raw => {
       if (typeof raw.outline !== 'string' || !raw.outline.trim()) throw new Error('The outline is empty.');
       return raw.outline.trim();
-    }, { temperature: 0.6, maxTokens: 8192, route: 'writer', schema: { type: 'object', required: ['outline'], properties: { outline: { type: 'string', minLength: 1 } }, additionalProperties: false } });
+    }, { temperature: SAMPLING.outline, maxTokens: 8192, route: 'writer', schema: { type: 'object', required: ['outline'], properties: { outline: { type: 'string', minLength: 1 } }, additionalProperties: false } });
     await this.checkpoint(run);
   }
 
@@ -290,23 +353,25 @@ export class NovelEngine {
     run.stage = 'planning';
     await this.checkpoint(run);
     if (!run.blueprint) {
-      run.blueprint = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\nAPPROVED OUTLINE:\n${run.outline}\nReturn JSON {"centralConflict":"goal, opposition, escalation and stakes","protagonistChange":"initial belief, decisive choice, cost and final change","endingPayoff":"external and emotional resolution","characters":[{"name":"name","description":"desire, need, contradiction, agency, speech habits and relationships"}],"promises":[{"id":"stable-id","description":"specific setup and earned payoff","setupChapter":1,"payoffChapter":${run.spec.chapterCount},"required":true}]}. Schedule all required payoffs inside this book. Optional series threads may remain open but must have required=false. Include the central conflict and emotional arc among the required promises.`, 'You build an explicit novel blueprint. Respond only with JSON.', this.llm, ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises'], raw => validateBlueprint(raw, run.spec), { temperature: 0.3, maxTokens: 8192, route: 'writer', schema: blueprintSchema });
+      run.blueprint = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\nAPPROVED OUTLINE:\n${run.outline}\nReturn JSON {"centralConflict":"goal, opposition, escalation and stakes","protagonistChange":"initial belief, decisive choice, cost and final change","endingPayoff":"external and emotional resolution","characters":[{"name":"name","description":"desire, need, contradiction, agency, speech habits and relationships"}],"promises":[{"id":"stable-id","description":"specific setup and earned payoff","setupChapter":1,"payoffChapter":${run.spec.chapterCount},"required":true}]}. Schedule all required payoffs inside this book. Optional series threads may remain open but must have required=false. Include the central conflict and emotional arc among the required promises.`, 'You build an explicit novel blueprint. Respond only with JSON.', this.llm, ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises'], raw => validateBlueprint(raw, run.spec), { temperature: SAMPLING.blueprint, maxTokens: 8192, route: 'writer', schema: blueprintSchema });
       await this.checkpoint(run);
     }
     for (let number = run.chapters.length + 1; number <= run.spec.chapterCount; number++) {
-      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND PREVIOUS CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude"}]. Set conflictCarriedBy to how the scene's conflict actually reaches the reader: "speech" when two or more characters press their opposing aims on each other in conversation, "action" when the decisive pressure is physical, "solitude" when the character faces it alone. A scene with several present characters whose interests differ is normally carried by speech; a novel in which no scene is carried by speech is a novel without dialogue. Allocate narrativeWeight by dramatic importance: brief connective scenes get less space than the decisive confrontation, its reversals and cost. These weights divide the chapter word budget; they are not tension scores or elapsed time. ${sceneCountGuidance(run.spec.targetWordsPerChapter)} For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
-      const decode = (raw: any) => validateChapterPlan(raw, run.spec, run.blueprint!.chapters);
+      const seed = buildIdeaSeed(number);
+      const cast = Object.keys(run.blueprint.characters);
+      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\n${languageContract(run.spec.language)}\n${STRUCTURE_BANS}\nSCENE SHAPE VARIATION: prefer ${seed.sceneShape} only if it fits the approved outline; never introduce a new setting, institution, object, clue or subplot merely for variety.\n${BESTSELLER_REQUIREMENTS}\n${PLANNING_COHERENCE}\nOUTLINE:\n${run.outline}\nCOMPACT BLUEPRINT AND PRIOR OUTCOMES:\n${JSON.stringify(compactPlanningContext(run))}\nAPPROVED CHARACTER NAMES (participants must be exact entries from this list): ${JSON.stringify(cast)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Continue from the previous chapter's outcome. Never reverse or disprove an established event merely to manufacture a twist unless the approved outline explicitly requires that reversal. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[exact approved names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude",sceneShape:"chase|confession|heist|trial|road|interrogation|negotiation|escape",freshConstraint:string,staging:string}]. Each scene's staging is one line: where everyone stands, which key objects are within sight or reach as the scene opens, and which physical conditions constrain action there. No keyMoment may require an act those conditions forbid: plan the change of conditions, with its cost, as a moment of its own, or plan a different act. Give adjacent scenes different sceneShape values; never repeat the previous chapter's opening or closing device. Allocate narrativeWeight by dramatic importance. ${sceneCountGuidance(run.spec.targetWordsPerChapter)} For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
+      const decode = (raw: any) => validateChapterPlan(raw, run.spec, run.blueprint!.chapters, cast);
       const settings = { maxTokens: 8192, route: 'writer' as const, schema: chapterPlanSchema };
       let plan: ParsedChapterPlan;
       try {
-        plan = await structuredResponse(planPrompt, 'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: 0.4, ...settings });
+        plan = await structuredResponse(planPrompt, 'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlan, ...settings });
       } catch (error) {
         // The generic retry answers a validation failure by lowering temperature, which is the wrong
         // medicine for "you repeated yourself": ask again, pointedly, with room to invent instead.
         if (!/repeats chapter/.test(String(error))) throw error;
         const unfulfilled = (run.blueprint.promises || []).filter(promise => promise.payoffChapter >= number);
         plan = await structuredResponse(`${planPrompt}\nYour previous attempt returned a copy of an earlier chapter of this same book. Plan what happens NEXT instead: the situation this chapter starts from is the one the previous chapter ended in, and it must not end where that chapter ended. These promises are still unpaid and are the material this chapter has to work with:\n${JSON.stringify(unfulfilled)}\nGive the chapter its own title, its own scenes and its own final situation.`,
-          'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: 0.9, ...settings });
+          'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlanRetry, ...settings });
       }
       run.blueprint.chapters.push(plan);
       const chapter: ChapterRecord = { number, plan, status: 'pending', versions: [], repairAttempts: 0 };
@@ -314,7 +379,7 @@ export class NovelEngine {
       run.chapters.push(chapter);
       await this.checkpoint(run);
     }
-    await this.speechSomewhere(run);
+    if (!run.spec.skipEditing) await this.speechSomewhere(run);
   }
 
   /**
@@ -361,7 +426,7 @@ export class NovelEngine {
           const plan = validateChapterPlan(raw, run.spec, plans.filter((_, index) => index !== crowded.index));
           if (!(plan.detailedScenes || []).some((scene: { conflictCarriedBy?: string }) => scene.conflictCarriedBy === 'speech')) throw new Error('The replanned chapter still has no scene carried by speech.');
           return plan;
-        }, { temperature: 0.4, maxTokens: 8192, route: 'writer', schema: chapterPlanSchema });
+        }, { temperature: SAMPLING.speechReplan, maxTokens: 8192, route: 'writer', schema: chapterPlanSchema });
       plans[crowded.index] = replanned;
       run.chapters[crowded.index].plan = replanned;
       await this.checkpoint(run);
@@ -373,13 +438,34 @@ export class NovelEngine {
   }
 
   private async acceptOrRepair(run: NovelRun, chapter: ChapterRecord, candidate: ChapterVersion): Promise<void> {
+    if (run.spec.skipEditing) {
+      if (!candidate.content.trim()) throw new Error(`Chapter ${chapter.number} has no prose.`);
+      candidate.review = { validationVersion: 2, status: 'not_checked', checkedRevision: candidate.revision, issues: [] };
+      candidate.literary = undefined;
+      candidate.analysis = await rememberChapter(chapter, candidate, this.llm);
+      acceptCandidate(run, chapter.number);
+      await this.checkpoint(run);
+      return;
+    }
     let repairsRetried = 0;
     let reviewsRedrawn = 0;
     let literaryRedrawn = 0;
     for (;;) {
-      if (candidate.review?.validationVersion !== 2 || candidate.review.status !== 'passed' || candidate.review.checkedRevision !== candidate.revision) {
+      /**
+       * Asked once per revision, not once per round.
+       *
+       * The condition used to re-read the chapter whenever its report was not a pass — including a
+       * report that had already read this very revision. Downstream gates fail a version after the
+       * review has passed it: the literary gate merges its findings in and returns to the top, where
+       * the prose was read again from scratch, came back clean, was extracted again in four calls,
+       * met the same failed gate, and went round once more. Measured on a live run: seven rounds in
+       * seven minutes for one chapter, thirteen calls each, ninety-one spent on nothing, and the way
+       * out was a sampled review happening to report something. A verdict on this text is a verdict;
+       * what follows it is repair, not another reading.
+       */
+      if (candidate.review?.validationVersion !== 2 || candidate.review.checkedRevision !== candidate.revision) {
         const superseded = candidate.review;
-        candidate.review = await reviewChapter(run, chapter, candidate, this.llm);
+        candidate.review = await reviewChapter(run, chapter, candidate, this.llm, '', this.nli);
         if (candidate.review.status !== 'not_checked') {
           // What the round before this one saw, so a judgement of taste has to be seen twice before it
           // stops a chapter. The previous version's report is the second opinion; there is no need to
@@ -402,7 +488,7 @@ export class NovelEngine {
             && citedOnlyTheOpening(candidate.content, candidate.review.issues.filter(issue => issue.evidence.length && !issue.id.startsWith('foreign-script')))) {
             reviewsRedrawn++;
             const reread = await reviewChapter(run, chapter, candidate, this.llm,
-              '\nYOUR PREVIOUS REPORT ON THIS CHAPTER CITED ONLY ITS FIRST HALF. If the rest of the chapter holds, say so by reporting only what is actually wrong; if it was not read, read it now. Either answer is acceptable; a report that covers half a chapter is not.');
+              '\nYOUR PREVIOUS REPORT ON THIS CHAPTER CITED ONLY ITS FIRST HALF. If the rest of the chapter holds, say so by reporting only what is actually wrong; if it was not read, read it now. Either answer is acceptable; a report that covers half a chapter is not.', this.nli);
             if (reread.status !== 'not_checked') candidate.review = reread;
           }
           const carried = this.carriedIssues(chapter, candidate, superseded);
@@ -468,22 +554,27 @@ export class NovelEngine {
             // A gate that cannot cite its evidence has failed to judge, not judged the chapter badly.
             // The assessment is sampled like the review, so an unusable draw deserves another; what it
             // must never do is end the run by exception, losing every accepted chapter behind it.
-            try { candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm); }
-            catch (error) {
-              if (literaryRedrawn >= MAX_REVIEW_REDRAWS) {
-                chapter.status = 'needs_revision';
-                await this.checkpoint(run);
-                throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: the literary assessment could not be completed (${error instanceof Error ? error.message : String(error)}).`);
+            // Every attempt guarded, including the last. The retry used to sit outside the catch, so a
+            // second failure escaped as whatever it was — a live run died on `TypeError: Failed to
+            // fetch`, a dropped connection, with chapter one accepted behind it and nothing marked
+            // needs_revision. A transport hiccup is not a verdict on the chapter, and it must not be
+            // able to end a run in a state the resume path never hears about.
+            for (;;) {
+              try { candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm); break; }
+              catch (error) {
+                if (literaryRedrawn >= MAX_REVIEW_REDRAWS) {
+                  chapter.status = 'needs_revision';
+                  await this.checkpoint(run);
+                  throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: the literary assessment could not be completed (${error instanceof Error ? error.message : String(error)}).`);
+                }
+                literaryRedrawn++;
               }
-              literaryRedrawn++;
-              candidate.literary = await assessLiteraryDevelopment(run, chapter, candidate, this.llm);
             }
           }
           await this.checkpoint(run);
         }
-        if (candidate.literary.status === 'failed') {
-          candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...candidate.literary.issues] };
-        }
+          // Merged once. Two copies of this block stood here, so every literary finding entered the
+          // report twice and the repair was handed the same instruction under two identities.
           if (candidate.literary.status === 'failed') {
             candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...candidate.literary.issues] };
             await this.checkpoint(run);
@@ -504,7 +595,7 @@ export class NovelEngine {
           // word for word invites the same answer, and the usual reason is quotation: a passage
           // remembered rather than copied cannot be found in the prose and voids the finding with it.
           candidate.review = await reviewChapter(run, chapter, candidate, this.llm,
-            candidate.review.error ? `\nYOUR PREVIOUS REPORT ON THIS CHAPTER WAS DISCARDED: ${candidate.review.error} Every quotation must be copied character for character out of the prose above — open the passage, copy it, do not retype it from memory and do not tidy its punctuation. A finding whose quotation cannot be found is lost entirely, so quote less and quote exactly: a single accurate sentence is worth more than a paragraph approximately recalled.` : '');
+            candidate.review.error ? `\nYOUR PREVIOUS REPORT ON THIS CHAPTER WAS DISCARDED: ${candidate.review.error} Every quotation must be copied character for character out of the prose above — open the passage, copy it, do not retype it from memory and do not tidy its punctuation. A finding whose quotation cannot be found is lost entirely, so quote less and quote exactly: a single accurate sentence is worth more than a paragraph approximately recalled.` : '', this.nli);
           await this.checkpoint(run);
           if (candidate.review.status !== 'not_checked') continue;
         }
@@ -521,7 +612,7 @@ export class NovelEngine {
       const previousShapes = chapter.lastFindingShapes;
       const streaks = findingStreaks(candidate.review.issues, previousShapes);
       chapter.lastFindingShapes = streaks;
-      const worn = streaks.filter(item => item.streak >= LOCAL_REPAIR_ATTEMPTS + 1 && item.category !== 'canon' && item.category !== 'format');
+      const worn = streaks.filter(item => item.streak >= LOCAL_REPAIR_ATTEMPTS + 1 && !this.isUndeconcedable(item));
       if (worn.length) {
         chapter.planningNote = `Findings no local repair could answer after ${LOCAL_REPAIR_ATTEMPTS + 1} rounds: ${worn.map(item => item.description).join('; ')}`;
         chapter.unrepairable = [...(chapter.unrepairable || []), ...worn.map(({ id, category, description }) => ({ id, category, description }))];
@@ -544,15 +635,12 @@ export class NovelEngine {
       if (chapter.repairAttempts >= LOCAL_REPAIR_ATTEMPTS) {
         // A contradiction of canon or a broken format always has a local answer — deleting a repeated
         // passage, removing a wedged character — so those keep their standing however long they take.
-        const stubborn = candidate.review.issues.filter(issue => issue.severity !== 'minor'
-          && issue.category !== 'canon' && issue.category !== 'format');
+        const stubborn = candidate.review.issues.filter(issue => issue.severity !== 'minor' && !this.isUndeconcedable(issue));
         if (stubborn.length) {
           chapter.planningNote = `Findings no local repair could answer after ${chapter.repairAttempts} attempts: ${stubborn.map(issue => issue.description).join('; ')}`;
           chapter.unrepairable = [...(chapter.unrepairable || []), ...stubborn.map(({ id, category, description }) => ({ id, category, description }))];
-          candidate.review = {
-            ...candidate.review,
-            issues: candidate.review.issues.map(issue => stubborn.includes(issue) ? { ...issue, severity: 'minor' as const } : issue),
-          };
+          const demoted = candidate.review.issues.map(issue => stubborn.includes(issue) ? { ...issue, severity: 'minor' as const } : issue);
+          candidate.review = { ...candidate.review, issues: demoted, status: demoted.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed' };
           chapter.repairAttempts = 0;
           chapter.lastFindingShapes = undefined;
           await this.checkpoint(run);
@@ -602,6 +690,7 @@ export class NovelEngine {
         // Refused twice on the same ground, the repair is not going to be whole; the chapter keeps the
         // text it has and the round ends rather than accepting damaged prose.
         if (newlyBroken(version.content, retried).length) {
+          if (await this.concede(run, chapter, candidate, `two repairs in a row broke the prose open (${broken[0].slice(0, 80)})`)) continue;
           chapter.status = 'needs_revision';
           await this.checkpoint(run);
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row broke the prose open (${broken[0].slice(0, 80)}).`);
@@ -619,6 +708,7 @@ export class NovelEngine {
           `${extra}Your previous attempt was refused: it removed ${spokenLost} spoken line(s) from this chapter, and none of the findings asked for dialogue to be cut. Answer them without taking speech off the page — a line may be rewritten, but the exchange stays.`, allowShortening);
         if (!spokenLinesLost(version.content, kept)) content = kept;
         else {
+          if (await this.concede(run, chapter, candidate, `two repairs in a row removed ${spokenLost} spoken line(s) nothing asked them to remove`)) continue;
           chapter.status = 'needs_revision';
           await this.checkpoint(run);
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row removed spoken lines nothing asked them to remove.`);
@@ -632,23 +722,8 @@ export class NovelEngine {
         // are, so a repair that does nothing needs its own count or it spends the whole budget.
         if (unchanged(version.content, content)) {
           // Twice asked, twice nothing changed: the writer has already answered that these findings
-          // cannot be met by editing this chapter. That is the same answer the repair budget arrives
-          // at after two failed attempts, so it gets the same treatment — the findings become
-          // advisory and the chapter goes on — rather than ending the run over prose nobody touched.
-          const unanswerable = candidate.review.issues.filter(issue => issue.severity !== 'minor'
-            && issue.category !== 'canon' && issue.category !== 'format');
-          if (unanswerable.length) {
-            chapter.planningNote = `Findings no local repair could answer, and two attempts returned the chapter unchanged: ${unanswerable.map(issue => issue.description).join('; ')}`;
-            chapter.unrepairable = [...(chapter.unrepairable || []), ...unanswerable.map(({ id, category, description }) => ({ id, category, description }))];
-            candidate.review = {
-              ...candidate.review,
-              issues: candidate.review.issues.map(issue => unanswerable.includes(issue) ? { ...issue, severity: 'minor' as const } : issue),
-            };
-            chapter.repairAttempts = 0;
-            chapter.lastFindingShapes = undefined;
-            await this.checkpoint(run);
-            continue;
-          }
+          // cannot be met by editing this chapter.
+          if (await this.concede(run, chapter, candidate, 'two attempts returned the chapter unchanged')) continue;
           chapter.status = 'needs_revision';
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row returned the chapter unchanged against ${candidate.review.issues.map(issue => issue.description).join('; ')}`);
         }
@@ -669,6 +744,46 @@ export class NovelEngine {
       candidate = addCandidate(chapter, content, 'Repair reported chapter defects');
       await this.checkpoint(run);
     }
+  }
+
+  /**
+   * What the loop does when a repair has answered twice over that it cannot do what was asked.
+   *
+   * Three places reach that answer: prose returned unchanged, prose returned broken open, and
+   * dialogue taken off the page. Only the first of them used to survive it; the other two ended the
+   * run, and a live chapter died on the third after twenty-nine revisions of work behind it. Nothing
+   * about those two calls for a harder ending — the repair was refused, so the prose the chapter
+   * carries is the prose it already had, whole and reviewed. What has failed is the attempt to
+   * improve it, and the honest response is the one this loop already had for a stuck finding: record
+   * what no local repair could answer, demote it to advisory, and let the chapter go on standing on
+   * the version it has.
+   *
+   * A contradiction of canon or a broken format is never conceded: those have a local answer by
+   * construction, and waiving one writes a defect into every chapter after it. When the findings are
+   * all of that kind there is nothing to concede, the caller is told so, and the chapter stops for a
+   * reader — which is the one case where stopping is the right outcome.
+   */
+  private isUndeconcedable(issue: { id: string; category?: string }): boolean {
+    if (issue.category === 'canon' && !issue.id.startsWith('nli-')) return true;
+    if (issue.category === 'format' && issue.id !== 'restated-passage' && issue.id !== 'duplicated-passage') return true;
+    return false;
+  }
+
+  private async concede(run: NovelRun, chapter: ChapterRecord, candidate: ChapterVersion, reason: string): Promise<boolean> {
+    const review = candidate.review;
+    if (!review) return false;
+    const unanswerable = review.issues.filter(issue => issue.severity !== 'minor' && !this.isUndeconcedable(issue));
+    if (!unanswerable.length) return false;
+    chapter.planningNote = `Findings no local repair could answer, and ${reason}: ${unanswerable.map(issue => issue.description).join('; ')}`;
+    chapter.unrepairable = [...(chapter.unrepairable || []), ...unanswerable.map(({ id, category, description }) => ({ id, category, description }))];
+    const issues = review.issues.map(issue => unanswerable.includes(issue) ? { ...issue, severity: 'minor' as const } : issue);
+    // The verdict is restated here because nothing reads the chapter again to restate it: a report
+    // whose every blocking finding has been conceded is a report the chapter passes.
+    candidate.review = { ...review, issues, status: issues.some(issue => issue.severity !== 'minor') ? 'failed' : 'passed' };
+    chapter.repairAttempts = 0;
+    chapter.lastFindingShapes = undefined;
+    await this.checkpoint(run);
+    return true;
   }
 
   private extractProse(text: string): string {
@@ -783,15 +898,58 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
       : missingContent
         ? `\nLENGTH CONTRACT: the current version has ${words} words and the chapter target is ${target} words. The issues name content that is missing or undramatized, so add that content and return at least ${Math.ceil(target * 0.8)} words. Add the named material only; do not restate what the chapter already tells.`
         : `\nLENGTH CONTRACT: the current version has ${words} words. Keep every scene, event and clue at full length and do not condense, trim or summarize anything the issues do not name. Do not add length either: no new description, comparison or interior passage beyond what the issues require. A revision of roughly ${words} words is correct.`;
-    const raw = await generateProse(this.llm, `${specPrompt(run.spec)}${genreCraft(run.spec)}${proseCraft(run, chapter)}\nLITERARY INTENT FOR THIS CHAPTER:\n${JSON.stringify(chapter.literaryPlan)}\nPLAN:\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nREPAIR ONLY THESE ISSUES:\n${JSON.stringify(issues)}\nEach issue carries the exact passages it refers to. Locate those passages in the prose below and rewrite those passages. Reproduce every other sentence unchanged, word for word: a rewrite that regenerates the whole chapter reintroduces the same defect. The cited wording must not survive in the revision.${issues.some(issue => distributed.includes(issue.id)) ? ` One exception, and only for these issues: ${issues.filter(issue => distributed.includes(issue.id)).map(issue => issue.id).join(', ')}. They describe a proportion of the whole chapter, their quotations are examples rather than the full extent of the defect, and editing only the quoted lines cannot change a proportion — a live chapter sat at 92% through six revisions that way. For those issues change every line in the chapter that carries the same defect, and leave everything else exactly as it stands.` : ''}\n${extra}\nFULL CURRENT PROSE:\n${version.content}\nReturn ONLY the complete revised chapter in the story's language. Do not output planning lists, outline scaffolding, working draft variants, or English commentary. Start directly with the story prose. Add no new memory, backstory or explanation of how something came to be: a character may not recall an origin the story has not given, and inventing one is the defect this review keeps finding. Where a finding says a character uses knowledge the story has not given them, repair it by taking the knowledge away — let the character guess, wonder, be wrong or say nothing — whatever the finding's own instruction asks for; a chapter spent fourteen revisions on one such finding because every round was told to supply the missing source and forbidden to invent one. Preserve all unaffected events, clues, names, scene outcomes and intentional voice. Do not add stock gestures, rename characters or impose synonym variation. Do not summarize or omit scenes.${budget}`, 'You perform targeted fiction revision. Return only the final revised story prose without scaffolding.', { temperature: 0.3, maxTokens: Math.max(8192, version.content.length) });
+    const raw = await generateProse(this.llm, `${specPrompt(run.spec)}${genreCraft(run.spec)}${proseCraft(run, chapter)}\nLITERARY INTENT FOR THIS CHAPTER:\n${JSON.stringify(chapter.literaryPlan)}\nPLAN:\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nREPAIR ONLY THESE ISSUES:\n${JSON.stringify(issues)}\nEach issue carries the exact passages it refers to. Locate those passages in the prose below and rewrite those passages. Reproduce every other sentence unchanged, word for word: a rewrite that regenerates the whole chapter reintroduces the same defect. The cited wording must not survive in the revision.${issues.some(issue => distributed.includes(issue.id)) ? ` One exception, and only for these issues: ${issues.filter(issue => distributed.includes(issue.id)).map(issue => issue.id).join(', ')}. They describe a proportion of the whole chapter, their quotations are examples rather than the full extent of the defect, and editing only the quoted lines cannot change a proportion — a live chapter sat at 92% through six revisions that way. For those issues change every line in the chapter that carries the same defect, and leave everything else exactly as it stands.` : ''}\n${extra}\nFULL CURRENT PROSE:\n${version.content}\nReturn ONLY the complete revised chapter in the story's language. Do not output planning lists, outline scaffolding, working draft variants, or English commentary. Start directly with the story prose. Add no new memory, backstory or explanation of how something came to be: a character may not recall an origin the story has not given, and inventing one is the defect this review keeps finding. Where a finding says a character uses knowledge the story has not given them, repair it by taking the knowledge away — let the character guess, wonder, be wrong or say nothing — whatever the finding's own instruction asks for; a chapter spent fourteen revisions on one such finding because every round was told to supply the missing source and forbidden to invent one. Preserve all unaffected events, clues, names, scene outcomes and intentional voice. Do not add stock gestures, rename characters or impose synonym variation. Do not summarize or omit scenes.${budget}`, 'You perform targeted fiction revision. Return only the final revised story prose without scaffolding.', { temperature: SAMPLING.repair, maxTokens: Math.max(8192, version.content.length) });
     return this.extractProse(raw).trim();
   }
 
   private async writeRemaining(run: NovelRun) {
     let chapter: ChapterRecord | undefined;
     while ((chapter = nextUnacceptedChapter(run))) {
+      if (run.spec.skipEditing) {
+        let candidate = chapter.versions.find(v => v.revision === chapter.candidateRevision);
+        if (!candidate && chapter.status === 'invalidated' && chapter.versions.length) {
+          const old = chapter.versions.find(v => v.revision === chapter.acceptedRevision) || chapter.versions.at(-1)!;
+          candidate = addCandidate(chapter, old.content, 'Preserved manuscript');
+        }
+        if (!candidate) {
+          chapter.sceneDrafts ||= [];
+          const full = run.spec.chapterMode === 'full';
+          if (full && !chapter.sceneDrafts.length) {
+            chapter.sceneDrafts.push(await writeDirect(run, chapter, this.llm));
+            chapter.status = 'draft';
+            await this.checkpoint(run);
+          } else if (!full) {
+            for (let i = chapter.sceneDrafts.length; i < chapter.plan.detailedScenes.length; i++) {
+              chapter.sceneDrafts.push(await writeDirect(run, chapter, this.llm, i));
+              chapter.status = 'draft';
+              await this.checkpoint(run);
+            }
+          }
+          candidate = addCandidate(chapter, chapter.sceneDrafts.join('\n\n***\n\n'), 'Initial chapter draft');
+          await this.checkpoint(run);
+        }
+        await this.acceptOrRepair(run, chapter, candidate);
+        continue;
+      }
       if (!chapter.literaryPlan || chapter.literaryPlan.contextKey !== literaryContextKey(run, chapter.number) || chapter.literaryPlan.chapterPlanKey !== JSON.stringify(chapter.plan)) {
-        chapter.literaryPlan = await planLiteraryDevelopment(run, chapter, this.llm);
+        if (run.spec.skipEditing) {
+          chapter.literaryPlan = {
+            version: 1,
+            contextKey: literaryContextKey(run, chapter.number),
+            chapterPlanKey: JSON.stringify(chapter.plan),
+            endingDevelopment: chapter.plan.chapterEnding || '',
+            avoidReplaying: [],
+            scenes: (chapter.plan.detailedScenes || []).map(s => ({
+              sceneId: s.sceneId,
+              development: s.objective || '',
+              characterChoice: s.conflict || '',
+              dramaticCost: s.outcome || '',
+              narrativeWeight: s.narrativeWeight || 3,
+            })),
+          };
+        } else {
+          chapter.literaryPlan = await planLiteraryDevelopment(run, chapter, this.llm, this.summarize);
+        }
         await this.checkpoint(run);
       }
       let candidate = chapter.versions.find(version => version.revision === chapter.candidateRevision);
@@ -802,26 +960,56 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
       }
       if (!candidate) {
         chapter.sceneDrafts ||= [];
-        for (let sceneIndex = chapter.sceneDrafts.length; sceneIndex < chapter.plan.detailedScenes.length; sceneIndex++) {
-          let scene = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm));
+        const isFullChapter = run.spec.chapterMode === 'full';
+
+        if (isFullChapter && chapter.sceneDrafts.length === 0) {
+          let fullProse = this.extractProse(await writeFullChapter(run, chapter, this.llm));
+          const residue = run.spec.skipEditing ? [] : apparatusResidue(fullProse);
+          if (residue.length) {
+            const rewritten = this.extractProse(await writeFullChapter(run, chapter, this.llm,
+              `Your previous attempt left planning apparatus notes on the page: ${JSON.stringify(residue)}. Remove all scene labels, headers, and planning notes. Output pure narrative prose only.`));
+            if (rewritten && !apparatusResidue(rewritten).length) fullProse = rewritten;
+          }
+
+          const parts = fullProse.split(/\n+\s*\*\*\*\s*\n+/).map(s => s.trim()).filter(Boolean);
+          chapter.sceneDrafts = parts.length > 1 ? parts : [fullProse];
+          chapter.status = 'draft';
+          await this.checkpoint(run);
+          candidate = addCandidate(chapter, fullProse, 'Initial chapter draft');
+          await this.checkpoint(run);
+        } else {
+          for (let sceneIndex = chapter.sceneDrafts.length; sceneIndex < chapter.plan.detailedScenes.length; sceneIndex++) {
+            let scene = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm));
           // A live chapter arrived as scene one followed by scene two written four times: the writer,
           // shown the prose already written, returned it again for every remaining scene. Catching the
           // copy here costs one call; letting it through cost that chapter fourteen revisions.
-          if (copyOfEarlierScene(scene, chapter.sceneDrafts)) {
+          if (!run.spec.skipEditing && copyOfEarlierScene(scene, chapter.sceneDrafts)) {
             scene = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm, 'Your previous attempt returned prose already written for an earlier scene of this chapter. That scene is finished. Write the scene requested here: it starts from the situation the earlier prose ended in and must not retell it.'));
             if (copyOfEarlierScene(scene, chapter.sceneDrafts)) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} came back as a copy of an earlier scene twice.`);
           }
-          if (!scene) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} is empty.`);
+          // Editorial mode treats an empty answer as a failed draft. Direct mode never stops the
+          // writing run to judge or retry a model answer; it records exactly what was generated.
+          if (!scene && !run.spec.skipEditing) throw new Error(`Scene ${sceneIndex + 1} of chapter ${chapter.number} is empty.`);
           // Not the whole scene copied, but passages of it told again. Compared now, the answer is to
           // write one scene of eight hundred words; found after the chapter is finished — where twelve
           // of the twenty-five blocking findings on first drafts were found — the answer is to rewrite
           // the chapter around it. One attempt: a second restatement is the chapter review's business.
-          const restated = restatedFromEarlierScenes(scene, chapter.sceneDrafts);
+          const restated = run.spec.skipEditing ? [] : restatedFromEarlierScenes(scene, chapter.sceneDrafts);
           if (restated.length) {
             const retold = restated.slice(0, 4).map(item => `"${item.sentence}" repeats "${item.source}"`).join('; ');
             const rewritten = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm,
               `Your previous attempt told again what earlier scenes of this chapter have already put on the page: ${retold}. Those events happened; this scene begins after them. Write this scene's own material, and refer to what is already told only as something the characters take for granted.`));
             if (rewritten && restatedFromEarlierScenes(rewritten, chapter.sceneDrafts).length < restated.length) scene = rewritten;
+          }
+          // The plan, left standing where the prose should be. One attempt, like the restatement check
+          // above: a scene that comes back labelled twice is the chapter review's business, and the
+          // rewrite is kept only if it is actually clean — a retry that trades one label for another
+          // has bought nothing worth losing a written scene for.
+          const residue = run.spec.skipEditing ? [] : apparatusResidue(scene);
+          if (residue.length) {
+            const rewritten = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm,
+              `Your previous attempt left the planning apparatus standing on the page: ${JSON.stringify(residue)}. Those are notes from the plan you were given, not prose, and a reader sees them as an unfinished draft. Write the scene again as finished narration in the ${run.spec.tense} tense: no scene, beat or chapter label, no field name, no bracketed note, no sentence instructing rather than narrating. Whatever those lines were reserving a place for is dramatized instead.`));
+            if (rewritten && !apparatusResidue(rewritten).length) scene = rewritten;
           }
           chapter.sceneDrafts.push(scene);
           chapter.status = 'draft';
@@ -830,15 +1018,20 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
           // always recorded, empty if the reading failed: a missing continuity note costs the next
           // scene some of its context, and a journal out of step with the drafts would cost it more.
           chapter.sceneJournal ||= [];
-          try {
-            chapter.sceneJournal.push(await readSceneJournal(run, chapter, sceneIndex, scene, this.llm));
-          } catch {
+          if (!run.spec.skipEditing) {
+            try {
+              chapter.sceneJournal.push(await readSceneJournal(run, chapter, sceneIndex, scene, this.llm));
+            } catch {
+              chapter.sceneJournal.push({ sceneId: chapter.plan.detailedScenes[sceneIndex].sceneId, notes: [] });
+            }
+          } else {
             chapter.sceneJournal.push({ sceneId: chapter.plan.detailedScenes[sceneIndex].sceneId, notes: [] });
           }
           await this.checkpoint(run);
         }
         candidate = addCandidate(chapter, chapter.sceneDrafts.join('\n\n***\n\n'), 'Initial chapter draft');
         await this.checkpoint(run);
+        }
       }
       await this.acceptOrRepair(run, chapter, candidate);
     }
@@ -919,6 +1112,40 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
     await this.writeRemaining(run);
   }
 
+  async reviewCompleted(run: NovelRun): Promise<void> {
+    if (run.stage !== 'complete') throw new Error('Finish the manuscript before editing.');
+    const text = run.chapters.map(c => `CHAPTER ${c.number}: ${c.plan.title}\n${acceptedVersion(c)!.content}`).join('\n\n');
+    const result = await structuredResponse(`AUTHOR REQUEST:\n${specPrompt(run.spec)}\nBOOK PLAN:\n${run.outline}\nCOMPLETE MANUSCRIPT:\n${text}\nReview continuity, repetition, scene completeness and the earned ending. Return {"report":"concise specific findings with chapter numbers; distinguish suggestions from contradictions", "proposals":[{"chapter":1,"instruction":"a concrete optional revision"}]}. Do not rewrite the manuscript. No score or invented evidence. Empty proposals are valid.`, 'You review a completed manuscript on the author’s request.', this.llm, ['report', 'proposals'], raw => {
+      if (typeof raw.report !== 'string' || !Array.isArray(raw.proposals)) throw new Error('Invalid editorial report');
+      return { report: raw.report, proposals: raw.proposals.filter((p: any) => Number.isInteger(p.chapter) && p.chapter >= 1 && p.chapter <= run.chapters.length && typeof p.instruction === 'string' && p.instruction.trim()) as { chapter: number; instruction: string }[] };
+    }, { route: 'writer', maxTokens: 4096 });
+    run.editorial = { ...result, revisions: run.chapters.map(c => c.acceptedRevision!) };
+    await this.checkpoint(run);
+  }
+
+  async applyEditorial(run: NovelRun): Promise<void> {
+    if (run.stage !== 'complete' || !run.editorial?.proposals?.length) throw new Error('No editorial proposals to apply.');
+    if (run.chapters.some((c, i) => c.acceptedRevision !== run.editorial!.revisions[i])) throw new Error('The manuscript changed. Review it again first.');
+    // Work on a separate copy. A failed request cannot replace the downloadable manuscript.
+    const draft = structuredClone(run);
+    const original = `# ${run.title}\n\n` + run.chapters.map(c => `## Chapter ${c.number}: ${c.plan.title}\n\n${acceptedVersion(c)!.content}`).join('\n\n');
+    for (const number of [...new Set(run.editorial.proposals.map(p => p.chapter))].sort((a, b) => a - b)) {
+      const chapter = draft.chapters[number - 1];
+      const previous = acceptedVersion(chapter)!;
+      const content = stripThinking(await this.llm(`Revise only the requested passages. Preserve all other events and the author's voice. Return the complete chapter as prose, without JSON or commentary.\nREQUESTS:\n${run.editorial.proposals.filter(p => p.chapter === number).map(p => p.instruction).join('\n')}\nORIGINAL CHAPTER:\n${previous.content}`, 'You edit a chapter on the author’s request.', { route: 'writer', temperature: 0.4, maxTokens: Math.max(8192, previous.content.length) }));
+      if (!content.trim()) throw new Error('The editor returned empty prose; original manuscript preserved.');
+      const candidate = addCandidate(chapter, content, 'Requested editorial revision');
+      candidate.analysis = await rememberChapter(chapter, candidate, this.llm);
+      candidate.review = { status: 'not_checked', issues: [], checkedRevision: candidate.revision };
+      acceptCandidate(draft, number);
+    }
+    draft.manuscriptHistory = [...(run.manuscriptHistory || []), { title: run.title || 'Manuscript', content: original, at: Date.now() }];
+    draft.editorial = undefined;
+    draft.stage = 'complete';
+    Object.assign(run, draft);
+    await this.checkpoint(run);
+  }
+
   async continue(run: NovelRun, options: { retry?: boolean } = {}): Promise<void> {
     try {
       if (reconcileCheckpoint(run)) await this.checkpoint(run);
@@ -942,20 +1169,31 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
         await this.checkpoint(run);
       }
       await this.writeRemaining(run);
+      if (run.spec.skipEditing) run.stage = 'final_review';
       if (run.stage === 'writing' || run.stage === 'structural_review') {
         run.stage = 'structural_review';
         await this.checkpoint(run);
-        await this.globalReview(run, 'structure');
+        if (!run.spec.skipEditing) {
+          await this.globalReview(run, 'structure');
+        } else {
+          run.structuralReview = { status: 'not_checked', issues: [], checkedRevision: 0 };
+        }
         run.stage = 'line_editing';
         await this.checkpoint(run);
       }
       if (run.stage === 'line_editing') {
-        await this.lineEdit(run);
+        if (!run.spec.skipEditing) {
+          await this.lineEdit(run);
+        }
         run.stage = 'final_review';
         await this.checkpoint(run);
       }
       if (run.stage === 'final_review') {
-        await this.globalReview(run, 'final');
+        if (!run.spec.skipEditing) {
+          await this.globalReview(run, 'final');
+        } else {
+          run.finalReview = { status: 'not_checked', issues: [], checkedRevision: 0 };
+        }
         if (!run.title) {
           try {
             run.title = await structuredResponse(`${specPrompt(run.spec)}\nNOVEL SUMMARY:\n${JSON.stringify(run.canon.summaries)}\nGive this novel a distinctive title. Return JSON {"title":"the title"}.`, 'You title completed novels.', this.llm, ['title'], raw => {

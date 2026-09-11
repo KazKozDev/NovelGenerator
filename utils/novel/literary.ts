@@ -2,6 +2,7 @@ import type { ChapterRecord, ChapterVersion, NovelRun, Evidence, ReviewIssue } f
 import { specPrompt } from './contracts';
 import { structuredResponse, type NovelLLM } from './review';
 import { literaryKinds, literaryLedger, literaryContextKey, type LiteraryAssessment, type LiteraryPlan } from './literaryState';
+import type { Summarizer } from './summarizer';
 
 const text = { type: 'string', minLength: 1 };
 const list = (items: object, maxItems = 16) => ({ type: 'array', items, maxItems });
@@ -29,10 +30,45 @@ export function ledgerForPlanning(history: ReturnType<typeof literaryLedger>, ex
   }));
 }
 
-export async function planLiteraryDevelopment(run: NovelRun, chapter: ChapterRecord, llm: NovelLLM): Promise<LiteraryPlan> {
+/** Serialized planning history above this stays verbatim; past it each observation compresses to one line. */
+export const PLANNING_LEDGER_BUDGET = 8000;
+
+export async function compressPlanningLedger(
+  history: ReturnType<typeof literaryLedger>,
+  summarize?: Summarizer,
+  budget = PLANNING_LEDGER_BUDGET,
+): Promise<object> {
+  const full = ledgerForPlanning(history);
+  if (!summarize || JSON.stringify(full).length <= budget) return full;
+  // Compression is best-effort: a summarizer that fails (a broken download,
+  // an offline runtime) falls back to the truncated quotes, observation by
+  // observation, and planning continues on the full ledger. A compression
+  // helper must never be what loses a chapter.
+  const compressed = [];
+  for (const item of history) {
+    const observations = [];
+    for (const observation of item.observations) {
+      const { evidence, ...rest } = observation;
+      const quotes = evidence.map(item => item.quote).join('\n');
+      let line = '';
+      try {
+        line = await summarize(
+          `Established in chapter ${item.chapter}: ${observation.kind} — ${observation.subject}. Before: ${observation.before}. After: ${observation.after}. Mechanism: ${observation.mechanism}. Passages:\n${quotes}`,
+          128,
+        );
+      } catch { /* fall through to the truncated quote below */ }
+      observations.push({ ...rest, evidence: [line.trim() || quotes.slice(0, 300)] });
+    }
+    compressed.push({ chapter: item.chapter, observations });
+  }
+  return compressed;
+}
+
+export async function planLiteraryDevelopment(run: NovelRun, chapter: ChapterRecord, llm: NovelLLM, summarize?: Summarizer): Promise<LiteraryPlan> {
   const history = literaryLedger(run, chapter.number);
+  const planningHistory = await compressPlanningLedger(history, summarize);
   const sceneSchema = object({ sceneId: text, development: text, characterChoice: text, dramaticCost: text, narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 } });
-  return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}\nAPPROVED CHAPTER PLAN:\n${JSON.stringify(chapter.plan)}\nCHARACTER DESIGN:\n${JSON.stringify(run.blueprint?.characters)}\nACCEPTED LITERARY HISTORY (each observation with the opening of the passage that established it):\n${JSON.stringify(ledgerForPlanning(history))}\nALREADY DRAFTED SCENES (preserve their events):\n${JSON.stringify(chapter.sceneDrafts || [])}\nPlan the next development, not another announcement of a realization already reached. For each existing scene ID specify development of thought or relationship, an independently motivated character choice, its dramatic cost and relative page weight (1–5). Keep the approved events, scene IDs and ending. An unchanged belief can be tested, contradicted or acted on; change is not mandatory in every scene. Preserve the antagonist's established motives and limits. Give supporting characters their own stakes where relevant, without inventing subplots. Decide how this chapter's ending develops the sequence of prior endings. Record concrete already-used moves to avoid replaying, based on the history; no invented examples. If a scene has no internal development, state its actual dramatic function.`,
+  return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}\nAPPROVED CHAPTER PLAN:\n${JSON.stringify(chapter.plan)}\nCHARACTER DESIGN:\n${JSON.stringify(run.blueprint?.characters)}\nACCEPTED LITERARY HISTORY (each observation with the opening of the passage that established it):\n${JSON.stringify(planningHistory)}\nALREADY DRAFTED SCENES (preserve their events):\n${JSON.stringify(chapter.sceneDrafts || [])}\nPlan the next development, not another announcement of a realization already reached. For each existing scene ID specify development of thought or relationship, an independently motivated character choice, its dramatic cost and relative page weight (1–5). Keep the approved events, scene IDs and ending. An unchanged belief can be tested, contradicted or acted on; change is not mandatory in every scene. Preserve the antagonist's established motives and limits. Give supporting characters their own stakes where relevant, without inventing subplots. Decide how this chapter's ending develops the sequence of prior endings. Record concrete already-used moves to avoid replaying, based on the history; no invented examples. If a scene has no internal development, state its actual dramatic function.`,
     'You plan literary development against versioned manuscript state. Return only JSON.', llm, ['endingDevelopment', 'avoidReplaying', 'scenes'], raw => {
       if (!fields(raw, ['endingDevelopment']) || !strings(raw.avoidReplaying) || !Array.isArray(raw.scenes)) throw new Error('Incomplete literary development plan.');
       const expected = new Set((chapter.plan.detailedScenes || []).map(scene => scene.sceneId));
@@ -83,9 +119,13 @@ export async function assessLiteraryDevelopment(run: NovelRun, chapter: ChapterR
   const observationSchema = object({ kind: { type: 'string', enum: literaryKinds }, subject: text, before: text, after: text, mechanism: text, sources: sourceIds });
   const issueSchema = object({ kind: { type: 'string', enum: literaryKinds }, severity: { type: 'string', enum: ['major', 'minor'] }, description: text, instruction: text, sources: sourceIds });
   const resolve = (ids: unknown) => {
-    if (!strings(ids, 12) || !ids.length || ids.some(id => !sourceMap.has(id))) throw new Error('Unknown or missing literary evidence source.');
+    // These messages return to the model inside the automatic retry, so they name the repair:
+    // copy real IDs, and always ground each finding in the current prose. The offending IDs
+    // travel back too — a model told exactly which IDs do not exist stops inventing them.
+    const shown = Array.isArray(ids) ? ids.filter(item => typeof item === 'string').slice(0, 12).join(', ') : String(ids);
+    if (!strings(ids, 12) || !ids.length || ids.some(id => !sourceMap.has(id))) throw new Error(`Unknown or missing literary evidence source (got: ${shown || 'empty'}): copy 1–12 source IDs exactly from the SOURCE TEXT list (p1..pN for the current prose, hC.I.E for history). Do not invent IDs and do not leave sources empty.`);
     const evidence = [...new Set(ids)].map(id => sourceMap.get(id)!);
-    if (!evidence.some(item => item.chapter === chapter.number && item.revision === candidate.revision)) throw new Error('A literary finding must cite the current chapter.');
+    if (!evidence.some(item => item.chapter === chapter.number && item.revision === candidate.revision)) throw new Error(`A literary finding must cite the current chapter (got only history: ${shown}): include at least one p-unit ID from the current prose alongside any history IDs.`);
     return evidence;
   };
   return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}, REVISION ${candidate.revision}\nLITERARY HISTORY (referred to by source id; the quotations live in the source list below):\n${JSON.stringify(ledgerForPrompt)}\nDEVELOPMENT INTENT (not proof):\n${JSON.stringify(chapter.literaryPlan)}\nAPPROVED PLOT AND CHARACTER DESIGN:\n${JSON.stringify({ plan: chapter.plan, characters: run.blueprint?.characters })}\nSOURCE TEXT: historical evidence followed by the COMPLETE current prose in consecutive numbered units:\n${JSON.stringify(sourcesForPrompt)}\nRecord what this prose actually establishes, and only that. These observations become the book's literary history, read by every later chapter as evidence of what has already happened, so a chapter that establishes two things must produce two observations and a chapter that establishes eight must produce eight. Do not write one observation per dimension: a ledger padded to cover the list describes a book that was not written and misleads every chapter after this one. Store before/after and mechanism, each with supporting source IDs. "Before" is where this thread stood when this chapter opened, which for a thread the history above already tracks is that history's most recent "after" — not a restatement of where the thread began earlier in the book. Copying a previous "before" forward says the chapter changed nothing, and a ledger that says so about a chapter that did change misleads every chapter after it. At least one ending observation must cite the final source p${paragraphs.length}, because a chapter's ending is always established by its ending.\nSeparately judge all six dimensions against the actual current text and historical evidence, and say plainly where a dimension fails. Six clean dimensions and six defects are both possible results, and neither is the expected one: judge what is on the page. A defect is something the text does — a realization the book already reached announced again as if new, an ending built out of the same moves as the previous chapter's, an explanation restating an action the prose has just shown, a motive flattened without groundwork, a character carried through the scene without a choice of their own, a decisive exchange summarized after a long approach. A passage that could go deeper, land harder or be more fully developed is not a defect, and this review does not collect suggestions. Compare meanings and rhetorical functions, not word overlap. A deliberate motif with new consequences and a belief genuinely tested are not defects. Cross-chapter repetition findings must cite both historical and current source IDs; local repetition findings must cite its occurrences. Distinguish omission from a supporting character simply being absent from this chapter. Do not demand a moral recap, action climax or thought change in every chapter. The final ending must honor the author contract.\nReturn observations, issues, and checked containing all six dimension names only after assessing each. Empty issues means every assessed dimension holds; an issues list is not required to be non-empty and is not required to be empty.`,

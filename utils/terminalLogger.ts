@@ -235,3 +235,53 @@ export function installConsoleBridge(): void {
     }
   };
 }
+
+/**
+ * What blocked the page, and for how long.
+ *
+ * A tab offering to close itself has held its main thread for seconds, and every guess about which
+ * seconds those are costs a full run to test. The browser already knows: a long task is any block over
+ * 50ms, and the browser reports it with a duration. This records them, names what the application was
+ * doing at the time, and sends the bad ones to the terminal next to the step lines already there — so
+ * the next freeze arrives with a measurement instead of a theory.
+ *
+ * Cheap by construction: the observer is the platform's, it fires after the block is over, and
+ * anything under the floor is counted and never reported. Browsers without the entry type — Safari at
+ * the time of writing — get nothing and lose nothing.
+ */
+export interface StallWatch {
+  stop(): void;
+  worst(): { ms: number; doing: string } | undefined;
+  all(): { ms: number; doing: string; at: number }[];
+}
+
+export function watchMainThreadStalls(doing: () => string, floorMs = 400): StallWatch {
+  const stalls: { ms: number; doing: string; at: number }[] = [];
+  let observer: PerformanceObserver | undefined;
+  try {
+    observer = new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) {
+        const ms = Math.round(entry.duration);
+        if (ms < 50) continue;
+        const context = doing();
+        stalls.push({ ms, doing: context, at: Date.now() });
+        if (ms >= floorMs) {
+          logToTerminal({
+            message: `Main thread blocked ${ms}ms while: ${context}`,
+            agent: 'Performance',
+            level: ms >= 2000 ? 'error' : 'warn',
+          });
+        }
+      }
+    });
+    observer.observe({ entryTypes: ['longtask'] });
+  } catch {
+    // A browser that does not report long tasks reports nothing; the run is unaffected.
+  }
+  return {
+    stop: () => observer?.disconnect(),
+    worst: () => stalls.reduce<{ ms: number; doing: string } | undefined>(
+      (worst, stall) => !worst || stall.ms > worst.ms ? { ms: stall.ms, doing: stall.doing } : worst, undefined),
+    all: () => [...stalls],
+  };
+}

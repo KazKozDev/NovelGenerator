@@ -1,12 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { type StorySettings, type AgentLogEntry } from '../types';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import { embedOllama } from '../services/ollamaService';
-import { sharedReranker } from '../utils/novel/reranker';
+import { RERANK_STORAGE_KEY, sharedReranker } from '../utils/novel/reranker';
+import { reportLocalModels } from '../utils/novel/modelProgress';
+import { DEFAULT_LOCAL_EMBEDDER, sharedLocalEmbedder } from '../utils/novel/localEmbedder';
 import { createBookSpec, type NovelRun } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { BrowserRunStore, type RunStore } from '../utils/novel/runStore';
-import { addCandidate, reconcileCheckpoint } from '../utils/novel/storyState';
+import { acceptedVersion, addCandidate, reconcileCheckpoint } from '../utils/novel/storyState';
+import { SUMMARIZER_KEY, checkChapter, checkEmotions, checkGenre, deepCheckTools, isLocalModelOn } from '../utils/novel/deepCheck';
+import { sharedSummarizer } from '../utils/novel/summarizer';
 import { compileBook, displayChapters, generationStep, metadata } from '../utils/novel/presentation';
 import { playSuccessSound } from '../utils/soundUtils';
 import type { NovelLLM } from '../utils/novel/review';
@@ -14,7 +18,8 @@ import type { NovelLLM } from '../utils/novel/review';
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
   writingStyle: 'descriptive', language: 'English', tense: 'past',
-  ending: 'closed', targetWordsPerChapter: 4000,
+  ending: 'closed', targetWordsPerChapter: 4000, chapterMode: 'scene',
+  skipEditing: true,
 };
 
 /**
@@ -55,20 +60,52 @@ export function stepName(system: string): string {
  * check nobody switched on is a check that never ran: the repetitions it finds were sitting in
  * finished books. If it cannot load, the cosine decides alone rather than the run losing the check.
  */
-export const RERANK_STORAGE_KEY = 'novel-repetition-reranker';
+export { RERANK_STORAGE_KEY } from '../utils/novel/reranker';
 
 function repetitionTools(log: (entry: { type: AgentLogEntry['type']; message: string }) => void): { embed?: (inputs: string[]) => Promise<number[][]>; rerank?: ReturnType<typeof sharedReranker> } {
   const config = getStoredProviderConfig();
-  // Without a local Ollama there is nothing to nominate pairs with, and the cross-encoder alone would
-  // have to score every paragraph against every earlier one.
-  if (config.provider !== 'ollama') return {};
-  // The models that run on the reader's own machine were invisible in the log: the page would sit for
-  // half a minute measuring repetition with nothing to show for it. They announce themselves now.
-  const embed = async (inputs: string[]) => {
-    log({ type: 'execution', message: `Measuring repetition: reading ${inputs.length} paragraphs` });
-    const vectors = await embedOllama(inputs, undefined, config.ollamaEndpoint);
-    log({ type: 'success', message: `Measuring repetition: ${inputs.length} paragraphs read` });
+  // The in-browser embedder, on its worker. It is the fallback for every provider that cannot embed.
+  const browserEmbed = async (inputs: string[]) => {
+    const local = sharedLocalEmbedder();
+    log({ type: 'execution', message: `Measuring repetition locally: reading ${inputs.length} paragraphs (first use downloads ${DEFAULT_LOCAL_EMBEDDER})` });
+    const vectors = await local(inputs);
+    log({ type: 'success', message: `Measuring repetition locally: ${inputs.length} paragraphs read` });
     return vectors;
+  };
+  // Without a local Ollama there is no server embedder to nominate pairs with. Fall back to the
+  // in-browser MiniLM embedder so cloud-provider users get the semantic check too: the first
+  // measurement downloads the weights once, the browser caches them afterwards. The cross-encoder
+  // alone would have to score every paragraph against every earlier one, so it stays off here.
+  if (config.provider !== 'ollama') return { embed: browserEmbed };
+  /**
+   * Ollama is asked first, and answers for itself.
+   *
+   * "The provider is Ollama" was read as "Ollama can embed", and for a cloud setup that is false:
+   * `:cloud` models are proxied and need no local weights, while an embedding needs a model on the
+   * machine. Found on a live run — the server held no models at all, its store on an external volume
+   * refusing to open — so every call to /api/embed failed, measureProsody caught it and fell back to a
+   * report with no repetition check, and the cross-encoder behind it never ran either: with no
+   * embedder to nominate pairs there is nothing for it to score. Both halves of the semantic
+   * repetition check were installed and dead, and nothing said so out loud.
+   *
+   * So the choice is made by capability rather than by configuration. The first failure is reported
+   * once and remembered: a server that cannot embed will not learn to mid-run, and asking it again per
+   * chapter would spend a timeout each time.
+   */
+  let serverCanEmbed = true;
+  const embed = async (inputs: string[]) => {
+    if (serverCanEmbed) {
+      try {
+        log({ type: 'execution', message: `Measuring repetition: reading ${inputs.length} paragraphs` });
+        const vectors = await embedOllama(inputs, undefined, config.ollamaEndpoint);
+        log({ type: 'success', message: `Measuring repetition: ${inputs.length} paragraphs read` });
+        return vectors;
+      } catch (error) {
+        serverCanEmbed = false;
+        log({ type: 'warning', message: `${config.ollamaEndpoint} cannot embed (${error instanceof Error ? error.message : String(error)}). Cloud models are proxied and carry no local weights, so the repetition check moves to the in-browser embedder for the rest of this run.` });
+      }
+    }
+    return browserEmbed(inputs);
   };
   // The cross-encoder now runs on a worker of its own, so the page keeps answering while a chapter is
   // measured; onnxruntime-web executes on whichever thread calls it, and owning that thread was the
@@ -102,6 +139,8 @@ export default function useBookGenerator() {
   const storeRef = useRef<RunStore>(new BrowserRunStore());
   const epoch = useRef(0);
   const busy = useRef(false);
+  // Deep-check memory survives across executes: an accepted chapter is scanned once, ever.
+  const deepSeen = useRef({ chapters: new Set<string>(), genres: new Set<string>(), arc: new Map<string, string[]>() });
 
   /**
    * A snapshot for React, not a copy of the manuscript. Cloning the whole run took 10ms once it held
@@ -176,9 +215,83 @@ export default function useBookGenerator() {
       clear: async () => { checkActive(); await storeRef.current.clear(); },
       save: async state => { checkActive(); await storeRef.current.save(state); },
     };
+    // Direct writing means exactly that: no post-acceptance scans, embeddings, reranking,
+    // summarizers, or background model downloads may be started while chapters are being written.
+    if (run.spec.skipEditing) {
+      return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); });
+    }
+    // Where a local model ended up running, and when it gives its memory back, in the reader's own log.
+    reportLocalModels(message => setAgentLogs(previous => [...previous,
+      { timestamp: Date.now(), chapterNumber: runRef.current?.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0, type: 'execution', message }]));
     const { embed, rerank } = repetitionTools(entry => setAgentLogs(previous => [...previous,
       { timestamp: Date.now(), chapterNumber: runRef.current?.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0, ...entry }]));
-    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); }, embed, rerank);
+    const tools = deepCheckTools(entry => setAgentLogs(previous => [...previous,
+      { timestamp: Date.now(), chapterNumber: runRef.current?.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0, ...entry }]));
+    const summarize = isLocalModelOn(SUMMARIZER_KEY) ? sharedSummarizer() : undefined;
+    if (summarize) {
+      setAgentLogs(previous => [...previous,
+        { timestamp: Date.now(), chapterNumber: 0, type: 'execution', message: 'Ledger compression on: the first planning call downloads the summarizer (~300MB)' }]);
+    }
+    // Quiet post-acceptance checks: newly accepted chapters are scanned once each, in the
+    // background, and report as advisory log lines. Failures here never touch the run.
+    const seen = deepSeen.current;
+    const say = (chapterNumber: number, message: string) => {
+      setAgentLogs(previous => [...previous, { timestamp: Date.now(), chapterNumber, type: 'evaluation', message }]);
+    };
+    const maybeDeepCheck = (state: NovelRun) => {
+      if (tools.classifyGenre && state.outline.trim() && !seen.genres.has(state.id)) {
+        seen.genres.add(state.id);
+        void (async () => {
+          try {
+            const verdict = await checkGenre(state, state.outline, tools.classifyGenre!);
+            if (epoch.current !== token || !verdict) return;
+            say(0, verdict.ok
+              ? `Genre check: outline reads as ${verdict.top} — matches contract (${verdict.expected})`
+              : `Genre check: outline reads as ${verdict.top}, contract says ${verdict.expected} — advisory`);
+          } catch {
+            // A quiet check that fails stays quiet: it must never lose a reviewed chapter.
+          }
+        })();
+      }
+      if (!tools.score && !tools.identify && !tools.scoreEmotion) return;
+      for (const chapter of state.chapters) {
+        if (chapter.status !== 'accepted') continue;
+        const version = acceptedVersion(chapter);
+        if (!version) continue;
+        const key = `${state.id}#${chapter.number}r${version.revision}`;
+        if (seen.chapters.has(key)) continue;
+        seen.chapters.add(key);
+        void (async () => {
+          try {
+            const report = await checkChapter(state, chapter.number, version.content, tools);
+            if (epoch.current !== token) return;
+            if (tools.score) {
+              say(chapter.number, report.contradictions.length
+                ? `Deep check ch ${chapter.number}: ${report.contradictions.length} possible contradiction(s) vs canon — advisory, see report`
+                : `Deep check ch ${chapter.number}: no canon contradictions`);
+            }
+            if (report.language && !report.language.ok) {
+              say(chapter.number, `Deep check ch ${chapter.number}: prose reads as ${report.language.label}, expected ${report.language.expected}`);
+            }
+            if (tools.scoreEmotion) {
+              const felt = await checkEmotions(chapter.number, version.content, tools.scoreEmotion);
+              if (epoch.current !== token || !felt) return;
+              say(chapter.number, `Emotion ch ${chapter.number}: dominant ${felt.dominant} · variety ${Math.round(felt.variety * 100)}%`);
+              const trail = [...(seen.arc.get(state.id) || []), `${chapter.number}:${felt.dominant}`]
+                .sort((a, b) => Number(a.split(':')[0]) - Number(b.split(':')[0]));
+              seen.arc.set(state.id, trail);
+              const moods = trail.map(entry => entry.split(':')[1]);
+              if (new Set(moods.map(mood => mood.toLowerCase())).size > 1) {
+                say(chapter.number, `Emotion arc travels: ${moods.join(' → ')}`);
+              }
+            }
+          } catch {
+            // A quiet check that fails stays quiet: it must never lose a reviewed chapter.
+          }
+        })();
+      }
+    };
+    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); maybeDeepCheck(state); }, embed, rerank, summarize);
   }
 
   async function execute(action: (run: NovelRun, engine: NovelEngine) => Promise<void>) {
@@ -186,6 +299,8 @@ export default function useBookGenerator() {
     busy.current = true;
     const token = epoch.current;
     const run = runRef.current;
+    // A saved run may predate direct-only generation. Never resume it through the old editorial
+    // pipeline: the active product path writes the manuscript without validator or repair passes.
     setIsLoading(true);
     setError(null);
     if (run.stage === 'needs_revision') {
@@ -209,7 +324,7 @@ export default function useBookGenerator() {
     if (busy.current || isRestoring) return;
     if (runRef.current) return continueGeneration();
     try {
-      const run = createRun(createBookSpec(premise, count, storySettings), getStoredProviderConfig());
+      const run = createRun(createBookSpec(premise, count, { ...storySettings, skipEditing: false }), getStoredProviderConfig());
       run.validationProvider = getStoredValidatorConfig();
       runRef.current = run;
       update(run);
@@ -273,20 +388,41 @@ export default function useBookGenerator() {
     catch (err) { setError(`Could not reset the saved manuscript: ${String(err)}`); }
   }
 
-  const generatedChapters = displayChapters(snapshot);
+  /**
+   * Derived once per snapshot, not once per render.
+   *
+   * These four were rebuilt on every render, and a render happens on every checkpoint, every appended
+   * log line and every keystroke elsewhere in the tree: the chapter list, which copies each chapter
+   * and pretty-prints its plan; the blueprint, pretty-printed whole; and on a finished book the
+   * compiled manuscript and the metadata document, which is hundreds of kilobytes of JSON that
+   * something downstream then parses again. None of them can change while the snapshot does not.
+   */
+  const generatedChapters = useMemo(() => displayChapters(snapshot), [snapshot]);
   const complete = snapshot?.stage === 'complete';
+  const finalBook = useMemo(() => {
+    if (!complete || !snapshot) return { content: null as string | null, metadata: null as string | null };
+    // A run marked complete that cannot be compiled is a defect to report, never a throw on every
+    // render of the page that would report it.
+    try { return { content: compileBook(snapshot), metadata: metadata(snapshot) }; }
+    catch { return { content: null, metadata: null }; }
+  }, [snapshot, complete]);
+  const blueprintJson = useMemo(() => snapshot?.blueprint ? JSON.stringify(snapshot.blueprint, null, 2) : '', [snapshot]);
   return {
     storyPremise, setStoryPremise, numChapters, setNumChapters, storySettings, setStorySettings,
     isLoading: isLoading || isRestoring, currentStep: generationStep(snapshot, isLoading), error,
     isResumable: Boolean(snapshot && !complete && snapshot.stage !== 'outline' && !isLoading),
     startGeneration, continueGeneration, regenerateOutline, resetGenerator, reviseChapter,
-    finalBookContent: complete ? compileBook(snapshot) : null,
-    finalMetadataJson: complete ? metadata(snapshot) : null,
+    reviewCompleted: () => execute((run, engine) => engine.reviewCompleted(run)),
+    applyEditorial: () => execute((run, engine) => engine.applyEditorial(run)),
+    editorial: snapshot?.editorial,
+    manuscriptHistory: snapshot?.manuscriptHistory || [],
+    finalBookContent: finalBook.content,
+    finalMetadataJson: finalBook.metadata,
     generatedChapters,
     currentChapterProcessing: snapshot?.chapters.find(chapter => chapter.status !== 'accepted')?.number || 0,
     totalChaptersToProcess: snapshot?.spec.chapterCount || numChapters,
     currentStoryOutline: snapshot?.outline || '', setCurrentStoryOutline,
-    currentChapterPlan: snapshot?.blueprint ? JSON.stringify(snapshot.blueprint, null, 2) : '',
+    currentChapterPlan: blueprintJson,
     agentLogs, lastSavedAt: snapshot?.updatedAt,
   };
 }

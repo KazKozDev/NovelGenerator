@@ -5,6 +5,7 @@ import ThemeToggle from './ThemeToggle';
 import PlanView from './PlanView';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
+import ChapterChecks from './ChapterChecks';
 import SaveStatusIndicator from './SaveStatusIndicator';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Button } from './common/Button';
@@ -258,46 +259,50 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           )}
         </div>
 
-        {/* ZONE 3: agent telemetry, shown only when there is any */}
+        {/* ZONE 3: chapter checks on top, agent telemetry below — half each */}
         {showInspector && (
           <div
             data-testid="zone-agent-inspector"
             className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
           >
-            <div className="shrink-0 flex items-baseline justify-between pb-2">
-              <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
-              <span className="text-xs text-zinc-500">
-                {agentLogs.length} events
-              </span>
-            </div>
+            <ChapterChecks content={activeContent} chapterNum={activeChapterNum} />
 
-            {/* Quick Agent Status Telemetry */}
-            <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
-              <div className="py-1">
-                <div className="text-xs font-semibold uppercase text-zinc-500">Specialists</div>
-                <div className="text-xs text-zinc-300 mt-0.5 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
-                  Active
+            <div className="border-t border-zinc-800 mt-2 pt-2 flex flex-col min-h-0 flex-1 overflow-hidden">
+              <div className="shrink-0 flex items-baseline justify-between pb-2">
+                <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
+                <span className="text-xs text-zinc-500">
+                  {agentLogs.length} events
+                </span>
+              </div>
+
+              {/* Quick Agent Status Telemetry */}
+              <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
+                <div className="py-1">
+                  <div className="text-xs font-semibold uppercase text-zinc-500">Specialists</div>
+                  <div className="text-xs text-zinc-300 mt-0.5 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
+                    Active
+                  </div>
+                </div>
+                <div className="py-1">
+                  <div className="text-xs font-semibold uppercase text-zinc-500">Target</div>
+                  <div className="text-xs text-zinc-300 mt-0.5 truncate">
+                    Ch #{currentChapterProcessing || 1}
+                  </div>
                 </div>
               </div>
-              <div className="py-1">
-                <div className="text-xs font-semibold uppercase text-zinc-500">Target</div>
-                <div className="text-xs text-zinc-300 mt-0.5 truncate">
-                  Ch #{currentChapterProcessing || 1}
-                </div>
-              </div>
-            </div>
 
-            {/* Full Agent Activity Log */}
-            {agentLogs.length > 0 ? (
-              <div className="flex-1 min-h-0 overflow-y-auto pt-2 pr-1">
-                <AgentActivityLog logs={agentLogs} />
-              </div>
-            ) : (
-              <div className="pt-3 text-zinc-500 text-xs">
-                <span>Awaiting agent telemetry...</span>
-              </div>
-            )}
+              {/* Full Agent Activity Log */}
+              {agentLogs.length > 0 ? (
+                <div className="flex-1 min-h-0 overflow-y-auto pt-2 pr-1">
+                  <AgentActivityLog logs={agentLogs} />
+                </div>
+              ) : (
+                <div className="pt-3 text-zinc-500 text-xs">
+                  <span>Awaiting agent telemetry...</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

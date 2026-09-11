@@ -3,10 +3,11 @@ import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
 import { Select } from './common/Select';
-import { MIN_CHAPTERS } from '../constants';
+import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
 import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
+import LocalModelToggles from './LocalModelToggles';
 import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
@@ -134,6 +135,34 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
         </div>
 
+        {/* Gemini Details */}
+        {providerConfig.provider === 'gemini' && (
+          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                Gemini Model
+              </label>
+              <Input
+                type="text"
+                value={providerConfig.geminiModel || ''}
+                onChange={(e) => {
+                  const typed = e.target.value.trim();
+                  const updated = { ...providerConfig };
+                  if (typed) updated.geminiModel = typed;
+                  else delete updated.geminiModel;
+                  setProviderConfig(updated);
+                  saveStoredProviderConfig(updated);
+                }}
+                placeholder={GEMINI_MODEL_NAME}
+                className="text-xs py-1.5 font-mono"
+              />
+              <p className="text-xs text-zinc-500 mt-1">
+                Type any Gemini model ID — empty means the default ({GEMINI_MODEL_NAME})
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Ollama Details */}
         {providerConfig.provider === 'ollama' && (
           <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
@@ -224,62 +253,6 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
         )}
 
-        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h4 className="text-base font-semibold text-zinc-100">Editor model</h4>
-              <p className="text-xs text-zinc-500">Reviews chapters, extracts canon and audits the book</p>
-            </div>
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
-              <input type="checkbox" checked={validator.enabled}
-                onChange={event => updateValidator({ enabled: event.target.checked })} />
-              Use a separate model
-            </label>
-          </div>
-
-          {!validator.enabled ? (
-            <p className="text-xs text-zinc-400">
-              The writer will review its own prose. A second model catches contradictions the writer cannot see.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
-              <div>
-                <label htmlFor="validatorProvider" className="block text-sm font-medium text-zinc-400 mb-1.5">Provider</label>
-                <Select id="validatorProvider" value={validator.provider} className="text-xs py-1.5"
-                  onChange={event => updateValidator({ provider: event.target.value as LLMProviderConfig['provider'] })}>
-                  <option value="gemini">Gemini</option>
-                  <option value="ollama">Ollama</option>
-                </Select>
-              </div>
-              {validator.provider === 'ollama' && (
-                <div>
-                  <label htmlFor="validatorModel" className="block text-sm font-medium text-zinc-400 mb-1.5">Model</label>
-                  {ollamaModels.length > 0 ? (
-                    <Select id="validatorModel" value={validator.ollamaModel} className="text-xs py-1.5"
-                      onChange={event => updateValidator({ ollamaModel: event.target.value })}>
-                      {ollamaModels.map(model => <option key={model} value={model}>{model}</option>)}
-                    </Select>
-                  ) : (
-                    <Input id="validatorModel" type="text" value={validator.ollamaModel} className="text-xs py-1.5"
-                      placeholder="gemma4:31b-cloud"
-                      onChange={event => updateValidator({ ollamaModel: event.target.value })} />
-                  )}
-                </div>
-              )}
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-sm text-zinc-400">
-                  <input type="checkbox" checked={Boolean(validator.think)}
-                    onChange={event => updateValidator({ think: event.target.checked })} />
-                  Let the editor think before answering
-                </label>
-                <p className="text-xs text-zinc-500 mt-1">
-                  A reasoning model asked to judge with thinking off returns an empty review. Its reasoning is
-                  returned separately and never reaches the manuscript.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       <div>
@@ -353,6 +326,14 @@ const UserInput: React.FC<UserInputProps> = ({
               onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
           </div>
           <div>
+            <label htmlFor="chapterMode" className="block text-sm font-medium text-zinc-400 mb-1.5">Chapter drafting mode</label>
+            <Select id="chapterMode" value={storySettings.chapterMode || 'auto'} onChange={event => setStorySettings({ ...storySettings, chapterMode: event.target.value === 'auto' ? undefined : event.target.value as 'full' | 'scene' })}>
+              <option value="auto">Automatic — whole short chapters, scenes for long chapters</option>
+              <option value="scene">Scene by scene (recommended for 2500–5000 words — full volume & deep dialogue)</option>
+              <option value="full">Full chapter in 1 prompt (fast — best for up to 1500–2000 words)</option>
+            </Select>
+          </div>
+          <div>
             <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>
             <Select id="tense" value={storySettings.tense || 'past'} onChange={event => setStorySettings({ ...storySettings, tense: event.target.value as StorySettings['tense'] })}>
               <option value="past">Past</option><option value="present">Present</option>
@@ -365,6 +346,10 @@ const UserInput: React.FC<UserInputProps> = ({
             </Select>
           </div>
         </div>
+      </div>
+
+      <div className="pt-2">
+        <p className="text-xs text-zinc-500">Chapters are written sequentially with story memory. Optional editing is available after the book is complete.</p>
       </div>
 
       <div className="flex justify-end pt-2">
@@ -405,7 +390,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Quality & Export</h3>
             <p className="text-xs text-zinc-500">
-              Whole-book review checks setup, payoff and the ending before EPUB, Markdown or PDF export.
+              Download the finished book immediately. Request a separate review and save edits as a new version.
             </p>
           </div>
         </div>
