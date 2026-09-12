@@ -6,7 +6,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { apparatusResidue, castNotInOutline, compactPlanningContext, createRun, looseJoins, NovelEngine, nextSweep, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon, standingConditions } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, characterLimits, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { analyseChapter, beatCoverageIssue, characterLimits, viewpointQuestion, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -2125,5 +2125,41 @@ describe('A scene plan without the fields nothing reads', () => {
     // And what a scene is actually judged on is still required.
     expect(() => validateChapterPlan({ ...run.chapters[0].plan, detailedScenes: [{ ...scene, outcome: '' }] }, run.spec)).toThrow();
     expect(() => validateChapterPlan({ ...run.chapters[0].plan, detailedScenes: [{ ...scene, keyMoments: [] }] }, run.spec)).toThrow();
+  });
+});
+
+describe('Whose eyes the scene is seen through', () => {
+  const scene = (extra: object) => ({
+    sceneId: 'scene-1', location: 'the kitchen', participants: ['Alfred', 'Bruce'], objective: 'feed him',
+    conflict: 'he will not eat', outcome: 'the tray stays', duration: 'an hour', mood: 'quiet',
+    keyMoments: ['the tray goes down', 'the refusal'], ...extra,
+  });
+  const withScenes = (scenes: object[]) => ({ ...plan(1), detailedScenes: scenes });
+  const spec = createBookSpec('A house at night', 3, { language: 'English' });
+
+  it('keeps a viewpoint the scene contains and refuses one it does not', () => {
+    expect(validateChapterPlan(withScenes([scene({ pov: 'Alfred' })]), spec).detailedScenes?.[0].pov).toBe('Alfred');
+    expect(() => validateChapterPlan(withScenes([scene({ pov: 'Clark' })]), spec))
+      .toThrow(/seen through "Clark", who is not among its participants/);
+    // One person in the room is not an ambiguity about whose eyes it is; it is a name written wrong.
+    const alone = validateChapterPlan(withScenes([scene({ participants: ['Alfred'], pov: 'Clark', conflictCarriedBy: 'solitude' })]), spec);
+    expect(alone.detailedScenes?.[0].pov).toBe('Alfred');
+    expect(alone.normalizations?.join(' ')).toContain('the only person present');
+    // Plans made before the field existed declare no viewpoint, and are not judged against one.
+    expect(validateChapterPlan(withScenes([scene({})]), spec).detailedScenes?.[0].pov).toBeUndefined();
+  });
+
+  it('gives the reviewer the declaration, and the writer the change', async () => {
+    const run = runWithPlans();
+    run.chapters[0].plan = validateChapterPlan(withScenes([
+      scene({ sceneId: 'scene-1', pov: 'Alfred' }),
+      scene({ sceneId: 'scene-2', pov: 'Bruce' }),
+    ]), spec);
+    expect(viewpointQuestion(run.chapters[0])).toContain('"pov":"Alfred"');
+    expect(viewpointQuestion(run.chapters[1])).toBe('');
+    let seen = '';
+    await writeScene(run, run.chapters[0], 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Prose.' }); });
+    expect(seen).toContain('seen through one person — Bruce');
+    expect(seen).toContain('The previous scene was seen through someone else (Alfred)');
   });
 });

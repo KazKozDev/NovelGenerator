@@ -203,9 +203,24 @@ CONTINUATION CONTRACT:
 3. Characters, locations, and tensions established in Chapter ${chapter.number - 1} are already known; do not re-introduce them from scratch.`
     : '';
 
+  // The plan says whose scene it is where it was asked; the first participant is the old guess, kept
+  // for the plans that were made before the field existed.
+  const focus = scene.pov || scene.participants?.[0];
   const viewpoint = isRussian
-    ? (scene.participants?.[0] ? `третье лицо (фокус на персонаже: ${scene.participants[0]})` : (run.spec.narrativeVoice || 'третье лицо'))
-    : (scene.participants?.[0] ? `third-person limited (focus on ${scene.participants[0]})` : (run.spec.narrativeVoice || 'third-person'));
+    ? (focus ? `третье лицо (фокус на персонаже: ${focus})` : (run.spec.narrativeVoice || 'третье лицо'))
+    : (focus ? `third-person limited (focus on ${focus})` : (run.spec.narrativeVoice || 'third-person'));
+  /**
+   * A scene holds one viewpoint, and the seam where a generated chapter loses it is not the scene
+   * break: a finished book spent a page in Alfred's kitchen and then continued, with no break and no
+   * name, inside Clark — "The mark on his throat was there", where "his" points at the wrong man.
+   * So the writer is told whose scene this is, told to stay in it, and where the viewpoint changes
+   * from the scene before, told to say whose it is now in the first sentence.
+   */
+  const previousPov = sceneIndex > 0 ? (chapter.plan.detailedScenes || [])[sceneIndex - 1]?.pov : undefined;
+  const changed = !!(focus && previousPov && previousPov !== focus);
+  const viewpointContract = !focus ? '' : isRussian
+    ? `\nТОЧКА ЗРЕНИЯ: вся сцена видна глазами одного человека — ${focus}. Не выходи из того, что ${focus} может видеть, слышать и знать; мысли и мотивы остальных доступны только по их словам и поступкам. Смена точки зрения внутри сцены — брак.${changed ? ` Предыдущая сцена шла от лица другого персонажа (${previousPov}), поэтому первое предложение должно назвать ${focus} по имени и сказать, где он и когда это происходит: читатель не должен догадываться, чьё это «он».` : ''}\n`
+    : `\nVIEWPOINT: the whole scene is seen through one person — ${focus}. Stay inside what ${focus} can see, hear and know; everyone else's thoughts and motives reach the page only through what they say and do. A viewpoint that changes inside a scene is a defect.${changed ? ` The previous scene was seen through someone else (${previousPov}), so the first sentence of this one names ${focus} and says where they are and when: the reader must never have to work out whose "he" or "she" this is.` : ''}\n`;
 
   const genreToneVoice = isRussian
     ? `Жанр: ${run.spec.genre || 'художественная проза'}, тональность: ${run.spec.tone || 'выразительная'}, повествовательный голос: ${run.spec.narrativeVoice || run.spec.writingStyle || 'литературный'}`
@@ -280,7 +295,7 @@ ${sceneShape ? `- Assigned scene shape: ${sceneShape}\n` : ''}${dialogueInstruct
 
 ФОРМАТ ОТВЕТА
 - Только художественный текст на русском языке.
-- Прошедшее время; точка зрения: ${viewpoint}.
+- Прошедшее время; точка зрения: ${viewpoint}.${viewpointContract}
 - Ориентировочный объём: ${sceneTarget} слов.
 - Никаких заголовков, списков, мета-комментариев, анализа, планов, пояснений.
 - Диалоги оформляй по правилам русской прямой речи.
@@ -390,6 +405,7 @@ through events available to them in this scene.
 
 Stay within the viewpoint character’s perceptions and interpretations.
 Do not state another character’s private thoughts or motives as fact.
+${viewpointContract}
 
 
 CONTINUITY

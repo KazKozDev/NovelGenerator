@@ -113,6 +113,15 @@ export interface DetailedScene {
    * allowed at most one 'clean', because a scene that costs nothing leaves the next one nothing.
    */
   outcomeType?: 'costly-success' | 'setback' | 'clean';
+  /**
+   * Whose eyes the scene is seen through. In a limited narrative voice one scene has one viewpoint,
+   * and the place a generated chapter loses it is inside a scene rather than at a scene break: a
+   * finished book spent a page in Alfred's kitchen and then, with no break and no name, continued in
+   * Clark's body — "The mark on his throat was there" — with "his" pointing at the wrong man.
+   * Declared here so the writer is told whose scene it is, and so a reviewer can be asked a question
+   * with an answer instead of being asked to notice.
+   */
+  pov?: string;
   /** Binding fresh-idea constraint for this scene (genre mix, setting card, ban). */
   freshConstraint?: string;
   /** One-line staging: positions, key objects within reach, and the physical conditions constraining action as the scene opens. */

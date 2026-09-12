@@ -316,6 +316,24 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
       normalizations.push(`${named} said its conflict is carried by speech with ${scene.participants.length === 1 ? `only ${JSON.stringify(scene.participants[0])}` : 'nobody'} in it; carried by solitude instead.`);
       scene.conflictCarriedBy = 'solitude';
     }
+    // Whose scene it is. A viewpoint the scene does not contain is a planner naming the wrong person,
+    // and the scene's own participants are the only correction available without inventing anyone —
+    // where the scene has exactly one person in it there is no ambiguity about whose eyes it is.
+    // Anything else is refused, because a viewpoint guessed at is worse than none declared.
+    if (scene.pov !== undefined) {
+      if (typeof scene.pov !== 'string' || !scene.pov.trim()) throw new Error(`${named} has a pov that is not a name: ${JSON.stringify(scene.pov)}.`);
+      scene.pov = scene.pov.trim();
+      const matches = (name: string) => name.trim().toLocaleLowerCase() === scene.pov.toLocaleLowerCase()
+        || name.trim().toLocaleLowerCase().includes(scene.pov.toLocaleLowerCase()) || scene.pov.toLocaleLowerCase().includes(name.trim().toLocaleLowerCase());
+      if (scene.participants.length && !scene.participants.some(matches)) {
+        if (scene.participants.length === 1) {
+          normalizations.push(`${named} is seen through ${JSON.stringify(scene.pov)}, who is not in it; read as ${JSON.stringify(scene.participants[0])}, the only person present.`);
+          scene.pov = scene.participants[0].trim();
+        } else {
+          throw new Error(`${named} is seen through ${JSON.stringify(scene.pov)}, who is not among its participants ${JSON.stringify(scene.participants)}. A scene is seen through someone who is in it.`);
+        }
+      }
+    }
     // The prompt has always listed the shapes a scene may take; this used to accept any non-empty
     // string, so the list was a suggestion. A near miss is normalized to the shape it names, and a
     // label that names no structure is a plan the planner has to make again.
@@ -522,9 +540,10 @@ export const chapterPlanSchema = {
       type: 'array', minItems: 1, maxItems: 8,
       items: {
         type: 'object',
-        required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy', 'shift', 'outcomeType'],
+        required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy', 'shift', 'outcomeType', 'pov'],
         properties: {
           narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 },
+          pov: text,
           conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] },
           sceneShape: { type: 'string', enum: [...SCENE_SHAPES] },
           shift: {
@@ -676,7 +695,7 @@ export function copyOfEarlierScene(scene: string, earlier: string[] = []): boole
  * happens to contain the word scene, or a number, or a colon, is left alone.
  */
 const apparatusMarkers: RegExp[] = [
-  /(?:sceneId|keyMoments|narrativeWeight|conflictCarriedBy|sceneShape|outcomeType|freshConstraint|detailedScenes|targetWordCount|openingHook|chapterEnding|plotAdvancement|characterDevelopmentFocus|emotionalToneTension|connectionToNextChapter|timelineIndicators|rhythmPacing|tensionLevel|endingDevelopment|avoidReplaying|sceneBreakdown)/,
+  /(?:sceneId|keyMoments|narrativeWeight|conflictCarriedBy|pov|sceneShape|outcomeType|freshConstraint|detailedScenes|targetWordCount|openingHook|chapterEnding|plotAdvancement|characterDevelopmentFocus|emotionalToneTension|connectionToNextChapter|timelineIndicators|rhythmPacing|tensionLevel|endingDevelopment|avoidReplaying|sceneBreakdown)/,
   /^[*#>\s]*(?:scene|chapter|beat|act|part|\u0441\u0446\u0435\u043d\u0430|\u0433\u043b\u0430\u0432\u0430|\u044d\u043f\u0438\u0437\u043e\u0434|\u0447\u0430\u0441\u0442\u044c)\s*[\u2116#]?\s*\d+\s*[:.)\u2013\u2014-]/i,
   /^[*#>\s]*(?:pov|target (?:scene )?length|word count|narrative weight|scene shape|staging|objective|outcome|key moments?|\u0446\u0435\u043b\u044c \u0441\u0446\u0435\u043d\u044b|\u043a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u043c\u043e\u043c\u0435\u043d\u0442\u044b|\u043c\u0438\u0437\u0430\u043d\u0441\u0446\u0435\u043d\u0430|\u0438\u0441\u0445\u043e\u0434 \u0441\u0446\u0435\u043d\u044b)\s*[:\u2014-]/i,
   /^[\[(](?:note|todo|placeholder|\u043f\u0440\u0438\u043c\.|\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435|\u0437\u0430\u043c\u0435\u0442\u043a\u0430)/i,
@@ -1839,6 +1858,7 @@ Top-level fields:
     },
     "outcomeType": "costly-success",
     "narrativeWeight": 3,
+    "pov": "The one character whose eyes this scene is seen through",
     "conflictCarriedBy": "speech",
     "sceneShape": "negotiation",
     "freshConstraint": "",
@@ -1850,6 +1870,14 @@ Use sequential sceneId values: scene-1, scene-2, and so on.
 narrativeWeight must be an integer from 1 to 5.
 Allocate it by dramatic importance and required development,
 not by action intensity.
+
+pov names one participant of the scene, and the scene stays
+inside what that person can see, hear and know. Where the
+narrative voice is limited, a change of viewpoint happens at a
+scene break and never inside a scene. Prefer to hold one
+viewpoint for the whole chapter; change it only where the
+chapter has to show something its viewpoint character is not
+present for.
 
 conflictCarriedBy must be one of:
 speech, action, solitude.
