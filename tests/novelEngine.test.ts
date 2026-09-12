@@ -6,7 +6,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { apparatusResidue, castNotInOutline, compactPlanningContext, createRun, looseJoins, NovelEngine, nextSweep, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon, standingConditions } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { analyseChapter, beatCoverageIssue, characterLimits, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -320,6 +320,27 @@ describe('A book is planned to cost something and to win the ending with what it
     // A book planned before arcs declared a cost declares none anywhere, and stays readable.
     const legacy = book({ chapterArcs: [arc(1, ''), arc(2, ''), arc(3, '')] });
     expect(validateBlueprint(legacy, spec).chapterArcs).toHaveLength(3);
+  });
+
+  it('keeps what a character cannot do, and asks the reviewer about it by name', () => {
+    const limited = book({ characters: [
+      { name: 'Thorne', description: 'A guarded archivist.', limits: ['will not let a death buy her the letter', '  ', 'will not let a death buy her the letter', 'cannot lift the drawer alone'] },
+      { name: 'The clerk', description: 'Keeps the register.', limits: [] },
+    ] });
+    const blueprint = validateBlueprint(limited, spec);
+    // Blank and duplicate entries are not limits; a character the design gave none carries none.
+    expect(blueprint.characters.Thorne.limits).toEqual(['will not let a death buy her the letter', 'cannot lift the drawer alone']);
+    expect(blueprint.characters['The clerk'].limits).toBeUndefined();
+    const run = runWithPlans();
+    run.blueprint = blueprint;
+    const asked = characterLimits(run, run.chapters[0]);
+    expect(asked).toContain('cannot lift the drawer alone');
+    // The clerk is not in the chapter's scenes and has no limits; neither reaches the prompt.
+    expect(asked).not.toContain('The clerk');
+    // A book planned before the field existed is not judged against limits nobody wrote.
+    const legacy = createRun(spec, provider);
+    legacy.blueprint = validateBlueprint(book(), spec);
+    expect(characterLimits(legacy, run.chapters[0])).toBe('');
   });
 
   it('reads a schedule the model quoted as strings, and stores it as numbers', () => {
@@ -962,8 +983,10 @@ describe('First-draft prose context', () => {
     expect(context).not.toContain('UNACCEPTED_SECRET');
     expect(context).not.toContain('FUTURE_SECRET');
     // Two excerpts of at most 3000 characters each, plus the fixed craft and manuscript contract:
-    // the number guards the excerpts against growing into the whole book, not the instructions.
-    expect(context.length).toBeLessThan(13500);
+    // the number guards the excerpts against growing into the whole book, not the instructions. It
+    // moved from 13500 when the contract took on the two-sentence negation and the character limits;
+    // the excerpts it guards did not change, and what the instructions cost is visible in the diff.
+    expect(context.length).toBeLessThan(14000);
   });
 
   it('gives the next scene the events and the last words, not every finished scene in full', async () => {

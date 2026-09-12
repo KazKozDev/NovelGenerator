@@ -105,10 +105,15 @@ export function validateBlueprint(value: any, spec: BookSpec): BookBlueprint {
   const characters: Record<string, Character> = {};
   for (const character of value.characters) {
     if (typeof character.name !== 'string' || !character.name.trim() || typeof character.description !== 'string' || !character.description.trim() || characters[character.name]) throw new Error('Invalid or duplicate character design.');
+    // Limits are read where they are given and never invented here: a blueprint saved before the
+    // field existed has no limits, which is not the same as a character who has none.
+    const limits: string[] = Array.isArray(character.limits)
+      ? [...new Set((character.limits as unknown[]).filter((limit): limit is string => typeof limit === 'string' && !!limit.trim()).map(limit => limit.trim()))].slice(0, 6)
+      : [];
     characters[character.name] = {
       name: character.name, description: character.description, first_appearance: 1,
       status: 'not established', location: 'not established', emotional_state: 'not established',
-      relationships: {}, development: [],
+      relationships: {}, development: [], ...(limits.length ? { limits } : {}),
     };
   }
   const ids = new Set<string>();
@@ -378,7 +383,10 @@ export function compactPlanningContext(run: NovelRun) {
     ...(blueprint.climax ? { climax: blueprint.climax } : {}),
     ...(blueprint.majorTurns?.length ? { majorTurns: blueprint.majorTurns } : {}),
     ...(blueprint.chapterArcs?.length ? { chapterArcs: blueprint.chapterArcs } : {}),
-    characters: Object.fromEntries(Object.entries(blueprint.characters).map(([name, character]) => [name, character.description])),
+    // The limits travel with the description: a plan that schedules a rescue only a man who can fly
+    // could make hands the writer a scene that cannot be written without breaking the character.
+    characters: Object.fromEntries(Object.entries(blueprint.characters).map(([name, character]) =>
+      [name, character.limits?.length ? { description: character.description, limits: character.limits } : character.description])),
     promises: blueprint.promises,
     // What earlier chapters made binding. A planner that never sees these plans the chapter that
     // walks through one of them, and the prose then does exactly what it was planned to do.
@@ -463,7 +471,7 @@ export const blueprintSchema = {
         additionalProperties: false,
       },
     },
-    characters: { type: 'array', minItems: 1, items: { type: 'object', required: ['name', 'description'], properties: { name: text, description: text }, additionalProperties: false } },
+    characters: { type: 'array', minItems: 1, items: { type: 'object', required: ['name', 'description', 'limits'], properties: { name: text, description: text, limits: { type: 'array', items: text } }, additionalProperties: false } },
     promises: {
       type: 'array', minItems: 1,
       items: {
@@ -1341,7 +1349,8 @@ Return one JSON object with exactly these top-level keys:
   "characters": [
     {
       "name": "Exact established name",
-      "description": "Desire, relevant need or tension, contradiction, independent agency, personal stakes, speech habits, and relationships; proportionate to the character’s importance"
+      "description": "Desire, relevant need or tension, contradiction, independent agency, personal stakes, speech habits, and relationships; proportionate to the character’s importance",
+      "limits": ["What this person cannot do and what they will not do, one per entry, at most four: the physical ceiling their body or resources impose, and the standing refusal they would have to break themselves to cross. Write what is established for this character in this story, not a general virtue: \"cannot outrun a car\", \"will not kill, and will not let a death buy him an advantage\", \"cannot be hurt by anything a human hand can do\". An empty list where the story establishes none."]
     }
   ],
   "promises": [

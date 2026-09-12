@@ -8,6 +8,19 @@ export interface Character {
   relationships_text?: string; // For storing raw text from LLM if needed
   location: string; // Last known location
   emotional_state: string;
+  /**
+   * What this character cannot do and what they will not do — the two together, because on the page
+   * they fail the same way. A reviewer of a finished book listed them in one breath: an ordinary man
+   * tearing an invulnerable one's suit with his fingers, human teeth leaving a mark that lasts days,
+   * a man who does not kill using a living person to stop a rifle, and a character too badly hurt to
+   * drive taking the wheel two paragraphs after the prose said he could not.
+   *
+   * Physical and standing both: "cannot lift more than a strong man can", "will not kill, and will
+   * not let a death happen to buy himself an advantage". The prose may break one only by paying for
+   * it on the page — a stated cost, a changed condition, a choice the character makes and answers
+   * for. Breaking one silently is the defect.
+   */
+  limits?: string[];
 }
 
 export enum ChapterGenerationStage {

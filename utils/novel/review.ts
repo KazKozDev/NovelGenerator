@@ -695,6 +695,29 @@ export function citedOnlyTheOpening(content: string, issues: ReviewIssue[]): boo
   return located.length >= 3 && Math.max(...located) < 0.5;
 }
 
+/**
+ * What the people in this chapter cannot do and will not do, put in front of the reviewer as its own
+ * question.
+ *
+ * A finished book was read by someone who had not written it, and four of their findings were one
+ * finding: an ordinary man tearing an invulnerable one's suit with his fingers, human teeth leaving a
+ * mark that lasted days, a man established as never killing using a living person to stop a rifle,
+ * and a character the prose had just called unable to drive putting the car in gear. Every one of
+ * them passed twenty other checks, because nothing anywhere held what a character is not able to do.
+ *
+ * Asked only of the characters this chapter's plan actually puts in a scene, and only where the
+ * blueprint gave them limits — a book planned before the field existed is not judged against limits
+ * nobody wrote.
+ */
+export function characterLimits(run: NovelRun, chapter: ChapterRecord): string {
+  const present = new Set((chapter.plan.detailedScenes || []).flatMap(scene => scene.participants || []).map(name => name.toLowerCase()));
+  const listed = Object.values(run.blueprint?.characters || {}).filter(person => person.limits?.length
+    && (!present.size || [...present].some(name => name.includes(person.name.toLowerCase()) || person.name.toLowerCase().includes(name))));
+  if (!listed.length) return '';
+  return `LIMITS, established for these people by the book's own design:\n${JSON.stringify(listed.map(person => ({ name: person.name, limits: person.limits })))}\n`
+    + `Report as 'character' any passage where one of them does what their limits say they cannot do or would not do, and the prose does not pay for it: a capability that appears because the sentence needed it, a standing refusal crossed without the character choosing it and answering for it, an injury or incapacity the chapter itself established and then ignored. Paying for it on the page is not a defect — a limit broken deliberately, at a cost the prose shows, is a scene. A limit the chapter has no occasion to touch is not a defect either, and most chapters touch none.\n`;
+}
+
 export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, version: ChapterVersion, llm: NovelLLM, retry = '', nli?: NLIScorer): Promise<ReviewReport> {
   if (!version.content.trim()) return { validationVersion: 2, status: 'failed', checkedRevision: version.revision, issues: [], error: 'Chapter prose is empty.' };
   try {
@@ -703,7 +726,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `WHAT THE PREVIOUS ACCEPTED VERSION ESTABLISHED (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${JSON.stringify(established(previous))}\nSENTENCES THAT VERSION HAD AND THIS ONE DOES NOT — a revision may cut, but not lose a scene:\n${JSON.stringify(sentencesLost(previous.content, version.content))}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\n${obligations.length ? `WHAT THIS CHAPTER UNDERTOOK, and what a general review will not think to ask: answer each of these against the prose, and report the ones the chapter does not deliver — the move that is reported instead of performed, the failure softened into a recovery, the cost named instead of paid, the promise the page does not actually establish. A delivered obligation needs no finding.\n${obligations.map((item, index) => `${index + 1}. ${item}`).join('\n')}\n` : ''}Check for a beat played out twice — a confrontation, refusal, discovery or admission that reaches its point, ends, and is staged again ('pacing' or 'plot'). Check causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition, distinct dialogue voices, POV/tense/style/audience, scene completeness,${REVIEW_COHERENCE} intentional pacing and emotional hooks.
 KNOWLEDGE: a character must not state or rely on a specific fact the story has not given them. A guess, a doubt, a wrong hypothesis, a reaction to something directly perceived, and anything the author contract above already establishes are not leaks. When you report one, the repair you ask for must take the knowledge away — turn the statement into a guess, a question, or cut it. Never ask for a source to be invented for it: a revision may not add memory or backstory, so that instruction cannot be carried out and the same finding returns every round until the chapter runs out of budget.
 ALSO: an action hedged with two alternative reasons ('plot' or 'voice'); narration or dialogue explaining subtext and moral takeaways instead of showing them ('voice' or 'character'); a prominent object handled and given no function ('plot'); a character repeating one thought in new words ('dialogue').
-CONSTRAINTS: report as 'canon' a passage where this chapter acts as though one of the standing constraints listed in the canon above were gone — a route taken that was closed, a person acting without what they said they required, a deadline passed without consequence — unless this chapter's own prose takes the constraint away on the page. Lifting a constraint is an event; assuming it away is the defect. A constraint this chapter has no occasion to touch is not a defect.
+${characterLimits(run, chapter)}CONSTRAINTS: report as 'canon' a passage where this chapter acts as though one of the standing constraints listed in the canon above were gone — a route taken that was closed, a person acting without what they said they required, a deadline passed without consequence — unless this chapter's own prose takes the constraint away on the page. Lifting a constraint is an event; assuming it away is the defect. A constraint this chapter has no occasion to touch is not a defect.
 PROMISES: report a missing setup or payoff only for a promise scheduled for this chapter; one due later is not unresolved here. A revelation this chapter makes that an earlier chapter did not prepare is a defect of the book, not of this chapter — nothing written here can plant a clue in a chapter already finished, and the whole-book review checks that. The final chapter must fulfil the requested ending without a forced next-chapter hook.
 These are directions to look in, not a list to fill: most will be clean in most chapters, and one defect per dimension is a review inventing them.
 ${issueFormat}${retry}`;
