@@ -139,7 +139,9 @@ export async function generateTextStream(
   onChunk: (chunk: string) => void,
   systemInstruction?: string,
   temperature: number = 0.7,
-  overrideConfig?: LLMProviderConfig
+  overrideConfig?: LLMProviderConfig,
+  schema?: object,
+  maxTokens?: number,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
   const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
@@ -164,10 +166,13 @@ export async function generateTextStream(
       wrappedOnChunk,
       systemInstruction,
       config.ollamaModel,
-      config.ollamaEndpoint
+      config.ollamaEndpoint,
+      schema,
+      temperature,
+      maxTokens,
     );
   } else {
-    result = await generateGeminiTextStream(prompt, wrappedOnChunk, systemInstruction, temperature, undefined, undefined, config.geminiModel);
+    result = await generateGeminiTextStream(prompt, wrappedOnChunk, systemInstruction, temperature, undefined, undefined, config.geminiModel, schema, maxTokens);
   }
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);

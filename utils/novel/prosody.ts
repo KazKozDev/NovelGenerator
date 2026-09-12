@@ -239,6 +239,53 @@ export function newlyBroken(before: string, after: string): string[] {
   return brokenParagraphs(after).filter(paragraph => !had.has(paragraph));
 }
 
+/**
+ * Words that point backwards without naming what they point at. A sentence opening with one of these
+ * is a sentence leaning on the one in front of it.
+ *
+ * Bare personal pronouns are deliberately absent. "He" opens a third of the paragraphs in a novel
+ * about two men and still resolves two sentences back; flagging it would refuse every honest cut.
+ * These are the openers that resolve to the immediately preceding sentence or to nothing at all.
+ */
+const anaphoricOpeners = /^\s*(?:["“«]?\s*)?(?:it|this|that|these|those|then|there|such|so|instead|again|both|neither|either|the other|the same|the sound|the noise|это|этот|эта|эти|тот|та|те|тогда|там|такой|такая|такое|такие|затем|потом|поэтому|оттого|вместо|снова|оба|обе)\b/i;
+
+/**
+ * Sentences a revision left leaning on something that is no longer in front of them.
+ *
+ * The deletion pass cuts by sentence number and glues the remainder; nothing reads the glue. A live
+ * chapter came back with "Clark's back arched against the parapet. It was not Bruce's wrist." — the
+ * second sentence untouched, its antecedent cut away, and every check we had passed it, because the
+ * grammar is perfect and the meaning is gone. newlyBroken reads for damaged syntax and finds nothing
+ * here.
+ *
+ * The rule is narrow on purpose. A sentence is reported only when it survived the revision word for
+ * word, opens by pointing backwards, and now has a different sentence in front of it than it had
+ * before. Freshly written prose is never reported, however it opens: a new "It was a thin, high
+ * tone" arrives with the sentence that earns it, and both are new. What is reported is an old
+ * sentence above a new hole.
+ */
+export function newlyOrphaned(before: string, after: string): string[] {
+  const split = (text: string) => text.split(/(?<=[.!?…])\s+/).map(item => item.trim()).filter(Boolean);
+  const previous = split(before);
+  const current = split(after);
+  if (!previous.length || !current.length) return [];
+  const predecessor = (list: string[]) => {
+    const map = new Map<string, string>();
+    list.forEach((sentence, index) => { if (!map.has(sentence)) map.set(sentence, index ? list[index - 1] : ''); });
+    return map;
+  };
+  const had = predecessor(previous);
+  const now = predecessor(current);
+  const orphans: string[] = [];
+  for (const [sentence, neighbour] of now) {
+    if (!anaphoricOpeners.test(sentence)) continue;
+    if (!had.has(sentence)) continue; // Newly written: it arrives with whatever earns it.
+    if (had.get(sentence) === neighbour) continue; // Same ground under it as before.
+    orphans.push(sentence);
+  }
+  return orphans;
+}
+
 export const dialogueFloor = 0.12;
 
 /** Direct speech, not reported speech: the paragraph opens with a dash or an opening quotation mark. */
@@ -408,13 +455,20 @@ export async function repetitionIssues(
   // A cross-encoder that cannot load — no weights cached, no network to fetch them — is a reader who
   // did not come, not a verdict of "no repetition". The cosine then decides alone, at the threshold
   // its own distribution asks for, and the nominations below that line go back to being nothing.
+  // We prioritize the most suspicious candidate pairs (highest cosine similarity) and cap at 8 pairs,
+  // preventing 40+ sequential WebGPU forward passes from hanging the browser thread for minutes.
+  const prioritized = rerank && candidates.length > 8
+    ? [...candidates].sort((a, b) => b.score - a.score).slice(0, 8)
+    : candidates;
+  const targetCandidates = candidates.filter(c => prioritized.includes(c));
+
   let verdicts: number[] | undefined;
-  if (rerank && candidates.length) {
-    try { verdicts = await rerank(candidates.map(item => [item.paragraph, item.source.paragraph])); }
+  if (rerank && targetCandidates.length) {
+    try { verdicts = await rerank(targetCandidates.map(item => [item.paragraph, item.source.paragraph])); }
     catch { verdicts = undefined; }
   }
   const crossed: Evidence[] = [];
-  candidates.forEach((candidate, index) => {
+  targetCandidates.forEach((candidate, index) => {
     const repeated = verdicts ? verdicts[index] >= rerankRepetitionScore : candidate.score >= thresholds.crossChapter;
     if (!repeated) return;
     crossed.push({ chapter, revision: version.revision, quote: candidate.paragraph });

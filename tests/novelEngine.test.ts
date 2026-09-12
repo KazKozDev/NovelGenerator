@@ -4,9 +4,9 @@ import { literaryIntentForScene, planForScene } from '../utils/novel/writer';
 import { describe, expect, it, vi } from 'vitest';
 import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '../utils/novel/contracts';
 import { plannedBeatsFrom } from './beatStub';
-import { apparatusResidue, compactPlanningContext, createRun, NovelEngine, nextSweep, oneDistributedAtATime, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
-import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, copiedFromEarlier, generateProse, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { apparatusResidue, castNotInOutline, compactPlanningContext, createRun, looseJoins, NovelEngine, nextSweep, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
+import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon, standingConditions } from '../utils/novel/storyState';
+import { analyseChapter, beatCoverageIssue, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -49,7 +49,8 @@ function plan(number: number) {
   };
 }
 function blueprint(count: number) {
-  return { centralConflict: 'Recover the letter at a cost', protagonistChange: 'Accept responsibility', endingPayoff: 'Pay the price', characters: [{ name: 'Thorne', description: 'A guarded archivist whose clipped speech hides guilt.' }], promises: [{ id: 'letter', description: 'The letter must be recovered at a price', setupChapter: 1, payoffChapter: count, required: true }] };
+  return { centralConflict: 'Recover the letter at a cost', protagonistChange: 'Accept responsibility', endingPayoff: 'Pay the price', characters: [{ name: 'Thorne', description: 'A guarded archivist whose clipped speech hides guilt.' }], promises: [{ id: 'letter', description: 'The letter must be recovered at a price', setupChapter: 1, payoffChapter: count, required: true }],
+    climax: { decisiveAction: 'Thorne takes the letter back and gives up the post she kept it for.', preparedBy: ['letter'] } };
 }
 function runWithPlans(count = 3): NovelRun {
   const run = createRun(createBookSpec('Recover a letter', count, { targetWordsPerChapter: 300, language: 'English' }), provider);
@@ -76,7 +77,7 @@ function fixtureLLM(count = 3): NovelLLM {
     const literary = literaryResponse(prompt, system);
     if (literary !== undefined) return literary;
     if (system.includes('novel architect')) return JSON.stringify({ outline: 'Thorne recovers the letter and accepts the cost.' });
-    if (system.includes('explicit novel blueprint')) return JSON.stringify(blueprint(count));
+    if (system.includes('novel blueprint')) return JSON.stringify(blueprint(count));
     if (system.includes('plan causally')) return JSON.stringify(plan(Number(prompt.match(/Plan chapter (\d+)/)?.[1])));
     if (system.includes('single prose writer')) return JSON.stringify({ prose: prose(Number(prompt.match(/CHAPTER (\d+) OF/)?.[1])) });
     if (system.includes('continuity and developmental') || system.includes('complete novel through')) return '{"issues":[]}';
@@ -84,7 +85,7 @@ function fixtureLLM(count = 3): NovelLLM {
       const number = Number(prompt.match(/chapter=(\d+)/)?.[1]);
       const revision = Number(prompt.match(/revision=(\d+)/)?.[1]);
       const evidence = { chapter: number, revision, quote: `Thorne opened door ${number}.` };
-      return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence })), summary: `Thorne opened door ${number} and paid the price.`, facts: [{ id: `door-${number}`, subject: 'Thorne', predicate: 'location', value: `door ${number}`, knownBy: ['Thorne'], evidence }], events: [{ id: `event-${number}`, description: 'Thorne chose to act', consequences: ['Paid a price'], evidence }], promises: number === 1 ? [{ promiseId: 'letter', kind: 'setup', evidence }] : number === count ? [{ promiseId: 'letter', kind: 'payoff', evidence }] : [] });
+      return JSON.stringify({ conditions: [], beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence })), summary: `Thorne opened door ${number} and paid the price.`, facts: [{ id: `door-${number}`, subject: 'Thorne', predicate: 'location', value: `door ${number}`, knownBy: ['Thorne'], evidence }], events: [{ id: `event-${number}`, description: 'Thorne chose to act', consequences: ['Paid a price'], evidence }], promises: number === 1 ? [{ promiseId: 'letter', kind: 'setup', evidence }] : number === count ? [{ promiseId: 'letter', kind: 'payoff', evidence }] : [] });
     }
     if (system.includes('continuity record')) {
       const written = prompt.split('AS WRITTEN:\n')[1] || '';
@@ -292,6 +293,80 @@ describe('Redundancy repair', () => {
   });
 });
 
+describe('A book is planned to cost something and to win the ending with what it prepared', () => {
+  const spec = createBookSpec('Recover a letter', 3);
+  const arc = (chapter: number, cost: string) => ({
+    chapter, cost, structuralRole: 'develop', entryState: 'in the archive', causalLink: 'after the refusal',
+    protagonistStrategy: 'press the clerk', development: 'the refusal hardens', internalDevelopment: 'doubt',
+    chapterChange: 'the letter moves', exitState: 'the drawer is locked', endingFunction: 'consequence',
+    pacingPriority: 'the refusal', setupPromiseIds: [], payoffPromiseIds: [],
+  });
+  const book = (extra: object = {}) => ({
+    centralConflict: 'Recover the letter at a cost', protagonistChange: 'Accept responsibility', endingPayoff: 'Pay the price',
+    characters: [{ name: 'Thorne', description: 'A guarded archivist.' }],
+    promises: [
+      { id: 'letter', description: 'The letter must be recovered at a price', setupChapter: 1, payoffChapter: 3, required: true },
+      { id: 'key', description: 'The clerk keeps a second key', setupChapter: 3, payoffChapter: 3, required: false },
+    ],
+    climax: { decisiveAction: 'Thorne takes the letter back and loses the post she kept it for.', preparedBy: ['letter'] },
+    ...extra,
+  });
+
+  it('allows one chapter that costs nothing, and refuses a book of them', () => {
+    const one = book({ chapterArcs: [arc(1, 'her place on the register'), arc(2, ''), arc(3, 'the post itself')] });
+    expect(validateBlueprint(one, spec).chapterArcs?.[1].cost).toBe('');
+    const two = book({ chapterArcs: [arc(1, 'her place on the register'), arc(2, ''), arc(3, '')] });
+    expect(() => validateBlueprint(two, spec)).toThrow(/cost the protagonist nothing/);
+    // A book planned before arcs declared a cost declares none anywhere, and stays readable.
+    const legacy = book({ chapterArcs: [arc(1, ''), arc(2, ''), arc(3, '')] });
+    expect(validateBlueprint(legacy, spec).chapterArcs).toHaveLength(3);
+  });
+
+  it('reads a schedule the model quoted as strings, and stores it as numbers', () => {
+    // Gemini returns "4" for an integer field often enough that a live book died on it: the schedule
+    // was right and the type was wrong, and every === against a chapter number downstream needs the
+    // number, so the coercion happens here or not at all.
+    const quoted = book({
+      promises: [
+        { id: 'letter', description: 'The letter must surface', setupChapter: '1', payoffChapter: '3', required: 'true' },
+      ],
+      climax: { decisiveAction: 'Thorne gives up the post.', preparedBy: ['letter'] },
+    });
+    const blueprint = validateBlueprint(quoted, spec);
+    expect(blueprint.promises[0]).toMatchObject({ setupChapter: 1, payoffChapter: 3, required: true });
+  });
+
+  it('says which promise is wrong and how, because that message is what the retry works from', () => {
+    const late = book({ promises: [{ id: 'letter', description: 'x', setupChapter: 1, payoffChapter: 9, required: true }], climax: { decisiveAction: 'a', preparedBy: ['letter'] } });
+    expect(() => validateBlueprint(late, spec)).toThrow(/pays off in chapter 9, but this book ends at chapter 3/);
+    const backwards = book({ promises: [{ id: 'letter', description: 'x', setupChapter: 3, payoffChapter: 1, required: true }], climax: { decisiveAction: 'a', preparedBy: ['letter'] } });
+    expect(() => validateBlueprint(backwards, spec)).toThrow(/before it is set up in chapter 3/);
+    const open = book({ promises: [{ id: 'letter', description: 'x', setupChapter: 1, payoffChapter: null, required: true }], climax: { decisiveAction: 'a', preparedBy: ['letter'] } });
+    expect(() => validateBlueprint(open, spec)).toThrow(/Only a promise with required=false may be left open/);
+    const twin = book({ promises: [
+      { id: 'letter', description: 'x', setupChapter: 1, payoffChapter: 3, required: true },
+      { id: 'letter', description: 'y', setupChapter: 1, payoffChapter: 3, required: false },
+    ], climax: { decisiveAction: 'a', preparedBy: ['letter'] } });
+    expect(() => validateBlueprint(twin, spec)).toThrow(/share the id "letter"/);
+  });
+
+  it('refuses an ending won by something the book never set up', () => {
+    expect(validateBlueprint(book(), spec).climax?.preparedBy).toEqual(['letter']);
+    const invented = book({ climax: { decisiveAction: 'A stranger arrives with a duplicate.', preparedBy: ['duplicate'] } });
+    expect(() => validateBlueprint(invented, spec)).toThrow(/not one of this book's promises/);
+    // Declared, but first established in the chapter that spends it: the book handing itself the means.
+    const late = book({ climax: { decisiveAction: 'Thorne opens the drawer with the second key.', preparedBy: ['key'] } });
+    expect(() => validateBlueprint(late, spec)).toThrow(/not set up until chapter 3/);
+  });
+
+  it('refuses a book that will not say how it ends', () => {
+    const { climax, ...silent } = book();
+    expect(() => validateBlueprint(silent, spec)).toThrow(/what decisive action ends the book/);
+    const unprepared = book({ climax: { decisiveAction: 'Thorne takes the letter back.', preparedBy: [] } });
+    expect(() => validateBlueprint(unprepared, spec)).toThrow(/name the promises that prepare it/);
+  });
+});
+
 describe('A chapter is planned against the book', () => {
   it('rejects a participant corrupted with generated prose', () => {
     const valid = runWithPlans(3).chapters[0].plan;
@@ -401,6 +476,57 @@ describe('A chapter is planned against the book', () => {
     expect(run.chapters.every(chapter => chapter.planningNote === undefined)).toBe(true);
   });
 
+  it('refuses a scene shape that names no dramatic structure, and keeps the one that does', () => {
+    const known = plan('Shape', [{ ...scene('s1', ['Thorne'], 'solitude'), sceneShape: 'negotiation' }]);
+    expect(validateChapterPlan(known, spec).detailedScenes[0].sceneShape).toBe('negotiation');
+    // A near miss names a shape the list has; it is worth normalizing, not worth losing a plan over.
+    const alias = plan('Alias', [{ ...scene('s1', ['Thorne'], 'solitude'), sceneShape: 'Interrogation' }]);
+    expect(validateChapterPlan(alias, spec).detailedScenes[0].sceneShape).toBe('investigation');
+    const invented = plan('Invented', [{ ...scene('s1', ['Thorne'], 'solitude'), sceneShape: 'a quiet talk' }]);
+    expect(() => validateChapterPlan(invented, spec)).toThrow(/not one of/);
+  });
+
+  it('allows a chapter one scene that costs nothing, and no more', () => {
+    const one = plan('One clean', [
+      { ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'clean' },
+      { ...scene('s2', ['Thorne'], 'action'), outcomeType: 'setback' },
+    ]);
+    expect(validateChapterPlan(one, spec).title).toBe('One clean');
+    const two = plan('Two clean', [
+      { ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'clean' },
+      { ...scene('s2', ['Thorne'], 'action'), outcomeType: 'clean' },
+    ]);
+    expect(() => validateChapterPlan(two, spec)).toThrow(/at most one scene/i);
+    const invented = plan('Invented', [{ ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'happy' }]);
+    expect(() => validateChapterPlan(invented, spec)).toThrow(/outcomeType must be one of/);
+  });
+
+  it('does not let a clean ending run across the chapter break', () => {
+    const first = validateChapterPlan(plan('First', [{ ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'clean' }]), spec);
+    const second = plan('Second', [{ ...scene('s2', ['Thorne'], 'action'), outcomeType: 'clean' }]);
+    expect(() => validateChapterPlan(second, spec, [first])).toThrow(/already ended in a clean success/);
+    const costly = plan('Second', [{ ...scene('s2', ['Thorne'], 'action'), outcomeType: 'costly-success' }]);
+    expect(validateChapterPlan(costly, spec, [first]).title).toBe('Second');
+  });
+
+  it('refuses a shift that ends where it began, and a chapter that declares one for some scenes only', () => {
+    const moving = (from: string, to: string) => ({ register: 'knowledge', from, to });
+    const good = plan('Moves', [
+      { ...scene('s1', ['Thorne'], 'solitude'), shift: moving('believes the clerk is honest', 'has seen the clerk take the money') },
+      { ...scene('s2', ['Thorne'], 'action'), shift: moving('has seen the clerk take the money', 'has told no one and cannot prove it') },
+    ]);
+    expect(validateChapterPlan(good, spec).detailedScenes[1].shift.register).toBe('knowledge');
+    const still = plan('Still', [{ ...scene('s1', ['Thorne'], 'solitude'), shift: moving('afraid', 'Afraid ') }]);
+    expect(() => validateChapterPlan(still, spec)).toThrow(/ends where it began/);
+    const partial = plan('Partial', [
+      { ...scene('s1', ['Thorne'], 'solitude'), shift: moving('outside the archive', 'inside it') },
+      scene('s2', ['Thorne'], 'action'),
+    ]);
+    expect(() => validateChapterPlan(partial, spec)).toThrow(/or none may/);
+    const madeUp = plan('Made up', [{ ...scene('s1', ['Thorne'], 'solitude'), shift: { register: 'vibes', from: 'a', to: 'b' } }]);
+    expect(() => validateChapterPlan(madeUp, spec)).toThrow(/shift register must be one of/);
+  });
+
   it('judges no plan made before scenes declared how their conflict is carried', () => {
     const legacy = plan('Legacy', [scene('s1', ['Thorne', 'the clerk']), scene('s2', ['Thorne', 'the clerk'])]);
     expect(validateChapterPlan(legacy, spec).title).toBe('Legacy');
@@ -470,15 +596,20 @@ describe('A review is allowed to find nothing', () => {
     let seen = '';
     await reviewChapter(run, run.chapters[0], candidate, async prompt => { seen = prompt; return '{"issues":[]}'; });
     // A live review flagged a sentence lifted from the author's own premise as a knowledge leak.
-    expect(seen).toContain('the premise in the author contract above is established ground');
-    expect(seen).toContain('repeating it is never a violation');
-    // A live review called an explicitly unplaceable memory a knowledge leak, quoting the sentence
-    // that said it could not take the form of a concrete event.
-    expect(seen).toContain('a memory or sensation the prose itself marks as unformed, unplaced or unrecognized is not knowledge');
-    expect(seen).toContain('requires a smoother transition');
+    expect(seen).toContain('anything the author contract above already establishes are not leaks');
     // A final chapter stalled for four revisions on a revelation the earlier chapters had not planted:
     // nothing it can write will plant a clue in a chapter that is already accepted.
-    expect(seen).toContain('is a defect of the book and not of this chapter');
+    expect(seen).toContain('is a defect of the book, not of this chapter');
+  });
+
+  it('keeps the scars it stopped arguing in words, as rules that run every time', () => {
+    const leak = (quote: string) => ({ id: 'k', category: 'knowledge' as const, severity: 'critical' as const, description: 'Uses knowledge the story has not given.', instruction: 'Remove it.', evidence: [{ chapter: 1, revision: 1, quote }] });
+    // The prompt used to spend 1800 characters arguing these two cases. They are checked here instead.
+    expect(demoteHedgedKnowledge([leak('She could not place the smell, only that it belonged to somewhere else.')])[0].severity).toBe('minor');
+    expect(demoteHedgedKnowledge([leak('Он не мог вспомнить, где слышал это имя.')])[0].severity).toBe('minor');
+    const wish = (description: string) => ({ id: 'w', category: 'pacing' as const, severity: 'major' as const, description, instruction: 'Rework it.', evidence: [{ chapter: 1, revision: 1, quote: 'q' }] });
+    expect(demoteSuggestions([wish('The scene requires a smoother transition into the next.')])[0].severity).toBe('minor');
+    expect(demoteSuggestions([wish('The passage risks breaking immersion.')])[0].severity).toBe('minor');
   });
 
   it('discards a finding whose own quoted subject is not in the prose', async () => {
@@ -546,7 +677,7 @@ describe('A defect that is a proportion, not a place', () => {
   it('sends one chapter-wide sweep per repair and keeps every finding about a place', () => {
     const issues = [spread('simile-density', 'minor'), { ...spread('knowledge-01'), category: 'knowledge' as const },
       spread('speech-tag-bloat'), spread('serial-explanation'), spread('adjective-stacking', 'minor')];
-    const passed = oneDistributedAtATime(issues).map(issue => issue.id);
+    const passed = nextSweep(issues).issues.map(issue => issue.id);
     // The most severe sweep goes first; the others come back next round, still measured.
     expect(passed).toEqual(['knowledge-01', 'speech-tag-bloat']);
   });
@@ -573,7 +704,7 @@ describe('A defect that is a proportion, not a place', () => {
 
   it('changes nothing when there is only one sweep to make', () => {
     const issues = [spread('simile-density'), { ...spread('knowledge-01'), category: 'knowledge' as const }];
-    expect(oneDistributedAtATime(issues)).toEqual(issues);
+    expect(nextSweep(issues).issues).toEqual(issues);
   });
 
   it('hands the repair this chapter\'s intent, not the book\'s whole literary ledger', async () => {
@@ -983,6 +1114,7 @@ describe('The beat registry', () => {
       if (prompt.includes('TASK: Extract facts')) return '{"summary":"Thorne opened the door.","facts":[]}';
       if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
       if (prompt.includes('TASK: Extract promises')) return '{"promises":[]}';
+      if (prompt.includes('TASK: Extract conditions')) return '{"conditions":[]}';
       const planned = plannedBeatsFrom(prompt);
       expect(planned).toEqual([{ sceneId: 'scene-1', beat: 'choice' }, { sceneId: 'scene-1', beat: 'consequence' }]);
       // The third entry names a beat no scene planned; it cannot be a planned beat that reached the page.
@@ -1044,13 +1176,239 @@ describe('The beat registry', () => {
     const llm = vi.fn(async (prompt: string, system: string) => {
       if (system.includes('extract evidence')) {
         // The extraction is clean and finds nothing of the planned scene: the scene was never written.
-        return JSON.stringify({ summary: 'Thorne opened door 1.', facts: [], events: [], promises: [], beats: [] });
+        return JSON.stringify({ summary: 'Thorne opened door 1.', facts: [], events: [], promises: [], beats: [], conditions: [] });
       }
       throw new Error(`repair reached: ${system}`);
     });
     await expect((new NovelEngine(llm as any, new MemoryRunStore()) as any).acceptOrRepair(run, chapter, candidate)).rejects.toThrow(/repair reached/);
     expect(chapter.status).not.toBe('accepted');
     expect(candidate.review!.issues.map(issue => issue.id)).toContain('undramatized-beat');
+  });
+});
+
+describe('What a chapter has already put on the page', () => {
+  it('outlives the chapter, and reaches the scenes of the chapters after it', async () => {
+    const run = runWithPlans(3);
+    const first = run.chapters[0];
+    first.sceneJournal = [{ sceneId: 'scene-1', notes: [
+      { kind: 'told', note: 'THE_ARCHIVE_ROOM_IS_DESCRIBED', quote: prose(1).slice(0, 20) },
+      { kind: 'event', note: 'A door was opened.', quote: prose(1).slice(0, 20) },
+    ] }];
+    approve(run, 1);
+    // The journal goes when the chapter is accepted; what it had already told does not.
+    expect(first.sceneJournal).toBeUndefined();
+    expect(first.alreadyTold).toEqual(['THE_ARCHIVE_ROOM_IS_DESCRIBED']);
+
+    const second = run.chapters[1];
+    let seen = '';
+    await writeScene(run, second, 0, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Next.' }); });
+    expect(seen).toContain('ALREADY GIVEN IN EARLIER CHAPTERS');
+    expect(seen).toContain('THE_ARCHIVE_ROOM_IS_DESCRIBED');
+  });
+});
+
+describe('A plan checked against the outline it came from, and against itself', () => {
+  const arc = (chapter: number, entryState: string, exitState: string) => ({
+    chapter, cost: 'a way back', structuralRole: 'develop', entryState, causalLink: 'after', protagonistStrategy: 'press',
+    development: 'the refusal hardens', internalDevelopment: 'doubt', chapterChange: 'the letter moves', exitState,
+    endingFunction: 'consequence', pacingPriority: 'the refusal', setupPromiseIds: [], payoffPromiseIds: [],
+  });
+
+  it('sees a chapter that starts where the previous one started, and one that starts from nowhere', () => {
+    const copied = looseJoins([
+      arc(1, 'Thorne is outside the archive with no letter', 'Thorne holds the letter and is seen taking it'),
+      arc(2, 'Thorne is outside the archive with no letter', 'The clerk names his price'),
+    ]);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]).toMatchObject({ chapter: 2 });
+    expect(copied[0].problem).toContain('same state chapter 1 started from');
+
+    const jump = looseJoins([
+      arc(1, 'Thorne waits outside the archive', 'Thorne holds the letter and the clerk has seen him'),
+      arc(2, 'A harbour pilot inspects a damaged hull at dawn', 'The pilot signs the manifest'),
+    ]);
+    expect(jump).toHaveLength(1);
+    expect(jump[0].problem).toContain('nothing in common');
+  });
+
+  it('says nothing about a join that meets', () => {
+    expect(looseJoins([
+      arc(1, 'Thorne waits outside the archive', 'Thorne holds the letter and the clerk has seen him'),
+      arc(2, 'Thorne holds the letter the clerk saw him take', 'The clerk names his price'),
+    ])).toEqual([]);
+    expect(looseJoins([])).toEqual([]);
+  });
+
+  it('names the people the plan has and the outline never mentioned', () => {
+    const outline = 'Thorne recovers the letter from the clerk and accepts the cost.';
+    const cast = { 'Thorne': {}, 'the clerk': {}, 'Commodore Vale': {} };
+    expect(castNotInOutline(cast, outline)).toEqual(['Commodore Vale']);
+    // A full name shortened in the outline is the same person, not an invention.
+    expect(castNotInOutline({ 'Elias Thorne': {} }, outline)).toEqual([]);
+  });
+});
+
+describe('A review that is this chapter\'s and no other\'s', () => {
+  it('asks the chapter what it undertook, in its own words', async () => {
+    const run = runWithPlans(3);
+    // The last chapter, where the fixture's promise is scheduled to be paid.
+    const chapter = run.chapters[2];
+    chapter.plan.detailedScenes = [{
+      ...chapter.plan.detailedScenes![0],
+      shift: { register: 'knowledge', from: 'believes the clerk is honest', to: 'has seen the clerk take the money' },
+      outcomeType: 'setback',
+    }];
+    const candidate = addCandidate(chapter, prose(3), 'draft');
+    let seen = '';
+    await reviewChapter(run, chapter, candidate, async prompt => {
+      if (prompt.includes('REVIEW CHAPTER')) seen = prompt;
+      return '{"issues":[]}';
+    });
+    expect(seen).toContain('WHAT THIS CHAPTER UNDERTOOK');
+    expect(seen).toContain('moves knowledge from "believes the clerk is honest" to "has seen the clerk take the money"');
+    expect(seen).toContain('ends in failure that leaves the situation worse');
+    // The whole book's schedule is context; what this chapter owes is a question.
+    expect(seen).toContain('The promise "The letter must be recovered at a price" is paid off here.');
+  });
+
+  it('says nothing of the kind for a plan that declares no obligations', async () => {
+    const run = runWithPlans(3);
+    const chapter = run.chapters[0];
+    run.blueprint!.promises = [];
+    chapter.plan.detailedScenes = [{ ...chapter.plan.detailedScenes![0], shift: undefined, outcomeType: undefined }];
+    const candidate = addCandidate(chapter, prose(1), 'draft');
+    let seen = '';
+    await reviewChapter(run, chapter, candidate, async prompt => {
+      if (prompt.includes('REVIEW CHAPTER')) seen = prompt;
+      return '{"issues":[]}';
+    });
+    expect(seen).not.toContain('WHAT THIS CHAPTER UNDERTOOK');
+  });
+});
+
+describe('A chapter read against the one before it', () => {
+  it('quotes the chapter under review, never the finished one, and runs once', async () => {
+    const run = runWithPlans(3);
+    approve(run, 1);
+    const chapter = run.chapters[1];
+    const candidate = addCandidate(chapter, prose(2), 'draft');
+    let neighbourCalls = 0;
+    const llm: NovelLLM = async prompt => {
+      if (prompt.includes('AS ACCEPTED AND FINAL')) {
+        neighbourCalls++;
+        return JSON.stringify({ findings: [
+          { question: 4, description: 'Thorne is barefoot here, and the previous chapter left him booted.', instruction: 'Keep the boots or take them off on the page.', quote: prose(2).slice(0, 40) },
+          // Quoting the finished chapter instead: nothing can act on it, so it is dropped.
+          { question: 2, description: 'The archive is described again.', instruction: 'Cut the description.', quote: prose(1).slice(0, 40) },
+        ] });
+      }
+      return '{"issues":[]}';
+    };
+    const report = await reviewChapter(run, chapter, candidate, llm);
+    expect(neighbourCalls).toBe(1);
+    const against = report.issues.filter(issue => issue.id.startsWith('against-previous'));
+    expect(against).toHaveLength(1);
+    expect(against[0].description).toContain('Against chapter 1');
+    expect(against[0].evidence[0].quote).toBe(prose(2).slice(0, 40));
+
+    // A second review of the same chapter does not read the neighbour again: that is how a check
+    // becomes a loop, and the marker is what stops it.
+    const second = addCandidate(chapter, prose(2), 'repair');
+    await reviewChapter(run, chapter, second, llm);
+    expect(neighbourCalls).toBe(1);
+  });
+
+  it('says nothing for the first chapter, which has no chapter before it', async () => {
+    const run = runWithPlans(3);
+    const chapter = run.chapters[0];
+    const candidate = addCandidate(chapter, prose(1), 'draft');
+    const llm: NovelLLM = async prompt => {
+      if (prompt.includes('AS ACCEPTED AND FINAL')) throw new Error('There is no chapter before the first.');
+      return '{"issues":[]}';
+    };
+    const report = await reviewChapter(run, chapter, candidate, llm);
+    expect(report.issues.filter(issue => issue.id.startsWith('against-previous'))).toEqual([]);
+  });
+});
+
+describe('A beat the chapter plays twice', () => {
+  const chapterProse = [
+    'Clark could not find the core. Bruce held out his bare hand. "Use me." Clark took the wrist and fired, and the shot went wide.',
+    'Clark could not fix his eyes on the aperture. Bruce crossed the last pace and raised his open palm. "That is the point." Clark took the wrist and fired, and this time it did not waver.',
+  ].join('\n\n***\n\n');
+
+  it('is reported with both stagings quoted, where the scene journal could not see it', async () => {
+    const run = runWithPlans(3);
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, chapterProse, 'fixture');
+    const llm: NovelLLM = async () => JSON.stringify({ replayed: [{
+      beat: 'Bruce offers his hand and Clark fires',
+      first: 'Bruce held out his bare hand.',
+      second: 'Bruce crossed the last pace and raised his open palm.',
+    }] });
+    const issues = await replayedBeats(run, chapter, version, llm);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].category).toBe('pacing');
+    expect(issues[0].severity).toBe('major');
+    expect(issues[0].evidence.map(item => item.quote)).toEqual(['Bruce held out his bare hand.', 'Bruce crossed the last pace and raised his open palm.']);
+  });
+
+  it('is dropped when either staging cannot be quoted from the chapter', async () => {
+    const run = runWithPlans(3);
+    const chapter = run.chapters[0];
+    const version = addCandidate(chapter, chapterProse, 'fixture');
+    // One real passage and one composed: a repeat that can only show one occurrence is not a repeat.
+    const halfQuoted: NovelLLM = async () => JSON.stringify({ replayed: [{
+      beat: 'The offer', first: 'Bruce held out his bare hand.', second: 'Bruce offered his hand a second time.',
+    }] });
+    expect(await replayedBeats(run, chapter, version, halfQuoted)).toEqual([]);
+    const empty: NovelLLM = async () => JSON.stringify({ replayed: [] });
+    expect(await replayedBeats(run, chapter, version, empty)).toEqual([]);
+  });
+});
+
+describe('A condition one chapter puts on the next', () => {
+  const evidence = (chapter: number, revision: number) => ({ chapter, revision, quote: prose(chapter).slice(0, 24) });
+
+  it('stays in force until a chapter can be quoted for lifting it', () => {
+    const run = runWithPlans(3);
+    const first = approve(run, 1);
+    first.analysis!.conditions = [{ id: 'bridge', statement: 'The bridge out of the district is down.', evidence: evidence(1, first.revision) }];
+    run.canon = rebuildCanon(run.chapters);
+    expect(standingConditions(run.canon).map(item => item.id)).toEqual(['bridge']);
+
+    // Chapter two says nothing about it: silence does not lift a condition.
+    const second = approve(run, 2);
+    run.canon = rebuildCanon(run.chapters);
+    expect(standingConditions(run.canon).map(item => item.id)).toEqual(['bridge']);
+
+    second.analysis!.conditions = [{ id: 'bridge-lifted', statement: 'The ferry crossing is opened in its place.', evidence: evidence(2, second.revision), lifts: 'bridge' }];
+    run.canon = rebuildCanon(run.chapters);
+    expect(standingConditions(run.canon)).toEqual([]);
+    expect(run.canon.conditions[0].liftedIn).toBe(2);
+    expect(run.canon.conditions[0].liftedBy).toEqual(evidence(2, second.revision));
+  });
+
+  it('is not lifted by a chapter naming a condition the book never set', () => {
+    const run = runWithPlans(3);
+    const first = approve(run, 1);
+    first.analysis!.conditions = [{ id: 'bridge', statement: 'The bridge out of the district is down.', evidence: evidence(1, first.revision) }];
+    const second = approve(run, 2);
+    // Fail-closed: an invented target lifts nothing, and the real constraint keeps binding.
+    second.analysis!.conditions = [{ id: 'x', statement: 'The road is clear now.', evidence: evidence(2, second.revision), lifts: 'a-condition-nobody-set' }];
+    run.canon = rebuildCanon(run.chapters);
+    expect(standingConditions(run.canon).map(item => item.id)).toEqual(['bridge']);
+  });
+
+  it('travels into the prompts that decide what happens next', () => {
+    const run = runWithPlans(3);
+    const first = approve(run, 1);
+    first.analysis!.conditions = [{ id: 'key', statement: 'Nobody enters the archive without the clerk.', evidence: evidence(1, first.revision) }];
+    run.canon = rebuildCanon(run.chapters);
+    const forScene = JSON.stringify(canonForPrompt(run.canon));
+    expect(forScene).toContain('Nobody enters the archive without the clerk');
+    // The planner sees it too, or it plans the chapter that walks straight through it.
+    expect(JSON.stringify(compactPlanningContext(run))).toContain('Nobody enters the archive without the clerk');
   });
 });
 
@@ -1407,6 +1765,29 @@ describe('The journal a chapter keeps while it is written', () => {
     expect(JSON.stringify(journal.notes)).not.toContain('who wrote the letter');
     expect(quotedFrom('turned the key', scene)).toBe(true);
     expect(quotedFrom('turned the lock', scene)).toBe(false);
+  });
+
+  it('records the declared shift only when the scene can be quoted for it', async () => {
+    const run = runWithPlans();
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes![0].shift = { register: 'resource', from: 'Thorne holds the letter', to: 'the clerk has it locked away' };
+    const scene = 'The clerk put the letter in the drawer and turned the key.';
+    const answer = (shift: object) => JSON.stringify({
+      notes: [{ kind: 'possession', note: 'The letter is in the drawer.', quote: 'put the letter in the drawer' }], shift,
+    });
+
+    const moved = await readSceneJournal(run, chapter, 0, scene, async () => answer({ happened: true, quote: 'put the letter in the drawer' }));
+    expect(moved.shiftQuote).toBe('put the letter in the drawer');
+    // Claimed, but with a passage the scene does not contain: the claim goes the way an invented note goes.
+    const composed = await readSceneJournal(run, chapter, 0, scene, async () => answer({ happened: true, quote: 'She handed it across the counter.' }));
+    expect(composed.shiftQuote).toBeUndefined();
+    const admitted = await readSceneJournal(run, chapter, 0, scene, async () => answer({ happened: false, quote: '' }));
+    expect(admitted.shiftQuote).toBeUndefined();
+    // A scene that declared no shift has none to record, and the reading is unaffected.
+    delete chapter.plan.detailedScenes![0].shift;
+    const undeclared = await readSceneJournal(run, chapter, 0, scene, async () => answer({ happened: true, quote: 'put the letter in the drawer' }));
+    expect(undeclared.shiftQuote).toBeUndefined();
+    expect(undeclared.notes).toHaveLength(1);
   });
 
   it('reaches the next scene of the chapter, and the plan is only the fallback', async () => {

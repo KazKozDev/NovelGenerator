@@ -1,28 +1,100 @@
 import { assessLiteraryDevelopment, planLiteraryDevelopment } from './literary';
-import { BESTSELLER_REQUIREMENTS, SAMPLING, STRUCTURE_BANS, buildIdeaSeed, languageContract } from './diversity';
+import { BESTSELLER_REQUIREMENTS, OUTCOME_TYPES, SAMPLING, SCENE_SHAPES, SHIFT_REGISTERS, STRUCTURE_BANS, buildIdeaSeed, ideaSeedPrompt, languageContract, normalizeSceneShape } from './diversity';
 import { PLANNING_COHERENCE } from './coherence';
 import { literaryContextKey, literaryCurrent, literaryStillHolds } from './literaryState';
 import { proseCraft, narrativeDesign, sceneCountGuidance } from './proseCraft';
-import { newlyBroken, prosodyMetrics, prosodyReport, spokenLinesLost, type Embedder, type ProsodyMetrics } from './prosody';
+import { newlyBroken, newlyOrphaned, prosodyMetrics, prosodyReport, spokenLinesLost, type Embedder, type ProsodyMetrics } from './prosody';
 import type { Reranker } from './reranker';
 import type { Summarizer } from './summarizer';
 import { applyPassages, repairableInPlace } from './patch';
 import type { Character, ParsedChapterPlan, LLMProviderConfig } from '../../types';
-import type { BookBlueprint, BookSpec, ChapterRecord, ChapterVersion, NovelRun, ReviewIssue, ReviewReport } from './contracts';
+import type { BookBlueprint, BookSpec, ChapterArc, ChapterRecord, ChapterVersion, MajorTurn, NovelRun, PlanningIssue, ReviewIssue, ReviewReport, SceneJournal } from './contracts';
 import { chapterRole, genreCraft, specPrompt } from './contracts';
-import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, validateAnalysis } from './storyState';
+import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, emptyStoryState, evidenceExists, nextUnacceptedChapter, reconcileCheckpoint, standingConditions, validateAnalysis } from './storyState';
 import { analyseChapter, beatCoverageIssue, citedOnlyTheOpening, confirmedFindings, findingStreaks, planWithoutRetelling, restatedFromEarlierScenes, sameFinding, sameFindingSet, reviewBook, reviewChapter, stripThinking, generateProse, structuredResponse, type NovelLLM } from './review';
 import type { NLIScorer } from './nli';
 import type { RunStore } from './runStore';
 import { writeFullChapter, writeScene } from './writer';
-import { readSceneJournal } from './sceneJournal';
+import { quotedFrom, readSceneJournal } from './sceneJournal';
 import { rememberChapter, writeDirect } from './memory';
+import { checkChapter, checkEmotions, checkGenre, type DeepCheckTools } from './deepCheck';
 
 export function createRun(spec: BookSpec, provider: LLMProviderConfig): NovelRun {
   return {
     schemaVersion: 1, validationVersion: 2, literaryValidationVersion: 1, id: crypto.randomUUID(), spec: structuredClone(spec), provider: { ...provider },
     outline: '', chapters: [], canon: emptyStoryState(), stage: 'outline', updatedAt: Date.now(),
   };
+}
+
+/**
+ * An integer, however the model spelled it.
+ *
+ * Gemini's structured output returns "4" for an integer field often enough that a live book died on
+ * it: the schedule was correct, the type was a string, and the validator refused a plan that was
+ * right. A numeric string carries the same information as a number and is worth reading rather than
+ * rejecting — but it is read once, here, and written back as a number, because everything downstream
+ * compares payoffChapter to a chapter number with ===, and a string that survives this point fails
+ * silently in every one of those comparisons instead of loudly in this one.
+ */
+export function asInteger(value: unknown): number | undefined {
+  if (Number.isInteger(value)) return value as number;
+  if (typeof value === 'string' && /^\s*-?\d+\s*$/.test(value)) return Number(value.trim());
+  return undefined;
+}
+
+/** The same leniency for a boolean a model quoted: "true" is the answer it meant. */
+export function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string' && ['true', 'false'].includes(value.trim().toLowerCase())) return value.trim().toLowerCase() === 'true';
+  return undefined;
+}
+
+/**
+ * Chapter joins the book plan does not actually make.
+ *
+ * Every arc records the state its chapter starts from and the state it leaves, written by one call in
+ * one pass — so the two sides of every join are there to be compared, and nothing has ever compared
+ * them. Two shapes are recognisable without reading for meaning: a chapter that starts where the
+ * previous one started, which is a state copied forward rather than moved, and a chapter that starts
+ * from something with no word in common with what the previous one left, which is a jump the plan
+ * does not describe.
+ *
+ * Both are signals, not verdicts. They are deliberately not thrown: a fuzzy measure that kills a
+ * blueprint costs the whole book, and the blueprint gets two attempts. What they do is pick the pairs
+ * worth one narrow question, and travel to the planner of that chapter.
+ */
+export function looseJoins(arcs: ChapterArc[] = []): { chapter: number; problem: string }[] {
+  const words = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 3));
+  const shared = (first: string, second: string) => {
+    const a = words(first), b = words(second);
+    if (!a.size || !b.size) return 1; // Nothing written is not a finding about what was written.
+    let count = 0;
+    for (const word of b) if (a.has(word)) count++;
+    return count;
+  };
+  const ordered = [...arcs].sort((first, second) => first.chapter - second.chapter);
+  const found: { chapter: number; problem: string }[] = [];
+  for (let index = 1; index < ordered.length; index++) {
+    const previous = ordered[index - 1], current = ordered[index];
+    if (current.entryState && previous.entryState && current.entryState.trim().toLocaleLowerCase() === previous.entryState.trim().toLocaleLowerCase()) {
+      found.push({ chapter: current.chapter, problem: `starts from the same state chapter ${previous.chapter} started from, so nothing moved between them` });
+      continue;
+    }
+    if (!shared(previous.exitState, current.entryState)) {
+      found.push({ chapter: current.chapter, problem: `starts from "${current.entryState}", which has nothing in common with what chapter ${previous.chapter} left: "${previous.exitState}"` });
+    }
+  }
+  return found;
+}
+
+/** Characters the blueprint invented: named in the plan, absent from the outline it was built from. */
+export function castNotInOutline(characters: Record<string, unknown>, outline: string): string[] {
+  const text = outline.toLocaleLowerCase();
+  return Object.keys(characters).filter(name => {
+    const parts = name.split(/\s+/).filter(part => part.length > 2);
+    // A full name may be shortened in the outline, so any substantial part of it counts as present.
+    return parts.length > 0 && !parts.some(part => text.includes(part.toLocaleLowerCase()));
+  });
 }
 
 export function validateBlueprint(value: any, spec: BookSpec): BookBlueprint {
@@ -41,15 +113,119 @@ export function validateBlueprint(value: any, spec: BookSpec): BookBlueprint {
   }
   const ids = new Set<string>();
   for (const promise of value.promises) {
-    if (typeof promise.id !== 'string' || !promise.id || ids.has(promise.id) || typeof promise.description !== 'string' ||
-        typeof promise.required !== 'boolean' || !Number.isInteger(promise.setupChapter) || !Number.isInteger(promise.payoffChapter) ||
-        promise.setupChapter < 1 || promise.payoffChapter < promise.setupChapter || promise.payoffChapter > spec.chapterCount) {
-      throw new Error('Invalid narrative promise timing or identity.');
+    // One message for seven different defects taught the retry nothing: a model told only that a
+    // promise is invalid returns the same schedule with the same fault, and the book dies at its
+    // first call. Each rule now says which promise and what is wrong with it, because these messages
+    // are what the second attempt gets to work from.
+    const named = `promise ${JSON.stringify(promise?.id ?? null)}`;
+    // Read once and written back, so the schedule the book runs on is numbers and booleans.
+    for (const field of ['setupChapter', 'payoffChapter'] as const) {
+      const parsed = asInteger(promise?.[field]);
+      if (parsed !== undefined) promise[field] = parsed;
+    }
+    const asked = asBoolean(promise?.required);
+    if (asked !== undefined) promise.required = asked;
+    if (typeof promise?.id !== 'string' || !promise.id.trim()) throw new Error(`Every narrative promise needs a non-empty id; one arrived as ${JSON.stringify(promise?.id ?? null)}.`);
+    if (ids.has(promise.id)) throw new Error(`Two narrative promises share the id ${JSON.stringify(promise.id)}. Give each promise its own id.`);
+    if (typeof promise.description !== 'string' || !promise.description.trim()) throw new Error(`The ${named} has no description.`);
+    if (typeof promise.required !== 'boolean') throw new Error(`The ${named} must say whether it is required, as true or false, not ${JSON.stringify(promise.required)}.`);
+    if (!Number.isInteger(promise.setupChapter) || promise.setupChapter < 1 || promise.setupChapter > spec.chapterCount) {
+      throw new Error(`The ${named} is set up in chapter ${JSON.stringify(promise.setupChapter)}. This book has chapters 1 to ${spec.chapterCount}, and setupChapter must be one of them.`);
+    }
+    const openSeriesThread = promise.required === false && (promise.payoffChapter === null || promise.payoffChapter === undefined);
+    if (!openSeriesThread) {
+      if (!Number.isInteger(promise.payoffChapter)) {
+        throw new Error(`The ${named} is required, so it must be paid off inside this book: give payoffChapter an integer from ${promise.setupChapter} to ${spec.chapterCount}, not ${JSON.stringify(promise.payoffChapter)}. Only a promise with required=false may be left open with payoffChapter null.`);
+      }
+      if (promise.payoffChapter > spec.chapterCount) {
+        throw new Error(`The ${named} pays off in chapter ${promise.payoffChapter}, but this book ends at chapter ${spec.chapterCount}. Schedule the payoff inside the book, or mark the promise required=false and leave payoffChapter null.`);
+      }
+      if (promise.payoffChapter < promise.setupChapter) {
+        throw new Error(`The ${named} pays off in chapter ${promise.payoffChapter}, before it is set up in chapter ${promise.setupChapter}. A payoff cannot precede its setup.`);
+      }
     }
     ids.add(promise.id);
   }
   if (!value.promises.some((promise: { required: boolean }) => promise.required)) throw new Error('The book must have at least one required narrative payoff.');
-  return { centralConflict: value.centralConflict, protagonistChange: value.protagonistChange, endingPayoff: value.endingPayoff, characters, promises: value.promises, chapters: [] };
+
+  let majorTurns: MajorTurn[] | undefined;
+  if (Array.isArray(value.majorTurns)) {
+    majorTurns = value.majorTurns.map((turn: any) => ({
+      id: String(turn.id || ''),
+      functions: Array.isArray(turn.functions) ? turn.functions.map(String) : [],
+      chapter: asInteger(turn.chapter) ?? 1,
+      event: String(turn.event || ''),
+      cause: String(turn.cause || ''),
+      characterAction: String(turn.characterAction || ''),
+      consequence: String(turn.consequence || ''),
+    }));
+  }
+
+  let chapterArcs: ChapterArc[] | undefined;
+  if (Array.isArray(value.chapterArcs)) {
+    chapterArcs = value.chapterArcs.map((arc: any) => ({
+      chapter: asInteger(arc.chapter) ?? 1,
+      cost: String(arc.cost || ''),
+      structuralRole: String(arc.structuralRole || ''),
+      entryState: String(arc.entryState || ''),
+      causalLink: String(arc.causalLink || ''),
+      protagonistStrategy: String(arc.protagonistStrategy || ''),
+      development: String(arc.development || ''),
+      internalDevelopment: String(arc.internalDevelopment || ''),
+      chapterChange: String(arc.chapterChange || ''),
+      exitState: String(arc.exitState || ''),
+      endingFunction: String(arc.endingFunction || ''),
+      pacingPriority: String(arc.pacingPriority || ''),
+      setupPromiseIds: Array.isArray(arc.setupPromiseIds) ? arc.setupPromiseIds.map(String) : [],
+      payoffPromiseIds: Array.isArray(arc.payoffPromiseIds) ? arc.payoffPromiseIds.map(String) : [],
+    }));
+  }
+
+  // A chapter that takes nothing away leaves the next one nothing to work against, and a book whose
+  // chapters all end in gain is the outline equivalent of a scene that ends where it began. One such
+  // chapter is a rest; two are a book without consequences. Plans made before arcs declared a cost
+  // declare none at all, and those stay readable.
+  if (chapterArcs?.some(arc => arc.cost)) {
+    const costless = chapterArcs.filter(arc => !arc.cost);
+    if (costless.length > 1) throw new Error(`Chapters ${costless.map(arc => arc.chapter).join(', ')} cost the protagonist nothing. A book may have one such chapter; say what each of the others takes away for good.`);
+  }
+
+  // What wins the ending, and what paid for it in advance. The check is the one the promise ledger
+  // already makes for evidence, moved to the plan: a means introduced in the final chapter is a
+  // means the book invented when it needed it.
+  const climaxValue = value.climax;
+  if (!climaxValue || typeof climaxValue !== 'object' || typeof climaxValue.decisiveAction !== 'string' || !climaxValue.decisiveAction.trim()) {
+    throw new Error('The blueprint must say what decisive action ends the book.');
+  }
+  if (!Array.isArray(climaxValue.preparedBy) || !climaxValue.preparedBy.length) throw new Error('The climax must name the promises that prepare it.');
+  const climax = { decisiveAction: climaxValue.decisiveAction.trim(), preparedBy: climaxValue.preparedBy.map(String) };
+  for (const id of climax.preparedBy) {
+    const promise = value.promises.find((item: { id: string }) => item.id === id);
+    if (!promise) throw new Error(`The climax is prepared by "${id}", which is not one of this book's promises.`);
+    if (promise.setupChapter >= spec.chapterCount) throw new Error(`The climax is prepared by "${id}", which is not set up until chapter ${promise.setupChapter}. What wins the ending must be established before the chapter that uses it.`);
+  }
+
+  let planningIssues: PlanningIssue[] | undefined;
+  if (Array.isArray(value.planningIssues)) {
+    planningIssues = value.planningIssues.map((issue: any) => ({
+      location: String(issue.location || ''),
+      problem: String(issue.problem || ''),
+      neededClarification: String(issue.neededClarification || ''),
+    }));
+  }
+
+  return {
+    centralConflict: value.centralConflict,
+    protagonistChange: value.protagonistChange,
+    endingPayoff: value.endingPayoff,
+    characters,
+    promises: value.promises,
+    chapters: [],
+    climax,
+    ...(majorTurns ? { majorTurns } : {}),
+    ...(chapterArcs ? { chapterArcs } : {}),
+    ...(planningIssues ? { planningIssues } : {}),
+  };
 }
 
 /**
@@ -73,6 +249,9 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
   for (const [field, alternatives] of Object.entries(aliases)) {
     if (plan[field] === undefined) plan[field] = alternatives.map(key => target[key]).find(item => item !== undefined);
     if (field !== 'detailedScenes' && (typeof plan[field] !== 'string' || !plan[field].trim())) throw new Error(`Chapter plan missing ${field}.`);
+  }
+  if (typeof plan.title === 'string') {
+    plan.title = plan.title.replace(/^(?:chapter|глава)\s*\d+\s*[:.\-—–]\s*/i, '').trim() || plan.title.trim();
   }
   if (!Array.isArray(plan.detailedScenes) || !plan.detailedScenes.length || plan.detailedScenes.length > 8) throw new Error('A chapter needs 1–8 fully planned scenes.');
   const ids = new Set<string>();
@@ -99,16 +278,48 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
       const unknown = scene.participants.find((name: string) => !allowed.has(name.trim().toLocaleLowerCase()));
       if (unknown) throw new Error(`Scene participant is not in the approved cast: ${unknown}`);
     }
-    if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error('Scene narrativeWeight must be an integer from 1 to 5.');
+    const weight = asInteger(scene.narrativeWeight);
+    if (weight !== undefined) scene.narrativeWeight = weight;
+    if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error(`Scene narrativeWeight must be an integer from 1 to 5, not ${JSON.stringify(scene.narrativeWeight)}.`);
     // Older checkpoints planned scenes before this field existed; their prose is not retroactively defective.
     if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error('Scene conflictCarriedBy must be speech, action or solitude.');
     if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) throw new Error('A scene carried by speech needs at least two characters present to speak.');
-    if (scene.sceneShape !== undefined && (typeof scene.sceneShape !== 'string' || !scene.sceneShape.trim())) throw new Error('Scene sceneShape must be a non-empty string when present.');
+    // The prompt has always listed the shapes a scene may take; this used to accept any non-empty
+    // string, so the list was a suggestion. A near miss is normalized to the shape it names, and a
+    // label that names no structure is a plan the planner has to make again.
+    if (scene.sceneShape !== undefined) {
+      if (typeof scene.sceneShape !== 'string' || !scene.sceneShape.trim()) throw new Error('Scene sceneShape must be a non-empty string when present.');
+      const shape = normalizeSceneShape(scene.sceneShape);
+      if (!shape) throw new Error(`Scene sceneShape "${scene.sceneShape}" is not one of: ${SCENE_SHAPES.join(', ')}.`);
+      scene.sceneShape = shape;
+    }
+    // What the scene moves. Declared here so it can be checked against the prose after the scene is
+    // written; a scene that cannot say what changes in it is a scene with nothing to verify.
+    if (scene.shift !== undefined) {
+      const shift = scene.shift;
+      if (!shift || typeof shift !== 'object' || Array.isArray(shift)) throw new Error('Scene shift must be an object with register, from and to.');
+      if (!SHIFT_REGISTERS.includes(shift.register)) throw new Error(`Scene shift register must be one of: ${SHIFT_REGISTERS.join(', ')}.`);
+      for (const side of ['from', 'to'] as const) {
+        if (typeof shift[side] !== 'string' || !shift[side].trim()) throw new Error(`Scene shift ${side} must be a non-empty state.`);
+      }
+      if (shift.from.trim().toLocaleLowerCase() === shift.to.trim().toLocaleLowerCase()) throw new Error('A scene whose shift ends where it began changes nothing; plan what it moves.');
+    }
+    if (scene.outcomeType !== undefined && !OUTCOME_TYPES.includes(scene.outcomeType)) throw new Error(`Scene outcomeType must be one of: ${OUTCOME_TYPES.join(', ')}.`);
     if (scene.freshConstraint !== undefined && typeof scene.freshConstraint !== 'string') throw new Error('Scene freshConstraint must be a string when present.');
     if (scene.staging !== undefined && (typeof scene.staging !== 'string' || !scene.staging.trim())) throw new Error('Scene staging must be a non-empty string when present.');
     ids.add(scene.sceneId);
     return scene;
   });
+  // Declared for some scenes and not others, the contract is worth nothing: the scenes that skipped
+  // it are exactly the ones with nothing to check. Plans made before these fields existed declare
+  // them nowhere, and those stay readable.
+  const declaring = plan.detailedScenes.filter((scene: any) => scene.shift !== undefined).length;
+  if (declaring && declaring !== plan.detailedScenes.length) throw new Error('Every scene of a chapter must declare what it shifts, or none may.');
+  const clean = plan.detailedScenes.filter((scene: any) => scene.outcomeType === 'clean');
+  if (clean.length > 1) throw new Error('At most one scene in a chapter may end in a clean success; the others must cost something or make things worse.');
+  // A clean scene on either side of a chapter break is the same standstill spread over two chapters.
+  const priorOutcome = earlier.at(-1)?.detailedScenes?.at(-1)?.outcomeType;
+  if (priorOutcome === 'clean' && plan.detailedScenes[0].outcomeType === 'clean') throw new Error('The previous chapter already ended in a clean success; this chapter cannot open with another.');
   const fingerprint = JSON.stringify(plan.detailedScenes);
   const twin = earlier.findIndex(item => JSON.stringify(item.detailedScenes) === fingerprint || (item.title === plan.title && item.summary === plan.summary));
   if (twin !== -1) throw new Error(`This plan repeats chapter ${twin + 1}. Plan the next movement of the story: different scenes, a different situation at the end, and a title of its own.`);
@@ -121,8 +332,27 @@ export function compactPlanningContext(run: NovelRun) {
     centralConflict: blueprint.centralConflict,
     protagonistChange: blueprint.protagonistChange,
     endingPayoff: blueprint.endingPayoff,
+    // The chapter that spends the means has to know what they are, and the chapters before it have to
+    // know what they are preparing.
+    ...(blueprint.climax ? { climax: blueprint.climax } : {}),
+    ...(blueprint.majorTurns?.length ? { majorTurns: blueprint.majorTurns } : {}),
+    ...(blueprint.chapterArcs?.length ? { chapterArcs: blueprint.chapterArcs } : {}),
     characters: Object.fromEntries(Object.entries(blueprint.characters).map(([name, character]) => [name, character.description])),
     promises: blueprint.promises,
+    // What earlier chapters made binding. A planner that never sees these plans the chapter that
+    // walks through one of them, and the prose then does exactly what it was planned to do.
+    standingConditions: standingConditions(run.canon).map(({ id, statement }) => ({ id, statement })),
+    // Where the plan was found not to hold — a join that does not meet, a departure from the approved
+    // outline. Recorded at planning time and put in front of every chapter planner, because a finding
+    // about the plan that nothing reads is the same as no finding.
+    ...(blueprint.planningIssues?.length ? { knownPlanProblems: blueprint.planningIssues } : {}),
+    // What earlier chapters could not be made to fix. It was written into five different places and
+    // read by none of them, so a chapter that gave up on a defect told nobody, and the chapter after
+    // it planned as though the book were clean.
+    ...(() => {
+      const unresolved = run.chapters.filter(chapter => chapter.planningNote).map(chapter => ({ chapter: chapter.number, note: chapter.planningNote }));
+      return unresolved.length ? { unresolvedInEarlierChapters: unresolved } : {};
+    })(),
     previousChapters: blueprint.chapters.map((chapter, index) => ({
       number: index + 1,
       title: chapter.title,
@@ -136,21 +366,148 @@ export function compactPlanningContext(run: NovelRun) {
 const text = { type: 'string', minLength: 1 };
 /** Constrained decoding keeps a long plan well-formed; an unterminated JSON object is unrecoverable. */
 export const blueprintSchema = {
-  type: 'object', required: ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises'],
+  type: 'object', required: ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises', 'climax'],
   properties: {
+    climax: {
+      type: 'object', required: ['decisiveAction', 'preparedBy'],
+      properties: {
+        decisiveAction: text,
+        preparedBy: { type: 'array', minItems: 1, items: text },
+      }, additionalProperties: false,
+    },
     centralConflict: text, protagonistChange: text, endingPayoff: text,
+    majorTurns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'functions', 'chapter', 'event', 'cause', 'characterAction', 'consequence'],
+        properties: {
+          id: text,
+          functions: { type: 'array', items: text },
+          chapter: { type: 'integer' },
+          event: text,
+          cause: text,
+          characterAction: text,
+          consequence: text,
+        },
+        additionalProperties: false,
+      },
+    },
+    chapterArcs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: [
+          'chapter', 'cost', 'structuralRole', 'entryState', 'causalLink',
+          'protagonistStrategy', 'development', 'internalDevelopment',
+          'chapterChange', 'exitState', 'endingFunction', 'pacingPriority',
+          'setupPromiseIds', 'payoffPromiseIds'
+        ],
+        properties: {
+          chapter: { type: 'integer' },
+          cost: { type: 'string' },
+          structuralRole: text,
+          entryState: text,
+          causalLink: text,
+          protagonistStrategy: text,
+          development: text,
+          internalDevelopment: text,
+          chapterChange: text,
+          exitState: text,
+          endingFunction: text,
+          pacingPriority: text,
+          setupPromiseIds: { type: 'array', items: text },
+          payoffPromiseIds: { type: 'array', items: text },
+        },
+        additionalProperties: false,
+      },
+    },
     characters: { type: 'array', minItems: 1, items: { type: 'object', required: ['name', 'description'], properties: { name: text, description: text }, additionalProperties: false } },
-    promises: { type: 'array', minItems: 1, items: { type: 'object', required: ['id', 'description', 'setupChapter', 'payoffChapter', 'required'], properties: { id: text, description: text, setupChapter: { type: 'integer' }, payoffChapter: { type: 'integer' }, required: { type: 'boolean' } }, additionalProperties: false } },
+    promises: {
+      type: 'array', minItems: 1,
+      items: {
+        type: 'object',
+        // payoffChapter is required and nullable, not optional: a field a model may omit is a field it
+        // omits, and the schedule then arrives with nothing where the payoff belongs.
+        required: ['id', 'description', 'setupChapter', 'required', 'payoffChapter'],
+        properties: {
+          id: text,
+          description: text,
+          setup: text,
+          setupChapter: { type: 'integer' },
+          development: text,
+          payoff: text,
+          payoffChapter: { type: ['integer', 'null'] },
+          required: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+    },
+    planningIssues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['location', 'problem', 'neededClarification'],
+        properties: {
+          location: text,
+          problem: text,
+          neededClarification: text,
+        },
+        additionalProperties: false,
+      },
+    },
   }, additionalProperties: false,
 };
-const planStrings = ['title', 'summary', 'sceneBreakdown', 'characterDevelopmentFocus', 'plotAdvancement', 'timelineIndicators', 'emotionalToneTension', 'connectionToNextChapter', 'openingHook', 'chapterEnding', 'moralDilemma', 'consequencesOfChoices', 'rhythmPacing'];
+const planStrings = [
+  'title', 'summary', 'sceneBreakdown', 'characterDevelopmentFocus', 'plotAdvancement',
+  'timelineIndicators', 'emotionalToneTension', 'connectionToNextChapter', 'openingHook',
+  'chapterEnding', 'moralDilemma', 'consequencesOfChoices', 'rhythmPacing',
+  'structuralRole', 'causalLink', 'chapterChange', 'protagonistStrategy'
+];
 export const chapterPlanSchema = {
-  type: 'object', required: [...planStrings, 'tensionLevel', 'detailedScenes'],
+  type: 'object', required: ['title', 'summary', 'sceneBreakdown', 'characterDevelopmentFocus', 'plotAdvancement', 'timelineIndicators', 'emotionalToneTension', 'connectionToNextChapter', 'openingHook', 'chapterEnding', 'tensionLevel', 'detailedScenes'],
   properties: {
-    ...Object.fromEntries(planStrings.map(field => [field, text])),
+    ...Object.fromEntries(planStrings.map(field => [field, { type: 'string' }])),
     tensionLevel: { type: 'integer' },
-    detailedScenes: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy'], properties: { narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 }, conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] }, sceneShape: { type: 'string' }, freshConstraint: { type: 'string' }, staging: { type: 'string' }, sceneId: text, location: text, participants: { type: 'array', items: text }, objective: text, conflict: text, outcome: text, duration: text, mood: text, keyMoments: { type: 'array', minItems: 1, items: text } }, additionalProperties: false } },
-  }, additionalProperties: false,
+    detailedScenes: {
+      type: 'array', minItems: 1, maxItems: 8,
+      items: {
+        type: 'object',
+        required: ['sceneId', 'location', 'participants', 'objective', 'conflict', 'outcome', 'keyMoments', 'narrativeWeight', 'conflictCarriedBy', 'shift', 'outcomeType'],
+        properties: {
+          narrativeWeight: { type: 'integer', minimum: 1, maximum: 5 },
+          conflictCarriedBy: { type: 'string', enum: ['speech', 'action', 'solitude'] },
+          sceneShape: { type: 'string', enum: [...SCENE_SHAPES] },
+          shift: {
+            type: 'object', required: ['register', 'from', 'to'],
+            properties: {
+              register: { type: 'string', enum: [...SHIFT_REGISTERS] },
+              from: text,
+              to: text,
+            }, additionalProperties: false,
+          },
+          outcomeType: { type: 'string', enum: [...OUTCOME_TYPES] },
+          freshConstraint: { type: 'string' },
+          staging: { type: 'string' },
+          sceneId: text,
+          location: text,
+          participants: { type: 'array', items: text },
+          entryState: { type: 'string' },
+          causalLink: { type: 'string' },
+          objective: text,
+          conflict: text,
+          characterResponse: { type: 'string' },
+          consequence: { type: 'string' },
+          outcome: text,
+          duration: text,
+          mood: text,
+          keyMoments: { type: 'array', minItems: 1, items: text }
+        },
+        additionalProperties: false
+      }
+    },
+  },
+  additionalProperties: false,
 };
 
 /**
@@ -217,6 +574,28 @@ export function textureRegression(before: ProsodyMetrics, after: ProsodyMetrics,
 export class NeedsRevisionError extends Error {}
 
 /**
+ * What the journal found wrong with the scene it just read, phrased as instructions to the writer.
+ *
+ * Every item here was quoted out of the prose before it got this far: the journal discards a finding
+ * whose quotation is not in the scene, the same way it discards an invented continuity note. So this
+ * is a list of things the page demonstrably does, not a list of opinions about it.
+ */
+export function sceneFaults(scene: { shift?: { register: string; from: string; to: string } }, entry?: SceneJournal): string[] {
+  if (!entry) return [];
+  const faults: string[] = [];
+  if (scene.shift && !entry.shiftQuote) {
+    faults.push(`It ended where it began: nothing on the page shows ${scene.shift.register} moving from "${scene.shift.from}" to "${scene.shift.to}" — the scene approaches that change, reports it as already settled, or leaves it for later. Make the move happen in what is done, said or seen, so the scene could be quoted for it.`);
+  }
+  for (const item of entry.reported || []) {
+    faults.push(`It reports "${item.beat}" instead of performing it — "${item.quote}" tells the reader it happened rather than letting them watch it. Put that act on the page, and cut the sentence that summarizes it.`);
+  }
+  for (const item of entry.secondTake || []) {
+    faults.push(`It plays "${item.beat}" twice: once at "${item.first}" and again at "${item.second}". The second staging is a seam, not a rhythm. Keep the stronger occurrence and let everything after it proceed from the fact that it already happened.`);
+  }
+  return faults;
+}
+
+/**
  * Whether a freshly written scene is one the chapter already has. Compared on sentences rather than
  * on the whole string: a copy that differs by a word is the same failure as a byte-identical one.
  */
@@ -248,7 +627,7 @@ export function copyOfEarlierScene(scene: string, earlier: string[] = []): boole
  * happens to contain the word scene, or a number, or a colon, is left alone.
  */
 const apparatusMarkers: RegExp[] = [
-  /(?:sceneId|keyMoments|narrativeWeight|conflictCarriedBy|sceneShape|freshConstraint|detailedScenes|targetWordCount|openingHook|chapterEnding|plotAdvancement|characterDevelopmentFocus|emotionalToneTension|connectionToNextChapter|timelineIndicators|rhythmPacing|tensionLevel|endingDevelopment|avoidReplaying|sceneBreakdown)/,
+  /(?:sceneId|keyMoments|narrativeWeight|conflictCarriedBy|sceneShape|outcomeType|freshConstraint|detailedScenes|targetWordCount|openingHook|chapterEnding|plotAdvancement|characterDevelopmentFocus|emotionalToneTension|connectionToNextChapter|timelineIndicators|rhythmPacing|tensionLevel|endingDevelopment|avoidReplaying|sceneBreakdown)/,
   /^[*#>\s]*(?:scene|chapter|beat|act|part|\u0441\u0446\u0435\u043d\u0430|\u0433\u043b\u0430\u0432\u0430|\u044d\u043f\u0438\u0437\u043e\u0434|\u0447\u0430\u0441\u0442\u044c)\s*[\u2116#]?\s*\d+\s*[:.)\u2013\u2014-]/i,
   /^[*#>\s]*(?:pov|target (?:scene )?length|word count|narrative weight|scene shape|staging|objective|outcome|key moments?|\u0446\u0435\u043b\u044c \u0441\u0446\u0435\u043d\u044b|\u043a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u043c\u043e\u043c\u0435\u043d\u0442\u044b|\u043c\u0438\u0437\u0430\u043d\u0441\u0446\u0435\u043d\u0430|\u0438\u0441\u0445\u043e\u0434 \u0441\u0446\u0435\u043d\u044b)\s*[:\u2014-]/i,
   /^[\[(](?:note|todo|placeholder|\u043f\u0440\u0438\u043c\.|\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435|\u0437\u0430\u043c\u0435\u0442\u043a\u0430)/i,
@@ -288,10 +667,6 @@ export function nextSweep(issues: ReviewIssue[], served: string[] = []): { issue
   };
 }
 
-/** The findings a repair should carry when the sweeps take their turns in order. */
-export function oneDistributedAtATime(issues: ReviewIssue[], served: string[] = []): ReviewIssue[] {
-  return nextSweep(issues, served).issues;
-}
 
 /** Whether a revision left the prose as it was: sentence sets identical, whitespace aside. */
 export function unchanged(before: string, after: string): boolean {
@@ -303,7 +678,7 @@ export function unchanged(before: string, after: string): boolean {
 }
 
 export class NovelEngine {
-  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder, private rerank?: Reranker, private summarize?: Summarizer, private nli?: NLIScorer) {}
+  constructor(private llm: NovelLLM, private store: RunStore, private onUpdate: (run: NovelRun) => void = () => {}, private embed?: Embedder, private rerank?: Reranker, private summarize?: Summarizer, private nli?: NLIScorer, private deepCheckTools?: DeepCheckTools) {}
 
   /**
    * Report mode: measured prose texture is recorded on the version and never fails a chapter. The
@@ -342,10 +717,307 @@ export class NovelEngine {
    * The schema pins outline to a string; a nested chapter object is not a usable outline.
    */
   async outline(run: NovelRun): Promise<void> {
-    run.outline = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\n${languageContract(run.spec.language)}\n${STRUCTURE_BANS}\nDevelop a complete outline for exactly ${run.spec.chapterCount} chapters. Establish the central conflict, protagonist desire and inner need, opposition, causal escalation, major choices and their costs, planted clues and payoffs, differentiated character voices, and an earned ending. Describe the actual ending, not a teaser. Give every chapter its own dramatic move: no two chapters may share the same opening device or the same closing device.` + '\nReturn JSON {"outline":"the complete outline"}.', 'You are a novel architect developing the author\'s story.', this.llm, ['outline'], raw => {
-      if (typeof raw.outline !== 'string' || !raw.outline.trim()) throw new Error('The outline is empty.');
-      return raw.outline.trim();
-    }, { temperature: SAMPLING.outline, maxTokens: 8192, route: 'writer', schema: { type: 'object', required: ['outline'], properties: { outline: { type: 'string', minLength: 1 } }, additionalProperties: false } });
+    const { chapterMode: _, skipEditing: __, ...cleanSpec } = run.spec;
+    const outlinePrompt = `AUTHOR CONTRACT
+
+${JSON.stringify(cleanSpec, null, 2)}
+
+Preserve the specified premise, genre, character identities, audience,
+viewpoint, language, length, and ending requirements.
+
+Treat style preferences as contextual guidance, not absolute word bans.
+Do not impose a cliffhanger on a resolved ending.
+
+
+TASK
+
+Develop a complete chapter-by-chapter outline for exactly
+${run.spec.chapterCount} chapters.
+
+Describe the actual events, major discoveries, consequential choices,
+and ending. Do not write a promotional synopsis or withhold spoilers.
+
+Plan a story that fits the author contract’s targetWordsPerChapter.
+Give pivotal developments enough space to be dramatized later.
+
+Write all planning text and JSON keys in English.
+Future story prose must follow the author contract’s language.
+
+
+NOVEL STRUCTURE
+
+Build a coherent progression with these dramatic functions:
+
+- Establish the protagonist pursuing something concrete within
+  an existing situation.
+- Introduce a disruption that makes that situation unstable.
+- Establish a commitment, choice, or consequence that draws
+  the protagonist into sustained pursuit of the central conflict.
+- Develop attempts whose results create or reshape subsequent problems.
+- Include a meaningful reorientation: a discovery, reversal, success,
+  or failure that changes the protagonist’s understanding or strategy.
+- Bring the developing conflict to a crisis that leads into
+  the decisive action.
+- Resolve the central dramatic question through consequential
+  character action.
+- Show the meaningful external and emotional consequences.
+
+These are story functions, not mandatory separate chapters.
+Several may occur within one chapter. Do not force rigid percentages
+or add incidents merely to fill structural slots.
+
+Adapt the progression to the requested genre and narrative design.
+
+
+CAUSAL DEVELOPMENT
+
+Connect major developments through causes and consequences.
+
+For each chapter, make clear:
+- What prior event or existing pressure drives it.
+- What the protagonist attempts.
+- What resists or complicates that attempt.
+- What the response produces.
+- How the resulting situation affects what follows.
+
+Do not repeatedly reset the protagonist to the same problem,
+strategy, or emotional realization.
+
+Escalation may increase cost, narrow options, deepen a relationship
+conflict, expose a mistaken assumption, or change the goal.
+It need not consist of larger physical threats.
+
+Coincidence may complicate the situation but must not conveniently
+resolve the central conflict.
+
+
+CHARACTERS
+
+Establish the protagonist’s external desire and relevant internal
+need, contradiction, or operating belief.
+
+Develop the internal trajectory through evidence, choices,
+and consequences. Allow growth, deterioration, or steadfastness
+according to the intended story.
+
+A later chapter must test, complicate, or apply an earlier realization
+rather than repeat it.
+
+Give consequential supporting characters their own objectives,
+personal stakes, and choices capable of resisting the protagonist.
+Do not create a separate subplot for every incidental character.
+
+Differentiate voices through attitude, vocabulary, directness,
+and conversational tactics rather than catchphrases alone.
+
+Make opposition coherent. If there is an antagonist, establish
+their motives, means, limitations, and actions.
+Do not make them responsible for every misfortune merely to simplify
+the ending.
+
+
+KNOWLEDGE AND PLAUSIBILITY
+
+Respect what characters can know through established experience,
+observation, communication, and reasonable inference.
+
+Distinguish suspicion from confirmed knowledge.
+Plan how important discoveries become available to the characters.
+
+Ground major events in credible locations, access, timing,
+and available resources without writing scene-level staging.
+
+Give important clues, evidence, and devices a plausible origin
+and route into the story.
+
+Establish abilities, resources, relationships, and information
+before they become essential to the resolution.
+
+
+SETUPS AND PAYOFFS
+
+Identify the important expectations the story creates and how
+they are fulfilled.
+
+Prepare major revelations and decisive solutions with sufficient
+prior groundwork. Avoid clues that exist only to deliver
+the next instruction to the protagonist.
+
+Resolve the central conflict and the promised emotional trajectory
+within this book, in a manner consistent with the requested ending.
+
+Optional series threads may remain open, but must not substitute
+for this book’s resolution.
+
+
+PACING AND ORIGINALITY
+
+Give each chapter a specific contribution to the developing story.
+
+Vary objectives, tactics, emotional pressure, and consequences
+when the story supports that variation.
+Do not introduce arbitrary settings, objects, or subplots for novelty.
+
+Avoid stock openings built around waking up, generic weather,
+mirror-based self-description, or travel itinerary.
+When such an event matters to the premise, enter through its
+specific dramatic problem.
+
+Avoid mechanically repeating chapter openings, endings,
+or sequences of actions with different wording.
+
+Recurring motifs and deliberate structural echoes should develop
+their meaning or consequence.
+
+Allow quieter chapters or passages for reaction, interpretation,
+preparation, and recovery when they affect subsequent behavior.
+
+Use chapter endings appropriate to their function:
+consequence, decision, discovery, unresolved pressure, or earned closure.
+Do not require a cliffhanger after every chapter.
+
+Give the climax enough space for meaningful resistance,
+decisive action, and immediate consequences.
+Do not spend the final chapter on approach and then summarize
+the resolution.
+
+
+OUTLINE CONTENT
+
+Within the outline string, include:
+
+1. STORY FOUNDATION
+   Central dramatic question, protagonist desire, internal tension,
+   opposition, concrete stakes, and intended emotional trajectory.
+
+2. CHARACTER DYNAMICS
+   Brief descriptions of consequential characters, their independent
+   objectives, relationships, and distinguishing speech tendencies.
+
+3. CHAPTER-BY-CHAPTER OUTLINE
+   Exactly ${run.spec.chapterCount} numbered chapters.
+
+   For each chapter, state:
+   - Its structural role.
+   - The opening situation and causal link.
+   - The protagonist’s objective and approach.
+   - The specific major events, resistance, and character responses.
+   - The resulting external and internal change.
+   - Relevant setups or payoffs.
+   - The ending situation and its consequences.
+   - Which pivotal development deserves the most page space.
+
+4. ENDING AND PAYOFFS
+   State what actually happens in the climax, how the central
+   dramatic question is answered, what it costs, and the resulting
+   external and emotional state.
+   Identify how the major setups receive their payoffs.
+
+Keep the outline concrete and proportionate to the book’s length.
+Do not include finished scenes, scripted dialogue, or detailed staging.
+
+
+FINAL CHECK — DO NOT OUTPUT
+
+Check that:
+- There are exactly ${run.spec.chapterCount} chapters.
+- The story fits the author contract and available length.
+- Major events have credible causes and meaningful consequences.
+- Character knowledge and resources support their actions.
+- Chapters develop the conflict rather than repeat the same pattern.
+- The climax follows from prior developments and character agency.
+- The actual ending and major payoffs are explicitly described.
+
+
+RESPONSE FORMAT
+
+Return only a valid JSON object with exactly one key:
+
+{"outline": "The complete outline in English"}
+
+The outline value must be a string.
+Escape line breaks and quotation marks correctly for valid JSON.
+Do not include Markdown fences or commentary outside the JSON.`;
+
+    run.outline = await structuredResponse(
+      outlinePrompt,
+      'You are a novel architect developing the author\'s story.',
+      this.llm,
+      ['outline'],
+      raw => {
+        if (typeof raw.outline !== 'string' || !raw.outline.trim()) throw new Error('The outline is empty.');
+        return raw.outline.trim();
+      },
+      {
+        temperature: SAMPLING.outline,
+        maxTokens: 8192,
+        route: 'writer',
+        schema: {
+          type: 'object',
+          required: ['outline'],
+          properties: { outline: { type: 'string', minLength: 1 } },
+          additionalProperties: false,
+        },
+      }
+    );
+    await this.checkpoint(run);
+  }
+
+  /**
+   * The plan read against the two things nothing has ever read it against: the outline it was built
+   * from, and itself.
+   *
+   * Both are one call, once, at planning time, and neither can stop the book. A plan-level finding
+   * that throws costs the whole run — the blueprint gets two attempts — and a plan-level finding that
+   * triggers a replan is the loop we have spent the day refusing. So what they produce is written
+   * where the chapter planners will read it: every chapter is planned with the list of places the
+   * plan does not hold in front of it, and the chapter that owns a broken join is told which one.
+   */
+  private async checkPlanCoherence(run: NovelRun): Promise<void> {
+    const blueprint = run.blueprint!;
+    const issues: PlanningIssue[] = [];
+
+    // 1. Joins. The deterministic pass picks the pairs; the call decides which of them are real.
+    const flagged = looseJoins(blueprint.chapterArcs);
+    if (flagged.length) {
+      const arcs = (blueprint.chapterArcs || []).map(arc => ({ chapter: arc.chapter, entryState: arc.entryState, exitState: arc.exitState }));
+      try {
+        const confirmed = await structuredResponse(`${specPrompt(run.spec)}\nCHAPTER JOINS AS PLANNED, each chapter with the state it starts from and the state it leaves:\n${JSON.stringify(arcs)}\nThese joins look wrong and are the only ones you are asked about: ${JSON.stringify(flagged)}.\nFor each, say whether the chapter genuinely starts from the situation the previous chapter left. A chapter may open elsewhere, later, or with other people and still follow from it; what does not follow is a chapter that begins as though the previous one had not happened, or that begins exactly where the previous one began. Report only the joins that do not hold, in the words of the plan itself.\nReturn JSON {"broken":[{"chapter":2,"problem":"what does not follow"}]}, and an empty list if all of them hold.`,
+          'You read a novel plan for one thing only: whether each chapter starts from the situation the previous chapter left. You judge the plan and write no story.', this.llm, ['broken'], raw => {
+            if (!Array.isArray(raw.broken)) throw new Error('Return a broken array, empty if every join holds.');
+            return raw.broken
+              .filter((item: any) => item && Number.isInteger(item.chapter) && typeof item.problem === 'string' && item.problem.trim()
+                && flagged.some(candidate => candidate.chapter === item.chapter))
+              .slice(0, flagged.length)
+              .map((item: any) => ({ chapter: item.chapter as number, problem: String(item.problem).trim() }));
+          }, { temperature: 0.1, maxTokens: 2048, route: 'validator', schema: {
+            type: 'object', required: ['broken'],
+            properties: { broken: { type: 'array', items: { type: 'object', required: ['chapter', 'problem'], properties: { chapter: { type: 'integer' }, problem: { type: 'string' } }, additionalProperties: false } } },
+            additionalProperties: false,
+          } });
+        for (const item of confirmed) issues.push({ location: `chapter ${item.chapter}`, problem: item.problem, neededClarification: `Plan chapter ${item.chapter} to start from what chapter ${item.chapter - 1} actually leaves, or dramatize what closed the gap.` });
+      } catch { /* A reading that fails leaves the plan as it is; it never costs the book. */ }
+    }
+
+    // 2. The outline. A substituted plot arrives with new people, so the names are the cheap half.
+    const invented = castNotInOutline(blueprint.characters, run.outline);
+    try {
+      const departures = await structuredResponse(`${specPrompt(run.spec)}\nAPPROVED OUTLINE — the authorized story:\n${run.outline}\nTHE PLAN BUILT FROM IT:\n${JSON.stringify({ centralConflict: blueprint.centralConflict, protagonistChange: blueprint.protagonistChange, endingPayoff: blueprint.endingPayoff, climax: blueprint.climax, cast: Object.keys(blueprint.characters), promises: blueprint.promises.map(promise => promise.description) })}\n${invented.length ? `These names are in the plan and not in the outline: ${JSON.stringify(invented)}. Say for each whether the outline supports the person under another description, or whether the plan introduced them.\n` : ''}The plan explains the outline; it may make causes explicit, name what the outline left unnamed, and schedule what the outline implies. What it may not do is replace the story: a different central conflict, a different ending, a protagonist who changes in another direction, a payoff the outline does not contain.\nReport only what the plan carries and the outline does not support. Quote the outline for each — the passage that shows what the outline actually says — copied exactly. A finding whose quotation is not in the outline is discarded. Most plans depart nowhere, and an empty list is the expected answer.\nReturn JSON {"departures":[{"what":"what the plan does","outlineQuote":"exact passage from the outline"}]}.`,
+        'You compare a novel plan against the outline it was built from and report only where the plan replaces the story. You quote the outline and compose nothing.', this.llm, ['departures'], raw => {
+          if (!Array.isArray(raw.departures)) throw new Error('Return a departures array, empty if the plan keeps the outline.');
+          return raw.departures
+            .filter((item: any) => item && typeof item.what === 'string' && item.what.trim() && typeof item.outlineQuote === 'string' && quotedFrom(item.outlineQuote, run.outline))
+            .slice(0, 4)
+            .map((item: any) => ({ what: String(item.what).trim(), outlineQuote: String(item.outlineQuote).trim().slice(0, 240) }));
+        }, { temperature: 0.1, maxTokens: 2048, route: 'validator', schema: {
+          type: 'object', required: ['departures'],
+          properties: { departures: { type: 'array', maxItems: 4, items: { type: 'object', required: ['what', 'outlineQuote'], properties: { what: { type: 'string' }, outlineQuote: { type: 'string' } }, additionalProperties: false } } },
+          additionalProperties: false,
+        } });
+      for (const item of departures) issues.push({ location: 'the plan against the approved outline', problem: item.what, neededClarification: `The outline says: "${item.outlineQuote}". Keep the outline's story.` });
+    } catch { /* Same: the comparison is worth one call and never the book. */ }
+
+    if (issues.length) blueprint.planningIssues = [...(blueprint.planningIssues || []), ...issues];
     await this.checkpoint(run);
   }
 
@@ -353,25 +1025,835 @@ export class NovelEngine {
     run.stage = 'planning';
     await this.checkpoint(run);
     if (!run.blueprint) {
-      run.blueprint = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\nAPPROVED OUTLINE:\n${run.outline}\nReturn JSON {"centralConflict":"goal, opposition, escalation and stakes","protagonistChange":"initial belief, decisive choice, cost and final change","endingPayoff":"external and emotional resolution","characters":[{"name":"name","description":"desire, need, contradiction, agency, speech habits and relationships"}],"promises":[{"id":"stable-id","description":"specific setup and earned payoff","setupChapter":1,"payoffChapter":${run.spec.chapterCount},"required":true}]}. Schedule all required payoffs inside this book. Optional series threads may remain open but must have required=false. Include the central conflict and emotional arc among the required promises.`, 'You build an explicit novel blueprint. Respond only with JSON.', this.llm, ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises'], raw => validateBlueprint(raw, run.spec), { temperature: SAMPLING.blueprint, maxTokens: 8192, route: 'writer', schema: blueprintSchema });
+      const { chapterMode: _, skipEditing: __, ...cleanSpec } = run.spec;
+      const blueprintSystemPrompt = `You build an explicit, causally coherent novel blueprint from an
+author contract and an approved outline.
+
+Define the novel’s dramatic architecture, character trajectories,
+and scheduled setups and payoffs so downstream chapter planners
+can develop the story without inventing a different plot.
+
+Preserve the approved events, ending, character identities,
+and author requirements. Make implicit causal relationships explicit
+without adding unsupported major developments.
+
+Respond only with valid JSON matching the requested schema.
+Write planning descriptions in English.
+Do not include Markdown fences, commentary, or finished story prose.`;
+
+      const blueprintUserPrompt = `AUTHOR CONTRACT
+
+${JSON.stringify(cleanSpec, null, 2)}
+
+The author contract applies to planning, prose, and every revision.
+
+Preserve proper names, requested audience, viewpoint, language,
+and ending. Style preferences are contextual, not absolute word bans.
+
+Write blueprint descriptions in English. Future story prose must
+follow the language specified in the author contract.
+
+
+APPROVED OUTLINE
+
+${run.outline}
+
+
+TASK AND AUTHORITY
+
+Build a book-level blueprint for exactly ${run.spec.chapterCount} chapters.
+
+The author contract defines requirements.
+The approved outline defines the authorized story events and ending.
+This blueprint explains their structure and causal relationships.
+
+Do not replace the approved plot with a more conventional one.
+Do not invent major events merely to fill structural slots.
+
+You may clarify motivations, consequences, and connective details
+when they are compatible with the supplied material.
+
+If the contract and outline conflict, or a necessary causal link
+cannot be supported without changing the approved plot, record
+the issue in planningIssues rather than silently rewriting the story.
+
+
+DRAMATIC ARCHITECTURE
+
+Organize the approved events into a coherent progression:
+
+- Setup: establish the protagonist’s active situation, desire,
+  and relevant vulnerability.
+- Disruption: identify what makes the existing situation unstable.
+- Commitment: identify what commits the protagonist to pursuing
+  the central conflict and makes retreat difficult.
+- Development: show attempts, resistance, and accumulating consequences.
+- Reorientation: identify a supported discovery, reversal, success,
+  or failure that changes the protagonist’s understanding or strategy.
+- Crisis: identify the pressure or conflict of priorities that leads
+  into the decisive action.
+- Climax: resolve the central dramatic question through consequential
+  character action.
+- Resolution: show the external and emotional consequences.
+
+Use these functions as diagnostic guidance, not mandatory separate events.
+One event may serve several functions. Multiple functions may occur
+within one chapter, especially in a short book.
+
+Locate turns according to the approved events, not rigid percentages
+or chapter-number formulas.
+
+If a conventional structural function is deliberately absent,
+preserve that design. Flag an absence only when it creates a concrete
+problem with causality, comprehension, or the promised resolution.
+
+Do not mistake a sequence of increasingly dangerous incidents
+for a developing plot. Each major development must change the problem,
+the protagonist’s strategy, the available options, or the cost.
+
+
+CAUSALITY AND STAKES
+
+For every major turn, identify:
+- The established event, pressure, or action that causes it.
+- What the protagonist or another consequential character does.
+- What changes as a result.
+- How that change shapes subsequent events.
+
+Track the protagonist’s strategy across chapters.
+Setbacks and successes must affect later behavior rather than
+resetting the protagonist to the same approach without explanation.
+
+Make stakes concrete: what may be lost, for whom, and why it matters.
+Escalation may involve relationships, obligations, identity, resources,
+knowledge, exposure, or danger.
+
+Do not resolve a central obstacle through an unestablished ability,
+resource, coincidence, or sudden change of allegiance.
+
+
+PROTAGONIST TRAJECTORY
+
+Describe the protagonist’s starting belief or operating assumption,
+the strategy it supports, and the evidence that tests it.
+
+Let internal development emerge through choices and consequences.
+A later chapter must test, complicate, or apply an earlier realization
+rather than announce it again.
+
+Allow growth, deterioration, refusal to change, or a steadfast belief
+that changes others when supported by the approved story.
+
+Connect the decisive choice to this trajectory without forcing
+a moral lesson or positive transformation.
+
+Make the final emotional state compatible with what the protagonist
+has done, gained, lost, and understood.
+
+
+SUPPORTING CHARACTERS AND OPPOSITION
+
+Give consequential supporting characters:
+- An objective of their own.
+- Something they risk or stand to lose.
+- An independent choice that can support, resist, or complicate
+  the protagonist’s pursuit.
+
+Express agency through planned behavior and relationships.
+Do not add a subplot for every incidental person.
+
+Keep character knowledge distinct from blueprint knowledge.
+Do not give characters premature access to later revelations.
+
+Preserve the antagonist’s established motives, limitations,
+and credible alternatives where applicable.
+
+Do not retroactively make one antagonist responsible for every
+misfortune merely to simplify the protagonist’s decision.
+
+A revelation of culpability requires prior groundwork.
+If the ending depends on a costly choice, the revelation must not
+erase that cost merely by making one option obviously correct.
+
+Do not invent a personified antagonist if the approved opposition
+is institutional, environmental, interpersonal, or internal.
+
+
+SETUPS AND PAYOFFS
+
+Schedule specific narrative promises rather than vague intentions
+such as “explore trust” or “increase tension.”
+
+For each promise, identify:
+- What creates the reader’s expectation.
+- Where that expectation is established.
+- Any necessary reinforcement or complication.
+- What event, decision, discovery, or resulting state fulfills it.
+- The chapter where that fulfillment occurs.
+
+Include the central conflict and the protagonist’s emotional trajectory
+among the required promises.
+
+Schedule every required payoff inside this book.
+Optional series threads may remain open only with required=false.
+
+A setup and payoff may occur within the same chapter if their sequence
+is clear and the payoff is adequately prepared.
+
+Do not treat every detail as a promise or force every motif
+into a reveal.
+
+
+WHAT THE ENDING COSTS, AND WHAT WINS IT
+
+Each chapter arc states its cost: what that chapter takes away for good.
+A person, a resource, an option, a standing, a belief, a way back.
+Gaining less than hoped is not a cost; being unable to return to a
+position already held is.
+
+At most one chapter in the book may cost nothing, and a plan in which
+two or more cost nothing is rejected. A chapter that only accumulates
+advantages leaves the next chapter nothing to work against.
+
+climax states the decisive action that ends the central conflict, and
+preparedBy lists the promise ids that establish the means it uses.
+
+Every means the ending relies on — an object, an ally, a piece of
+knowledge, a weakness, an access — must be one of those promises and
+must be set up in an earlier chapter than the one that uses it. A plan
+whose climax is won by something the final chapter introduces is
+rejected: that is the book supplying itself with what it needs at the
+moment it needs it.
+
+
+PACING AND ENDINGS
+
+Match the planned scope to ${run.spec.chapterCount} chapters and approximately
+the author contract’s targetWordsPerChapter per chapter.
+
+Allocate enough space for decisive developments.
+Do not overload a short chapter with several major turns that each
+require extensive dramatization.
+
+Give the climax room for the resistance, consequential action,
+and immediate effects that the approved confrontation requires.
+Do not spend its available space on approach and then summarize
+the decisive exchange.
+
+Alternate pressure with reaction, interpretation, preparation,
+or recovery when those phases affect what happens next.
+
+Vary chapter endings by dramatic function:
+consequence, decision, discovery, unresolved pressure, or earned closure.
+
+Do not require every chapter to end with a cliffhanger.
+Do not reuse the same sequence of actions, images, and internal
+conclusions to close successive chapters.
+
+Deliberate recurring endings or motifs must develop their meaning
+or consequence.
+
+Respect the requested ending. Do not attach a new threat
+to an otherwise resolved ending merely to create a sequel hook.
+
+Atmosphere should influence attention, interpretation, risk,
+or behavior rather than serve only as decorative description.
+
+
+OUTPUT SCHEMA
+
+Return one JSON object with exactly these top-level keys:
+
+{
+  "centralConflict": "The protagonist’s goal, opposition, developing pressure, concrete stakes, and central dramatic question",
+  "protagonistChange": "Starting belief or operating assumption, how it is tested, decisive response, cost, and resulting change or steadfastness",
+  "endingPayoff": "How the approved ending resolves the external conflict and emotional trajectory, including meaningful consequences",
+  "majorTurns": [
+    {
+      "id": "turn-1",
+      "functions": ["disruption", "commitment"],
+      "chapter": 1,
+      "event": "A specific approved event",
+      "cause": "The established pressure or action producing it",
+      "characterAction": "The consequential character response",
+      "consequence": "What changes and how it shapes what follows"
+    }
+  ],
+  "chapterArcs": [
+    {
+      "chapter": 1,
+      "structuralRole": "This chapter’s specific contribution to the novel",
+      "entryState": "The relevant situation at the opening",
+      "causalLink": "What drives this chapter; for chapter one, the existing pressure or initiating circumstance",
+      "protagonistStrategy": "The approach pursued during this chapter",
+      "development": "The approved events and responses that test or advance that approach",
+      "internalDevelopment": "How the chapter tests, complicates, or applies the protagonist’s operating belief",
+      "chapterChange": "The meaningful change produced by this chapter",
+      "exitState": "The resulting situation inherited by later events",
+      "endingFunction": "The dramatic function of the chapter ending",
+      "pacingPriority": "Which development needs space and what can be compressed",
+      "cost": "What this chapter takes away for good, or an empty string if it takes nothing",
+      "setupPromiseIds": [],
+      "payoffPromiseIds": []
+    }
+  ],
+  "characters": [
+    {
+      "name": "Exact established name",
+      "description": "Desire, relevant need or tension, contradiction, independent agency, personal stakes, speech habits, and relationships; proportionate to the character’s importance"
+    }
+  ],
+  "promises": [
+    {
+      "id": "promise-central-conflict",
+      "description": "The specific reader expectation and its earned fulfillment",
+      "setup": "The event or situation establishing the expectation",
+      "setupChapter": 1,
+      "development": "Necessary reinforcement or complication, or an empty string if none is needed",
+      "payoff": "The specific event or resulting state fulfilling the promise",
+      "payoffChapter": ${run.spec.chapterCount},
+      "required": true
+    }
+  ],
+  "climax": {
+    "decisiveAction": "The specific act that ends the central conflict, and who performs it",
+    "preparedBy": ["promise-central-conflict"]
+  },
+  "planningIssues": [
+    {
+      "location": "Affected chapter, turn, promise, or contract requirement",
+      "problem": "A concrete conflict, unsupported dependency, or scope problem",
+      "neededClarification": "The decision or missing information needed to resolve it"
+    }
+  ]
+}
+
+
+FIELD RULES
+
+Use actual chapter numbers within 1 through ${run.spec.chapterCount}.
+The numbers shown in the example are illustrative.
+
+chapterArcs must contain exactly ${run.spec.chapterCount} entries,
+ordered by chapter number.
+
+majorTurns must contain only supported turns.
+Do not add one entry per structural function merely to fill a checklist.
+
+Allowed values in majorTurns.functions:
+setup, disruption, commitment, development, reorientation,
+crisis, climax, resolution.
+
+Each major turn may have more than one function.
+
+Use stable, unique IDs for turns and promises.
+All promise IDs referenced in chapterArcs must exist in promises.
+
+setupChapter and payoffChapter must be integers inside the book.
+payoffChapter must not precede setupChapter.
+
+For an optional unresolved series thread:
+- Set required to false.
+- Set payoffChapter to null.
+- Describe the intentionally unresolved expectation in payoff.
+
+This book has chapters 1 to ${run.spec.chapterCount} and no others.
+Every setupChapter is an integer in that range. For every required
+promise, payoffChapter is an integer in that range and not earlier
+than its own setupChapter. A promise that cannot be paid off inside
+this book is not a required promise: mark it required=false and leave
+payoffChapter null, or schedule it where it can actually be paid.
+Ensure chapterArcs schedules its setup and payoff consistently.
+
+Use an empty array for planningIssues when no concrete issue exists.
+Do not invent issues or generic warnings to populate this field.
+
+Do not add scene-level staging, detailed scene breakdowns,
+finished dialogue, or prose instructions to this blueprint.
+Those belong to downstream chapter and scene planning.
+
+
+BEFORE YOU ANSWER
+
+The promise schedule, the means of the climax and the chapter costs are
+checked by the application and sent back to you if they are wrong, so
+spend nothing on re-reading them. These are yours, and the first is the
+one plans actually get wrong:
+
+- Every chapter's entryState is the situation the previous chapter's
+  exitState leaves. Not a restatement of that state, and not a fresh
+  situation that merely happens afterwards.
+- Major turns arise from supported causes and character responses.
+- The protagonist’s strategy and internal trajectory develop over time.
+- Consequential supporting characters retain independent agency.
+- The planned scope fits the available length.
+
+Return only the JSON object.`;
+
+      run.blueprint = await structuredResponse(
+        blueprintUserPrompt,
+        blueprintSystemPrompt,
+        this.llm,
+        ['centralConflict', 'protagonistChange', 'endingPayoff', 'characters', 'promises'],
+        raw => validateBlueprint(raw, run.spec),
+        { temperature: SAMPLING.blueprint, maxTokens: 16384, route: 'writer', schema: blueprintSchema }
+      );
       await this.checkpoint(run);
+      if (!run.spec.skipEditing) await this.checkPlanCoherence(run);
     }
     for (let number = run.chapters.length + 1; number <= run.spec.chapterCount; number++) {
       const seed = buildIdeaSeed(number);
       const cast = Object.keys(run.blueprint.characters);
-      const planPrompt = `${specPrompt(run.spec)}${narrativeDesign}\n${languageContract(run.spec.language)}\n${STRUCTURE_BANS}\nSCENE SHAPE VARIATION: prefer ${seed.sceneShape} only if it fits the approved outline; never introduce a new setting, institution, object, clue or subplot merely for variety.\n${BESTSELLER_REQUIREMENTS}\n${PLANNING_COHERENCE}\nOUTLINE:\n${run.outline}\nCOMPACT BLUEPRINT AND PRIOR OUTCOMES:\n${JSON.stringify(compactPlanningContext(run))}\nAPPROVED CHARACTER NAMES (participants must be exact entries from this list): ${JSON.stringify(cast)}\nPlan chapter ${number}/${run.spec.chapterCount}, role=${chapterRole(number, run.spec.chapterCount)}. Continue from the previous chapter's outcome. Never reverse or disprove an established event merely to manufacture a twist unless the approved outline explicitly requires that reversal. Every scene needs a goal, resistance, a consequential choice and changed situation. Follow scheduled promise setups and payoffs. Vary pacing intentionally; a quiet consequence scene need not contain a fight or cliffhanger. Return JSON with strings title, summary, sceneBreakdown, characterDevelopmentFocus, plotAdvancement, timelineIndicators, emotionalToneTension, connectionToNextChapter, openingHook, chapterEnding, moralDilemma, consequencesOfChoices, rhythmPacing; integer tensionLevel; and detailedScenes:[{sceneId,location,participants:[exact approved names],objective,conflict,outcome,keyMoments:[specific beats],narrativeWeight:1–5,conflictCarriedBy:"speech"|"action"|"solitude",sceneShape:"chase|confession|heist|trial|road|interrogation|negotiation|escape",freshConstraint:string,staging:string}]. Each scene's staging is one line: where everyone stands, which key objects are within sight or reach as the scene opens, and which physical conditions constrain action there. No keyMoment may require an act those conditions forbid: plan the change of conditions, with its cost, as a moment of its own, or plan a different act. Give adjacent scenes different sceneShape values; never repeat the previous chapter's opening or closing device. Allocate narrativeWeight by dramatic importance. ${sceneCountGuidance(run.spec.targetWordsPerChapter)} For the final chapter, connectionToNextChapter must describe closure or an intentional series thread.`;
+      const thisChapterArc = run.blueprint.chapterArcs?.find(arc => arc.chapter === number);
+      const thisChapterTurns = run.blueprint.majorTurns?.filter(turn => turn.chapter === number) || [];
+      const systemPrompt = `You plan causally connected scenes for a novel.
+
+Follow the approved outline, author requirements, established canon,
+and character knowledge. Translate the assigned chapter role into
+specific events, motivated character responses, and consequences.
+
+Prioritize causal continuity, character agency, and purposeful pacing.
+Use structural guidance to support the story, not to manufacture
+twists, dilemmas, or cliffhangers.
+
+Respond only with a valid JSON object matching the requested schema.
+Write all JSON string values in English.
+Do not include Markdown fences or commentary.`;
+
+      const planPrompt = `AUTHOR REQUIREMENTS
+
+${specPrompt(run.spec)}
+
+
+NARRATIVE DESIGN
+
+${narrativeDesign}
+
+
+TASK
+
+Plan chapter ${number} of ${run.spec.chapterCount}.
+Assigned chapter role: ${chapterRole(number, run.spec.chapterCount)}.
+${thisChapterArc ? `\nASSIGNED CHAPTER ARC\n\n${JSON.stringify(thisChapterArc, null, 2)}\n` : ''}${thisChapterTurns.length ? `\nASSIGNED MAJOR TURNS FOR CHAPTER ${number}\n\n${JSON.stringify(thisChapterTurns, null, 2)}\n` : ''}
+Plan 2 to 4 scenes, allocating space according to dramatic importance. ${sceneCountGuidance(run.spec.targetWordsPerChapter)}
+Produce a scene plan, not finished story prose.
+
+Continue from the previous chapter’s established outcome.
+Honor any time or location transition required by the approved outline.
+
+
+APPROVED OUTLINE
+
+${run.outline}
+
+
+COMPACT BLUEPRINT AND PRIOR OUTCOMES
+
+${JSON.stringify(compactPlanningContext(run), null, 2)}
+
+
+APPROVED CHARACTER NAMES
+
+Participants must be exact entries from this list:
+
+${JSON.stringify(cast)}
+
+
+AUTHORITY AND CONTINUITY
+
+Treat author requirements, established events, and the approved outline
+as constraints.
+
+Use the outline to determine what is scheduled to happen.
+Use prior outcomes to determine what has already happened.
+
+Do not reverse or disprove an established event merely to manufacture
+a twist unless the approved outline explicitly requires that reversal.
+
+Keep character knowledge separate from planning knowledge.
+Characters may act on information only if they already possess it
+or acquire it through a planned event.
+
+Preserve relevant injuries, possessions, access restrictions,
+relationships, unresolved actions, and physical conditions.
+
+Do not replay completed events, repeat discoveries, or restore
+an earlier situation without a credible intervening cause.
+
+Do not introduce a new setting, institution, object, clue, ability,
+or subplot merely to create variety or solve a planning difficulty.
+Any necessary connective detail must fit established circumstances
+and must not alter the approved plot.
+
+
+NOVEL STRUCTURE ALIGNMENT
+
+Identify this chapter’s specific contribution to the novel’s current
+phase: setup, commitment, escalation, midpoint reorientation,
+consequences, crisis, climax, or resolution.
+
+Use these phases descriptively. Do not force every novel into identical
+chapter proportions or assign a major turn solely by chapter number.
+
+Advance only the portion of the novel arc assigned to this chapter.
+Do not introduce, relocate, or resolve a major turning point merely
+to make this chapter feel complete.
+
+Develop the protagonist’s current strategy:
+- What approach are they pursuing?
+- What does the result reveal about that approach?
+- How does the result affect their next action?
+
+Connect external developments to the protagonist’s internal conflict
+where the story supports that connection.
+Do not force a lesson, transformation, or moral dilemma into every chapter.
+
+Prepare scheduled developments through relevant actions, information,
+relationships, or resources. Follow scheduled promise setups and payoffs.
+Do not reveal or resolve material assigned to later chapters.
+
+If this chapter contains the climax, make the decisive outcome arise
+from established causes and consequential character action.
+
+If this chapter contains the resolution, show the resulting state
+and fulfill remaining scheduled promises without manufacturing
+a new central conflict.
+
+
+CHAPTER CAUSALITY
+
+Define the meaningful difference between the chapter’s opening
+and ending situations.
+
+Build a causal sequence rather than a list of adjacent events.
+The outcome of each scene must motivate, enable, constrain,
+or complicate what follows.
+
+A change of time, location, or focus is acceptable when its relationship
+to the chapter’s developing conflict is clear.
+
+Across the chapter, give the protagonist meaningful agency through
+attempts, decisions, refusals, or deliberate restraint.
+
+Place costly choices where the conflict supports them.
+Do not manufacture an irreversible decision in every scene.
+
+Escalation may increase cost, narrow options, deepen a relationship
+conflict, undermine a strategy, or overturn an assumption.
+It need not increase physical danger.
+
+Alternate pressure with room for reaction, interpretation, and decision
+when appropriate. Tension does not have to rise in every scene.
+
+
+SCENE REQUIREMENTS
+
+For each scene, specify:
+- The relevant entry state.
+- Why this scene follows from established events.
+- The viewpoint character’s immediate objective.
+- The resistance, uncertainty, or competing demand.
+- The character’s motivated response.
+- Specific events that dramatize the required development.
+- The consequence of the response.
+- The resulting changed situation.
+
+Make the immediate situation and the viewpoint character’s reason
+for engaging clear early in the scene.
+
+WHAT EACH SCENE MOVES
+
+Every scene declares a shift: the register it changes, the state it
+changes from, and the state it changes to.
+
+register must be one of:
+${SHIFT_REGISTERS.join(', ')}.
+
+- knowledge: what someone knows, believes, or has been told.
+- resource: what is available — an object, money, time, an ally, a way out.
+- relationship: what two people are to each other, or what they owe.
+- initiative: who is acting and who is answering, who sets the terms.
+- position: where someone stands physically or in the order of things.
+
+from and to are concrete states, not descriptions of mood:
+"believes the clerk is honest" to "has seen the clerk take the money",
+not "uneasy" to "more uneasy".
+
+A shift whose from and to are the same state is rejected: that scene
+does not need to exist, and its material belongs to a scene that moves.
+
+A quiet aftermath or reflection scene is valid when it shifts
+an interpretation, intention, relationship, or next course of action.
+It does not require a fight, argument, or cliffhanger.
+
+
+HOW EACH SCENE ENDS
+
+Every scene declares an outcomeType:
+
+- costly-success: the attempt works, and it costs something that
+  cannot be taken back — time, an ally, cover, a principle, a way out.
+- setback: the attempt fails, and the situation is worse afterwards
+  than a plain failure would leave it.
+- clean: the attempt works at no new cost.
+
+At most one scene in the chapter may be clean, and a plan with two is
+rejected. A clean scene hands the next scene nothing to start from.
+
+The scene that follows starts from the cost or the setback the previous
+one produced. Write the next scene's entry state as that consequence,
+not as a fresh situation that happens to come afterwards.
+
+Write keyMoments as concrete, stageable events in causal order.
+Avoid instructions such as “increase tension,” “show growth,”
+or “reveal the theme” without specifying what actually happens.
+
+Describe important exchanges through what a character seeks,
+what another character does in response, and what changes.
+Do not script polished dialogue or final prose.
+
+
+SCENE SHAPE AND VARIATION
+
+Choose sceneShape to describe the scene’s actual dramatic structure.
+
+Allowed values, and no others:
+${SCENE_SHAPES.join(', ')}.
+A plan using any other label is rejected and asked for again.
+
+Adjacent scenes may share a shape when causality requires it.
+Prefer meaningful variation in objectives, tactics, pacing,
+emotional pressure, and outcomes over changing labels.
+
+Prefer ${seed.sceneShape} only if it fits the approved outline
+and is one of the allowed values. Otherwise choose the best-fitting value.
+
+${ideaSeedPrompt(seed)}
+
+Do not open with waking up, generic weather description, mirror-based
+self-description, or a travel itinerary as a routine introductory device.
+If an approved event involves one of these, enter through its specific
+dramatic problem rather than a stock introduction.
+
+Do not reproduce the previous chapter’s sequence of actions,
+images, and conclusions with cosmetic changes.
+
+Avoid mechanically repeating the previous chapter’s opening
+or closing device.
+
+A recurring motif should gain meaning or produce a new consequence.
+Do not insert motifs merely to make the chapter appear literary.
+
+
+SCENE ENDINGS
+
+Choose endings according to scene function:
+consequence, decision, discovery, unresolved pressure, or earned closure.
+
+End each scene when its planned change has occurred.
+Do not append an explanation of what the scene means.
+
+Do not require every final line to propel directly into the next scene.
+Forward movement may come from an unresolved consequence or changed
+intention rather than an explicit hook.
+
+Vary chapter endings when appropriate.
+Do not manufacture sudden arrivals, unanswered questions,
+or withheld information merely to create a cliffhanger.
+
+Departures must follow the setting’s physical rules and established
+abilities. Do not use unexplained disappearance into shadow or mist
+as a convenient ending.
+
+
+STAGING AND PHYSICAL PLAUSIBILITY
+
+For each scene, provide one concise staging line describing:
+- Where each participant is positioned at the opening.
+- Which relevant objects are visible or within reach.
+- Which physical conditions constrain action.
+
+Include only conditions that matter, such as injury, restraint,
+noise, visibility, a locked door, distance, or a moving vehicle.
+
+Check every keyMoment against this staging.
+If an action requires a change of position, access, possession,
+or physical conditions, plan that change before the action.
+Include its cost or consequence when relevant.
+
+Any clue, evidence, device, or discovery must have a credible origin
+and route into the scene.
+
+Do not plant unexplained objects inside secured environments.
+Establish or credibly support the relevant access, breach, recovery,
+transfer, or interception.
+
+Distinguish a character’s observation from their inference.
+Do not treat suspicion as established fact.
+
+
+OUTPUT SCHEMA
+
+Return one valid JSON object with exactly the following top-level keys.
+
+All narrative descriptions must be strings in English.
+Use integers and arrays where specified.
+Do not use null.
+
+Top-level fields:
+
+- title:
+  An evocative chapter title without a chapter number or "Chapter" prefix.
+
+- summary:
+  A concise account of the chapter’s causal progression.
+
+- structuralRole:
+  The chapter’s specific contribution to the approved novel arc.
+
+- causalLink:
+  The established event or consequence that drives this chapter.
+
+- chapterChange:
+  The meaningful difference between the opening and ending situations.
+
+- protagonistStrategy:
+  The approach pursued and how its result affects that approach.
+
+- sceneBreakdown:
+  A concise overview of the scene sequence, without repeating
+  the detailed scene descriptions.
+
+- characterDevelopmentFocus:
+  The relevant change, resistance to change, or deepening contradiction.
+
+- plotAdvancement:
+  Which approved plot developments and scheduled promises advance.
+
+- timelineIndicators:
+  Relevant timing, duration, and transitions.
+
+- emotionalToneTension:
+  How emotional pressure develops and varies across the chapter.
+
+- connectionToNextChapter:
+  The consequence, intention, or unresolved condition carried forward.
+  For the final chapter, describe closure or an intentional series thread.
+
+- openingHook:
+  The concrete opening situation that gives the reader a reason to engage.
+  Describe the event or pressure, not a polished opening sentence.
+
+- chapterEnding:
+  The event, decision, discovery, or settled condition on which
+  the chapter stops. Do not write the final prose line.
+
+- moralDilemma:
+  A genuine conflict between values or obligations, if present.
+  Otherwise use an empty string. Do not invent one to fill this field.
+
+- consequencesOfChoices:
+  The important effects of character attempts, decisions, or refusals.
+
+- rhythmPacing:
+  Where to expand pivotal moments, compress transitions,
+  and allow space for response.
+
+- tensionLevel:
+  An integer from 1 to 10 describing the chapter’s overall tension.
+  This is descriptive, not a target to maximize.
+
+- detailedScenes:
+  An array of 2 to 4 objects with exactly these keys:
+
+  {
+    "sceneId": "scene-1",
+    "location": "Established or outline-supported location",
+    "participants": ["Exact approved character names"],
+    "entryState": "Relevant situation before this scene",
+    "causalLink": "Why this scene follows from established events",
+    "objective": "Immediate viewpoint-character goal",
+    "conflict": "Resistance, uncertainty, or competing demand",
+    "characterResponse": "Motivated attempt, choice, refusal, or reassessment",
+    "keyMoments": [
+      "Concrete event",
+      "Response or complication caused by that event",
+      "Event completing the planned change"
+    ],
+    "consequence": "What the character response produces",
+    "outcome": "Resulting state in which the scene leaves the story",
+    "shift": {
+      "register": "knowledge",
+      "from": "State before this scene, concretely",
+      "to": "State after this scene, concretely, and different"
+    },
+    "outcomeType": "costly-success",
+    "narrativeWeight": 3,
+    "conflictCarriedBy": "speech",
+    "sceneShape": "negotiation",
+    "freshConstraint": "",
+    "staging": "Opening positions, relevant objects, and physical constraints"
+  }
+
+Use sequential sceneId values: scene-1, scene-2, and so on.
+
+narrativeWeight must be an integer from 1 to 5.
+Allocate it by dramatic importance and required development,
+not by action intensity.
+
+conflictCarriedBy must be one of:
+speech, action, solitude.
+Choose the dominant mode; it does not exclude other modes.
+
+sceneShape must be one of the allowed values listed above.
+
+shift.register must be one of:
+${SHIFT_REGISTERS.join(', ')}.
+shift.from and shift.to must be different states.
+
+outcomeType must be one of:
+${OUTCOME_TYPES.join(', ')}.
+At most one scene in this chapter may be clean.
+
+freshConstraint must describe a relevant constraint supported
+by the story. Use an empty string if none is needed.
+Do not invent an obstacle merely to populate this field.
+
+outcome is the scene’s exit state.
+consequence explains the effect that produces or contributes
+to that state. Keep these fields complementary rather than repetitive.
+
+
+FINAL VALIDATION — DO NOT OUTPUT
+
+Before returning the JSON, check:
+- The chapter fulfills its assigned role without advancing future turns.
+- Each scene has a meaningful change and a clear causal relationship
+  to the developing chapter.
+- Each scene's shift names a state the scene actually reaches, and each
+  scene after the first starts from the previous scene's cost or setback.
+- Character responses fit their knowledge, motives, and circumstances.
+- Key moments are compatible with staging and established access.
+- Setups, discoveries, and solutions have credible sources.
+- Pacing and endings serve the story rather than a repeated formula.
+- No unsupported twist, dilemma, clue, or subplot was added.
+- The JSON is valid and matches the requested fields and types.
+
+Return only the JSON object.`;
       const decode = (raw: any) => validateChapterPlan(raw, run.spec, run.blueprint!.chapters, cast);
-      const settings = { maxTokens: 8192, route: 'writer' as const, schema: chapterPlanSchema };
+      // Raised with the plan itself: a chapter now declares what each scene shifts and what its
+      // outcome costs, and a budget that fitted the old plan returns the new one cut off mid-object.
+      const settings = { maxTokens: 16384, route: 'writer' as const, schema: chapterPlanSchema };
       let plan: ParsedChapterPlan;
       try {
-        plan = await structuredResponse(planPrompt, 'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlan, ...settings });
+        plan = await structuredResponse(planPrompt, systemPrompt, this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlan, ...settings });
       } catch (error) {
         // The generic retry answers a validation failure by lowering temperature, which is the wrong
         // medicine for "you repeated yourself": ask again, pointedly, with room to invent instead.
         if (!/repeats chapter/.test(String(error))) throw error;
         const unfulfilled = (run.blueprint.promises || []).filter(promise => promise.payoffChapter >= number);
         plan = await structuredResponse(`${planPrompt}\nYour previous attempt returned a copy of an earlier chapter of this same book. Plan what happens NEXT instead: the situation this chapter starts from is the one the previous chapter ended in, and it must not end where that chapter ended. These promises are still unpaid and are the material this chapter has to work with:\n${JSON.stringify(unfulfilled)}\nGive the chapter its own title, its own scenes and its own final situation.`,
-          'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlanRetry, ...settings });
+          systemPrompt, this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlanRetry, ...settings });
       }
       run.blueprint.chapters.push(plan);
       const chapter: ChapterRecord = { number, plan, status: 'pending', versions: [], repairAttempts: 0 };
@@ -581,6 +2063,24 @@ export class NovelEngine {
             continue;
           }
           acceptCandidate(run, chapter.number);
+          if (this.deepCheckTools && !run.spec.skipEditing) {
+            const accepted = acceptedVersion(chapter);
+            if (accepted) {
+              try {
+                if (this.deepCheckTools.score || this.deepCheckTools.identify) {
+                  chapter.deepCheck = await checkChapter(run, chapter.number, accepted.content, this.deepCheckTools);
+                }
+                if (this.deepCheckTools.scoreEmotion) {
+                  chapter.emotion = await checkEmotions(chapter.number, accepted.content, this.deepCheckTools.scoreEmotion);
+                }
+                if (this.deepCheckTools.classifyGenre) {
+                  chapter.genre = await checkGenre(run, accepted.content, this.deepCheckTools.classifyGenre);
+                }
+              } catch {
+                // Post-acceptance check failure stays quiet: it must never fail a chapter
+              }
+            }
+          }
           await this.checkpoint(run);
           return;
         }
@@ -632,6 +2132,20 @@ export class NovelEngine {
       // stop spending the budget on it: the finding is recorded as one the chapter cannot answer
       // locally and demoted, and the round after it faces whatever else is actually there. Two
       // chapters spent a full budget each this way, on findings no local edit could satisfy.
+      // In forward-only mode, cap repair rounds to 2. If issues persist after 2 rounds, concede them and accept.
+      if (run.spec.forwardOnly && (chapter.repairAttempts >= LOCAL_REPAIR_ATTEMPTS || (chapter.versions.length - (chapter.repairVersionStart || 0)) >= 2)) {
+        const stubborn = candidate.review.issues.filter(issue => issue.severity !== 'minor');
+        if (stubborn.length) {
+          chapter.planningNote = `Forward-only: accepting chapter after ${LOCAL_REPAIR_ATTEMPTS} repair attempts. Advisory notes: ${stubborn.map(issue => issue.description).join('; ')}`;
+          chapter.unrepairable = [...(chapter.unrepairable || []), ...stubborn.map(({ id, category, description }) => ({ id, category, description }))];
+          const demoted = candidate.review.issues.map(issue => ({ ...issue, severity: 'minor' as const }));
+          candidate.review = { ...candidate.review, issues: demoted, status: 'passed' };
+          chapter.repairAttempts = 0;
+          chapter.lastFindingShapes = undefined;
+          await this.checkpoint(run);
+          continue;
+        }
+      }
       if (chapter.repairAttempts >= LOCAL_REPAIR_ATTEMPTS) {
         // A contradiction of canon or a broken format always has a local answer — deleting a repeated
         // passage, removing a wedged character — so those keep their standing however long they take.
@@ -661,9 +2175,16 @@ export class NovelEngine {
       // Cutting is the repair some issues actually ask for; only then may a revision come back shorter.
       let allowShortening = version.review!.issues.some(issue => issue.id === 'excess-length' || issue.id === 'duplicated-passage' || issue.id === 'restated-passage' || issue.id === 'recycled-passage' || issue.id === 'copied-passage');
       const sweep = nextSweep(version.review!.issues, chapter.distributedServed);
+      let targetIssues = sweep.issues;
+      if (run.spec.forwardOnly) {
+        const priorityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2 };
+        targetIssues = [...sweep.issues]
+          .sort((a, b) => (priorityOrder[a.severity] ?? 1) - (priorityOrder[b.severity] ?? 1))
+          .slice(0, 5);
+      }
       if (!repetition.length) {
         chapter.distributedServed = sweep.served;
-        content = await this.repair(run, chapter, version, sweep.issues);
+        content = await this.repair(run, chapter, version, targetIssues);
       } else {
         try { content = await this.removeRedundancy(run, chapter, version, repetition); }
         catch (error) {
@@ -696,6 +2217,24 @@ export class NovelEngine {
           throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row broke the prose open (${broken[0].slice(0, 80)}).`);
         }
         content = retried;
+      }
+      // The other way a revision damages prose, and the one every check we had was blind to: a
+      // sentence left standing above a hole. The deletion pass cuts by number and glues the rest, so
+      // a survivor that opened by pointing at its neighbour now points at nothing. Refused like a
+      // broken paragraph, and for the same reason — the grammar is fine and the page is not.
+      const orphaned = newlyOrphaned(version.content, content);
+      if (orphaned.length) {
+        chapter.rejectedRepairs = [...(chapter.rejectedRepairs || []), { revision: version.revision, reason: `left ${orphaned.length} sentence(s) pointing at removed text: ${orphaned[0].slice(0, 80)}`, at: Date.now() }];
+        await this.checkpoint(run);
+        const rejoined = await this.repair(run, chapter, version, sweep.issues,
+          `${extra}Your previous attempt was refused: it left ${orphaned.length} sentence(s) standing above a hole, the first of them reading ${JSON.stringify(orphaned[0].slice(0, 120))}. That sentence opens by pointing back at something the revision removed, so a reader has nothing to attach it to. Whatever you cut, cut what depends on it too, or leave the sentence its ground.`, allowShortening);
+        if (!newlyOrphaned(version.content, rejoined).length) content = rejoined;
+        else {
+          if (await this.concede(run, chapter, candidate, `two repairs in a row left prose pointing at removed text (${orphaned[0].slice(0, 80)})`)) continue;
+          chapter.status = 'needs_revision';
+          await this.checkpoint(run);
+          throw new NeedsRevisionError(`Chapter ${chapter.number} needs editorial attention: two repairs in a row left prose pointing at removed text (${orphaned[0].slice(0, 80)}).`);
+        }
       }
       // Cutting is the answer to some findings and to no others. A repair that quietly takes the
       // dialogue out of a scene while answering something else has changed what the chapter is, and
@@ -1027,6 +2566,33 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
           } else {
             chapter.sceneJournal.push({ sceneId: chapter.plan.detailedScenes[sceneIndex].sceneId, notes: [] });
           }
+          // Three faults the chapter review finds too late, read off the page the scene was just
+          // written on: the declared change never happens, a required beat is reported instead of
+          // performed, and a beat is played out and then played out again after a break. They are one
+          // family — a scene that reads well, contradicts nothing, and leaves the reader where it
+          // found them — and they get the treatment the restated and apparatus-laden drafts get: one
+          // pointed attempt naming all of them, kept only if the rewrite is actually cleaner. Nothing
+          // is discarded otherwise, and the chapter review still has the scene in front of it.
+          if (!run.spec.skipEditing) {
+            const entry = chapter.sceneJournal.at(-1);
+            const faults = sceneFaults(chapter.plan.detailedScenes[sceneIndex], entry);
+            if (entry && faults.length) {
+              try {
+                const rewritten = this.extractProse(await writeScene(run, chapter, sceneIndex, this.llm,
+                  `Your previous attempt has to be written again. ${faults.join(' ')} Keep the events, people and outcome already planned; what must change is that these happen in front of the reader, once each.`));
+                if (rewritten) {
+                  const reread = await readSceneJournal(run, chapter, sceneIndex, rewritten, this.llm);
+                  if (sceneFaults(chapter.plan.detailedScenes[sceneIndex], reread).length < faults.length) {
+                    chapter.sceneDrafts[chapter.sceneDrafts.length - 1] = rewritten;
+                    chapter.sceneJournal[chapter.sceneJournal.length - 1] = reread;
+                  }
+                }
+              } catch {
+                // A failed re-ask leaves the written scene standing. A faulty scene is worth one call,
+                // never the run.
+              }
+            }
+          }
           await this.checkpoint(run);
         }
         candidate = addCandidate(chapter, chapter.sceneDrafts.join('\n\n***\n\n'), 'Initial chapter draft');
@@ -1044,7 +2610,7 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
     for (;;) {
       run[field] = await reviewBook(run, this.llm, phase);
       await this.checkpoint(run);
-      if (run[field].status === 'passed') return;
+      if (run.spec.forwardOnly || run[field].status === 'passed') return;
       let report = run[field];
       // A book review reads the ledger rather than the prose, so its quotations are the likeliest
       // thing to go wrong: a passage extended by a word cannot be located, and a report whose every
@@ -1070,8 +2636,35 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
       for (const number of [...affected].sort((a, b) => a - b)) {
         await this.writeRemaining(run);
         const chapter = run.chapters[number - 1];
+        if (!chapter) continue;
         const version = acceptedVersion(chapter);
+        if (!version) continue;
         const issues = report.issues.filter(issue => issue.evidence.some(evidence => evidence.chapter === number));
+        if (!issues.length) {
+          const missingSetups = run.blueprint.promises.filter(p => p.required && p.setupChapter === number && !run.canon.promises.some(item => item.promiseId === p.id && item.kind === 'setup'));
+          const missingPayoffs = run.blueprint.promises.filter(p => p.required && p.payoffChapter === number && !run.canon.promises.some(item => item.promiseId === p.id && item.kind === 'payoff'));
+          for (const p of missingSetups) {
+            issues.push({
+              id: `missing-setup-${p.id}`,
+              category: 'plot',
+              severity: 'major',
+              description: `Required story promise "${p.description}" is scheduled to be introduced in this chapter but lacks verified evidence.`,
+              instruction: `Dramatize and plant the setup for this narrative promise: ${p.description}. Keep all unaffected prose unchanged.`,
+              evidence: [{ chapter: number, revision: version.revision, quote: version.content.slice(0, 200) }],
+            });
+          }
+          for (const p of missingPayoffs) {
+            issues.push({
+              id: `missing-payoff-${p.id}`,
+              category: 'plot',
+              severity: 'major',
+              description: `Required story promise "${p.description}" is scheduled for payoff in this chapter but lacks verified evidence.`,
+              instruction: `Dramatize and resolve the payoff for this narrative promise: ${p.description}. Keep all unaffected prose unchanged.`,
+              evidence: [{ chapter: number, revision: version.revision, quote: version.content.slice(0, 200) }],
+            });
+          }
+        }
+        if (!issues.length) continue;
         const content = await this.repair(run, chapter, version, issues, `GLOBAL REVIEW: ${report.error || ''}\nRequired promises for this chapter: ${JSON.stringify(run.blueprint.promises.filter(promise => promise.setupChapter === number || promise.payoffChapter === number))}`);
         const candidate = addCandidate(chapter, content, `Address ${phase} review`);
         await this.checkpoint(run);
@@ -1082,6 +2675,7 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
   }
 
   private async lineEdit(run: NovelRun) {
+    if (run.spec.forwardOnly) return;
     for (const chapter of run.chapters) {
       await this.writeRemaining(run);
       const version = acceptedVersion(chapter);
@@ -1173,7 +2767,12 @@ Return JSON {"replacements":[{"id":"f1","prose":"..."}]} with one entry per id a
       if (run.stage === 'writing' || run.stage === 'structural_review') {
         run.stage = 'structural_review';
         await this.checkpoint(run);
-        if (!run.spec.skipEditing) {
+        // The structural pass exists to send chapters back before the line edit. Forward-only does
+        // neither — it cannot revise an accepted chapter and it never reaches the line edit — so the
+        // pass was reading the whole book's ledger through a model and writing the answer into a
+        // field no code has ever read. The final pass below still runs: its verdict reaches the
+        // manuscript metadata, and its findings are what the author is shown at the end.
+        if (!run.spec.skipEditing && !run.spec.forwardOnly) {
           await this.globalReview(run, 'structure');
         } else {
           run.structuralReview = { status: 'not_checked', issues: [], checkedRevision: 0 };

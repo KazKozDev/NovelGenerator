@@ -45,6 +45,15 @@ describe('ModelSwitch', () => {
     const html = renderToStaticMarkup(<ModelSwitch />);
     expect(html).toContain('switchWriterGemini');
   });
+
+  it('lets a stopped run change provider, not only the model inside one', () => {
+    // A run stopped on an exhausted Gemini quota can only be saved by leaving Gemini, and this panel
+    // is the only place that offers the choice before the retry.
+    const html = renderToStaticMarkup(<ModelSwitch />);
+    expect(html).toContain('switchWriterProvider');
+    expect(html).toContain('switchEditorProvider');
+    expect(html).toContain('>Ollama</option>');
+  });
 });
 
 describe('PlanView scenes', () => {

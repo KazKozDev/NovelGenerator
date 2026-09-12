@@ -20,38 +20,87 @@ export const SAMPLING = {
   validator: 0.15,
 } as const;
 
-/** Distinct scene shapes; the planner must rotate them instead of reusing one default. */
+/**
+ * The dramatic structures a scene may take, and the only values sceneShape accepts.
+ *
+ * One list, because there were two: this constant used to hold genre set pieces (heist, trial, road)
+ * while the chapter planner was given a different list of dramatic structures, and the seed below
+ * then told the planner to prefer a value its own instructions forbade. Five of the eight seeds were
+ * unusable, and nothing checked the answer either way.
+ *
+ * These are shapes a scene can actually have, quiet scenes included: preparation, aftermath and
+ * reflection are here so that a scene which changes an intention rather than a situation has a true
+ * label and is not pushed into calling itself a confrontation.
+ */
 export const SCENE_SHAPES = [
-  'chase',
-  'confession',
-  'heist',
-  'trial',
-  'road',
-  'interrogation',
+  'confrontation',
   'negotiation',
+  'investigation',
+  'discovery',
+  'confession',
+  'pursuit',
   'escape',
+  'preparation',
+  'aftermath',
+  'reflection',
 ] as const;
 export type SceneShape = (typeof SCENE_SHAPES)[number];
 
-/** Fresh-idea seeds: genre mix + setting card + hard constraint + ban. */
-export const GENRE_MIXES = [
-  'fantasy + courtroom drama',
-  'sci-fi + heist',
-  'noir + family saga',
-  'thriller + coming-of-age',
-  'horror + workplace comedy',
-  'mystery + road story',
-] as const;
+/**
+ * Near misses a planner returns for a shape it means, and the older set-piece names kept in saved
+ * plans. Mapping them is not leniency about the vocabulary: it is refusing to throw away a correct
+ * plan over a synonym, while still rejecting a label that names no structure at all.
+ */
+const SHAPE_ALIASES: Record<string, SceneShape> = {
+  chase: 'pursuit', hunt: 'pursuit', flight: 'pursuit', manhunt: 'pursuit',
+  interrogation: 'investigation', questioning: 'investigation', inquiry: 'investigation', search: 'investigation',
+  revelation: 'discovery', reveal: 'discovery', realization: 'discovery',
+  argument: 'confrontation', standoff: 'confrontation', clash: 'confrontation', duel: 'confrontation', trial: 'confrontation',
+  bargain: 'negotiation', bargaining: 'negotiation', deal: 'negotiation', persuasion: 'negotiation',
+  admission: 'confession', disclosure: 'confession',
+  breakout: 'escape', getaway: 'escape',
+  planning: 'preparation', setup: 'preparation', heist: 'preparation', rehearsal: 'preparation', infiltration: 'preparation',
+  fallout: 'aftermath', regrouping: 'aftermath', recovery: 'aftermath', road: 'aftermath',
+  rest: 'reflection', contemplation: 'reflection', solitude: 'reflection',
+};
 
-export const SETTING_CARDS = [
-  'a night floating market during a blackout',
-  'a decommissioned lighthouse turned courtroom',
-  'a sleeper train that never reaches its terminus',
-  'a seed vault with one drawer missing',
-  'a radio station broadcasting to nobody',
-  'a border checkpoint between two festivals',
-] as const;
+/** The shape this label names, or null when it names none. */
+export function normalizeSceneShape(value: string): SceneShape | null {
+  const key = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const match = SCENE_SHAPES.find(shape => shape === key);
+  if (match) return match;
+  return SHAPE_ALIASES[key] || null;
+}
 
+/**
+ * The registers a scene can move the story in. A scene declares which one it shifts and from what to
+ * what, and the shift is checked against the written prose afterwards; a scene that shifts nothing is
+ * a scene the book does not need.
+ */
+export const SHIFT_REGISTERS = ['knowledge', 'resource', 'relationship', 'initiative', 'position'] as const;
+export type ShiftRegister = (typeof SHIFT_REGISTERS)[number];
+
+/**
+ * How a scene's attempt ends. 'clean' is the one that makes a chapter stand still, so a plan is
+ * allowed at most one of them: a scene whose attempt succeeds at no cost hands the next scene nothing
+ * to start from.
+ */
+export const OUTCOME_TYPES = ['costly-success', 'setback', 'clean'] as const;
+export type OutcomeType = (typeof OUTCOME_TYPES)[number];
+
+/**
+ * The craft constraints a chapter is planned under, rotated so consecutive chapters do not reach for
+ * the same move.
+ *
+ * There used to be four cards: a genre mix, a setting, a hard constraint and a ban. Only the scene
+ * shape ever reached a prompt — the function that assembled the rest into a sentence was written,
+ * tested, and called by nothing, so for the life of this project a plan was seeded by a value it was
+ * told to "prefer if it fits". The genre mix and the setting card are not restored with the others:
+ * a book bound to an approved outline cannot be handed "horror + workplace comedy" and a night market
+ * in a blackout, and a seed that fights the outline is worse than no seed. What is restored is the
+ * half that is craft rather than content — a constraint that costs the plan something, and a ban on
+ * the move every model reaches for first.
+ */
 export const CONSTRAINT_CARDS = [
   'no prophecy may explain anything',
   'no character may wake up to start a scene',
@@ -69,8 +118,6 @@ export const BAN_CARDS = [
 ] as const;
 
 export interface IdeaSeed {
-  genreMix: string;
-  setting: string;
   constraint: string;
   ban: string;
   sceneShape: SceneShape;
@@ -81,8 +128,6 @@ export function buildIdeaSeed(index: number): IdeaSeed {
   const at = (list: readonly string[], offset: number): string =>
     list[((index + offset) % list.length + list.length) % list.length];
   return {
-    genreMix: at(GENRE_MIXES, 0),
-    setting: at(SETTING_CARDS, 1),
     constraint: at(CONSTRAINT_CARDS, 2),
     ban: at(BAN_CARDS, 3),
     sceneShape: SCENE_SHAPES[((index % SCENE_SHAPES.length) + SCENE_SHAPES.length) % SCENE_SHAPES.length],
@@ -90,7 +135,7 @@ export function buildIdeaSeed(index: number): IdeaSeed {
 }
 
 export function ideaSeedPrompt(seed: IdeaSeed): string {
-  return `FRESH-IDEA SEED (binding for this chapter): genre mix ${seed.genreMix}; setting card ${seed.setting}; hard constraint ${seed.constraint}; ban ${seed.ban}; scene shape ${seed.sceneShape}. If the seed conflicts with approved canon, keep canon and reinterpret the seed, never break canon.`;
+  return `BINDING CONSTRAINTS FOR THIS CHAPTER: ${seed.constraint}; ${seed.ban}. They constrain how the approved events are planned, never which events happen: where a constraint and the approved outline disagree, the outline stands and the constraint applies to everything else.`;
 }
 
 /** Structural bans shared by planners and the scene writer. */
@@ -134,24 +179,6 @@ function vocabularySet(text: string): Set<string> {
   return new Set(wordsOf(text));
 }
 
-/** Jaccard similarity of two vocabularies, 0 (disjoint) to 1 (identical). */
-export function jaccardVocabulary(first: string, second: string): number {
-  const a = vocabularySet(first);
-  const b = vocabularySet(second);
-  if (!a.size && !b.size) return 1;
-  if (!a.size || !b.size) return 0;
-  let shared = 0;
-  for (const word of b) if (a.has(word)) shared++;
-  return shared / (a.size + b.size - shared);
-}
-
-/** 1 minus the closest match to any previous plan: higher means a more original plan. */
-export function planNoveltyScore(candidate: string, previous: string[]): number {
-  if (!previous.length) return 1;
-  let closest = 0;
-  for (const item of previous) closest = Math.max(closest, jaccardVocabulary(candidate, item));
-  return 1 - closest;
-}
 
 const HOOK_MARKERS =
   /(you|i must|we have until|deadline|threat|danger|kill|escape|run|choose|decide|secret|lie|truth|missing|stolen|dead|arrest|attack|fire|alarm|chase|knife|gun|trial|verdict|\?)/i;

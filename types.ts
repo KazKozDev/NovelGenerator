@@ -84,8 +84,22 @@ export interface DetailedScene {
   narrativeWeight?: number; // Relative page space (1–5), not elapsed story time
   /** How the scene's conflict reaches the page. 'speech' obliges the prose to dramatize it in direct speech. */
   conflictCarriedBy?: 'speech' | 'action' | 'solitude';
-  /** Distinct dramatic shape of the scene (chase, confession, heist, trial, road, interrogation, negotiation, escape). */
+  /**
+   * Distinct dramatic shape of the scene. One of SCENE_SHAPES in utils/novel/diversity.ts
+   * (confrontation, negotiation, investigation, discovery, confession, pursuit, escape, preparation,
+   * aftermath, reflection); the plan validator normalizes near misses and rejects anything else.
+   */
   sceneShape?: string;
+  /**
+   * What this scene moves, declared before it is written and verified against the prose afterwards:
+   * the register that changes, the state it changes from and the state it changes to.
+   */
+  shift?: { register: 'knowledge' | 'resource' | 'relationship' | 'initiative' | 'position'; from: string; to: string };
+  /**
+   * How the scene's attempt ends: won at a cost, lost and made worse, or won outright. A chapter is
+   * allowed at most one 'clean', because a scene that costs nothing leaves the next one nothing.
+   */
+  outcomeType?: 'costly-success' | 'setback' | 'clean';
   /** Binding fresh-idea constraint for this scene (genre mix, setting card, ban). */
   freshConstraint?: string;
   /** One-line staging: positions, key objects within reach, and the physical conditions constraining action as the scene opens. */
@@ -225,6 +239,7 @@ export interface StorySettings {
   generationSpeedMode?: GenerationSpeedMode;
   chapterMode?: ChapterMode;
   skipEditing?: boolean;
+  forwardOnly?: boolean;
 }
 
 // Agent activity log for UI display

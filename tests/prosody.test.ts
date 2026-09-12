@@ -1,9 +1,9 @@
 import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
-import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, newlyOrphaned, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
-import { citedOnlyTheOpening } from '../utils/novel/review';
+import { citedOnlyTheOpening, proseWordsSoFar } from '../utils/novel/review';
 import { createBookSpec } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { addCandidate } from '../utils/novel/storyState';
@@ -199,6 +199,46 @@ describe('semantic repetition', () => {
   });
 });
 
+describe('Prose watched as it arrives', () => {
+  it('counts the story on the page inside a half-finished envelope, and nothing before it', () => {
+    expect(proseWordsSoFar('')).toBe(0);
+    expect(proseWordsSoFar('{"pro')).toBe(0);
+    // The apparatus before the field is not the story.
+    expect(proseWordsSoFar('{"prose":"')).toBe(0);
+    expect(proseWordsSoFar('{"prose":"The rain had stopped')).toBe(4);
+    // An escaped break is a paragraph the reader will see, not a word.
+    expect(proseWordsSoFar('{"prose":"The rain had stopped.\\nShe went out."}')).toBe(7);
+  });
+});
+
+describe('A sentence left standing above a hole', () => {
+  // Quoted from a live chapter: the deletion pass cut the sentence this one was pointing at.
+  const before = "Clark's back arched against the parapet. His fingers closed on metal and crushed it. It was not Bruce's wrist. He let go.";
+
+  it('is reported when a cut takes the ground out from under it', () => {
+    const after = "Clark's back arched against the parapet. It was not Bruce's wrist. He let go.";
+    expect(newlyOrphaned(before, after)).toEqual(["It was not Bruce's wrist."]);
+  });
+
+  it('says nothing when the sentence keeps the same ground', () => {
+    // A cut elsewhere leaves this join exactly as it was.
+    const after = "Clark's back arched against the parapet. His fingers closed on metal and crushed it. It was not Bruce's wrist.";
+    expect(newlyOrphaned(before, after)).toEqual([]);
+    expect(newlyOrphaned(before, before)).toEqual([]);
+  });
+
+  it('never reports freshly written prose, however it opens', () => {
+    // New text arrives with whatever earns it; only a survivor above a new hole is a defect.
+    const after = "Clark's back arched against the parapet. A thin chime rose out of the fog. It was the handshake protocol. He let go.";
+    expect(newlyOrphaned(before, after)).toEqual([]);
+  });
+
+  it('leaves a bare personal pronoun alone, because a novel of two men opens on one constantly', () => {
+    const after = "Clark's back arched against the parapet. He let go.";
+    expect(newlyOrphaned(before, after)).toEqual([]);
+  });
+});
+
 describe('report mode inside the engine', () => {
   const purple = Array.from({ length: 12 }, (_, index) =>
     `Тьма была словно вода, будто плотная масса, точно как стена, подобно дыханию, и она ждала неподвижно у окна номер ${index}. `
@@ -226,6 +266,7 @@ describe('report mode inside the engine', () => {
       if (prompt.includes('TASK: Extract facts')) return '{"summary":"Марина ждёт света в окне напротив.","facts":[]}';
       if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
       if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+      if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
       return '{"promises":[]}';
     }
     throw new Error(`No ${system.slice(0, 40)} call belongs in an accepted, current chapter.`);

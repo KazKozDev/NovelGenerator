@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { type StorySettings, type AgentLogEntry } from '../types';
-import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { generateText, generateTextStream, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import { embedOllama } from '../services/ollamaService';
 import { RERANK_STORAGE_KEY, sharedReranker } from '../utils/novel/reranker';
 import { reportLocalModels } from '../utils/novel/modelProgress';
@@ -13,13 +13,15 @@ import { SUMMARIZER_KEY, checkChapter, checkEmotions, checkGenre, deepCheckTools
 import { sharedSummarizer } from '../utils/novel/summarizer';
 import { compileBook, displayChapters, generationStep, metadata } from '../utils/novel/presentation';
 import { playSuccessSound } from '../utils/soundUtils';
-import type { NovelLLM } from '../utils/novel/review';
+import { proseWordsSoFar, type NovelLLM } from '../utils/novel/review';
+import { logStreamProgress } from '../utils/terminalLogger';
 
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
   writingStyle: 'descriptive', language: 'English', tense: 'past',
   ending: 'closed', targetWordsPerChapter: 4000, chapterMode: 'scene',
-  skipEditing: true,
+  skipEditing: false,
+  forwardOnly: true,
 };
 
 /**
@@ -107,14 +109,12 @@ function repetitionTools(log: (entry: { type: AgentLogEntry['type']; message: st
     }
     return browserEmbed(inputs);
   };
-  // The cross-encoder now runs on a worker of its own, so the page keeps answering while a chapter is
-  // measured; onnxruntime-web executes on whichever thread calls it, and owning that thread was the
-  // only arrangement that moved it off this one. It is still a 600MB download on first use and a
-  // second of CPU per pair, so "off" in this key leaves the cosine deciding alone, as it did before
-  // the cross-encoder existed.
+  // The cross-encoder is the one local model that defaults on: anything but 'off' in storage leaves it
+  // running. An explicit 'off' drops it so the cosine decides alone — offered in the UI as the fastest
+  // way to recover when a tab hangs on generation.
   try {
     if (localStorage.getItem(RERANK_STORAGE_KEY) === 'off') return { embed };
-  } catch { /* a browser that refuses storage gets the default */ }
+  } catch { /* proceed */ }
   const model = sharedReranker();
   const rerank = async (pairs: [string, string][]) => {
     log({ type: 'execution', message: `Comparing ${pairs.length} passage pair(s) — the first use downloads the model, about 600MB` });
@@ -201,7 +201,24 @@ export default function useBookGenerator() {
       setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber, type: 'execution', message: stepName(system), details: system }]);
       try {
         const provider = options.route === 'validator' && run.validationProvider ? run.validationProvider : run.provider;
-        result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
+        if (options.stream) {
+          // Prose, watched as it arrives. The streaming transport existed in three files and was
+          // called by nothing, so a chapter appeared all at once after minutes of silence. The
+          // manuscript is unaffected: the accumulated text is reported, never accepted — what the
+          // engine receives is still the verified answer this call returns at the end.
+          let seen = '';
+          let announced = 0;
+          result = await generateTextStream(prompt, chunk => {
+            seen += chunk;
+            const words = proseWordsSoFar(seen);
+            if (words < announced + 50) return;
+            announced = words;
+            logStreamProgress(`Generating chapter ${chapterNumber}`, words, 'Synthesis');
+            setAgentLogs(previous => [...previous, { timestamp: Date.now(), chapterNumber, type: 'execution', message: `Writing: ~${words} words on the page` }]);
+          }, system, options.temperature ?? 0.4, provider, options.schema, options.maxTokens);
+        } else {
+          result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
+        }
         checkActive();
         success = true;
         return result;
@@ -263,7 +280,8 @@ export default function useBookGenerator() {
         seen.chapters.add(key);
         void (async () => {
           try {
-            const report = await checkChapter(state, chapter.number, version.content, tools);
+            const report = chapter.deepCheck || await checkChapter(state, chapter.number, version.content, tools);
+            chapter.deepCheck ||= report;
             if (epoch.current !== token) return;
             if (tools.score) {
               say(chapter.number, report.contradictions.length
@@ -274,7 +292,8 @@ export default function useBookGenerator() {
               say(chapter.number, `Deep check ch ${chapter.number}: prose reads as ${report.language.label}, expected ${report.language.expected}`);
             }
             if (tools.scoreEmotion) {
-              const felt = await checkEmotions(chapter.number, version.content, tools.scoreEmotion);
+              const felt = chapter.emotion || await checkEmotions(chapter.number, version.content, tools.scoreEmotion);
+              chapter.emotion ||= felt;
               if (epoch.current !== token || !felt) return;
               say(chapter.number, `Emotion ch ${chapter.number}: dominant ${felt.dominant} · variety ${Math.round(felt.variety * 100)}%`);
               const trail = [...(seen.arc.get(state.id) || []), `${chapter.number}:${felt.dominant}`]
@@ -291,7 +310,7 @@ export default function useBookGenerator() {
         })();
       }
     };
-    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); maybeDeepCheck(state); }, embed, rerank, summarize);
+    return new NovelEngine(llm, scopedStore, state => { checkActive(); update(state); maybeDeepCheck(state); }, embed, rerank, summarize, undefined, tools);
   }
 
   async function execute(action: (run: NovelRun, engine: NovelEngine) => Promise<void>) {
@@ -324,7 +343,7 @@ export default function useBookGenerator() {
     if (busy.current || isRestoring) return;
     if (runRef.current) return continueGeneration();
     try {
-      const run = createRun(createBookSpec(premise, count, { ...storySettings, skipEditing: false }), getStoredProviderConfig());
+      const run = createRun(createBookSpec(premise, count, { ...storySettings, skipEditing: false, forwardOnly: true }), getStoredProviderConfig());
       run.validationProvider = getStoredValidatorConfig();
       runRef.current = run;
       update(run);

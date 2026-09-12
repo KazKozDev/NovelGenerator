@@ -8,13 +8,20 @@
  * default off: enabling one downloads hundreds of MB on first use, and
  * that decision belongs to the reader, not the pipeline.
  */
-import type { NovelRun } from './contracts';
+import type { NovelRun, ChapterRecord } from './contracts';
 import { canonBefore } from './storyState';
 import { scanChapterContradictions, sharedNLIScorer, type ContradictionFinding, type NLIScorer } from './nli';
 import { languageMatches, sharedLanguageIdentifier, type LanguageIdentifier } from './languageId';
 import { sharedZeroShotClassifier, type ZeroShotClassifier } from './zeroShot';
-import { dominantEmotion, emotionVariety, sharedEmotionScorer, type EmotionScores, type EmotionScorer } from './emotion';
+import { arcTravel, dominantEmotion, emotionVariety, sharedEmotionScorer, type EmotionScores, type EmotionScorer } from './emotion';
 import { getGenreList } from '../genrePrompts';
+
+export type DeepCheckTools = {
+  score?: NLIScorer;
+  identify?: LanguageIdentifier;
+  classifyGenre?: ZeroShotClassifier;
+  scoreEmotion?: EmotionScorer;
+};
 
 export const DEEPCHECK_NLI_KEY = 'novel-deepcheck-contradictions';
 export const DEEPCHECK_LANG_KEY = 'novel-deepcheck-language';
@@ -118,6 +125,8 @@ export interface EmotionVerdict {
   chapter: number;
   dominant: string;
   variety: number;
+  /** Whether the chapter's emotional register moves at all, passage to passage, and where it goes. */
+  travel?: { dominant: string[]; traveled: boolean };
 }
 
 /** Score up to maxPassages paragraphs; advisory numbers, never a verdict on quality. */
@@ -135,7 +144,9 @@ export async function checkEmotions(
     labels: results[0].labels,
     scores: results[0].labels.map((_, index) => results.reduce((sum, result) => sum + (result.scores[index] ?? 0), 0) / results.length),
   };
-  return { chapter, dominant: dominantEmotion(whole), variety: emotionVariety(results) };
+  // The interface offers "dominant emotion and arc travel per chapter" and only variety was ever
+  // recorded; travel was computed by a function nothing called. Both now, because both were promised.
+  return { chapter, dominant: dominantEmotion(whole), variety: emotionVariety(results), travel: arcTravel(results) };
 }
 
 export function deepCheckTools(log: Log): { score?: NLIScorer; identify?: LanguageIdentifier; classifyGenre?: ZeroShotClassifier; scoreEmotion?: EmotionScorer } {
@@ -185,4 +196,118 @@ export function deepCheckTools(log: Log): { score?: NLIScorer; identify?: Langua
     };
   }
   return tools;
+}
+
+/**
+ * Translates post-acceptance deep-check findings from the previous chapter into
+ * actionable, craft-oriented editorial directives for the writer model of the next chapter.
+ * Never outputs raw analytical numbers or diagnostic jargon; translates issues into
+ * direct instructions on tone, pacing, canon adherence, and language authenticity.
+ */
+export function buildEditorialDirectives(priorChapter: ChapterRecord, run: NovelRun): string {
+  const isRussian = (run.spec.language || '').toLowerCase().startsWith('ru');
+  const directives: string[] = [];
+
+  // 1. Canon / Contradictions (from NLI check)
+  if (priorChapter.deepCheck?.contradictions?.length) {
+    const highContradictions = priorChapter.deepCheck.contradictions.filter(c => c.contradiction >= 0.7);
+    if (highContradictions.length) {
+      const distinctClaims = [...new Set(highContradictions.map(c => c.claim))].slice(0, 3);
+      if (isRussian) {
+        directives.push(
+          `• ПРЕЕМСТВЕННОСТЬ И КАНОН: Строго соблюдайте установленные факты сюжета: ${distinctClaims.map(c => `«${c}»`).join(', ')}. Персонажи должны действовать строго в соответствии со своими подтвержденными знаниями, положением и отношениями.`
+        );
+      } else {
+        directives.push(
+          `• CANON & CONTINUITY: Strictly uphold established story facts: ${distinctClaims.map(c => `"${c}"`).join(', ')}. Characters must act consistently with their known status, locations, and relationships.`
+        );
+      }
+    }
+  }
+
+  // 2. Language Mismatch / Calques / Foreign syntax
+  if (priorChapter.deepCheck?.language && !priorChapter.deepCheck.language.ok) {
+    if (isRussian) {
+      directives.push(
+        '• ЯЗЫК И СТИЛЬ: Пишите на чистом, выразительном и естественном русском литературном языке. Полностью исключите кальки, неестественный машинный синтаксис и англицизмы. Реплики персонажей должны звучать живо и органично.'
+      );
+    } else {
+      directives.push(
+        `• LANGUAGE & FLUENCY: Maintain natural, fluent prose in ${run.spec.language || 'English'}. Avoid literal calques, awkward syntax, or foreign phrasing.`
+      );
+    }
+  }
+
+  // 3. Emotion Monotony / Pacing / Variety
+  if (priorChapter.emotion) {
+    const { dominant, variety } = priorChapter.emotion;
+    const dom = dominant.toLowerCase();
+    const isHeavyOrPassive = ['grief', 'sadness', 'fear', 'disgust'].includes(dom);
+    if (dom === 'neutral') {
+      if (isRussian) {
+        directives.push(
+          `• ЭМОЦИОНАЛЬНАЯ ВЫРАЗИТЕЛЬНОСТЬ И ЧУВСТВА: В предыдущей главе зафиксирован сухой протокольный тон (${dominant}). Не пишите репортажный пересказ. Наполните сцену живой сенсорикой (звуки, тактильные ощущения, запахи, температура), покажите физические реакции на стресс (дыхание, пульс, скованность), внутренний трепет и невысказанное напряжение в диалогах.`
+        );
+      } else {
+        directives.push(
+          `• EMOTIONAL VIVIDNESS & SENSORY TEXTURE: The prior chapter was emotionally flat and reportorial (${dominant}). Break out of detached summarization: immerse the reader in visceral sensory details (sound, physical strain, temperature), physiological reactions to tension (pulse, breath, muscle tightness), unspoken friction, and vulnerable internal stakes.`
+        );
+      }
+    } else if (variety < 0.45 || isHeavyOrPassive) {
+      if (isRussian) {
+        directives.push(
+          `• ЭМОЦИОНАЛЬНАЯ ДИНАМИКА И ТЕМП: В предыдущей главе преобладала однородная тональность (${dominant}). В этой главе обеспечьте контраст и смену темпа: перейдите от пассивных переживаний к активным действиям, тактическим решениям, диалогам с подтекстом и внешнему развитию конфликта.`
+        );
+      } else {
+        directives.push(
+          `• EMOTIONAL PACING & CONTRAST: The previous chapter maintained a uniform emotional register (${dominant}). Provide dramatic contrast in this chapter: shift from passive internal brooding to decisive physical action, pragmatic choices, sharp dialogue exchanges, and escalating conflict.`
+        );
+      }
+    } else if (['anger', 'surprise'].includes(dom)) {
+      if (isRussian) {
+        directives.push(
+          `• ЭМОЦИОНАЛЬНЫЙ РЕГИСТР: После острого конфликта/напряжения (${dominant}) покажите последствия: выдержку персонажей, скрытые расчеты или необходимость перегруппироваться.`
+        );
+      } else {
+        directives.push(
+          `• EMOTIONAL REGISTER: Following high confrontation (${dominant}), explore tactical aftermath: tension, restraint, or shifting allegiances.`
+        );
+      }
+    }
+  }
+
+  // 4. Genre Drift
+  if (priorChapter.genre && !priorChapter.genre.ok) {
+    if (isRussian) {
+      directives.push(
+        `• ЖАНРОВЫЙ ТОНУС: Усильте жанровые особенности (${run.spec.genre || 'истории'}). Поддерживайте темп, обостряйте ставки и развивайте интригу, не позволяя сюжету провисать в бытовой рутине.`
+      );
+    } else {
+      directives.push(
+        `• GENRE FOCUS: Sharpen the core conventions of ${run.spec.genre || 'the genre'}. Heighten immediate stakes, accelerate tension, and keep the narrative actively driving forward.`
+      );
+    }
+  }
+
+  // 5. Prose Texture / Repetition from Prosody (if present in accepted version)
+  const acceptedVer = priorChapter.versions.find(v => v.revision === priorChapter.acceptedRevision);
+  if (acceptedVer?.prosody?.findings?.some(f => f.severity !== 'minor')) {
+    if (isRussian) {
+      directives.push(
+        '• СТИЛИСТИЧЕСКАЯ СВЕЖЕСТЬ: Варьируйте ритм предложений и открывающие конструкции сцен. Избегайте повторяющихся телесных реакций (вздохи, сжатые кулаки, поджатые губы) и клише.'
+      );
+    } else {
+      directives.push(
+        '• PROSE FRESHNESS: Vary sentence rhythm and opening phrasing. Avoid repeating stock physical gestures (sighs, clenching fists, narrowed eyes) and formulaic beats.'
+      );
+    }
+  }
+
+  if (!directives.length) return '';
+
+  return isRussian
+    ? `\nУКАЗАНИЯ ДЛЯ СЛЕДУЮЩЕЙ ГЛАВЫ (РЕЖИССУРА И ТОНАЛЬНАЯ КОРРЕКТИРОВКА НА ОСНОВЕ ПРЕДЫДУЩЕЙ ГЛАВЫ):
+${directives.join('\n')}`
+    : `\nEDITORIAL DIRECTIVES FOR THIS CHAPTER (MOMENTUM & TONE ADJUSTMENTS FROM PREVIOUS CHAPTER):
+${directives.join('\n')}`;
 }

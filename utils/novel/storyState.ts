@@ -1,40 +1,7 @@
 import { literaryCurrent } from './literaryState';
-import type { BeatEvidence, CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, ContinuityState, Evidence, NovelRun, StoryState } from './contracts';
+import type { BeatEvidence, CanonFact, ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, StoryState } from './contracts';
 
-export const emptyContinuityState = (): ContinuityState => ({
-  currentTime: 'not established', currentLocation: 'not established', characterLocations: {}, characterKnowledge: {}, relationshipStates: {},
-  injuriesAndCondition: {}, inventory: {}, activePromisesAndThreats: [], unresolvedPlotThreads: [], completedSetupsAndPayoffs: [],
-  lastSignificantDecision: 'not established', expectedConsequences: [],
-});
-
-export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], beats: [], summaries: {}, continuity: emptyContinuityState() });
-
-/** Build a conservative continuity projection from evidence-backed canon only. */
-function applyContinuity(state: StoryState, analysis: ChapterAnalysis): void {
-  const ledger = state.continuity;
-  for (const fact of analysis.facts) {
-    const predicate = fact.predicate.toLowerCase();
-    if (/(location|where|at |in |went|arrived)/.test(predicate)) {
-      ledger.characterLocations[fact.subject] = fact.value;
-      ledger.currentLocation = fact.value;
-    }
-    if (/(know|learn|told|believe)/.test(predicate)) (ledger.characterKnowledge[fact.subject] ||= []).push(fact.value);
-    if (/(injur|wound|condition|health)/.test(predicate)) ledger.injuriesAndCondition[fact.subject] = fact.value;
-    if (/(has|hold|carry|possess|inventory|lost|destroy)/.test(predicate)) ledger.inventory[fact.subject] = fact.value;
-    if (/(relationship|trust|alliance|love|hostil)/.test(predicate)) ledger.relationshipStates[fact.subject] = fact.value;
-    if (/(time|date|day|hour)/.test(predicate)) ledger.currentTime = fact.value;
-  }
-  const last = analysis.events.at(-1);
-  if (last) {
-    ledger.lastSignificantDecision = last.description;
-    ledger.expectedConsequences.push(...last.consequences);
-  }
-  for (const promise of analysis.promises) {
-    const label = `${promise.promiseId}:${promise.kind}`;
-    if (promise.kind === 'payoff') ledger.completedSetupsAndPayoffs.push(label);
-    else ledger.activePromisesAndThreats.push(label);
-  }
-}
+export const emptyStoryState = (): StoryState => ({ facts: [], events: [], promises: [], beats: [], conditions: [], summaries: {} });
 
 /** The beats the chapter plan asks this chapter to dramatize, in plan order. */
 export function plannedBeats(chapter: ChapterRecord): { sceneId: string; beat: string }[] {
@@ -125,8 +92,23 @@ export function rebuildCanon(chapters: ChapterRecord[]): StoryState {
     state.events.push(...version.analysis.events);
     state.promises.push(...version.analysis.promises);
     state.beats.push(...(version.analysis.beats || []));
+    // A condition is set once and lifted once. A lifting that names no standing condition is dropped
+    // rather than trusted: fail-closed here means the constraint stays in force, which is the answer
+    // that keeps the next chapter honest, and the reviewer still has the chapter in front of it.
+    for (const item of version.analysis.conditions || []) {
+      if (item.lifts) {
+        const standing = state.conditions.find(condition => condition.id === item.lifts && !condition.liftedIn);
+        if (standing) {
+          standing.liftedIn = chapter.number;
+          standing.liftedBy = item.evidence;
+        }
+        continue;
+      }
+      if (!state.conditions.some(condition => condition.id === item.id)) {
+        state.conditions.push({ id: item.id, statement: item.statement, evidence: item.evidence });
+      }
+    }
     state.summaries[chapter.number] = version.analysis.summary;
-    applyContinuity(state, version.analysis);
   }
   return state;
 }
@@ -226,13 +208,18 @@ export function acceptCandidate(run: NovelRun, number: number): void {
   // The scene journal was a draft record for writing this chapter's later scenes. The chapter now
   // speaks through the canon extracted from its accepted prose, so the notes go rather than sit in
   // every later checkpoint as a second, unreviewed account of events the ledger already holds.
+  // One kind is kept first. The canon says what is true; it has no way to say what has already been
+  // said, and the chapter that follows needs exactly that in order not to describe the same room a
+  // second time. Short, deduplicated, and the only part of the journal that outlives the chapter.
+  const told = (chapter.sceneJournal || []).flatMap(entry => entry.notes.filter(note => note.kind === 'told').map(note => note.note));
+  if (told.length) chapter.alreadyTold = [...new Set(told)].slice(0, 24);
   chapter.sceneJournal = undefined;
   chapter.repairAttempts = 0;
   chapter.lastFindings = undefined;
   chapter.lastFindingShapes = undefined;
   // Re-reviewing a chapter whose premises did not move only invites a fresh sampled verdict on prose
-  // nobody changed, and every such round can restart the cascade.
-  if (!run.spec.skipEditing && (canonMoved || literaryMoved)) {
+  // nobody changed, and every such round can restart the cascade. Forward-only mode freezes accepted chapters.
+  if (!run.spec.skipEditing && !run.spec.forwardOnly && (canonMoved || literaryMoved)) {
     for (const dependent of run.chapters.filter(item => item.number > number)) {
       if (!dependent.versions.length) continue;
       // When the move is confined to named subjects, only the chapters that speak about those
@@ -275,7 +262,7 @@ export function nextUnacceptedChapter(run: NovelRun): ChapterRecord | undefined 
  * still revalidates the book from its first chapter.
  */
 export function reconcileCheckpoint(run: NovelRun): boolean {
-  if (run.spec.skipEditing) return false;
+  if (run.spec.skipEditing || run.spec.forwardOnly) return false;
   const migrating = run.validationVersion !== 2 || run.literaryValidationVersion !== 1;
   const stale = run.chapters.filter(chapter => chapter.status === 'accepted'
     && (!acceptedVersion(chapter) || !literaryCurrent(run, chapter.number, acceptedVersion(chapter)!) || acceptedVersion(chapter)!.literary?.status !== 'passed'));
@@ -306,7 +293,7 @@ export function reconcileCheckpoint(run: NovelRun): boolean {
  */
 export function canonForPrompt(state: StoryState): object {
   const strip = <T extends { evidence: Evidence }>(items: T[]) => items.map(({ evidence, ...rest }) => rest);
-  return { facts: strip(state.facts), events: strip(state.events), promises: strip(state.promises), beats: strip(state.beats || []), summaries: state.summaries };
+  return { facts: strip(state.facts), events: strip(state.events), promises: strip(state.promises), beats: strip(state.beats || []), conditions: standingConditions(state).map(({ id, statement }) => ({ id, statement })), summaries: state.summaries };
 }
 
 /**
@@ -339,8 +326,16 @@ export function canonForScene(state: StoryState, participants: string[], chapter
       || mentions(`${event.description} ${event.consequences.join(' ')}`))),
     promises: strip(state.promises),
     beats: strip(state.beats || []),
+    // Kept whole whatever the budget: a standing condition is one line and it is the line a scene is
+    // most likely to walk through without noticing.
+    conditions: standingConditions(state).map(({ id, statement }) => ({ id, statement })),
     summaries: state.summaries,
   };
+}
+
+/** The constraints still in force: set by an accepted chapter and not yet taken away by one. */
+export function standingConditions(state: StoryState) {
+  return (state.conditions || []).filter(condition => !condition.liftedIn);
 }
 
 export function canonBefore(run: NovelRun, chapterNumber: number): StoryState {

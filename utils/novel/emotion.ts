@@ -90,9 +90,9 @@ export function dominantEmotion(result: EmotionScores): string {
 }
 
 /**
- * Arc travel across chapters: the dominant emotion per chapter and whether
- * it ever moved. An arc that never travels is flat whatever the prose
- * claims; advisory, never blocking.
+ * Whether an emotional arc moves at all: the dominant emotion of each step and whether it is ever a
+ * different one. Steps are chapters when the whole book is measured and passages when one chapter is;
+ * either way an arc that never travels is flat whatever the prose claims. Advisory, never blocking.
  */
 export function arcTravel(chapters: EmotionScores[]): { dominant: string[]; traveled: boolean } {
   const dominant = chapters.map(dominantEmotion);

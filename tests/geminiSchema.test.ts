@@ -2,6 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeGeminiSchema } from '../services/geminiService';
 
 describe('sanitizeGeminiSchema', () => {
+  it('keeps an integer-or-null field an integer, and marks it nullable', () => {
+    // The line that killed two live books: type: ['integer','null'] fell through to the default and
+    // the model was told payoffChapter is a string. It answered "4", and then omitted it entirely.
+    const cleaned = sanitizeGeminiSchema({
+      type: 'object',
+      required: ['payoffChapter'],
+      properties: { payoffChapter: { type: ['integer', 'null'] } },
+    });
+    expect(cleaned.properties.payoffChapter).toEqual({ type: 'integer', nullable: true });
+    expect(cleaned.required).toEqual(['payoffChapter']);
+    // An explicit nullable:false beside a nullable union does not take the null away.
+    expect(sanitizeGeminiSchema({ type: ['string', 'null'], nullable: false })).toEqual({ type: 'string', nullable: true });
+  });
+
   it('strips additionalProperties and non-Gemini fields from object schemas', () => {
     const rawSchema = {
       type: 'object',

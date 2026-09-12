@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { continuityIssues, scenePlan } from '../utils/novel/continuity';
-import { emptyContinuityState } from '../utils/novel/storyState';
 import { rebuildCanon } from '../utils/novel/storyState';
 import type { ChapterRecord, ChapterVersion } from '../utils/novel/contracts';
 
@@ -13,7 +12,7 @@ const version = (content: string): ChapterVersion => ({ revision: 1, content, re
 describe('continuity architecture', () => {
   it('upgrades a legacy scene into an explicit ScenePlan without inventing a new event', () => {
     const scene = chapter().plan.detailedScenes![0];
-    const plan = scenePlan(scene, emptyContinuityState());
+    const plan = scenePlan(scene);
     expect(plan.consequenceForNextScene).toBe('Mira leaves with the key');
     expect(plan.prohibitedShortcuts[0]).toContain('unearned');
   });
@@ -36,19 +35,17 @@ describe('continuity architecture', () => {
     expect(issues.map(issue => issue.id)).toContain('repeated-emotional-conclusion');
   });
 
-  it('projects evidence-backed location, inventory, injury and consequences into StoryState', () => {
+  it('keeps the canon to what the chapters evidenced, with no projection beside it', () => {
     const item = chapter();
     const draft = version('Mira left the station with the key in her cut palm.');
     draft.analysis = { summary: 'Mira leaves the station.', beats: [], promises: [], facts: [
       { id: 'where', subject: 'Mira', predicate: 'location', value: 'station exit', knownBy: ['Mira'], evidence: { chapter: 1, revision: 1, quote: 'Mira left the station' } },
-      { id: 'object', subject: 'Mira', predicate: 'holds inventory', value: 'brass key', knownBy: ['Mira'], evidence: { chapter: 1, revision: 1, quote: 'Mira left the station with the key' } },
-      { id: 'injury', subject: 'Mira', predicate: 'injury condition', value: 'cut palm', knownBy: ['Mira'], evidence: { chapter: 1, revision: 1, quote: 'Mira left the station' } },
     ], events: [{ id: 'leave', description: 'Mira chooses to leave.', consequences: ['The guard follows her.'], evidence: { chapter: 1, revision: 1, quote: 'Mira left the station' } }] };
     item.versions = [draft]; item.status = 'accepted'; item.acceptedRevision = 1;
     const state = rebuildCanon([item]);
-    expect(state.continuity.characterLocations.Mira).toBe('station exit');
-    expect(state.continuity.inventory.Mira).toBe('brass key');
-    expect(state.continuity.injuriesAndCondition.Mira).toBe('cut palm');
-    expect(state.continuity.expectedConsequences).toContain('The guard follows her.');
+    // The projected ledger that used to sit here was built on every acceptance and read by nothing.
+    expect((state as unknown as Record<string, unknown>).continuity).toBeUndefined();
+    expect(state.facts[0].value).toBe('station exit');
+    expect(state.events[0].consequences).toContain('The guard follows her.');
   });
 });

@@ -126,6 +126,16 @@ export function sanitizeGeminiSchema(schema: unknown): any {
 
   if (typeof raw.type === 'string') {
     cleaned.type = raw.type.toLowerCase();
+  } else if (Array.isArray(raw.type)) {
+    // JSON Schema writes an optional integer as type: ['integer', 'null']; Google's protobuf has no
+    // union type and expresses the same thing with nullable. Dropping the array used to fall through
+    // to the default below, so a field declared as an integer-or-null was described to the model as a
+    // string — which is exactly what came back, first as "4" and then as nothing at all, because a
+    // field the schema misdescribes is a field the model has no reason to fill correctly.
+    const members = raw.type.filter((item: unknown): item is string => typeof item === 'string').map((item: string) => item.toLowerCase());
+    const concrete = members.find((item: string) => item !== 'null');
+    if (concrete) cleaned.type = concrete;
+    if (members.includes('null')) cleaned.nullable = true;
   }
 
   if (typeof raw.description === 'string') {
@@ -133,7 +143,7 @@ export function sanitizeGeminiSchema(schema: unknown): any {
   }
 
   if (typeof raw.nullable === 'boolean') {
-    cleaned.nullable = raw.nullable;
+    cleaned.nullable = raw.nullable || cleaned.nullable;
   }
 
   if (typeof raw.format === 'string') {
@@ -239,7 +249,23 @@ export async function generateGeminiText(
       const response = await result.response;
       const rawText = response.text();
       const text = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-      console.log(`✅ Received response from Gemini API (${text.length} chars)`);
+      // Why an answer is unusable matters more than that it is. A truncated JSON object and a model
+      // that spent its whole budget thinking both arrive as "Expected a complete JSON object" three
+      // layers up, and that message sends the reader looking at the schema, which is not the problem.
+      const candidate: any = (response as any).candidates?.[0];
+      const usage: any = (response as any).usageMetadata;
+      const thoughts = usage?.thoughtsTokenCount;
+      const spent = [
+        usage?.candidatesTokenCount !== undefined ? `${usage.candidatesTokenCount} output tokens` : '',
+        thoughts ? `${thoughts} of them spent on reasoning` : '',
+      ].filter(Boolean).join(', ');
+      if (candidate?.finishReason === 'MAX_TOKENS') {
+        throw new Error(`Gemini stopped at the output token limit${maxOutputTokens ? ` of ${maxOutputTokens}` : ''} before finishing its answer${spent ? ` (${spent})` : ''}. The JSON it returned is cut off, not malformed. Raise the limit for this call, or use a model that does not spend the budget on reasoning.`);
+      }
+      if (!text) {
+        throw new Error(`Gemini returned an empty answer (finishReason: ${candidate?.finishReason || 'unknown'}${spent ? `, ${spent}` : ''}).`);
+      }
+      console.log(`✅ Received response from Gemini API (${text.length} chars${thoughts ? `, ${thoughts} reasoning tokens` : ''})`);
       return text;
     } catch (error) {
       throw handleApiError(error);
@@ -254,7 +280,9 @@ export async function generateGeminiTextStream(
   temperature?: number,
   topP?: number,
   topK?: number,
-  modelName?: string
+  modelName?: string,
+  responseSchema?: object,
+  maxOutputTokens?: number,
 ): Promise<string> {
   if (!ai) {
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
@@ -273,6 +301,15 @@ export async function generateGeminiTextStream(
       }
       if (topK !== undefined) {
           generationConfig.topK = topK;
+      }
+      // The streaming call could not carry a schema or a token ceiling, so the one call whose output
+      // a reader would want to watch — the prose — could not be streamed without giving up both.
+      if (maxOutputTokens !== undefined) {
+          generationConfig.maxOutputTokens = maxOutputTokens;
+      }
+      if (responseSchema) {
+          generationConfig.responseMimeType = "application/json";
+          generationConfig.responseSchema = sanitizeGeminiSchema(responseSchema);
       }
 
       const finalSystemInstruction = systemInstruction 
@@ -331,132 +368,4 @@ export async function generateGeminiTextStream(
       throw handleApiError(error);
     }
   });
-}
-
-// Queue system for handling API overload scenarios
-interface QueuedRequest {
-  id: string;
-  fn: () => Promise<any>;
-  resolve: (value: any) => void;
-  reject: (error: any) => void;
-  priority: 'high' | 'medium' | 'low';
-  timestamp: number;
-}
-
-class APIRequestQueue {
-  private queue: QueuedRequest[] = [];
-  private processing = false;
-  private rateLimitDelay = 1000; // Base delay between requests
-
-  enqueue<T>(
-    fn: () => Promise<T>,
-    priority: 'high' | 'medium' | 'low' = 'medium'
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const request: QueuedRequest = {
-        id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        fn,
-        resolve,
-        reject,
-        priority,
-        timestamp: Date.now()
-      };
-
-      // Insert based on priority
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      let insertIndex = this.queue.length;
-
-      for (let i = 0; i < this.queue.length; i++) {
-        if (priorityOrder[request.priority] < priorityOrder[this.queue[i].priority]) {
-          insertIndex = i;
-          break;
-        }
-      }
-
-      this.queue.splice(insertIndex, 0, request);
-      console.log(`📋 Queued API request (${priority} priority). Queue size: ${this.queue.length}`);
-
-      this.processQueue();
-    });
-  }
-
-  private async processQueue() {
-    if (this.processing || this.queue.length === 0) {
-      return;
-    }
-
-    this.processing = true;
-
-    while (this.queue.length > 0) {
-      const request = this.queue.shift()!;
-
-      try {
-        console.log(`🔄 Processing queued request ${request.id} (${request.priority} priority)`);
-        const result = await request.fn();
-        request.resolve(result);
-      } catch (error) {
-        console.error(`❌ Queued request ${request.id} failed:`, error);
-        request.reject(error);
-      }
-
-      // Rate limiting between requests
-      if (this.queue.length > 0) {
-        console.log(`⏳ Rate limiting: waiting ${this.rateLimitDelay}ms before next request`);
-        await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
-      }
-    }
-
-    this.processing = false;
-    console.log(`✅ Queue processing complete`);
-  }
-
-  getQueueSize(): number {
-    return this.queue.length;
-  }
-
-  isProcessing(): boolean {
-    return this.processing;
-  }
-
-  // Adjust rate limiting based on API responses
-  adjustRateLimit(increase: boolean) {
-    if (increase) {
-      this.rateLimitDelay = Math.min(this.rateLimitDelay * 1.5, 10000); // Max 10s
-      console.log(`📈 Increased rate limit delay to ${this.rateLimitDelay}ms`);
-    } else {
-      this.rateLimitDelay = Math.max(this.rateLimitDelay * 0.8, 500); // Min 500ms
-      console.log(`📉 Decreased rate limit delay to ${this.rateLimitDelay}ms`);
-    }
-  }
-}
-
-// Global queue instance
-const requestQueue = new APIRequestQueue();
-
-/**
- * Queued version of generateGeminiText for high-load scenarios
- */
-export async function generateGeminiTextQueued(
-  prompt: string,
-  systemInstruction?: string,
-  responseSchema?: object,
-  temperature?: number,
-  topP?: number,
-  topK?: number,
-  priority: 'high' | 'medium' | 'low' = 'medium'
-): Promise<string> {
-  return requestQueue.enqueue(
-    () => generateGeminiText(prompt, systemInstruction, responseSchema, temperature, topP, topK),
-    priority
-  );
-}
-
-/**
- * Get queue status for UI display
- */
-export function getQueueStatus() {
-  return {
-    size: requestQueue.getQueueSize(),
-    processing: requestQueue.isProcessing()
-  };
 }

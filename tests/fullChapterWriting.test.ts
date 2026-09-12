@@ -135,6 +135,142 @@ describe('Full chapter generation', () => {
     expect(run.chapters[0].versions[0].content).toContain('First scene at the platform with steam.');
   });
 
+  it('asks again for a scene that ends where it began, and keeps the rewrite that moves', async () => {
+    const run = mockRun('scene');
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [{
+      ...chapter.plan.detailedScenes![0],
+      shift: { register: 'position', from: 'on the platform with no ticket', to: 'aboard the train as it pulls out' },
+    }];
+    const still = 'Alex waited on the platform and thought about the ticket he did not have.';
+    const moved = 'Alex swung aboard as the couplings took up the slack and the platform slid away behind him.';
+    const asks: string[] = [];
+    let journalled = 0;
+
+    const mockLLM: NovelLLM = vi.fn(async (prompt, system) => {
+      const lit = literaryResponse(prompt, system);
+      if (lit !== undefined) return lit;
+      if (system.includes('single prose writer')) {
+        asks.push(prompt);
+        return JSON.stringify({ prose: asks.length === 1 ? still : moved });
+      }
+      if (system.includes('continuity record')) {
+        journalled++;
+        // The first scene never leaves the platform; the rewrite can be quoted for the move.
+        return journalled === 1
+          ? JSON.stringify({ notes: [{ kind: 'position', note: 'Alex is still on the platform.', quote: 'waited on the platform' }], shift: { happened: false, quote: '' } })
+          : JSON.stringify({ notes: [{ kind: 'position', note: 'Alex is aboard.', quote: 'swung aboard' }], shift: { happened: true, quote: 'swung aboard as the couplings took up the slack' } });
+      }
+      return JSON.stringify({ summary: 'Alex boarded.', facts: [], events: [], promises: [] });
+    });
+
+    await (new NovelEngine(mockLLM, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+
+    expect(asks).toHaveLength(2);
+    expect(asks[0]).toContain('WHAT THIS SCENE SHIFTS: position');
+    // The re-ask names the move that did not happen, and asks for the scene rather than a patch.
+    expect(asks[1]).toContain('ended where it began');
+    expect(asks[1]).toContain('aboard the train as it pulls out');
+    expect(chapter.sceneDrafts?.[0]).toBe(moved);
+    expect(chapter.sceneJournal?.[0].shiftQuote).toContain('swung aboard');
+  });
+
+  it('sends a scene back when a required beat is reported and a beat is played twice', async () => {
+    const run = mockRun('scene');
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [chapter.plan.detailedScenes![0]];
+    const told = 'By the time the guard turned away, Alex had already bought the ticket. The coin fell. Alex picked it up. Later, the coin fell again and Alex picked it up again.';
+    const shown = 'The guard turned his head and Alex slid the notes across the sill. The coin rang once on the gravel between them.';
+    const asks: string[] = [];
+    let journalled = 0;
+
+    const mockLLM: NovelLLM = vi.fn(async (prompt, system) => {
+      const lit = literaryResponse(prompt, system);
+      if (lit !== undefined) return lit;
+      if (system.includes('single prose writer')) {
+        asks.push(prompt);
+        return JSON.stringify({ prose: asks.length === 1 ? told : shown });
+      }
+      if (system.includes('continuity record')) {
+        journalled++;
+        return journalled === 1
+          ? JSON.stringify({
+            notes: [{ kind: 'event', note: 'Alex has a ticket.', quote: 'had already bought the ticket' }],
+            reported: [{ beat: 'Coin slips onto gravel', quote: 'By the time the guard turned away, Alex had already bought the ticket.' }],
+            secondTake: [{ beat: 'Guard steps closer', first: 'The coin fell. Alex picked it up.', second: 'the coin fell again and Alex picked it up again' }],
+          })
+          : JSON.stringify({ notes: [{ kind: 'event', note: 'Alex paid.', quote: 'slid the notes across the sill' }], reported: [], secondTake: [] });
+      }
+      return JSON.stringify({ summary: 'Alex boarded.', facts: [], events: [], promises: [] });
+    });
+
+    await (new NovelEngine(mockLLM, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+
+    expect(asks).toHaveLength(2);
+    // One re-ask carries both faults, each with the passage that proves it.
+    expect(asks[1]).toContain('reports "Coin slips onto gravel" instead of performing it');
+    expect(asks[1]).toContain('plays "Guard steps closer" twice');
+    expect(chapter.sceneDrafts?.[0]).toBe(shown);
+    expect(chapter.sceneJournal?.[0].reported).toBeUndefined();
+  });
+
+  it('discards an inspection finding whose quotation is not in the scene', async () => {
+    const run = mockRun('scene');
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [chapter.plan.detailedScenes![0]];
+    const draft = 'Alex slid the notes across the sill and the guard looked away.';
+    let written = 0;
+
+    const mockLLM: NovelLLM = vi.fn(async (prompt, system) => {
+      const lit = literaryResponse(prompt, system);
+      if (lit !== undefined) return lit;
+      if (system.includes('single prose writer')) { written++; return JSON.stringify({ prose: draft }); }
+      if (system.includes('continuity record')) {
+        return JSON.stringify({
+          notes: [{ kind: 'event', note: 'Alex paid.', quote: 'slid the notes across the sill' }],
+          // Composed, not copied: the scene says nothing of the kind, so the finding is not a finding.
+          reported: [{ beat: 'Conductor checks luggage', quote: 'The conductor had checked the luggage an hour before.' }],
+          secondTake: [],
+        });
+      }
+      return JSON.stringify({ summary: 'Alex paid.', facts: [], events: [], promises: [] });
+    });
+
+    await (new NovelEngine(mockLLM, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+
+    // No fault survived the quotation check, so no scene was written a second time.
+    expect(written).toBe(1);
+    expect(chapter.sceneJournal?.[0].reported).toBeUndefined();
+  });
+
+  it('leaves a scene standing when the rewrite does not move either', async () => {
+    const run = mockRun('scene');
+    const chapter = run.chapters[0];
+    chapter.plan.detailedScenes = [{
+      ...chapter.plan.detailedScenes![0],
+      shift: { register: 'position', from: 'on the platform', to: 'aboard the train' },
+    }];
+    const drafts = ['Alex waited on the platform.', 'Alex went on waiting on the platform.'];
+    let written = 0;
+
+    const mockLLM: NovelLLM = vi.fn(async (prompt, system) => {
+      const lit = literaryResponse(prompt, system);
+      if (lit !== undefined) return lit;
+      if (system.includes('single prose writer')) return JSON.stringify({ prose: drafts[Math.min(written++, 1)] });
+      if (system.includes('continuity record')) {
+        return JSON.stringify({ notes: [{ kind: 'position', note: 'Alex is on the platform.', quote: 'on the platform' }], shift: { happened: false, quote: '' } });
+      }
+      return JSON.stringify({ summary: 'Alex waited.', facts: [], events: [], promises: [] });
+    });
+
+    await (new NovelEngine(mockLLM, new MemoryRunStore()) as any).writeRemaining(run).catch(() => {});
+
+    // One attempt, then the scene stands and the chapter review has it. A run is not lost to this.
+    expect(written).toBe(2);
+    expect(chapter.sceneDrafts?.[0]).toBe(drafts[0]);
+    expect(chapter.sceneJournal?.[0].shiftQuote).toBeUndefined();
+  });
+
   it('includes Russian dialogue formatting and scene target quotas when language is Russian', async () => {
     const run = mockRun('full');
     run.spec.language = 'Russian';

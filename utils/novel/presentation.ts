@@ -1,7 +1,7 @@
 import { literaryCurrent } from './literaryState';
 import { ChapterGenerationStage, GenerationStep, type ChapterData } from '../../types';
 import type { NovelRun } from './contracts';
-import { acceptedVersion } from './storyState';
+import { acceptedVersion, endingIssues } from './storyState';
 
 export function generationStep(run: NovelRun | undefined, busy: boolean): GenerationStep {
   if (!run) return GenerationStep.Idle;
@@ -40,7 +40,7 @@ export function displayChapters(run?: NovelRun): ChapterData[] {
 }
 
 export function compileBook(run: NovelRun): string {
-  if (run.spec.skipEditing) {
+  if (run.spec.skipEditing || run.spec.forwardOnly) {
     if (run.stage !== 'complete' || run.chapters.length !== run.spec.chapterCount || run.chapters.some(c => c.candidateRevision !== undefined || !acceptedVersion(c)?.content.trim())) throw new Error('The manuscript is not complete.');
     return `# ${run.title}\n\n` + run.chapters.map(c => `## Chapter ${c.number}: ${c.plan.title}\n\n${acceptedVersion(c)!.content}`).join('\n\n');
   }
@@ -56,7 +56,17 @@ export function metadata(run: NovelRun): string {
     runId: run.id, characters: run.blueprint?.characters, chapter_summaries: run.canon.summaries,
     literaryState: run.chapters.map(chapter => ({ number: chapter.number, plan: chapter.literaryPlan, assessment: acceptedVersion(chapter)?.literary })),
     prosody: run.chapters.map(chapter => ({ number: chapter.number, report: acceptedVersion(chapter)?.prosody })),
-    canon: run.canon, promises: run.blueprint?.promises, finalReview: run.finalReview,
+    canon: run.canon, promises: run.blueprint?.promises,
+    // Both whole-book verdicts, with what they found. The final one used to travel as a bare status
+    // and the structural one travelled nowhere at all: a review whose findings reach no reader is a
+    // call spent on nothing.
+    wholeBookReview: {
+      structure: run.structuralReview ? { status: run.structuralReview.status, issues: run.structuralReview.issues } : undefined,
+      final: run.finalReview ? { status: run.finalReview.status, issues: run.finalReview.issues } : undefined,
+      unpaidPromises: endingIssues(run),
+    },
+    planningIssues: run.blueprint?.planningIssues,
+    chaptersWithUnresolvedFindings: run.chapters.filter(chapter => chapter.planningNote).map(chapter => ({ chapter: chapter.number, note: chapter.planningNote })),
     editorial: run.editorial, manuscriptHistory: run.manuscriptHistory,
     chapterVersions: run.chapters.map(chapter => ({ number: chapter.number, revision: chapter.acceptedRevision })),
     measurement: { calls: run.calls || [], note: 'Provider calls and duration are operational measurements, not literary quality scores.' },

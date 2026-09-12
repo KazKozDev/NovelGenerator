@@ -1,6 +1,7 @@
 import type { ChapterRecord, ChapterVersion, NovelRun, Evidence, ReviewIssue } from './contracts';
 import { specPrompt } from './contracts';
 import { structuredResponse, type NovelLLM } from './review';
+import { asInteger } from './engine';
 import { literaryKinds, literaryLedger, literaryContextKey, type LiteraryAssessment, type LiteraryPlan } from './literaryState';
 import type { Summarizer } from './summarizer';
 
@@ -74,7 +75,16 @@ export async function planLiteraryDevelopment(run: NovelRun, chapter: ChapterRec
       const expected = new Set((chapter.plan.detailedScenes || []).map(scene => scene.sceneId));
       const seen = new Set<string>();
       for (const scene of raw.scenes) {
-        if (!fields(scene, ['sceneId', 'development', 'characterChoice', 'dramaticCost']) || !expected.has(scene.sceneId) || seen.has(scene.sceneId) || !Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5) throw new Error('Invalid literary scene intent.');
+        // The same leniency the chapter plan gets: a weight spelled "3" is the weight the model meant,
+        // read once and written back as a number. And each rule says which scene failed and why —
+        // "Invalid literary scene intent" told the retry nothing it could act on.
+        const weight = asInteger(scene?.narrativeWeight);
+        if (weight !== undefined) scene.narrativeWeight = weight;
+        const named = `Scene ${JSON.stringify(scene?.sceneId ?? null)}`;
+        if (!fields(scene, ['sceneId', 'development', 'characterChoice', 'dramaticCost'])) throw new Error(`${named} needs sceneId, development, characterChoice and dramaticCost, each a non-empty string.`);
+        if (!expected.has(scene.sceneId)) throw new Error(`${named} is not one of this chapter's scenes: ${[...expected].join(', ')}.`);
+        if (seen.has(scene.sceneId)) throw new Error(`${named} appears twice; plan each scene once.`);
+        if (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5) throw new Error(`${named} needs narrativeWeight as an integer from 1 to 5, not ${JSON.stringify(scene.narrativeWeight)}.`);
         seen.add(scene.sceneId);
       }
       if (seen.size !== expected.size) throw new Error('Literary plan omitted a scene.');
@@ -115,18 +125,35 @@ export async function assessLiteraryDevelopment(run: NovelRun, chapter: ChapterR
     id, chapter: evidence.chapter, revision: evidence.revision,
     quote: id.startsWith('h') && evidence.quote.length > historyExcerpt ? `${evidence.quote.slice(0, historyExcerpt)}…` : evidence.quote,
   }));
-  const sourceIds = list(text, 12);
+  /** What a finding may carry into the ledger. The model is asked for this many; more are trimmed. */
+  const maxSources = 12;
+  const sourceIds = list(text, maxSources);
   const observationSchema = object({ kind: { type: 'string', enum: literaryKinds }, subject: text, before: text, after: text, mechanism: text, sources: sourceIds });
   const issueSchema = object({ kind: { type: 'string', enum: literaryKinds }, severity: { type: 'string', enum: ['major', 'minor'] }, description: text, instruction: text, sources: sourceIds });
   const resolve = (ids: unknown) => {
-    // These messages return to the model inside the automatic retry, so they name the repair:
-    // copy real IDs, and always ground each finding in the current prose. The offending IDs
-    // travel back too — a model told exactly which IDs do not exist stops inventing them.
-    const shown = Array.isArray(ids) ? ids.filter(item => typeof item === 'string').slice(0, 12).join(', ') : String(ids);
-    if (!strings(ids, 12) || !ids.length || ids.some(id => !sourceMap.has(id))) throw new Error(`Unknown or missing literary evidence source (got: ${shown || 'empty'}): copy 1–12 source IDs exactly from the SOURCE TEXT list (p1..pN for the current prose, hC.I.E for history). Do not invent IDs and do not leave sources empty.`);
-    const evidence = [...new Set(ids)].map(id => sourceMap.get(id)!);
-    if (!evidence.some(item => item.chapter === chapter.number && item.revision === candidate.revision)) throw new Error(`A literary finding must cite the current chapter (got only history: ${shown}): include at least one p-unit ID from the current prose alongside any history IDs.`);
-    return evidence;
+    // These messages return to the model inside the automatic retry, so each one has to name the
+    // defect it actually found. A chapter died here on a report whose IDs were all real: the list
+    // was thirteen long, the cap was twelve, and the failure came back as "unknown or missing
+    // source" listing twelve valid IDs with the instruction to copy them exactly — which the model
+    // had done. Told to fix what was not broken, it returned the same answer and the run stopped.
+    if (!Array.isArray(ids) || !ids.length || !ids.every(item => typeof item === 'string' && item.trim())) {
+      throw new Error(`A literary finding must cite its sources (got: ${JSON.stringify(ids)}): give a non-empty array of source IDs copied from the SOURCE TEXT list — p1..p${paragraphs.length} for the current prose, hC.I.E for history.`);
+    }
+    const cited = [...new Set(ids.map(id => id.trim()))];
+    const unknown = cited.filter(id => !sourceMap.has(id));
+    if (unknown.length) throw new Error(`Unknown literary evidence source (${unknown.slice(0, 12).join(', ')}): copy source IDs exactly from the SOURCE TEXT list — p1..p${paragraphs.length} for the current prose, hC.I.E for history. Do not invent IDs.`);
+    const current = cited.filter(id => {
+      const evidence = sourceMap.get(id)!;
+      return evidence.chapter === chapter.number && evidence.revision === candidate.revision;
+    });
+    if (!current.length) throw new Error(`A literary finding must cite the current chapter (got only history: ${cited.slice(0, 12).join(', ')}): include at least one p-unit ID from the current prose alongside any history IDs.`);
+    // Over-citing is not fabricating. A finding grounded in more real passages than the cap allows is
+    // still grounded, so the extras are dropped rather than the assessment, and the passage that ties
+    // the finding to this chapter is kept whatever else goes.
+    const kept = cited.length <= maxSources
+      ? cited
+      : [current[0], ...cited.filter(id => id !== current[0]).slice(0, maxSources - 1)];
+    return kept.map(id => sourceMap.get(id)!);
   };
   return structuredResponse(`${specPrompt(run.spec)}\nCHAPTER ${chapter.number}, REVISION ${candidate.revision}\nLITERARY HISTORY (referred to by source id; the quotations live in the source list below):\n${JSON.stringify(ledgerForPrompt)}\nDEVELOPMENT INTENT (not proof):\n${JSON.stringify(chapter.literaryPlan)}\nAPPROVED PLOT AND CHARACTER DESIGN:\n${JSON.stringify({ plan: chapter.plan, characters: run.blueprint?.characters })}\nSOURCE TEXT: historical evidence followed by the COMPLETE current prose in consecutive numbered units:\n${JSON.stringify(sourcesForPrompt)}\nRecord what this prose actually establishes, and only that. These observations become the book's literary history, read by every later chapter as evidence of what has already happened, so a chapter that establishes two things must produce two observations and a chapter that establishes eight must produce eight. Do not write one observation per dimension: a ledger padded to cover the list describes a book that was not written and misleads every chapter after this one. Store before/after and mechanism, each with supporting source IDs. "Before" is where this thread stood when this chapter opened, which for a thread the history above already tracks is that history's most recent "after" — not a restatement of where the thread began earlier in the book. Copying a previous "before" forward says the chapter changed nothing, and a ledger that says so about a chapter that did change misleads every chapter after it. At least one ending observation must cite the final source p${paragraphs.length}, because a chapter's ending is always established by its ending.\nSeparately judge all six dimensions against the actual current text and historical evidence, and say plainly where a dimension fails. Six clean dimensions and six defects are both possible results, and neither is the expected one: judge what is on the page. A defect is something the text does — a realization the book already reached announced again as if new, an ending built out of the same moves as the previous chapter's, an explanation restating an action the prose has just shown, a motive flattened without groundwork, a character carried through the scene without a choice of their own, a decisive exchange summarized after a long approach. A passage that could go deeper, land harder or be more fully developed is not a defect, and this review does not collect suggestions. Compare meanings and rhetorical functions, not word overlap. A deliberate motif with new consequences and a belief genuinely tested are not defects. Cross-chapter repetition findings must cite both historical and current source IDs; local repetition findings must cite its occurrences. Distinguish omission from a supporting character simply being absent from this chapter. Do not demand a moral recap, action climax or thought change in every chapter. The final ending must honor the author contract.\nReturn observations, issues, and checked containing all six dimension names only after assessing each. Empty issues means every assessed dimension holds; an issues list is not required to be non-empty and is not required to be empty.`,
     'You assess literary development from source text, independently of continuity review. Return only JSON.', llm, ['observations', 'issues', 'checked'], raw => {

@@ -63,10 +63,11 @@ describe('Promise ledger schedule', () => {
       if (field === 'facts') return JSON.stringify({ summary: 'Vera reads the letter.', facts: [] });
       if (field === 'events') return JSON.stringify({ events: [] });
       if (field === 'beats') return JSON.stringify({ beats: [] });
+      if (field === 'conditions') return JSON.stringify({ conditions: [] });
       // Chapter 1 owns the setup, never the payoff, however confidently the model labels it.
       return JSON.stringify({ promises: [{ promiseId: 'letter', kind: 'payoff', evidence: { sourceId: 'p1' } }, { promiseId: 'letter', kind: 'setup', evidence: { sourceId: 'p1' } }] });
     };
-    const analysis = await analyseChapter(run, chapter, version, async prompt => reply(prompt.includes('Extract facts') ? 'facts' : prompt.includes('Extract events') ? 'events' : prompt.includes('Extract beats') ? 'beats' : 'promises'));
+    const analysis = await analyseChapter(run, chapter, version, async prompt => reply(prompt.includes('Extract facts') ? 'facts' : prompt.includes('Extract events') ? 'events' : prompt.includes('Extract beats') ? 'beats' : prompt.includes('Extract conditions') ? 'conditions' : 'promises'));
     expect(analysis.promises).toHaveLength(1);
     expect(analysis.promises[0]).toMatchObject({ promiseId: 'letter', kind: 'setup' });
     expect(passage).toContain('Vera read the letter.');
@@ -150,7 +151,12 @@ describe('Prompt canon size', () => {
     chapter.candidateRevision = undefined;
     run.chapters = [chapter, { ...chapter, number: 2 }];
     let seen = '';
-    await reviewChapter(run, { ...chapter, number: 2 }, version, async prompt => { seen = prompt; return '{"issues":[]}'; });
+    // The chapter review is not the only prompt this sends any more: a chapter with a predecessor is
+    // also read against it, in its own call. Keep the one under test.
+    await reviewChapter(run, { ...chapter, number: 2 }, version, async prompt => {
+      if (prompt.includes('REVIEW CHAPTER')) seen = prompt;
+      return '{"issues":[]}';
+    });
     const canonBlock = seen.slice(seen.indexOf('ACCEPTED CANON BEFORE THIS CHAPTER:'), seen.indexOf("PLANNED PROMISES (the whole book's schedule):"));
     expect(canonBlock).toContain('sleepless');
     expect(canonBlock).toContain('Vera reads the letter.');
@@ -312,7 +318,7 @@ describe('Follow-up audit regressions', () => {
 describe('Source-indexed evidence extraction', () => {
   it('resolves a declared source to exact prose and rejects unknown or ambiguous references', async () => {
     const { run, chapter, version } = fixture();
-    const response = (evidence: unknown) => JSON.stringify({ summary: 'Vera reads.', facts: [], events: [{ id: 'read', description: 'Vera reads the letter', consequences: [], evidence }], promises: [], beats: [] });
+    const response = (evidence: unknown) => JSON.stringify({ summary: 'Vera reads.', facts: [], events: [{ id: 'read', description: 'Vera reads the letter', consequences: [], evidence }], promises: [], beats: [], conditions: [] });
     const analysis = await analyseChapter(run, chapter, version, async () => response({ sourceId: 'p1' }));
     expect(analysis.events[0].evidence).toEqual({ chapter: 1, revision: version.revision, quote: version.content });
     await expect(analyseChapter(run, chapter, version, async () => response({ sourceId: 'p999' }))).rejects.toThrow(/Unknown evidence sourceId/);
@@ -327,6 +333,7 @@ describe('Source-indexed evidence extraction', () => {
       { events: [] },
       { promises: [{ promiseId: 'invented', kind: 'setup', evidence: { sourceId: 'p1' } }] },
       { beats: [] },
+      { conditions: [] },
     ];
     const analysis = await analyseChapter(run, chapter, version, async () => JSON.stringify(responses.shift()));
     expect(analysis.promises).toEqual([]);
@@ -513,6 +520,7 @@ describe('A one-word paragraph', () => {
       if (prompt.includes('TASK: Extract facts')) return JSON.stringify({ summary: 'She arrives.', facts: [] });
       if (prompt.includes('TASK: Extract events')) return JSON.stringify({ events: [{ id: 'arrival', description: 'She arrives in the town.', consequences: [], evidence: { sourceId: 'p1' } }] });
       if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: [] });
+      if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
       return JSON.stringify({ promises: [] });
     });
     // Every source offered to the model is long enough to locate; "Salt." travels with what follows it.
@@ -640,7 +648,7 @@ describe('A book review whose quotations cannot be located', () => {
       chapter.candidateRevision = undefined;
       return chapter;
     });
-    run.canon = { facts: [], events: [], promises: [], beats: [], summaries: {} };
+    run.canon = emptyStoryState();
     const prompts: string[] = [];
     const llm = async (prompt: string, system: string) => {
       if (!system.includes('complete novel')) return '{"issues":[]}';

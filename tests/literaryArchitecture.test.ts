@@ -106,6 +106,35 @@ describe('Versioned literary architecture', () => {
     await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report(['h1.0.0'])))).rejects.toThrow(/p-unit/);
   });
 
+  it('keeps an assessment whose findings cite more real passages than the cap allows', async () => {
+    const run = setup();
+    accepted(run, 1);
+    // Long enough to split into several p-units, so thirteen real IDs exist to over-cite with.
+    const candidate = prepare(run, 2, 'Vera opened the letter. '.repeat(1200));
+    const paragraphs = Math.ceil(candidate.content.length / 1800);
+    expect(paragraphs).toBeGreaterThan(13);
+    const overCited = Array.from({ length: 13 }, (_, index) => `p${index + 1}`);
+    // The ending observation must still cite the last unit, so it gets its own entry.
+    const raw = report([`p${paragraphs}`]);
+    raw.observations.push({ kind: 'thought', subject: 'Vera', before: 'Silent', after: 'Speaking', mechanism: 'A decision carried through', sources: overCited });
+
+    const assessment = await assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(raw));
+    // Trimmed to the cap rather than thrown away: every ID it gave was a real passage of this chapter.
+    expect(assessment.observations[1].evidence).toHaveLength(12);
+    expect(assessment.observations[1].evidence.every(item => item.chapter === 2)).toBe(true);
+  });
+
+  it('names over-citing and invented IDs differently, so a retry is told what is actually wrong', async () => {
+    const run = setup();
+    accepted(run, 1);
+    const candidate = prepare(run, 2);
+    // An invented ID is named on its own; the valid IDs beside it are not paraded as the defect.
+    await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report(['p1', 'p999']))))
+      .rejects.toThrow(/Unknown literary evidence source \(p999\)/);
+    await expect(assessLiteraryDevelopment(run, run.chapters[1], candidate, async () => JSON.stringify(report([]))))
+      .rejects.toThrow(/must cite its sources/);
+  });
+
   it('blocks a semantic repeat despite a passed continuity review and zero shared wording', async () => {
     const run = setup();
     accepted(run, 1);
@@ -135,7 +164,14 @@ describe('Versioned literary architecture', () => {
     expect(sceneWordTargets(chapter, 300)).toEqual([60, 240]);
     const raw = JSON.parse(literaryResponse(llm.mock.calls[0][0], llm.mock.calls[0][1])!);
     raw.scenes[1].sceneId = 's1';
-    await expect(planLiteraryDevelopment(run, chapter, async () => JSON.stringify(raw))).rejects.toThrow(/Invalid literary scene intent/);
+    // The refusal names the scene and the fault, because that message is what the retry works from.
+    await expect(planLiteraryDevelopment(run, chapter, async () => JSON.stringify(raw))).rejects.toThrow(/Scene "s1" appears twice/);
+
+    // A weight the model quoted is the weight it meant: read as a number rather than refused.
+    const quoted = JSON.parse(literaryResponse(llm.mock.calls[0][0], llm.mock.calls[0][1])!);
+    quoted.scenes[1].narrativeWeight = '4';
+    const lenient = await planLiteraryDevelopment(run, chapter, async () => JSON.stringify(quoted));
+    expect(lenient.scenes[1].narrativeWeight).toBe(4);
   });
 
   it('invalidates downstream literary dependencies when an ending changes without changing facts', () => {
@@ -229,6 +265,7 @@ describe('Versioned literary architecture', () => {
         if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       throw new Error(system);
@@ -253,6 +290,7 @@ describe('Versioned literary architecture', () => {
         if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       throw new Error('writer offline');
@@ -270,6 +308,7 @@ describe('Versioned literary architecture', () => {
         if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       throw new Error(system);
@@ -305,6 +344,7 @@ describe('The order the checks run in', () => {
         if (prompt.includes('TASK: Extract facts')) { order.push('extraction'); return '{"summary":"Vera mailed the letter.","facts":[]}'; }
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       if (system.includes('assess literary development')) { order.push('literary'); return literaryResponse(prompt, system)!; }
@@ -330,6 +370,7 @@ describe('A chapter the literary gate keeps failing', () => {
         if (prompt.includes('TASK: Extract facts')) { extractions++; return '{"summary":"Vera mailed the letter.","facts":[]}'; }
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       if (system.includes('assess literary development')) {
@@ -368,6 +409,7 @@ describe('A literary gate the network would not let through', () => {
         if (prompt.includes('TASK: Extract facts')) return '{"summary":"Vera mailed the letter.","facts":[]}';
         if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
         if (prompt.includes('TASK: Extract beats')) return JSON.stringify({ beats: plannedBeatsFrom(prompt).map(item => ({ ...item, evidence: { sourceId: 'p1' } })) });
+        if (prompt.includes('TASK: Extract conditions')) return JSON.stringify({ conditions: [] });
         return '{"promises":[]}';
       }
       // A dropped connection, on every attempt: not a verdict on the chapter, and not a bad answer.
@@ -406,6 +448,27 @@ describe('A thread that does not move', () => {
       thread(3, 'Elara sees that repair can erase what a person meant to keep, and does it anyway for money.', 'Elara refuses the work that would erase it.'),
     ]);
     expect(moved).toEqual([]);
+  });
+
+  it('is reported when a chapter arrives where the one before it arrived', () => {
+    // The manuscript version of this: "the count did not start again from one", announced as new in
+    // four chapters running. The thread opens honestly each time and reaches nowhere.
+    const arrival = 'Clark stops holding himself back and does not call it an accident.';
+    const stalled = stalledThreads([
+      thread(2, 'Clark holds himself back from every touch and calls each slip an accident.', arrival),
+      thread(3, 'Clark has stopped holding back once, on a roof, under pressure.', arrival),
+    ]);
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]).toMatchObject({ chapter: 3, reason: 'arrives where the last one arrived' });
+  });
+
+  it('names which of the two failures it found', () => {
+    const opening = 'Elara views repair as an unquestioned virtue that restores order to a broken machine.';
+    const stalled = stalledThreads([
+      thread(2, opening, 'Elara confronts the possibility that repair can be an act of violence.'),
+      thread(3, opening, 'Elara decides the tower is worth the cost of the work.'),
+    ]);
+    expect(stalled[0].reason).toBe('opens where the last one opened');
   });
 
   it('does not compare threads that are not the same thread', () => {

@@ -226,8 +226,3 @@ export function getGenreList(): string[] {
   return Object.keys(GENRE_CONFIGS);
 }
 
-export function getGenreDescription(genre: string): string {
-  const key = resolveGenreKey(genre);
-  const config = key ? GENRE_CONFIGS[key] : undefined;
-  return config ? config.description : "General fiction";
-}

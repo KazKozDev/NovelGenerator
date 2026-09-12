@@ -8,9 +8,7 @@ import {
   hookScore,
   ideaSeedPrompt,
   isRecapEnding,
-  jaccardVocabulary,
   languageContract,
-  planNoveltyScore,
   uniqueNgramRatio,
 } from '../utils/novel/diversity';
 
@@ -22,12 +20,17 @@ describe('diversity pipeline', () => {
     expect(SAMPLING.prose).toBeGreaterThan(SAMPLING.repair);
   });
 
-  it('builds deterministic idea seeds that rotate scene shapes', () => {
+  it('builds deterministic idea seeds that rotate scene shapes and craft constraints', () => {
     const first = buildIdeaSeed(0);
     expect(buildIdeaSeed(0)).toEqual(first);
-    expect(first.genreMix.length).toBeGreaterThan(0);
+    expect(first.constraint.length).toBeGreaterThan(0);
     expect(buildIdeaSeed(1).sceneShape).not.toBe(buildIdeaSeed(0).sceneShape);
-    expect(ideaSeedPrompt(first)).toContain(first.sceneShape);
+    // The seed's text reaches a prompt now: for the life of the project the assembler was called by
+    // nothing, and a chapter was seeded only by a shape it was told to prefer if it fit.
+    expect(ideaSeedPrompt(first)).toContain(first.constraint);
+    expect(ideaSeedPrompt(first)).toContain(first.ban);
+    // It constrains how the approved events are planned, never which events happen.
+    expect(ideaSeedPrompt(first)).toContain('the outline stands');
   });
 
   it('keeps every prompt block English-only', () => {
@@ -45,13 +48,6 @@ describe('diversity pipeline', () => {
     expect(uniqueNgramRatio('')).toBe(1);
   });
 
-  it('scores plan novelty against previous plans', () => {
-    expect(planNoveltyScore('a lighthouse trial during a blackout', [])).toBe(1);
-    const near = planNoveltyScore('a lighthouse trial during a blackout', ['a lighthouse trial during a blackout']);
-    const far = planNoveltyScore('a desert heist with a radio host', ['a lighthouse trial during a blackout']);
-    expect(far).toBeGreaterThan(near);
-    expect(jaccardVocabulary('same words here', 'same words here')).toBeCloseTo(1);
-  });
 
   it('flags weak hooks and recap endings for the bestseller check', () => {
     const hooked = 'Run! Mara shouted, grabbing the ledger as the alarm tore through the market. Who took the missing drawer?';

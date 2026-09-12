@@ -107,7 +107,7 @@ export async function fetchOllamaModels(endpoint: string = DEFAULT_OLLAMA_ENDPOI
 }
 
 /** Read every NDJSON frame and require a successful terminal record. Partial text is never success. */
-export async function readOllamaCompletion(response: Response): Promise<string> {
+export async function readOllamaCompletion(response: Response, onChunk?: (text: string) => void): Promise<string> {
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new Error(`Ollama request failed [${response.status}]: ${detail || response.statusText}`);
@@ -120,6 +120,10 @@ export async function readOllamaCompletion(response: Response): Promise<string> 
     const text = frame.message?.content ?? frame.response ?? '';
     if (typeof text !== 'string') throw new Error('Malformed Ollama content.');
     content += text;
+    // The frames were always arriving one at a time; nothing was listening. Reporting them costs
+    // nothing and changes nothing about what is accepted: the caller still receives only the verified
+    // final content, and a stream that ends without its completion record is still rejected whole.
+    if (text && onChunk) onChunk(text);
     if (frame.done) {
       if (['length', 'max_tokens'].includes(frame.done_reason)) throw new Error('Ollama output reached its token limit; the incomplete response was rejected.');
       completed = true;
@@ -154,7 +158,8 @@ export async function readOllamaCompletion(response: Response): Promise<string> 
 export async function generateOllamaText(
   prompt: string, systemInstruction?: string, schema?: object, temperature = 0.7,
   model = DEFAULT_OLLAMA_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT,
-  maxTokens?: number, topP?: number, topK?: number, think = false
+  maxTokens?: number, topP?: number, topK?: number, think = false,
+  onChunk?: (text: string) => void
 ): Promise<string> {
   const base = endpoint.replace(/\/+$/, '');
   // Thinking is off unless the caller's provider role enables it; only message.content is ever read.
@@ -177,18 +182,22 @@ export async function generateOllamaText(
         body: JSON.stringify(buildOllamaGeneratePayload({ model, prompt, system, temperature, schema, isJson: Boolean(schema), stream: true, think, maxTokens, topP, topK })),
       });
     }
-    return await readOllamaCompletion(response);
+    return await readOllamaCompletion(response, onChunk);
   } finally { clearTimeout(timeout); }
 }
 
+/**
+ * The streaming call, which until now was not one: it ran the ordinary request to completion and
+ * handed the whole answer over as a single chunk, so a writer on Ollama produced nothing to watch and
+ * then produced a chapter. The transport was already reading the stream frame by frame; only the
+ * reporting was missing.
+ */
 export async function generateOllamaTextStream(
   prompt: string, onChunk: (chunk: string) => void, systemInstruction?: string,
-  model = DEFAULT_OLLAMA_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT
+  model = DEFAULT_OLLAMA_MODEL, endpoint = DEFAULT_OLLAMA_ENDPOINT,
+  schema?: object, temperature = 0.7, maxTokens?: number
 ): Promise<string> {
-  const text = await generateOllamaText(prompt, systemInstruction, undefined, 0.7, model, endpoint);
-  // Expose only verified final content; transport thinking and partial output stay out of the manuscript.
-  onChunk(text);
-  return text;
+  return generateOllamaText(prompt, systemInstruction, schema, temperature, model, endpoint, maxTokens, undefined, undefined, false, onChunk);
 }
 
 /**

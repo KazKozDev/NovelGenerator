@@ -91,7 +91,7 @@ export function literaryStillHolds(previous: ChapterVersion, candidate: ChapterV
  * while the book moves, or a book that does not move. Both were happening in the run this came from.
  * So this reports the threads, and reports them as something to look at.
  */
-export function stalledThreads(history: { chapter: number; observations: LiteraryObservation[] }[]): { chapter: number; kind: LiteraryKind; subject: string }[] {
+export function stalledThreads(history: { chapter: number; observations: LiteraryObservation[] }[]): { chapter: number; kind: LiteraryKind; subject: string; reason: 'opens where the last one opened' | 'arrives where the last one arrived' }[] {
   const stems = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 3).map(word => word.slice(0, 6)));
   const near = (first: string, second: string) => {
     const a = stems(first), b = stems(second);
@@ -101,7 +101,7 @@ export function stalledThreads(history: { chapter: number; observations: Literar
     for (const word of b) if (a.has(word)) shared++;
     return shared / smaller;
   };
-  const stalled: { chapter: number; kind: LiteraryKind; subject: string }[] = [];
+  const stalled: { chapter: number; kind: LiteraryKind; subject: string; reason: 'opens where the last one opened' | 'arrives where the last one arrived' }[] = [];
   for (let index = 1; index < history.length; index++) {
     const previous = history[index - 1], current = history[index];
     for (const observation of current.observations) {
@@ -113,7 +113,16 @@ export function stalledThreads(history: { chapter: number; observations: Literar
       // close enough to be the same sentence: a thread carried forward rather than moved.
       const toStart = near(observation.before, sameThread.before);
       if (toStart >= 0.9 && toStart > near(observation.before, sameThread.after)) {
-        stalled.push({ chapter: current.chapter, kind: observation.kind, subject: observation.subject });
+        stalled.push({ chapter: current.chapter, kind: observation.kind, subject: observation.subject, reason: 'opens where the last one opened' });
+        continue;
+      }
+      // The other half of the same defect, and the one a finished manuscript shows plainly: a thread
+      // that ends this chapter where it ended the last one. Read as prose it is a realization the
+      // book has already reached being announced again as if it were new — "the count did not start
+      // again from one", four chapters running. The "before" check cannot see it, because a thread
+      // can open honestly from the previous ending and still arrive nowhere.
+      if (near(observation.after, sameThread.after) >= 0.9) {
+        stalled.push({ chapter: current.chapter, kind: observation.kind, subject: observation.subject, reason: 'arrives where the last one arrived' });
       }
     }
   }

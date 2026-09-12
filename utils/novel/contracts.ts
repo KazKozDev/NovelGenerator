@@ -11,6 +11,7 @@ export interface BookSpec extends StorySettings {
   targetWordsPerChapter: number;
   chapterMode?: 'full' | 'scene';
   skipEditing?: boolean;
+  forwardOnly?: boolean;
 }
 
 export function createBookSpec(premise: string, chapterCount: number, settings: StorySettings = {}): BookSpec {
@@ -30,6 +31,7 @@ export function createBookSpec(premise: string, chapterCount: number, settings: 
     targetWordsPerChapter: settings.targetWordsPerChapter || 4000,
     chapterMode: settings.chapterMode,
     skipEditing: settings.skipEditing,
+    forwardOnly: settings.forwardOnly,
   };
 }
 
@@ -43,7 +45,7 @@ export function genreCraft(spec: BookSpec): string {
 }
 
 export function specPrompt(spec: BookSpec): string {
-  const { chapterMode: _, skipEditing: __, ...cleanSpec } = spec;
+  const { chapterMode: _, skipEditing: __, forwardOnly: ___, ...cleanSpec } = spec;
   return `AUTHOR CONTRACT (applies to planning, prose and every revision):\n${JSON.stringify(cleanSpec, null, 2)}\nPreserve proper names. Style preferences are contextual, not absolute word bans. Respect the requested audience, viewpoint, language and ending. Do not impose a cliffhanger on a resolved ending.`;
 }
 
@@ -84,12 +86,63 @@ export interface PromisePlan {
   id: string;
   description: string;
   setupChapter: number;
-  payoffChapter: number;
+  payoffChapter: number | null;
   required: boolean;
+  setup?: string;
+  development?: string;
+  payoff?: string;
+}
+export interface MajorTurn {
+  id: string;
+  functions: string[];
+  chapter: number;
+  event: string;
+  cause: string;
+  characterAction: string;
+  consequence: string;
+}
+export interface ChapterArc {
+  chapter: number;
+  /**
+   * What this chapter takes away for good — a person, a resource, an option, a belief, a way back.
+   * An empty string says the chapter costs nothing, and a book is allowed one of those.
+   */
+  cost?: string;
+  structuralRole: string;
+  entryState: string;
+  causalLink: string;
+  protagonistStrategy: string;
+  development: string;
+  internalDevelopment: string;
+  chapterChange: string;
+  exitState: string;
+  endingFunction: string;
+  pacingPriority: string;
+  setupPromiseIds: string[];
+  payoffPromiseIds: string[];
+}
+export interface PlanningIssue {
+  location: string;
+  problem: string;
+  neededClarification: string;
 }
 export interface PromiseEvidence { promiseId: string; kind: 'setup' | 'payoff'; evidence: Evidence }
 /** A planned beat found on the page, quoted from the prose that dramatizes it. */
 export interface BeatEvidence { sceneId: string; beat: string; evidence: Evidence }
+/**
+ * A constraint a chapter put on the book: something later chapters must work around until the prose
+ * takes it away. "The bridge is out." "Nobody gets into the archive without the clerk's key." It is
+ * the promise ledger's mirror image — a promise is owed forward, a condition is binding forward —
+ * and it exists because a chapter that quietly drops one reads perfectly well on its own page.
+ */
+export interface ConditionEvidence {
+  id: string;
+  statement: string;
+  evidence: Evidence;
+  /** The chapter whose prose took the condition away, and the passage that did it. */
+  liftedIn?: number;
+  liftedBy?: Evidence;
+}
 export interface ChapterAnalysis {
   summary: string;
   facts: CanonFact[];
@@ -97,6 +150,11 @@ export interface ChapterAnalysis {
   promises: PromiseEvidence[];
   /** Absent in analyses recorded before the beat registry existed; never a reason to lose a run. */
   beats?: BeatEvidence[];
+  /**
+   * Conditions this chapter set, and conditions already standing that it lifted. Absent in analyses
+   * recorded before the ledger existed; a book without them is simply a book with none standing.
+   */
+  conditions?: { id: string; statement: string; evidence: Evidence; lifts?: string }[];
 }
 export interface StoryState {
   facts: CanonFact[];
@@ -104,25 +162,11 @@ export interface StoryState {
   promises: PromiseEvidence[];
   /** Which planned beats the accepted chapters have already played, and where. */
   beats: BeatEvidence[];
+  /** Constraints the accepted chapters put on the book, with the ones already lifted marked. */
+  conditions: ConditionEvidence[];
   summaries: Record<number, string>;
-  /** A compact, serializable continuity ledger for scene-to-scene writing. */
-  continuity: ContinuityState;
 }
 
-export interface ContinuityState {
-  currentTime: string;
-  currentLocation: string;
-  characterLocations: Record<string, string>;
-  characterKnowledge: Record<string, string[]>;
-  relationshipStates: Record<string, string>;
-  injuriesAndCondition: Record<string, string>;
-  inventory: Record<string, string>;
-  activePromisesAndThreats: string[];
-  unresolvedPlotThreads: string[];
-  completedSetupsAndPayoffs: string[];
-  lastSignificantDecision: string;
-  expectedConsequences: string[];
-}
 export interface ChapterVersion {
   revision: number;
   content: string;
@@ -160,10 +204,23 @@ export interface ChapterVersion {
  * motive already explained, an atmosphere already established, an emotional beat already played. It
  * is the one thing the next scene needs in order not to perform it again.
  */
-export const journalKinds = ['position', 'possession', 'event', 'knowledge', 'openQuestion', 'told'] as const;
+export const journalKinds = ['position', 'possession', 'condition', 'event', 'knowledge', 'openQuestion', 'told'] as const;
 export type JournalKind = typeof journalKinds[number];
 export interface JournalNote { kind: JournalKind; note: string; quote: string }
-export interface SceneJournal { sceneId: string; notes: JournalNote[] }
+export interface SceneJournal {
+  sceneId: string;
+  notes: JournalNote[];
+  /**
+   * The passage in which the scene's declared shift actually happens, copied from the scene. Absent
+   * when the scene declared no shift, when the reading failed, or when the shift is not on the page —
+   * the last of which is the case the writer is asked to answer for.
+   */
+  shiftQuote?: string;
+  /** Planned beats the scene reports as having happened instead of putting them on the page. */
+  reported?: { beat: string; quote: string }[];
+  /** A beat this scene plays, finishes, and then plays again — the same conflict after a break. */
+  secondTake?: { beat: string; first: string; second: string }[];
+}
 
 export interface ChapterRecord {
   number: number;
@@ -198,7 +255,23 @@ export interface ChapterRecord {
    * message to the next scene of this chapter, never a fact about the book.
    */
   sceneJournal?: SceneJournal[];
+  /**
+   * What this chapter has already put on the page, in a few words each — a place described, a motive
+   * explained, an emotional beat played out, an image spent. The journal that produced these is
+   * deleted when the chapter is accepted, and the canon that replaces it records what is now true,
+   * never what has already been said. So this is kept: the chapter after this one has no other way to
+   * know the archive has been described, and describes it again.
+   */
+  alreadyTold?: string[];
   lineEditedRevision?: number;
+  /**
+   * The revision this chapter was read against the chapter before it, in full. Once per chapter: the
+   * comparison is expensive, and running it every repair round is how a review becomes a loop.
+   */
+  neighbourReviewedRevision?: number;
+  deepCheck?: import('./deepCheck').DeepCheckReport;
+  emotion?: import('./deepCheck').EmotionVerdict;
+  genre?: import('./deepCheck').GenreVerdict;
 }
 export interface BookBlueprint {
   centralConflict: string;
@@ -207,6 +280,16 @@ export interface BookBlueprint {
   characters: Record<string, Character>;
   promises: PromisePlan[];
   chapters: ParsedChapterPlan[];
+  /**
+   * How the ending is actually won, and what prepared it.
+   *
+   * preparedBy names promises from this book's own schedule, each set up before the final chapter, so
+   * the means of the climax cannot be a resource the book produces at the moment it is needed.
+   */
+  climax?: { decisiveAction: string; preparedBy: string[] };
+  majorTurns?: MajorTurn[];
+  chapterArcs?: ChapterArc[];
+  planningIssues?: PlanningIssue[];
 }
 export interface NovelRun {
   editorial?: { report: string; revisions: number[]; proposals?: { chapter: number; instruction: string }[] };

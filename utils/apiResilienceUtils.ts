@@ -2,7 +2,6 @@
  * API Resilience Utilities - Fallback mechanisms and user notification system
  */
 
-import { useState, useEffect } from 'react';
 
 export interface APIStatus {
   isAvailable: boolean;
@@ -191,18 +190,4 @@ export async function withResilienceTracking<T>(
     apiResilienceManager.updateStatus(false, errorMessage);
     throw error;
   }
-}
-
-/**
- * Hook for React components to track API status
- */
-export function useAPIStatus() {
-  const [status, setStatus] = useState(apiResilienceManager.getStatus());
-
-  useEffect(() => {
-    const unsubscribe = apiResilienceManager.onStatusChange(setStatus);
-    return unsubscribe;
-  }, []);
-
-  return status;
 }

@@ -1,5 +1,5 @@
 import type { DetailedScene } from '../../types';
-import type { ChapterRecord, ChapterVersion, ContinuityState, ReviewIssue } from './contracts';
+import type { ChapterRecord, ChapterVersion, ReviewIssue } from './contracts';
 
 /** Thresholds are deliberately configuration, not hidden taste. */
 export const continuityConfig = {
@@ -12,18 +12,30 @@ const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, 
 const sentence = (text: string, index: number) => text.slice(Math.max(0, text.lastIndexOf('.', index - 1) + 1), text.indexOf('.', index) < 0 ? text.length : text.indexOf('.', index) + 1).trim();
 const evidence = (chapter: number, version: ChapterVersion, quote: string) => [{ chapter, revision: version.revision, quote }];
 
-/** Normalizes old short scene records into the explicit ScenePlan contract used by the writer. */
-export function scenePlan(scene: DetailedScene, prior: ContinuityState): Required<Pick<DetailedScene,
+/**
+ * Normalizes old short scene records into the explicit ScenePlan contract used by the writer.
+ *
+ * It used to take the continuity ledger as its second argument, to open a scene with "continue from
+ * <place> at <time>". The ledger is gone — built on every accepted chapter, written into every
+ * checkpoint, and read by nothing but this line — and the writer gets where and when from the canon
+ * and the previous scene's own last words, which are the record of what actually happened rather than
+ * a projection assembled out of regular expressions.
+ */
+export function scenePlan(scene: DetailedScene): Required<Pick<DetailedScene,
   'initialState' | 'characterDecisions' | 'consequenceForNextScene' | 'continuityRequirements' | 'informationRevealed' |
   'informationWithheld' | 'emotionalDelta' | 'prohibitedShortcuts' | 'exitHook'>> {
   return {
-    initialState: scene.initialState || `Continue from ${prior.currentLocation} at ${prior.currentTime}; do not contradict the continuity ledger.`,
+    initialState: scene.initialState || 'Continue from the situation the chapter has reached; contradict nothing the accepted canon establishes.',
     characterDecisions: scene.characterDecisions?.filter(Boolean).length ? scene.characterDecisions : ['A character makes a voluntary consequential choice under the stated conflict.'],
     consequenceForNextScene: scene.consequenceForNextScene || scene.outcome,
     continuityRequirements: scene.continuityRequirements?.filter(Boolean).length ? scene.continuityRequirements : ['Preserve established locations, knowledge, injuries and possessions.'],
     informationRevealed: scene.informationRevealed || scene.keyMoments,
     informationWithheld: scene.informationWithheld || [],
-    emotionalDelta: scene.emotionalDelta || `Change the situation through ${scene.outcome}; do not merely restate the existing emotion.`,
+    // The declared shift is what the scene is for, and it is checked against the prose afterwards.
+    // The generic sentence below is the fallback for plans made before scenes declared one.
+    emotionalDelta: scene.emotionalDelta
+      || (scene.shift ? `By the end, ${scene.shift.register} has moved from "${scene.shift.from}" to "${scene.shift.to}". That change must happen on the page, not be reported as having happened.` : '')
+      || `Change the situation through ${scene.outcome}; do not merely restate the existing emotion.`,
     prohibitedShortcuts: scene.prohibitedShortcuts?.filter(Boolean).length ? scene.prohibitedShortcuts : ['No unearned reversal, off-page rescue, or explanation in place of action.'],
     exitHook: scene.exitHook || scene.outcome,
   };
