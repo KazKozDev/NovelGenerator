@@ -468,6 +468,39 @@ describe('A chapter is planned against the book', () => {
     for (const ask of pointed) expect(ask.temperature).toBeGreaterThan(0.5);
   });
 
+  it('asks once more, naming the scenes, when a plan gives every scene a costless ending', async () => {
+    const run = createRun(createBookSpec('Recover a letter', 3, { targetWordsPerChapter: 300, language: 'English' }), provider);
+    run.outline = 'Thorne recovers the letter and accepts the cost.';
+    const base = fixtureLLM();
+    const asks: string[] = [];
+    // Each chapter gets its own scenes, or the twin check answers before this one does.
+    let planned = 0;
+    const costless = (n: number) => plan(`Chapter ${n}`, [
+      { ...scene(`s${n}a`, ['Thorne'], 'solitude'), outcomeType: 'clean' },
+      { ...scene(`s${n}b`, ['Thorne'], 'action'), outcomeType: 'clean' },
+    ]);
+    const paid = (n: number) => plan(`Chapter ${n}`, [
+      { ...scene(`s${n}a`, ['Thorne'], 'solitude'), outcomeType: 'clean' },
+      { ...scene(`s${n}b`, ['Thorne'], 'action'), outcomeType: 'setback' },
+    ]);
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (!system.includes('plan causally')) return base(prompt, system, options);
+      asks.push(prompt);
+      // Every scene costless the first time, answered once it is told which scenes and what to do.
+      if (/costs nothing/.test(prompt)) return JSON.stringify(paid(planned));
+      planned++;
+      return JSON.stringify(costless(planned));
+    });
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).plan(run);
+
+    // Each chapter planned twice: refused, then told exactly what to change.
+    expect(run.chapters).toHaveLength(3);
+    expect(run.chapters.every(chapter => chapter.plan.detailedScenes.filter((item: any) => item.outcomeType === 'clean').length === 1)).toBe(true);
+    const pointed = asks.filter(ask => /costs nothing/.test(ask));
+    expect(pointed).toHaveLength(3);
+    expect(pointed[0]).toContain('"s1a", "s1b" all end in a clean success');
+  });
+
   it('says nothing about a book whose characters never share a scene', async () => {
     const run = runWithPlans();
     for (const item of [...run.blueprint!.chapters, ...run.chapters.map(chapter => chapter.plan)]) {
@@ -498,7 +531,8 @@ describe('A chapter is planned against the book', () => {
       { ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'clean' },
       { ...scene('s2', ['Thorne'], 'action'), outcomeType: 'clean' },
     ]);
-    expect(() => validateChapterPlan(two, spec)).toThrow(/at most one scene/i);
+    // The refusal names the scenes, because the planner gets one pointed attempt on this message.
+    expect(() => validateChapterPlan(two, spec)).toThrow(/Scenes "s1", "s2" all end in a clean success/);
     const invented = plan('Invented', [{ ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'happy' }]);
     expect(() => validateChapterPlan(invented, spec)).toThrow(/outcomeType must be one of/);
   });

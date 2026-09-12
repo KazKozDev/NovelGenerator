@@ -325,7 +325,9 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
   const declaring = plan.detailedScenes.filter((scene: any) => scene.shift !== undefined).length;
   if (declaring && declaring !== plan.detailedScenes.length) throw new Error('Every scene of a chapter must declare what it shifts, or none may.');
   const clean = plan.detailedScenes.filter((scene: any) => scene.outcomeType === 'clean');
-  if (clean.length > 1) throw new Error('At most one scene in a chapter may end in a clean success; the others must cost something or make things worse.');
+  if (clean.length > 1) {
+    throw new Error(`Scenes ${clean.map((scene: any) => JSON.stringify(scene.sceneId)).join(', ')} all end in a clean success. A chapter may have one. Keep the single scene whose attempt genuinely costs nothing and give each of the others its true ending: "costly-success" where the attempt works and takes something that cannot be taken back, "setback" where it fails and leaves the situation worse.`);
+  }
   // A clean scene on either side of a chapter break is the same standstill spread over two chapters.
   const priorOutcome = earlier.at(-1)?.detailedScenes?.at(-1)?.outcomeType;
   if (priorOutcome === 'clean' && plan.detailedScenes[0].outcomeType === 'clean') throw new Error('The previous chapter already ended in a clean success; this chapter cannot open with another.');
@@ -1859,10 +1861,19 @@ Return only the JSON object.`;
       } catch (error) {
         // The generic retry answers a validation failure by lowering temperature, which is the wrong
         // medicine for "you repeated yourself": ask again, pointedly, with room to invent instead.
-        if (!/repeats chapter/.test(String(error))) throw error;
-        const unfulfilled = (run.blueprint.promises || []).filter(promise => promise.payoffChapter >= number);
-        plan = await structuredResponse(`${planPrompt}\nYour previous attempt returned a copy of an earlier chapter of this same book. Plan what happens NEXT instead: the situation this chapter starts from is the one the previous chapter ended in, and it must not end where that chapter ended. These promises are still unpaid and are the material this chapter has to work with:\n${JSON.stringify(unfulfilled)}\nGive the chapter its own title, its own scenes and its own final situation.`,
-          systemPrompt, this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlanRetry, ...settings });
+        // Two failures earn a third, pointed attempt rather than the end of the book: a plan that
+        // repeated an earlier chapter, and a plan whose scenes all end in gain. Both are refusals the
+        // planner can act on when it is told exactly what to change, and both used to arrive as a
+        // generic retry that lowered the temperature — the wrong medicine for either.
+        if (/clean success/.test(String(error))) {
+          plan = await structuredResponse(`${planPrompt}\nYour previous attempt gave more than one scene of this chapter an outcome that costs nothing: ${String(error)}\nDecide which single attempt in this chapter genuinely succeeds at no new cost, and leave that one as "clean". Every other scene ends either in "costly-success" — it works, and it takes something that cannot be taken back — or in "setback" — it fails, and the situation afterwards is worse than a plain failure would leave it. Change only the outcomeType values and whatever in the scene must change with them; keep the chapter's events, scenes and ending.`,
+            systemPrompt, this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlan, ...settings });
+        } else if (!/repeats chapter/.test(String(error))) throw error;
+        else {
+          const unfulfilled = (run.blueprint.promises || []).filter(promise => promise.payoffChapter >= number);
+          plan = await structuredResponse(`${planPrompt}\nYour previous attempt returned a copy of an earlier chapter of this same book. Plan what happens NEXT instead: the situation this chapter starts from is the one the previous chapter ended in, and it must not end where that chapter ended. These promises are still unpaid and are the material this chapter has to work with:\n${JSON.stringify(unfulfilled)}\nGive the chapter its own title, its own scenes and its own final situation.`,
+            systemPrompt, this.llm, ['title', 'detailedScenes'], decode, { temperature: SAMPLING.chapterPlanRetry, ...settings });
+        }
       }
       run.blueprint.chapters.push(plan);
       const chapter: ChapterRecord = { number, plan, status: 'pending', versions: [], repairAttempts: 0 };
