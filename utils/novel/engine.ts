@@ -2045,28 +2045,50 @@ Return only the JSON object.`;
         if (acting.length) candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...acting] };
       }
       if (candidate.review.status === 'passed') {
-        const identical = chapter.versions.find(version =>
-          version.revision !== candidate.revision && version.content === candidate.content && version.analysis,
-        );
-        if (identical?.analysis) {
-          candidate.analysis = structuredClone(identical.analysis);
-          for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises, candidate.analysis.beats || []]) {
-            for (const item of items) item.evidence.revision = candidate.revision;
+        /**
+         * Extracted once per revision, not once per round.
+         *
+         * An analysis describes a revision, and a revision's prose never changes under it: a repair
+         * always arrives as a new candidate. Re-extracting text that already has an analysis cost
+         * five calls a round and told the round nothing it did not already hold — a live run spent
+         * forty minutes on chapter four doing only that, because the beat gap below failed the
+         * version, the repair budget conceded it, the concession passed it again, and the loop came
+         * back here to extract the same prose from scratch.
+         */
+        if (!candidate.analysis) {
+          const identical = chapter.versions.find(version =>
+            version.revision !== candidate.revision && version.content === candidate.content && version.analysis,
+          );
+          if (identical?.analysis) {
+            candidate.analysis = structuredClone(identical.analysis);
+            for (const items of [candidate.analysis.facts, candidate.analysis.events, candidate.analysis.promises, candidate.analysis.beats || []]) {
+              for (const item of items) item.evidence.revision = candidate.revision;
+            }
+            const knownPromiseIds = new Set(run.blueprint?.promises.map(promise => promise.id) || []);
+            candidate.analysis.promises = candidate.analysis.promises.filter(promise => knownPromiseIds.has(promise.promiseId));
+            validateAnalysis(candidate.analysis, chapter.number, candidate);
+          } else {
+            candidate.analysis = await analyseChapter(run, chapter, candidate, this.llm);
           }
-          const knownPromiseIds = new Set(run.blueprint?.promises.map(promise => promise.id) || []);
-          candidate.analysis.promises = candidate.analysis.promises.filter(promise => knownPromiseIds.has(promise.promiseId));
-          validateAnalysis(candidate.analysis, chapter.number, candidate);
-        } else {
-          candidate.analysis = await analyseChapter(run, chapter, candidate, this.llm);
         }
         // A chapter is accepted on what it put on the page, not on what it was asked to put there.
         // Accepting a chapter whose planned scene was never written writes the gap into canon, and
         // every later chapter then builds on an event this book never told.
         const gap = beatCoverageIssue(chapter, candidate.analysis, candidate);
-        if (gap) {
+        // Unless the chapter has already conceded it. A finding no local repair could answer is
+        // advisory from then on, and this one was the exception that reopened itself: raised major
+        // after the concession had demoted every other finding, it failed the version, the budget
+        // conceded it a second time, and the round began again on prose nothing had touched.
+        const concededGap = !!gap && (chapter.unrepairable || []).some(known => sameFinding(known as ReviewIssue, gap));
+        if (gap && !concededGap) {
           candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, gap] };
           await this.checkpoint(run);
         } else {
+          // The conceded gap still belongs in the report: the chapter goes on standing, and the
+          // reader is told which planned beats never reached its page.
+          if (gap && !candidate.review.issues.some(issue => issue.id === gap.id)) {
+            candidate.review = { ...candidate.review, issues: [...candidate.review.issues, { ...gap, severity: 'minor' as const }] };
+          }
         // The literary gate is the most expensive call in the system, and until this order changed it
         // ran before the cheapest checks that could reject the version anyway: measured over both
         // stored runs, 12 of 34 assessments passed a version that extraction or the beat registry
@@ -2108,10 +2130,22 @@ Return only the JSON object.`;
         }
           // Merged once. Two copies of this block stood here, so every literary finding entered the
           // report twice and the repair was handed the same instruction under two identities.
+          // Merged once per round, and only while there is something left to answer. The assessment
+          // is kept on the version, so a round that reaches here again re-reads the same verdict: a
+          // finding the repair budget has already conceded came back major every time, failed the
+          // version the concession had just passed, and sent the loop round with nothing to repair.
           if (candidate.literary.status === 'failed') {
-            candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...candidate.literary.issues] };
-            await this.checkpoint(run);
-            continue;
+            const unanswered = candidate.literary.issues.filter(issue =>
+              !(chapter.unrepairable || []).some(known => sameFinding(known as ReviewIssue, issue)));
+            if (unanswered.length) {
+              candidate.review = { ...candidate.review, status: 'failed', issues: [...candidate.review.issues, ...unanswered] };
+              await this.checkpoint(run);
+              continue;
+            }
+            // All of them conceded: the chapter stands on the version it has, and its report keeps
+            // them as the advisory notes they became.
+            const absent = candidate.literary.issues.filter(issue => !candidate.review!.issues.some(existing => existing.id === issue.id));
+            if (absent.length) candidate.review = { ...candidate.review, issues: [...candidate.review.issues, ...absent.map(issue => ({ ...issue, severity: 'minor' as const }))] };
           }
           acceptCandidate(run, chapter.number);
           if (this.deepCheckTools && !run.spec.skipEditing) {

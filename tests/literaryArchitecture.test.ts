@@ -338,6 +338,9 @@ describe('The order the checks run in', () => {
   it('reaches the literary gate only after extraction and the beat registry have accepted the version', async () => {
     const run = setup();
     const candidate = prepare(run, 1);
+    // An unextracted version, because extraction is what this order is about: a candidate that
+    // already carries an analysis of its own revision is never extracted twice.
+    candidate.analysis = undefined;
     const order: string[] = [];
     const llm = vi.fn(async (prompt: string, system: string) => {
       if (system.includes('extract evidence')) {
@@ -356,6 +359,49 @@ describe('The order the checks run in', () => {
     // The most expensive call in the system runs last, on a version the cheap checks already accepted.
     expect(order).toEqual(['extraction', 'literary']);
     expect(run.chapters[0].status).toBe('accepted');
+  });
+
+  /**
+   * The round that could not end.
+   *
+   * A live run spent forty minutes on one chapter doing nothing but extraction. The planned beats
+   * never reached the page, so the registry failed the version; the repair budget conceded the
+   * finding and passed the version again; the top of the loop, seeing a passed review, extracted the
+   * same unchanged prose from scratch, the registry raised the same gap, and round it went. A
+   * concession has to be final, and a revision is extracted once.
+   */
+  it('accepts a conceded beat gap instead of extracting the same revision every round', async () => {
+    const run = setup();
+    run.spec.forwardOnly = true;
+    const candidate = prepare(run, 1);
+    candidate.analysis = undefined;
+    let extractions = 0;
+    let repairs = 0;
+    const llm = vi.fn(async (prompt: string, system: string) => {
+      if (system.includes('extract evidence')) {
+        if (prompt.includes('TASK: Extract facts')) { extractions++; return '{"summary":"Vera mailed the letter.","facts":[]}'; }
+        if (prompt.includes('TASK: Extract events')) return '{"events":[]}';
+        // Nothing the chapter planned reached its page, and no repair here ever puts it there.
+        if (prompt.includes('TASK: Extract beats')) return '{"beats":[]}';
+        if (prompt.includes('TASK: Extract conditions')) return '{"conditions":[]}';
+        return '{"promises":[]}';
+      }
+      if (system.includes('assess literary development')) return literaryResponse(prompt, system)!;
+      if (system.includes('continuity and developmental')) return '{"issues":[]}';
+      if (system.includes('targeted fiction revision')) {
+        repairs++;
+        return JSON.stringify({ prose: `Vera opened the letter and sat with it a while. She chose to tell her brother the truth, and said so on the ${repairs} attempt.` });
+      }
+      throw new Error(system);
+    });
+    await (new NovelEngine(llm as never, new MemoryRunStore()) as never as { acceptOrRepair: (r: unknown, c: unknown, v: unknown) => Promise<void> })
+      .acceptOrRepair(run, run.chapters[0], run.chapters[0].versions[run.chapters[0].versions.length - 1]);
+    expect(run.chapters[0].status).toBe('accepted');
+    // One extraction per revision written, and no revision extracted twice.
+    expect(extractions).toBeLessThanOrEqual(repairs + 1);
+    // The gap the chapter could not answer stays in its report, as the advisory note it became.
+    const accepted = run.chapters[0].versions.find(version => version.revision === run.chapters[0].acceptedRevision);
+    expect(accepted?.review?.issues.some(issue => issue.id === 'undramatized-beat' && issue.severity === 'minor')).toBe(true);
   });
 });
 
