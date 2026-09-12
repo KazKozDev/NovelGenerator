@@ -401,11 +401,16 @@ describe('A chapter is planned against the book', () => {
     expect(validateChapterPlan(empty, spec).detailedScenes[1].participants).toEqual([]);
   });
 
-  it('refuses to call a scene an exchange when nobody is there to speak', () => {
+  it('puts right a scene that calls itself an exchange with nobody to speak to, and says it did', () => {
     const alone = plan('Alone', [scene('s1', ['Thorne'], 'speech')]);
-    // The refusal names the scene and the speaker it has, because that message is the retry's only
-    // instruction: "invalid scene" sent the same plan back unchanged.
-    expect(() => validateChapterPlan(alone, spec)).toThrow(/Scene "s1" is carried by speech with only "Thorne" present/);
+    // Refusing cost a live book its run: the planner could read the message and still not answer it,
+    // and of the two contradicting fields only one can be corrected without inventing a person.
+    const fixed = validateChapterPlan(alone, spec);
+    expect(fixed.detailedScenes[0].conflictCarriedBy).toBe('solitude');
+    expect(fixed.normalizations?.[0]).toContain('Scene "s1" said its conflict is carried by speech with only "Thorne"');
+    // A plan that is wrong about the book is still refused; only self-contradiction is put right.
+    const stranger = plan('Stranger', [scene('s2', ['Thorne', 'a passing sailor'], 'speech')]);
+    expect(() => validateChapterPlan(stranger, spec, [], ['Thorne'])).toThrow(/not in the approved cast/);
   });
 
   it('does not demand speech of a single chapter: two participants can be a watcher and the watched', () => {
@@ -533,8 +538,11 @@ describe('A chapter is planned against the book', () => {
     ]);
     // The refusal names the scenes, because the planner gets one pointed attempt on this message.
     expect(() => validateChapterPlan(two, spec)).toThrow(/Scenes "s1", "s2" all end in a clean success/);
+    // A spelling of one of the three is read as that one; a fourth kind of ending is refused.
+    const spelled = plan('Spelled', [{ ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'Costly Success' }]);
+    expect(validateChapterPlan(spelled, spec).detailedScenes[0].outcomeType).toBe('costly-success');
     const invented = plan('Invented', [{ ...scene('s1', ['Thorne'], 'solitude'), outcomeType: 'happy' }]);
-    expect(() => validateChapterPlan(invented, spec)).toThrow(/outcomeType must be one of/);
+    expect(() => validateChapterPlan(invented, spec)).toThrow(/it must be one of/);
   });
 
   it('does not let a clean ending run across the chapter break', () => {
@@ -931,12 +939,16 @@ describe('First-draft prose context', () => {
     expect(sceneWordTargets(chapter, 300)).toEqual([334, 334, 333]);
   });
 
-  it('rejects invalid scene weights while accepting saved plans without them', () => {
+  it('reads a weight off the scale as the end it reaches for, and refuses one that is not a number', () => {
     const run = runWithPlans();
     const value = plan(1);
     expect(() => validateChapterPlan(value, run.spec)).not.toThrow();
     Object.assign(value.detailedScenes[0], { narrativeWeight: 0 });
-    expect(() => validateChapterPlan(value, run.spec)).toThrow(/narrativeWeight/);
+    const clamped = validateChapterPlan(value, run.spec);
+    expect(clamped.detailedScenes[0].narrativeWeight).toBe(1);
+    expect(clamped.normalizations?.[0]).toContain('read as 1');
+    Object.assign(value.detailedScenes[0], { narrativeWeight: 'heavy' });
+    expect(() => validateChapterPlan(value, run.spec)).toThrow(/narrativeWeight as an integer/);
   });
 
   it('uses bounded accepted excerpts without leaking candidate or future prose', () => {

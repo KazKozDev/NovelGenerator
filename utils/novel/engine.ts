@@ -255,6 +255,7 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
   }
   if (!Array.isArray(plan.detailedScenes) || !plan.detailedScenes.length || plan.detailedScenes.length > 8) throw new Error('A chapter needs 1–8 fully planned scenes.');
   const ids = new Set<string>();
+  const normalizations: string[] = [];
   plan.detailedScenes = plan.detailedScenes.map((raw: any, index: number) => {
     if (!raw || typeof raw !== 'object') throw new Error('Invalid scene object.');
     const scene = { ...raw, sceneId: raw.sceneId || raw.scene_id || raw.id || `scene-${index + 1}`,
@@ -274,6 +275,11 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
     // so the retry re-sent the same plan. Each one says which scene and what is wrong with it.
     const named = `Scene ${JSON.stringify(scene.sceneId)}`;
     if (ids.has(scene.sceneId)) throw new Error(`${named} appears twice. Give each scene of the chapter its own id.`);
+    // One name where a list belongs is the same list with one entry. Written back, and said aloud.
+    if (typeof scene.participants === 'string' && scene.participants.trim()) {
+      normalizations.push(`${named} gave its participants as one name rather than a list.`);
+      scene.participants = [scene.participants.trim()];
+    }
     if (!Array.isArray(scene.participants) || !scene.participants.every((name: unknown) => typeof name === 'string' && name.trim())) {
       throw new Error(`${named} needs participants as an array of names, empty if nobody is present; it arrived as ${JSON.stringify(scene.participants)}.`);
     }
@@ -287,11 +293,23 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
     }
     const weight = asInteger(scene.narrativeWeight);
     if (weight !== undefined) scene.narrativeWeight = weight;
-    if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error(`Scene narrativeWeight must be an integer from 1 to 5, not ${JSON.stringify(scene.narrativeWeight)}.`);
+    // A weight outside the scale is a weight the planner meant at one end of it; a plan is not worth
+    // losing over the difference between 7 and 5.
+    if (Number.isInteger(scene.narrativeWeight) && (scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) {
+      const clamped = Math.min(5, Math.max(1, scene.narrativeWeight));
+      normalizations.push(`${named} gave narrativeWeight ${scene.narrativeWeight}; read as ${clamped}, the end of the scale it reaches for.`);
+      scene.narrativeWeight = clamped;
+    }
+    if (scene.narrativeWeight !== undefined && !Number.isInteger(scene.narrativeWeight)) throw new Error(`${named} needs narrativeWeight as an integer from 1 to 5, not ${JSON.stringify(scene.narrativeWeight)}.`);
     // Older checkpoints planned scenes before this field existed; their prose is not retroactively defective.
     if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error(`${named} has conflictCarriedBy ${JSON.stringify(scene.conflictCarriedBy)}; it must be speech, action or solitude.`);
+    // A scene that says speech and lists one person contradicts itself, and only one of the two
+    // fields can be put right without inventing anything: nobody can be added to the room, but a
+    // conflict with one person in it plainly is not carried by dialogue. Refusing instead cost a live
+    // book two plans and then the run, with a message the planner could read and still not answer.
     if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) {
-      throw new Error(`${named} is carried by speech with ${scene.participants.length === 1 ? `only ${JSON.stringify(scene.participants[0])} present` : 'nobody present'}. Either put the other speaker in its participants, or carry the conflict by action or solitude.`);
+      normalizations.push(`${named} said its conflict is carried by speech with ${scene.participants.length === 1 ? `only ${JSON.stringify(scene.participants[0])}` : 'nobody'} in it; carried by solitude instead.`);
+      scene.conflictCarriedBy = 'solitude';
     }
     // The prompt has always listed the shapes a scene may take; this used to accept any non-empty
     // string, so the list was a suggestion. A near miss is normalized to the shape it names, and a
@@ -313,7 +331,19 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
       }
       if (shift.from.trim().toLocaleLowerCase() === shift.to.trim().toLocaleLowerCase()) throw new Error('A scene whose shift ends where it began changes nothing; plan what it moves.');
     }
-    if (scene.outcomeType !== undefined && !OUTCOME_TYPES.includes(scene.outcomeType)) throw new Error(`Scene outcomeType must be one of: ${OUTCOME_TYPES.join(', ')}.`);
+    // "costly success", "Setback.", "costlySuccess" — the same three answers, spelled by a model.
+    if (typeof scene.outcomeType === 'string' && !OUTCOME_TYPES.includes(scene.outcomeType)) {
+      const key = scene.outcomeType.trim().toLowerCase().replace(/[\s_.]+/g, '-');
+      const match = OUTCOME_TYPES.find(type => type === key)
+        || (/^costly/.test(key) || key === 'success-at-a-cost' ? 'costly-success' : undefined)
+        || (/^(?:setback|failure|loss|worse)/.test(key) ? 'setback' : undefined)
+        || (/^(?:clean|free|uncosted)/.test(key) ? 'clean' : undefined);
+      if (match) {
+        normalizations.push(`${named} spelled its outcome ${JSON.stringify(scene.outcomeType)}; read as ${JSON.stringify(match)}.`);
+        scene.outcomeType = match;
+      }
+    }
+    if (scene.outcomeType !== undefined && !OUTCOME_TYPES.includes(scene.outcomeType)) throw new Error(`${named} has outcomeType ${JSON.stringify(scene.outcomeType)}; it must be one of: ${OUTCOME_TYPES.join(', ')}.`);
     if (scene.freshConstraint !== undefined && typeof scene.freshConstraint !== 'string') throw new Error('Scene freshConstraint must be a string when present.');
     if (scene.staging !== undefined && (typeof scene.staging !== 'string' || !scene.staging.trim())) throw new Error('Scene staging must be a non-empty string when present.');
     ids.add(scene.sceneId);
@@ -334,7 +364,7 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
   const fingerprint = JSON.stringify(plan.detailedScenes);
   const twin = earlier.findIndex(item => JSON.stringify(item.detailedScenes) === fingerprint || (item.title === plan.title && item.summary === plan.summary));
   if (twin !== -1) throw new Error(`This plan repeats chapter ${twin + 1}. Plan the next movement of the story: different scenes, a different situation at the end, and a title of its own.`);
-  return { ...plan, targetWordCount: spec.targetWordsPerChapter };
+  return { ...plan, targetWordCount: spec.targetWordsPerChapter, ...(normalizations.length ? { normalizations } : {}) };
 }
 
 export function compactPlanningContext(run: NovelRun) {
@@ -1877,6 +1907,7 @@ Return only the JSON object.`;
       }
       run.blueprint.chapters.push(plan);
       const chapter: ChapterRecord = { number, plan, status: 'pending', versions: [], repairAttempts: 0 };
+      if (plan.normalizations?.length) chapter.planningNote = `The plan was put right before it was accepted: ${plan.normalizations.join(' ')}`;
       if (run.importedDrafts?.[number - 1]?.trim()) addCandidate(chapter, run.importedDrafts[number - 1], 'Imported manuscript: requires review before acceptance');
       run.chapters.push(chapter);
       await this.checkpoint(run);

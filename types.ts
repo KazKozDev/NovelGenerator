@@ -191,6 +191,14 @@ export interface ParsedChapterPlan {
   characterArcs?: CharacterEmotionalArc[]; // Emotional journeys for each character
   actionSequences?: ActionSequence[]; // Physical action and movement sequences
 
+  /**
+   * What the validator had to put right in this plan before accepting it. A plan is refused where it
+   * is wrong about the book — a person not in the cast, a promise paid before it is set up — and put
+   * right where it merely contradicts itself in a way only one field can be wrong about. Recorded so
+   * a correction is never silent.
+   */
+  normalizations?: string[];
+
   // PACING AND STRUCTURE
   targetWordCount?: number; // Estimated length for this chapter
   sceneTransitions?: string[]; // How scenes connect and flow into each other
