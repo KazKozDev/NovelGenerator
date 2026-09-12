@@ -403,7 +403,9 @@ describe('A chapter is planned against the book', () => {
 
   it('refuses to call a scene an exchange when nobody is there to speak', () => {
     const alone = plan('Alone', [scene('s1', ['Thorne'], 'speech')]);
-    expect(() => validateChapterPlan(alone, spec)).toThrow(/at least two characters present to speak/);
+    // The refusal names the scene and the speaker it has, because that message is the retry's only
+    // instruction: "invalid scene" sent the same plan back unchanged.
+    expect(() => validateChapterPlan(alone, spec)).toThrow(/Scene "s1" is carried by speech with only "Thorne" present/);
   });
 
   it('does not demand speech of a single chapter: two participants can be a watcher and the watched', () => {

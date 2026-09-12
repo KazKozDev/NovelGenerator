@@ -265,25 +265,34 @@ export function validateChapterPlan(value: any, spec: BookSpec, earlier: ParsedC
     // outcome, and nothing in the engine reads how long it lasts or what mood it is in. A field a
     // planner must invent and no reader consults is the appearance of thoroughness, not thoroughness.
     for (const field of ['sceneId', 'location', 'objective', 'conflict', 'outcome']) {
-      if (typeof scene[field] !== 'string' || !scene[field].trim()) throw new Error(`Scene missing ${field}.`);
+      if (typeof scene[field] !== 'string' || !scene[field].trim()) throw new Error(`Scene ${index + 1} of this chapter is missing ${field}.`);
     }
     // A scene may legitimately have no one in it — a room after everyone has gone, the closing image
     // of a chapter — and rejecting that killed a live run over a plan that was right.
-    if (ids.has(scene.sceneId) || !Array.isArray(scene.participants) ||
-        !scene.participants.every((name: unknown) => typeof name === 'string' && name.trim()) ||
-        !Array.isArray(scene.keyMoments) || !scene.keyMoments.length ||
-        !scene.keyMoments.every((beat: unknown) => typeof beat === 'string' && beat.trim())) throw new Error('Invalid scene identity, participants or beats.');
+    // Four different faults used to arrive as "Invalid scene identity, participants or beats", and
+    // that message is what the second attempt works from: it named neither the scene nor the fault,
+    // so the retry re-sent the same plan. Each one says which scene and what is wrong with it.
+    const named = `Scene ${JSON.stringify(scene.sceneId)}`;
+    if (ids.has(scene.sceneId)) throw new Error(`${named} appears twice. Give each scene of the chapter its own id.`);
+    if (!Array.isArray(scene.participants) || !scene.participants.every((name: unknown) => typeof name === 'string' && name.trim())) {
+      throw new Error(`${named} needs participants as an array of names, empty if nobody is present; it arrived as ${JSON.stringify(scene.participants)}.`);
+    }
+    if (!Array.isArray(scene.keyMoments) || !scene.keyMoments.length || !scene.keyMoments.every((beat: unknown) => typeof beat === 'string' && beat.trim())) {
+      throw new Error(`${named} needs keyMoments: a non-empty array of concrete, stageable events. It arrived as ${JSON.stringify(scene.keyMoments)}.`);
+    }
     if (cast.length) {
       const allowed = new Set(cast.map(name => name.trim().toLocaleLowerCase()));
       const unknown = scene.participants.find((name: string) => !allowed.has(name.trim().toLocaleLowerCase()));
-      if (unknown) throw new Error(`Scene participant is not in the approved cast: ${unknown}`);
+      if (unknown) throw new Error(`${named} has a participant who is not in the approved cast: ${JSON.stringify(unknown)}. The cast is ${JSON.stringify(cast)}, and a chapter plan may not introduce a person the book has not designed.`);
     }
     const weight = asInteger(scene.narrativeWeight);
     if (weight !== undefined) scene.narrativeWeight = weight;
     if (scene.narrativeWeight !== undefined && (!Number.isInteger(scene.narrativeWeight) || scene.narrativeWeight < 1 || scene.narrativeWeight > 5)) throw new Error(`Scene narrativeWeight must be an integer from 1 to 5, not ${JSON.stringify(scene.narrativeWeight)}.`);
     // Older checkpoints planned scenes before this field existed; their prose is not retroactively defective.
-    if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error('Scene conflictCarriedBy must be speech, action or solitude.');
-    if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) throw new Error('A scene carried by speech needs at least two characters present to speak.');
+    if (scene.conflictCarriedBy !== undefined && !['speech', 'action', 'solitude'].includes(scene.conflictCarriedBy)) throw new Error(`${named} has conflictCarriedBy ${JSON.stringify(scene.conflictCarriedBy)}; it must be speech, action or solitude.`);
+    if (scene.conflictCarriedBy === 'speech' && scene.participants.length < 2) {
+      throw new Error(`${named} is carried by speech with ${scene.participants.length === 1 ? `only ${JSON.stringify(scene.participants[0])} present` : 'nobody present'}. Either put the other speaker in its participants, or carry the conflict by action or solitude.`);
+    }
     // The prompt has always listed the shapes a scene may take; this used to accept any non-empty
     // string, so the list was a suggestion. A near miss is normalized to the shape it names, and a
     // label that names no structure is a plan the planner has to make again.
