@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
 import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, newlyOrphaned, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
-import { citedOnlyTheOpening, proseWordsSoFar } from '../utils/novel/review';
+import { citedOnlyTheOpening } from '../utils/novel/review';
 import { createBookSpec } from '../utils/novel/contracts';
 import { createRun, NovelEngine } from '../utils/novel/engine';
 import { addCandidate } from '../utils/novel/storyState';
@@ -196,18 +196,6 @@ describe('semantic repetition', () => {
   it('refuses a truncated embedder response instead of reporting no repetition', async () => {
     const short: Embedder = async inputs => inputs.slice(1).map(() => unit(0));
     await expect(repetitionIssues(1, version([a, b].join('\n\n')), [], short)).rejects.toThrow(/different number of vectors/);
-  });
-});
-
-describe('Prose watched as it arrives', () => {
-  it('counts the story on the page inside a half-finished envelope, and nothing before it', () => {
-    expect(proseWordsSoFar('')).toBe(0);
-    expect(proseWordsSoFar('{"pro')).toBe(0);
-    // The apparatus before the field is not the story.
-    expect(proseWordsSoFar('{"prose":"')).toBe(0);
-    expect(proseWordsSoFar('{"prose":"The rain had stopped')).toBe(4);
-    // An escaped break is a paragraph the reader will see, not a word.
-    expect(proseWordsSoFar('{"prose":"The rain had stopped.\\nShe went out."}')).toBe(7);
   });
 });
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { type StorySettings, type AgentLogEntry } from '../types';
-import { generateText, generateTextStream, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import { embedOllama } from '../services/ollamaService';
 import { RERANK_STORAGE_KEY, sharedReranker } from '../utils/novel/reranker';
 import { reportLocalModels } from '../utils/novel/modelProgress';
@@ -13,8 +13,7 @@ import { SUMMARIZER_KEY, checkChapter, checkEmotions, checkGenre, deepCheckTools
 import { sharedSummarizer } from '../utils/novel/summarizer';
 import { compileBook, displayChapters, generationStep, metadata } from '../utils/novel/presentation';
 import { playSuccessSound } from '../utils/soundUtils';
-import { proseWordsSoFar, type NovelLLM } from '../utils/novel/review';
-import { logStreamProgress } from '../utils/terminalLogger';
+import type { NovelLLM } from '../utils/novel/review';
 
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
@@ -201,24 +200,7 @@ export default function useBookGenerator() {
       setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber, type: 'execution', message: stepName(system), details: system }]);
       try {
         const provider = options.route === 'validator' && run.validationProvider ? run.validationProvider : run.provider;
-        if (options.stream) {
-          // Prose, watched as it arrives. The streaming transport existed in three files and was
-          // called by nothing, so a chapter appeared all at once after minutes of silence. The
-          // manuscript is unaffected: the accumulated text is reported, never accepted — what the
-          // engine receives is still the verified answer this call returns at the end.
-          let seen = '';
-          let announced = 0;
-          result = await generateTextStream(prompt, chunk => {
-            seen += chunk;
-            const words = proseWordsSoFar(seen);
-            if (words < announced + 50) return;
-            announced = words;
-            logStreamProgress(`Generating chapter ${chapterNumber}`, words, 'Synthesis');
-            setAgentLogs(previous => [...previous, { timestamp: Date.now(), chapterNumber, type: 'execution', message: `Writing: ~${words} words on the page` }]);
-          }, system, options.temperature ?? 0.4, provider, options.schema, options.maxTokens);
-        } else {
-          result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
-        }
+        result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
         checkActive();
         success = true;
         return result;
