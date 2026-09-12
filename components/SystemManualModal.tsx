@@ -71,7 +71,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
             }`}
           >
-            📖 Book Pipeline
+            Book Pipeline
           </button>
           <button
             type="button"
@@ -82,7 +82,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
             }`}
           >
-            🧠 ML Models & WebGPU
+            ML Models & WebGPU
           </button>
           <button
             type="button"
@@ -93,7 +93,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
             }`}
           >
-            🛡️ Story Canon & Forward-Only
+            Story Canon & Forward-Only
           </button>
           <button
             type="button"
@@ -104,7 +104,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
             }`}
           >
-            ⚡ Memory, GPU & Cache
+            Memory, GPU & Cache
           </button>
         </div>
 
@@ -424,7 +424,6 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <circle cx="12" cy="12" r="10" />
           <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
