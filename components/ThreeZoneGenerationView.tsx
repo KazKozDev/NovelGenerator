@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
 import ProgressBar from './ProgressBar';
 import ThemeToggle from './ThemeToggle';
+import SystemManualToggle from './SystemManualModal';
 import PlanView from './PlanView';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
@@ -104,6 +105,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             </Button>
           )}
           <ThemeToggle />
+          <SystemManualToggle />
           {headerActions}
           {onReset && (
             <button
@@ -212,8 +214,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             {showOutline && (
               <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto animate-fade-in">
                 <MarkdownView
-                  content={currentStoryOutline || 'No outline generated yet.'}
-                  className="text-xs"
+                  content={currentStoryOutline ? currentStoryOutline.replace(/\r\n/g, '\n').replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n') : 'No outline generated yet.'}
+                  className="text-xs compact-outline"
                 />
               </div>
             )}

@@ -7,6 +7,7 @@ import { GenerationStep } from './types';
 import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
+import SystemManualToggle from './components/SystemManualModal';
 import ModelSwitch from './components/ModelSwitch';
 import LocalModelToggles from './components/LocalModelToggles';
 import BookDisplay from './components/BookDisplay';
@@ -123,6 +124,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-3">
           <ThemeToggle />
+          <SystemManualToggle />
           {saveControl}
           <button
             type="button"

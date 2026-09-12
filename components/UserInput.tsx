@@ -253,6 +253,9 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
         )}
 
+        {/* Local Verification Models */}
+        <LocalModelToggles />
+
       </div>
 
       <div>

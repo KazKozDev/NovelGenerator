@@ -7,6 +7,7 @@ import {
   checkChapter,
   checkEmotions,
   checkGenre,
+  buildEditorialDirectives,
   claimsForChapter,
   deepCheckTools,
   isLocalModelOn,
@@ -116,5 +117,90 @@ describe('quiet deep checks', () => {
     const run = setup();
     const report = await checkChapter(run, 2, 'Thorne opened door 1 and stepped into the cold hallway beyond it.', {});
     expect(report).toEqual({ chapter: 2, contradictions: [], language: undefined });
+  });
+
+  it('translates post-acceptance deep check findings into actionable craft directives without raw numbers', () => {
+    const run = setup();
+    const ch1 = run.chapters[0];
+    ch1.deepCheck = {
+      chapter: 1,
+      contradictions: [{ claim: 'Thorne location: door 1', sentence: 'Thorne was in Paris.', contradiction: 0.92 }],
+      language: { label: 'es', score: 0.9, expected: 'English', ok: false },
+    };
+    ch1.emotion = {
+      chapter: 1,
+      dominant: 'grief',
+      variety: 0.2,
+    };
+    ch1.genre = {
+      top: 'romance',
+      score: 0.85,
+      expected: 'fantasy',
+      ok: false,
+    };
+
+    const directives = buildEditorialDirectives(ch1, run);
+    expect(directives).toContain('EDITORIAL DIRECTIVES FOR THIS CHAPTER');
+    expect(directives).toContain('CANON & CONTINUITY: Strictly uphold established story facts: "Thorne location: door 1"');
+    expect(directives).toContain('LANGUAGE & FLUENCY: Maintain natural, fluent prose in English');
+    expect(directives).toContain('EMOTIONAL PACING & CONTRAST: The previous chapter maintained a uniform emotional register (grief)');
+    expect(directives).toContain('shift from passive internal brooding to decisive physical action');
+    expect(directives).toContain('GENRE FOCUS: Sharpen the core conventions of fantasy');
+    // Ensure no raw classification scores leak to the writer prompt
+    expect(directives).not.toContain('0.92');
+    expect(directives).not.toContain('0.85');
+  });
+
+  it('generates Russian directives when run language is Russian', () => {
+    const run = setup();
+    run.spec.language = 'Russian';
+    const ch1 = run.chapters[0];
+    ch1.deepCheck = {
+      chapter: 1,
+      contradictions: [{ claim: 'Артем статус: ранен', sentence: 'Артем бежал легко.', contradiction: 0.88 }],
+      language: { label: 'en', score: 0.8, expected: 'Russian', ok: false },
+    };
+    ch1.emotion = {
+      chapter: 1,
+      dominant: 'sadness',
+      variety: 0.3,
+    };
+
+    const directives = buildEditorialDirectives(ch1, run);
+    expect(directives).toContain('УКАЗАНИЯ ДЛЯ СЛЕДУЮЩЕЙ ГЛАВЫ');
+    expect(directives).toContain('ПРЕЕМСТВЕННОСТЬ И КАНОН: Строго соблюдайте установленные факты сюжета: «Артем статус: ранен»');
+    expect(directives).toContain('ЯЗЫК И СТИЛЬ: Пишите на чистом, выразительном и естественном русском литературном языке');
+    expect(directives).toContain('ЭМОЦИОНАЛЬНАЯ ДИНАМИКА И ТЕМП');
+  });
+
+  it('injects editorial directives into writeScene prompt alongside chapter plan and continuation', async () => {
+    const run = setup();
+    const ch1 = run.chapters[0];
+    ch1.deepCheck = {
+      chapter: 1,
+      contradictions: [{ claim: 'Thorne location: door 1', sentence: 'Thorne was in Paris.', contradiction: 0.95 }],
+      language: undefined,
+    };
+    ch1.emotion = {
+      chapter: 1,
+      dominant: 'fear',
+      variety: 0.15,
+    };
+
+    let writerPrompt = '';
+    const mockLLM = vi.fn(async (prompt: string) => {
+      writerPrompt = prompt;
+      return JSON.stringify({ prose: 'The cold hallway stretched ahead as Thorne made his choice.' });
+    });
+
+    const ch2 = run.chapters[1];
+    const { writeScene } = await import('../utils/novel/writer');
+    await writeScene(run, ch2, 0, mockLLM);
+
+    expect(writerPrompt).toContain('CONTINUATION FROM PREVIOUS CHAPTER (Chapter 1)');
+    expect(writerPrompt).toContain('EDITORIAL DIRECTIVES FOR THIS CHAPTER');
+    expect(writerPrompt).toContain('CANON & CONTINUITY: Strictly uphold established story facts: "Thorne location: door 1"');
+    expect(writerPrompt).toContain('EMOTIONAL PACING & CONTRAST');
+    expect(writerPrompt).toContain('CHAPTER PLAN');
   });
 });

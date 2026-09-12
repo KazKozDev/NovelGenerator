@@ -66,4 +66,4 @@ if Image is not None:
         draw.rectangle([left, top, left + side * SCALE, top + side * SCALE], fill=INK)
     img.save('public/logo.png')
 
-print("%dx%d, блоков %d" % (W, H, len(blocks)))
+print("%dx%d, blocks: %d" % (W, H, len(blocks)))

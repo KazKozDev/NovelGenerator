@@ -105,6 +105,32 @@ export interface ContradictionFinding {
 }
 
 /**
+ * Naturalizes telegraphic canon claims ("Alice location: hangar") into standard
+ * grammatical propositions ("Alice is at hangar.") so NLI models evaluate semantic
+ * dependencies properly instead of misclassifying syntax artifacts as contradictions.
+ */
+export function naturalizeClaim(claim: string): string {
+  const trimmed = claim.trim();
+  const colonIndex = trimmed.indexOf(':');
+  if (colonIndex !== -1) {
+    const left = trimmed.slice(0, colonIndex).trim();
+    const right = trimmed.slice(colonIndex + 1).trim();
+    const parts = left.split(/\s+/);
+    if (parts.length >= 2) {
+      const subject = parts.slice(0, -1).join(' ');
+      const predicate = parts[parts.length - 1].toLowerCase();
+      if (predicate === 'status') return `${subject} is ${right}.`;
+      if (predicate === 'location') return `${subject} is at ${right}.`;
+      if (predicate.startsWith('is') || predicate.startsWith('was') || predicate.startsWith('has') || predicate.startsWith('had')) {
+        return `${subject} ${predicate} ${right}.`;
+      }
+      return `${subject}'s ${predicate} is ${right}.`;
+    }
+  }
+  return trimmed;
+}
+
+/**
  * Every sentence against every claim, highest contradiction first.
  * One pair at a time: a batch would pad to the longest sentence and a
  * chapter asks about dozens of pairs, not thousands.
@@ -113,15 +139,23 @@ export async function contradictionFindings(
   claims: string[],
   sentences: string[],
   score: NLIScorer,
-  threshold = 0.8,
+  threshold = 0.85,
 ): Promise<ContradictionFinding[]> {
   const findings: ContradictionFinding[] = [];
   for (const sentence of sentences) {
     if (!sentence.trim()) continue;
     for (const claim of claims) {
       if (!claim.trim()) continue;
-      const result = await score(claim, sentence);
-      if (result.contradiction >= threshold) findings.push({ claim, sentence, contradiction: result.contradiction });
+      const naturalPremise = naturalizeClaim(claim);
+      const result = await score(naturalPremise, sentence);
+      if (result.contradiction >= threshold) {
+        const claimWords = naturalPremise.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(w => w.length >= 3);
+        const sentenceWords = new Set(sentence.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/));
+        const hasOverlap = claimWords.some(w => sentenceWords.has(w));
+        if (hasOverlap || result.contradiction >= 0.95) {
+          findings.push({ claim, sentence, contradiction: result.contradiction });
+        }
+      }
     }
   }
   return findings.sort((first, second) => second.contradiction - first.contradiction);
@@ -138,7 +172,7 @@ export async function scanChapterContradictions(
   claims: string[],
   content: string,
   score: NLIScorer,
-  threshold = 0.8,
+  threshold = 0.85,
 ): Promise<ContradictionFinding[]> {
   return contradictionFindings(claims, sentencesOf(content), score, threshold);
 }

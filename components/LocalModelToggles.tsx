@@ -20,7 +20,7 @@ const MODELS = [
   { key: DEEPCHECK_EMOTION_KEY, name: 'Emotion scoring', detail: 'dominant emotion and arc travel per chapter · ~130MB on first use' },
 ];
 
-/** Anything but an explicit 'off' leaves the cross-encoder on, which is the behaviour it had. */
+/** The cross-encoder defaults on unless explicitly turned off by the reader. */
 function rerankerOn(): boolean {
   try {
     return typeof localStorage === 'undefined' || localStorage.getItem(RERANK_STORAGE_KEY) !== 'off';
@@ -75,7 +75,7 @@ export default function LocalModelToggles() {
           />
           <span>
             <span className="text-zinc-200">Repetition cross-encoder</span>
-            <span className="text-zinc-500"> — on by default, and the heaviest: ~600MB resident and about a second of CPU per pair, some forty pairs a chapter. Turn it off if the tab stops answering; the cosine then decides alone, as it did before this model existed.</span>
+            <span className="text-zinc-500"> — on by default; the heaviest local model (~600MB resident). Turning it off frees the memory and the cosine then decides alone.</span>
           </span>
         </label>
       </div>
