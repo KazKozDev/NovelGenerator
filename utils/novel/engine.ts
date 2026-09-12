@@ -917,6 +917,16 @@ within this book, in a manner consistent with the requested ending.
 Optional series threads may remain open, but must not substitute
 for this book’s resolution.
 
+Where the story has an external line beside its personal one — a
+case, a threat, a job, a search — that line needs causes of its
+own and an end of its own. Schedule it as promises: who wants
+what and why, what makes each turn happen, what the opposition
+does in answer, and how it finishes. An external line that moves
+only when the personal story needs a room to talk in, and stops
+being mentioned once it has served, is scenery. A reader asks
+what became of the person who drove away, and the book must
+have an answer.
+
 
 PACING AND ORIGINALITY
 
@@ -1950,6 +1960,7 @@ Return only the JSON object.`;
       await this.checkpoint(run);
     }
     if (!run.spec.skipEditing) await this.speechSomewhere(run);
+    if (!run.spec.skipEditing) await this.setbackSomewhere(run);
   }
 
   /**
@@ -2003,6 +2014,50 @@ Return only the JSON object.`;
     } catch (error) {
       // A book that stays mute is the author's call to make, not a reason to lose the planning work.
       run.chapters[crowded.index].planningNote = `No scene in this book is carried by speech, and replanning chapter ${number} did not change that: ${error instanceof Error ? error.message : String(error)}`;
+      await this.checkpoint(run);
+    }
+  }
+
+  /**
+   * A book in which nothing ever goes wrong.
+   *
+   * A reader of a finished book wrote that its emotional line ran from suppressed wanting to an
+   * accepted relationship in four chapters with no real complication in between — refusal, avoidance,
+   * danger, confession, and a domestic ending — and that what it lacked was one place where the
+   * characters' wants collide with their work or their values instead of with each other's reticence.
+   * Read against the plan, every scene of that book succeeded: at a cost, but it succeeded. Nothing
+   * fails anywhere, and a story whose every attempt works has no reversal for its ending to answer.
+   *
+   * Checked once over the whole book, like muteness, and repaired the same way: one chapter replanned
+   * so its decisive attempt fails, chosen in the middle-to-late stretch where a reversal belongs and
+   * never the opening, the climax or the resolution. It never ends the run — a book of successes is
+   * the author's to keep, and losing the planning work over it would be the worse outcome.
+   *
+   * No stored run carries outcomeType yet, so this is a floor on structure and not a fitted
+   * threshold: it fires only where a whole book contains no setback at all.
+   */
+  private async setbackSomewhere(run: NovelRun): Promise<void> {
+    const plans = run.blueprint!.chapters;
+    const scenesOf = (plan: ParsedChapterPlan) => (plan.detailedScenes || []) as { outcomeType?: string }[];
+    if (plans.length < 4) return; // Too short for a reversal to have a place of its own.
+    if (plans.some(plan => scenesOf(plan).some(scene => scene.outcomeType === 'setback'))) return;
+    if (!plans.some(plan => scenesOf(plan).some(scene => scene.outcomeType !== undefined))) return; // planned before the field existed
+    // Where a reversal belongs: past the middle, before the chapter that climbs to the climax.
+    const index = Math.min(Math.max(Math.round(plans.length * 0.6) - 1, 1), plans.length - 3);
+    const number = index + 1;
+    try {
+      const replanned = await structuredResponse(`${specPrompt(run.spec)}${narrativeDesign}\nOUTLINE:\n${run.outline}\nBLUEPRINT AND CHAPTER PLANS:\n${JSON.stringify(run.blueprint)}\nIn this whole book, as planned, no attempt ever fails: every scene ends in success, at a cost at worst, and the story runs to its ending without a reversal to answer. Replan chapter ${number} so that its decisive attempt fails and leaves the situation worse than a plain failure would — mark that scene "setback" — and so that the failure comes from what these people want and what they are bound to, not from a new obstacle dropped in from outside. Keep the chapter's place in the book, the promises it sets up or pays off, and everything later chapters depend on; the chapters after it inherit the worse situation rather than being rewritten.`,
+        'You plan causally connected scenes for a novel. Respond only with JSON.', this.llm, ['title', 'detailedScenes'],
+        raw => {
+          const plan = validateChapterPlan(raw, run.spec, plans.filter((_, position) => position !== index));
+          if (!(plan.detailedScenes || []).some((scene: { outcomeType?: string }) => scene.outcomeType === 'setback')) throw new Error('The replanned chapter still contains no scene that ends in a setback.');
+          return plan;
+        }, { temperature: SAMPLING.speechReplan, maxTokens: 8192, route: 'writer', schema: chapterPlanSchema });
+      plans[index] = replanned;
+      run.chapters[index].plan = replanned;
+      await this.checkpoint(run);
+    } catch (error) {
+      run.chapters[index].planningNote = `No scene in this book ends in a setback, and replanning chapter ${number} did not change that: ${error instanceof Error ? error.message : String(error)}`;
       await this.checkpoint(run);
     }
   }

@@ -1096,6 +1096,43 @@ export async function analyseChapter(run: NovelRun, chapter: ChapterRecord, vers
   return combined;
 }
 
+/**
+ * People the book designed, used once, and forgot.
+ *
+ * A reader of a finished book asked what became of the dealer who drove away in chapter three, and
+ * the answer was nothing: the manuscript never mentions him again. The whole-book review is supposed
+ * to catch a thread left hanging, and it does not — it reads a ledger of what each chapter
+ * established, where a person who has stopped appearing leaves no entry to notice.
+ *
+ * Deterministic, and reported rather than judged. The blueprint's cast is the book's consequential
+ * people, not its passers-by, so a designed character who appears in one chapter's evidence and in no
+ * chapter after it is either a thread the book dropped or a person the plan overvalued. Both are
+ * worth a sentence from the reviewer; neither is decided here. The final chapter is exempt — someone
+ * introduced at the end has no later chapter to appear in — and so is a book too short to abandon
+ * anyone in.
+ */
+export function abandonedCast(run: NovelRun): { name: string; lastChapter: number }[] {
+  const cast = Object.keys(run.blueprint?.characters || {});
+  if (cast.length < 2 || run.chapters.length < 3) return [];
+  const mentions = new Map<string, number[]>();
+  for (const chapter of run.chapters) {
+    const accepted = acceptedVersion(chapter);
+    if (!accepted?.analysis) continue;
+    const text = [accepted.analysis.summary,
+      ...accepted.analysis.facts.map(fact => `${fact.subject} ${fact.predicate} ${fact.value} ${fact.knownBy.join(' ')}`),
+      ...accepted.analysis.events.map(event => event.description)].join(' ').toLowerCase();
+    for (const name of cast) if (text.includes(name.toLowerCase())) mentions.set(name, [...(mentions.get(name) || []), chapter.number]);
+  }
+  const last = run.chapters.length;
+  return cast.flatMap(name => {
+    const seen = mentions.get(name) || [];
+    // Never present at all is a different defect — a cast the book did not write — and the promise
+    // and plan checks own it. This is about someone the book used and then dropped.
+    if (seen.length !== 1 || seen[0] >= last - 1) return [];
+    return [{ name, lastChapter: seen[0] }];
+  });
+}
+
 export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure' | 'final', retry = ''): Promise<ReviewReport> {
   const sources = run.chapters.map(chapter => ({ chapter: chapter.number, version: acceptedVersion(chapter) }));
   if (run.chapters.length !== run.spec.chapterCount || sources.some(source => !source.version) || run.chapters.some(chapter => chapter.candidateRevision !== undefined)) return { validationVersion: 2, status: 'not_checked', checkedRevision: 0, issues: [], error: 'Every chapter must be accepted before book review.' };
@@ -1116,7 +1153,7 @@ export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure
         beats: excerpt(source.version.analysis.beats),
       },
     }));
-    const prompt = `${specPrompt(run.spec)}\nBOOK BLUEPRINT:\n${JSON.stringify(run.blueprint)}\nCOMPLETE BOOK EVIDENCE LEDGER:\n${JSON.stringify(ledger)}\nDETERMINISTIC PROMISE CHECK:\n${JSON.stringify(endingIssues(run))}\nReview the ${phase === 'structure' ? 'whole-book structure before sentence-level editing' : 'final whole-book continuity and resolution'}. Check causal dependencies, escalation of the central conflict, protagonist agency and change, pacing variation, planted clues and earned payoffs, unresolved required promises, and the ending's emotional consequences. Distinguish intentionally open threads from broken promises. Propose precise affected passages, not a blind rewrite. All chapter prose has a separate full-content local review; here assess cross-chapter relationships.\nYou are reading the book through the ledger above and not through its prose, so every quotation you give must be copied out of that ledger character for character — an evidence quote exactly as it stands there, not extended, not tidied, not joined to a neighbour. A finding whose quotation cannot be located in the accepted chapters is discarded entirely, and a report of nothing but discarded findings is a review that did not happen.\n${issueFormat}${retry}`;
+    const prompt = `${specPrompt(run.spec)}\nBOOK BLUEPRINT:\n${JSON.stringify(run.blueprint)}\nCOMPLETE BOOK EVIDENCE LEDGER:\n${JSON.stringify(ledger)}\nDETERMINISTIC PROMISE CHECK:\n${JSON.stringify(endingIssues(run))}\nReview the ${phase === 'structure' ? 'whole-book structure before sentence-level editing' : 'final whole-book continuity and resolution'}. Check causal dependencies, escalation of the central conflict, protagonist agency and change, pacing variation, planted clues and earned payoffs, unresolved required promises, and the ending's emotional consequences. Distinguish intentionally open threads from broken promises. Where the book runs an external line beside its personal one — a case, a threat, a job, a search — check it as a line: does each of its turns have a cause the book gave, does the opposition act for reasons of its own, and does it finish. Report as 'plot' an external line that moves only when the personal story needs an occasion, a turn whose cause the book never supplies, and an element introduced with weight and then left — the object nobody uses again, the person who leaves and is not heard of again. Propose precise affected passages, not a blind rewrite. All chapter prose has a separate full-content local review; here assess cross-chapter relationships.\nYou are reading the book through the ledger above and not through its prose, so every quotation you give must be copied out of that ledger character for character — an evidence quote exactly as it stands there, not extended, not tidied, not joined to a neighbour. A finding whose quotation cannot be located in the accepted chapters is discarded entirely, and a report of nothing but discarded findings is a review that did not happen.\n${issueFormat}${retry}`;
     const report = await structuredResponse(prompt, 'You are a developmental editor reviewing a complete novel through its verified evidence ledger. Respond only with JSON.', llm, ['issues'], raw => parseIssues(raw, sources as { chapter: number; version: ChapterVersion }[]), { schema: issueSchema });
     // The same rule as a chapter review, for the same reason and against the same wording: this pass
     // reported "Elena's betrayal lacks sufficient motivation" beside "the plan is introduced without
@@ -1134,6 +1171,13 @@ export async function reviewBook(run: NovelRun, llm: NovelLLM, phase: 'structure
       id: 'thread-not-moving', category: 'plot', severity: 'major',
       description: `${stalled.length} thread(s) do not move between chapters: ${stalled.map(item => `chapter ${item.chapter}, ${item.kind} — ${item.subject} (${item.reason})`).join('; ')}.`,
       instruction: 'For each thread, decide which is true and say so: the chapter did move it and the ledger failed to record the move, or the chapter left it where it found it. A thread that arrives where the previous chapter already arrived is a realization the book has reached twice — name the later chapter and say what it should reach instead, rather than announcing the same arrival again. Where the chapter genuinely repeats the previous one — the same argument with the same positions, the same choice reached the same way — name the chapter and what would have to change in it.',
+      evidence: sources.slice(0, 1).map(source => ({ chapter: source.chapter, revision: source.version.revision, quote: source.version.content.slice(0, 200) })),
+    });
+    const dropped = abandonedCast(run);
+    if (dropped.length) report.issues.push({
+      id: 'abandoned-cast', category: 'plot', severity: 'major',
+      description: `${dropped.length} designed character(s) appear in one chapter and in none after it: ${dropped.map(item => `${item.name} (chapter ${item.lastChapter})`).join('; ')}.`,
+      instruction: 'For each, say which is true and name the chapter that should answer for it: the book uses them again and the ledger failed to record it; they were meant to matter and the story dropped them, in which case say where their thread should return and what it should cost; or the plan made a passer-by into a character, in which case nothing in the prose needs to change and the design was wrong. Do not answer by adding a mention to the last chapter to close the loop.',
       evidence: sources.slice(0, 1).map(source => ({ chapter: source.chapter, revision: source.version.revision, quote: source.version.content.slice(0, 200) })),
     });
     const missing = endingIssues(run);

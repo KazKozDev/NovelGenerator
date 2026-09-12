@@ -6,7 +6,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { apparatusResidue, castNotInOutline, compactPlanningContext, createRun, looseJoins, NovelEngine, nextSweep, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon, standingConditions } from '../utils/novel/storyState';
-import { alreadyExplained, analyseChapter, beatCoverageIssue, characterLimits, viewpointQuestion, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { abandonedCast, alreadyExplained, analyseChapter, beatCoverageIssue, characterLimits, viewpointQuestion, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -2177,5 +2177,59 @@ describe('What the book has already told the reader', () => {
     expect(alreadyExplained(run, run.chapters[0])).toBe('');
     const blank = runWithPlans();
     expect(alreadyExplained(blank, blank.chapters[2])).toBe('');
+  });
+});
+
+describe('A book where nothing ever goes wrong', () => {
+  const withOutcomes = (run: NovelRun, outcomes: (string | undefined)[]) => {
+    run.chapters.forEach((chapter, index) => {
+      chapter.plan.detailedScenes = chapter.plan.detailedScenes!.map(scene => ({ ...scene, outcomeType: outcomes[index] as any }));
+      run.blueprint!.chapters[index] = chapter.plan;
+    });
+    return run;
+  };
+
+  it('replans one chapter in the middle so an attempt actually fails', async () => {
+    const run = withOutcomes(runWithPlans(5), ['clean', 'costly-success', 'costly-success', 'costly-success', 'costly-success']);
+    let asked = '';
+    const llm: NovelLLM = async (prompt, _system) => {
+      asked = prompt;
+      return JSON.stringify({ ...plan(3), title: 'The refusal', detailedScenes: [{ ...plan(3).detailedScenes![0], outcomeType: 'setback' }] });
+    };
+    await (new NovelEngine(llm, new MemoryRunStore()) as any).setbackSomewhere(run);
+    expect(asked).toContain('no attempt ever fails');
+    // Past the middle, and never the climax or the resolution.
+    expect(run.chapters[2].plan.title).toBe('The refusal');
+    expect(run.blueprint!.chapters[2].detailedScenes?.[0].outcomeType).toBe('setback');
+  });
+
+  it('leaves alone a book that already fails somewhere, and never ends a run over it', async () => {
+    const has = withOutcomes(runWithPlans(5), ['clean', 'setback', 'costly-success', 'costly-success', 'costly-success']);
+    let calls = 0;
+    const counting: NovelLLM = async () => { calls++; return '{}'; };
+    await (new NovelEngine(counting, new MemoryRunStore()) as any).setbackSomewhere(has);
+    // Books planned before outcomes existed declare none, and are not judged against them.
+    const legacy = withOutcomes(runWithPlans(5), [undefined, undefined, undefined, undefined, undefined]);
+    await (new NovelEngine(counting, new MemoryRunStore()) as any).setbackSomewhere(legacy);
+    expect(calls).toBe(0);
+    // A replan that cannot produce a setback leaves the plan standing and says so in the chapter.
+    const failing = withOutcomes(runWithPlans(5), ['clean', 'clean', 'costly-success', 'costly-success', 'costly-success']);
+    await (new NovelEngine(async () => JSON.stringify(plan(3)), new MemoryRunStore()) as any).setbackSomewhere(failing);
+    expect(failing.chapters[2].planningNote).toContain('no scene in this book ends in a setback'.replace('no', 'No'));
+  });
+});
+
+describe('People the book used once and forgot', () => {
+  it('names the designed character who never comes back', async () => {
+    const run = runWithPlans(4);
+    run.blueprint!.characters['The dealer'] = { name: 'The dealer', description: 'Sells what he should not.', first_appearance: 1, status: 'x', location: 'x', emotional_state: 'x', relationships: {}, development: [] };
+    [1, 2, 3, 4].forEach(number => approve(run, number));
+    // Chapter two's evidence is the only place the dealer appears.
+    const second = acceptedVersion(run.chapters[1])!;
+    second.analysis!.events[0].description = 'The dealer drives away from the yard.';
+    expect(abandonedCast(run)).toEqual([{ name: 'The dealer', lastChapter: 2 }]);
+    // Someone the last chapters carry is not abandoned, and neither is a book too short to drop them.
+    acceptedVersion(run.chapters[3])!.analysis!.events[0].description = 'The dealer is charged.';
+    expect(abandonedCast(run)).toEqual([]);
   });
 });

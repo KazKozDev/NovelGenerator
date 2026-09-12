@@ -94,6 +94,43 @@ returns word for word, in this chapter or out of an earlier one, is reported as 
 finding: a refrain can be deliberate, a character's signature line handed back to them
 unchanged is what made one reviewer say he had stopped sounding like a person.
 
+**A character's limits are part of the design.** The blueprint declares, per character, what
+they cannot do and what they will not do — the body's ceiling and the standing refusal
+together, because on the page they fail the same way. They travel to the chapter planner
+with the description, reach the writer inside the character design, and the chapter review
+is asked about them by name, for the people that chapter's scenes contain. A limit may be
+broken only by paying for it on the page. A book planned before the field existed is judged
+against nothing.
+
+**A scene declares whose eyes it is seen through.** `pov` names one of the scene's own
+participants; a viewpoint outside the room is refused, unless one person is in it and the
+name is simply wrong. The writer is told whose scene it is, and where the viewpoint changes
+from the scene before, told to name that person in the first sentence. The review is given
+the declaration and asked whether the page kept it. The seam this exists for is not the
+scene break: a finished chapter ran a page of one man's morning and continued, with no break
+and no name, inside another.
+
+**What the book has already told the reader reaches the reviewer.** Each accepted chapter
+keeps what it described, explained or played out, taken from its own prose; that record went
+to the writer and to nobody else. The review now gets it with one question — is this chapter
+giving the reader something they already have. It is the only check that can see a meaning
+re-explained in new words, which shares no wording with the first telling and so is invisible
+to both the lexical and the embedding measures. A motif-frequency counter was measured and
+rejected instead: in the book that prompted this, the motif appears 15 times in chapter one
+and once in chapter four, so a count would have failed the chapter the reader praised.
+
+**A book in which nothing ever goes wrong is replanned once.** If no scene in any chapter
+ends in a setback, one chapter past the middle — never the opening, the climax or the
+resolution — is replanned so its decisive attempt fails. Like the muteness check, it runs
+once over the whole book and never ends the run; a book of successes is the author's to keep.
+No stored run carries `outcomeType` yet, so this is a floor on structure, not a fitted
+threshold.
+
+**A designed character used once and then dropped is reported.** The blueprint's cast is the
+book's consequential people, so one who appears in a single chapter's evidence and in none
+after it is either a thread the book abandoned or a person the plan overvalued. Deterministic,
+reported at whole-book review rather than judged, and the final chapters are exempt.
+
 **Planned exchanges must reach the page as speech.** Each planned scene declares whether
 its conflict is carried by speech, action or solitude. A chapter whose plan contains a
 speech-driven scene and whose prose contains no spoken line is rejected; spoken lines
