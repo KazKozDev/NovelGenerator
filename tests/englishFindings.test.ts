@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewIssue } from '../utils/novel/contracts';
-import { confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, mergeFindings, sameFindingSet } from '../utils/novel/review';
+import { confirmedFindings, demoteHedgedKnowledge, demoteKnownCanon, demoteSuggestions, mechanicalIssues, mergeFindings, repeatedSpokenLines, sameFindingSet } from '../utils/novel/review';
 import { emptyStoryState } from '../utils/novel/storyState';
 
 /**
@@ -74,5 +74,41 @@ describe('The silent-failure shapes, in Cyrillic and mixed text', () => {
     // "Колонне" against "Колонна", "убийстве" against "убийства": the same word to a reader.
     const canon = { ...emptyStoryState(), facts: [{ id: 'c', subject: 'Колонна №305', predicate: 'содержит', value: 'запись убийства журналиста', knownBy: ['Алексей'], evidence: { chapter: 1, revision: 1, quote: 'q' } }] };
     expect(demoteKnownCanon([leak('Алексей использует знание о Колонне №305 и убийстве журналиста.')], canon)[0].severity).toBe('minor');
+  });
+});
+
+describe('A spoken line that comes back word for word', () => {
+  const version = (content: string) => ({ revision: 1, content, reason: 'test', createdAt: 0 });
+
+  it('finds the signature line a live book gave a character twice', () => {
+    // Quoted from a finished English run: Alfred's line, excellent once, handed to him again two
+    // chapters later, and the reviewer wrote that he had stopped sounding like a person.
+    const line = '"I am not asking," Alfred said. "I am observing. It is what I am for."';
+    const chapter = `He set the tray down.\n\n${line}\n\nBruce did not answer.`;
+    const earlier = [{ chapter: 2, revision: 3, content: `The kitchen was dark.\n\n${line}` }];
+    const found = repeatedSpokenLines(chapter, earlier);
+    expect(found.map(item => item.line)).toContain('I am observing. It is what I am for.');
+    expect(found.find(item => item.line.startsWith('I am observing'))?.chapters).toEqual([2]);
+    const issue = mechanicalIssues(4, version(chapter), 'English', earlier).find(item => item.id === 'repeated-line');
+    // A refrain may be deliberate, so the finding informs the line editor and never fails a chapter.
+    expect(issue?.severity).toBe('minor');
+    expect(chapter).toContain(issue!.evidence[0].quote);
+  });
+
+  it('leaves ordinary speech and short exchanges alone', () => {
+    const chapter = '"Get in the car."\n\nHe got in.\n\n"Get in the car," she said again.';
+    expect(repeatedSpokenLines(chapter)).toEqual([]);
+    expect(repeatedSpokenLines('"Take it," she said. "You will need the street name."')).toEqual([]);
+  });
+});
+
+describe('Speech a draft never closed', () => {
+  it('fails the chapter that runs its narration on inside a spoken line', () => {
+    const chapter = ['Bruce’s head came up.',
+      '“I mean it,” Clark said. “You can push me away as many times as you need to. I will still be there. The idling engine filled the alley.',
+      '“You are bleeding,” Clark said. “Get in the car.”'].join('\n');
+    const issue = mechanicalIssues(3, { revision: 1, content: chapter, reason: 'test', createdAt: 0 }, 'English').find(item => item.id === 'unclosed-speech');
+    expect(issue?.severity).toBe('major');
+    expect(issue?.evidence[0].quote).toContain('I will still be there');
   });
 });

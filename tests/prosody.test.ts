@@ -1,7 +1,7 @@
 import { plannedBeatsFrom } from './beatStub';
 import { describe, expect, it } from 'vitest';
 import type { ChapterVersion } from '../utils/novel/contracts';
-import { brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, newlyBroken, newlyOrphaned, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
+import { antithesisPairs, brokenParagraphs, defaultRepetitionThresholds, dialogueIssues, openingFrames, newlyBroken, newlyOrphaned, paragraphsOf, spokenLinesLost, prosodyIssues, prosodyMetrics, repetitionIssues, speechParagraphs, type Embedder } from '../utils/novel/prosody';
 import { textureRegression } from '../utils/novel/engine';
 import { citedOnlyTheOpening } from '../utils/novel/review';
 import { createBookSpec } from '../utils/novel/contracts';
@@ -58,6 +58,47 @@ describe('measured prose texture', () => {
   it('stays silent when the prose is inside its budget', () => {
     const plain = ['Он открыл дверь и вышел на лестницу.', '— Подожди, — сказала она.', 'Дверь закрылась.'].join('\n\n');
     expect(prosodyIssues(1, version(plain), 'Russian').map(issue => issue.id)).not.toContain('simile-density');
+  });
+});
+
+describe('a sentence shape used as a formula', () => {
+  const rooftop = [
+    'It was not a handshake. It was a grip.',
+    'It was not a fighting shove. It was a question asked with the body.',
+    'He did not shift his weight. He did not check his watch.',
+    'He did not look back. He did not slow down.',
+    'He did not answer her question. He did not move from the parapet.',
+  ].join('\n\n');
+
+  it('counts the pairs that deny a thing and then assert its replacement', () => {
+    const metrics = prosodyMetrics(rooftop, 'English');
+    expect(metrics.negatedAntithesisPer1000).toBeGreaterThan(0);
+    expect(antithesisPairs(rooftop, 'English')).toHaveLength(5);
+    // A single denial that is never answered is a sentence, not the formula.
+    expect(antithesisPairs('It was not a handshake. She turned away from him.', 'English')).toEqual([]);
+    // Measured only where a budget was measured.
+    expect(prosodyMetrics(rooftop, 'Russian').negatedAntithesisPer1000).toBeUndefined();
+  });
+
+  it('names the sentence-opening frame a chapter leans on, and quotes it', () => {
+    const metrics = prosodyMetrics(rooftop, 'English');
+    expect(metrics.repeatedFrame).toBe('he did not *');
+    expect(openingFrames(rooftop, 'English')[0].sentences).toHaveLength(6);
+    // Function words alone are the language, not a habit: "The roof was cold" opens no frame.
+    expect(openingFrames('The roof was cold and the wind came off the yard.', 'English')).toEqual([]);
+  });
+
+  it('blocks the chapter only where the habit is far past what this pipeline writes', () => {
+    const issues = prosodyIssues(1, version(rooftop), 'English');
+    const antithesis = issues.find(issue => issue.id === 'negation-antithesis');
+    const frame = issues.find(issue => issue.id === 'repeated-sentence-frame');
+    expect(antithesis?.severity).toBe('major');
+    expect(frame?.severity).toBe('major');
+    expect(antithesis?.evidence.length).toBeGreaterThan(0);
+    // Ordinary prose at the pipeline's own median carries neither finding.
+    const plain = `${'She crossed the yard and counted the containers under the sodium lights. '.repeat(40)}It was not a question.`;
+    expect(prosodyIssues(1, version(plain), 'English').map(issue => issue.id))
+      .not.toContain('negation-antithesis');
   });
 });
 
@@ -535,6 +576,19 @@ describe('Prose a repair broke open', () => {
     expect(brokenParagraphs('— Не лгите, — сказала она.\n\n— Я и не лгу.')).toEqual([]);
     // Narration interrupting a spoken line, closed properly on both sides.
     expect(brokenParagraphs('"That is not why I am here," she said, gesturing at the piano, "and you know it."')).toEqual([]);
+  });
+
+  it('reads typographic quotation marks and single-newline paragraphs', () => {
+    // Quoted from chapter three of a finished English run, where the narration runs on inside a line
+    // of speech that is never closed. The book was written with “ ”, one paragraph per line, and the
+    // earlier rule — straight quotes only, blank lines only — saw nothing anywhere in it.
+    const chapter = ['Bruce’s head came up.',
+      '“I mean it,” Clark said. “You can push me away as many times as you need to. I will still be there. The idling engine filled the alley with its low note.',
+      '“You are bleeding,” Clark said, gentler. “Get in the car.”'].join('\n');
+    expect(brokenParagraphs(chapter)).toEqual([chapter.split('\n')[1]]);
+    // The real shape of speech continuing below: one opening mark, nothing closed.
+    expect(brokenParagraphs('“I suspected, and I said nothing,\n“and I was not ready for it to be true,” he answered.')).toEqual([]);
+    expect(brokenParagraphs('“Take it,” she said. “You will need the street name.”\nHe read it twice.')).toEqual([]);
   });
 
   it('reports only what a repair broke, not what the chapter already carried', () => {

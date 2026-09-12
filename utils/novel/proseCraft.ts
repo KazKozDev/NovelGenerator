@@ -17,13 +17,21 @@ import { acceptedVersion } from './storyState';
  * "not X, but Y" figure runs at a median of 2.5 per 1000 words and reaches 8.2 in the worst chapter,
  * which is a page and a half between one and the next — audible, and never once a correction of
  * something a character believed.
+ *
+ * Its two-sentence form was added after a finished book was read by someone who had not written it,
+ * and the first defect they named was this device turned into a formula: "It was not X. It was Y." on
+ * one page and "He did not X. He did not Y." on the next. The clause as written covered only the
+ * within-sentence shape, so the writer obeyed it and kept the habit. prosody.ts now measures the
+ * two-sentence form as well — see negatedAntithesisPer1000 — and this is the clause that is supposed
+ * to prevent what that measure reports.
  */
 export function manuscriptContract(tense: 'past' | 'present'): string {
   return `MANUSCRIPT CONTRACT (binding; the page carries the story and nothing else):
 TENSE: narrate in the ${tense} tense and hold it to the last line. A paragraph that slips into the ${tense === 'past' ? 'present' : 'past'} reads as a note to the author, not as prose.
 NOTHING FROM THE APPARATUS REACHES THE PAGE: no scene, beat or chapter label; no plan field name; no bracketed note; no sentence that instructs instead of narrating ("show that...", "here the reader must feel..."). The plan is what you dramatize, never what you write down.
 NAMES ARE SPELLED AS THE BOOK SPELLS THEM, letter for letter as the character design and the canon give them, every time. Coin no variant, second surname, nickname or transliteration the book has not established, and name no person the design does not contain: an incidental figure is his role — the porter, the woman with the dog. A name appearing once in a spelling of its own is the seam between two drafts, and it is the first thing a reader sees.
-STATE A FACT IN THE AFFIRMATIVE. "Not X, but Y" — defining a thing, a feeling or an act by first denying what it is not — is earned only where someone on the page held the denied belief and events are correcting them. As a default way to describe it becomes a tic audible within a page and doubles the length of every description. Where nothing is being corrected, delete the denial and write what is there.
+STATE A FACT IN THE AFFIRMATIVE. "Not X, but Y" — defining a thing, a feeling or an act by first denying what it is not — is earned only where someone on the page held the denied belief and events are correcting them. The same applies across a sentence break, which is where this habit hides: "It was not a handshake. It was a grip." and "He did not shift his weight. He did not check his watch." are the same device, and a reader who has met it three times predicts the second sentence before reading it. As a default way to describe, it becomes a tic audible within a page and doubles the length of every description. Where nothing is being corrected, delete the denial and write what is there.
+VARY HOW SENTENCES BEGIN. Two sentences on a page may open on the same construction where the echo is doing deliberate work; six may not. If a paragraph's sentences all start with the same subject and verb, the shape is doing the writing.
 NUMBERS ATTACHED TO A PERSON OR AN INTERVAL come from the canon or the character design, or they are not given: an age, a length of service, a distance, a time, how long ago something happened. Invent no figure to fill a sentence, and never restate an established one with a different value — a career of twelve years does not become twenty in the next scene because the sentence wanted weight. Where the number is not established, write the sentence without it.
 PHYSICAL CONDITIONS PERSIST UNTIL THE PAGE CHANGES THEM: darkness, restraint, a covered face, smoke, water, an injured hand, a locked door, a held breath. While a condition holds nobody performs an act it forbids, and no such act may later be reported as having been performed under it — a forged document, a read label, an aimed shot. If a character must do what the conditions forbid, the prose changes the conditions first, on the page, and the change costs light, air, time, a freed hand or a witness. A capability discovered after the fact is a retcon, and the reader catches it in the sentence that needs it.
 `;

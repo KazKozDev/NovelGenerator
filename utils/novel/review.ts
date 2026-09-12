@@ -1,6 +1,6 @@
 import type { ChapterAnalysis, ChapterRecord, ChapterVersion, Evidence, NovelRun, ReviewIssue, ReviewReport, StoryState } from './contracts';
 import { specPrompt } from './contracts';
-import { dialogueIssues, type PriorProse } from './prosody';
+import { brokenParagraphs, dialogueIssues, type PriorProse } from './prosody';
 import { REVIEW_COHERENCE } from './coherence';
 import { continuityIssues } from './continuity';
 import { scanChapterContradictions, type NLIScorer } from './nli';
@@ -295,6 +295,47 @@ function sentenceAround(content: string, index: number): string {
   return content.slice(start + 1, end).trim() || content.slice(Math.max(0, index - 40), index + 40);
 }
 
+/**
+ * A spoken line that comes back word for word — inside this chapter or out of an earlier one.
+ *
+ * The copied-passage check cannot see these: it reads sentences of eight words and up, and a
+ * character's signature line is short. A live book gave Alfred "I am not asking. I am observing. It
+ * is what I am for.", which is excellent once, and then gave it to him again, and the reviewer wrote
+ * that he had stopped sounding like a person. Six words is the floor: a line short enough to be a
+ * functional instruction — "Get in the car." — repeats in life as much as in prose, and only a longer
+ * line returning word for word is a signature. The comparison ignores punctuation and case, so a line
+ * re-typographed is still the same line. At this floor 36 of 131 stored manuscripts carry one.
+ *
+ * Reported, never blocking. Refrains are real: an oath, a ritual, a running joke a character repeats
+ * on purpose. The finding says where to look and the line editor decides.
+ */
+export function repeatedSpokenLines(content: string, earlier: PriorProse[] = [], minimumWords = 6):
+  { line: string; occurrences: number; chapters: number[]; evidence: string }[] {
+  // A quoted span never crosses a line: one unclosed mark otherwise pairs with a mark far below it
+  // and shifts every pairing after it, which on a live manuscript hid two thirds of the spoken lines.
+  const spoken = (text: string) => [...text.matchAll(/[“"]([^“"”\n]{8,300})[”"]/g)].map(match => match[1]);
+  const key = (line: string) => line.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+  const here = new Map<string, { line: string; count: number }>();
+  for (const line of spoken(content)) {
+    const normalised = key(line);
+    if (normalised.split(' ').length < minimumWords) continue;
+    const seen = here.get(normalised);
+    here.set(normalised, { line, count: (seen?.count || 0) + 1 });
+  }
+  const before = new Map<string, Set<number>>();
+  for (const prior of earlier) for (const line of spoken(prior.content)) {
+    const normalised = key(line);
+    before.set(normalised, (before.get(normalised) || new Set()).add(prior.chapter));
+  }
+  const found: { line: string; occurrences: number; chapters: number[]; evidence: string }[] = [];
+  for (const [normalised, { line, count }] of here) {
+    const chapters = [...(before.get(normalised) || [])].sort((first, second) => first - second);
+    if (count < 2 && !chapters.length) continue;
+    found.push({ line, occurrences: count + chapters.length, chapters, evidence: line });
+  }
+  return found;
+}
+
 export function mechanicalIssues(chapter: number, version: ChapterVersion, language = '', earlier: PriorProse[] = []): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const target = language.toLowerCase();
@@ -330,6 +371,23 @@ export function mechanicalIssues(chapter: number, version: ChapterVersion, langu
       { chapter, revision: version.revision, quote: item.sentence },
       { chapter: item.source.chapter, revision: item.source.revision, quote: item.source.sentence },
     ]),
+  });
+  // Speech that never closes, and the narration that then runs on inside it. The repair loop has
+  // checked for this since a repair produced one, but only ever by comparing a revision against the
+  // version before it — so a first draft that arrives broken was never examined at all, and one did.
+  const unclosed = brokenParagraphs(version.content);
+  if (unclosed.length) issues.push({
+    id: 'unclosed-speech', category: 'format', severity: 'major',
+    description: `${unclosed.length} paragraph(s) open a line of speech and never close it; the narration after it reads as though it were still being spoken.`,
+    instruction: 'Close each line of speech where it ends, and leave the narration that follows outside the quotation marks. Where the missing text is the end of a spoken line rather than a missing mark, write the line out. Change nothing else in these paragraphs.',
+    evidence: unclosed.slice(0, 4).map(quote => ({ chapter, revision: version.revision, quote })),
+  });
+  const signature = repeatedSpokenLines(version.content, earlier);
+  if (signature.length) issues.push({
+    id: 'repeated-line', category: 'dialogue', severity: 'minor',
+    description: `${signature.length} spoken line(s) return word for word: ${signature.map(item => `"${item.line}" (${item.occurrences} times${item.chapters.length ? `, also in chapter ${item.chapters.join(', ')}` : ''})`).join('; ')}.`,
+    instruction: 'A line that returns unchanged turns a character into a slogan. Keep the occurrence that lands hardest and let the others say the same thing in the words that moment gives them, or cut them. A line meant as a refrain — an oath, a ritual, a running joke a character is knowingly repeating — is allowed to return; leave those alone and say so.',
+    evidence: signature.slice(0, 3).map(item => ({ chapter, revision: version.revision, quote: item.evidence })),
   });
   const marker = version.content.match(/\[(?:DIALOGUE|ACTION|INTERNAL|DESCRIPTION|TRANSITION|EMOTION|SLOT)[A-Z_\d -]*\]/i);
   if (marker) issues.push({

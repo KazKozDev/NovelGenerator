@@ -17,6 +17,12 @@ export interface ProsodyMetrics {
   stackedAdjectivesPer1000: number | undefined;
   /** Series of three or more coordinate members hung on one action, per 1000 words. */
   serialExplanationsPer1000: number | undefined;
+  /** Sentence pairs that deny a thing and then assert its replacement, per 1000 words. */
+  negatedAntithesisPer1000: number | undefined;
+  /** How often the single most-used sentence-opening frame is used, per 1000 words. */
+  repeatedFramePer1000: number | undefined;
+  /** The frame itself, so a report can name the habit instead of only counting it. */
+  repeatedFrame: string | undefined;
 }
 
 // JavaScript's \b is defined over ASCII word characters, so a Cyrillic boundary must be spelled out.
@@ -49,6 +55,41 @@ const serialExplanations: { languages: string[]; pattern: RegExp }[] = [
     + `|${edge.before}\\p{L}+(?:ая|яя|ав|ив|вши|ясь|ась)${edge.after}[^.!?]{0,60},\\s*\\p{L}+(?:ая|яя|ав|ив|вши|ясь|ась)${edge.after}[^.!?]{0,60},\\s*(?:и\\s+)?\\p{L}+(?:ая|яя|ав|ив|вши|ясь|ась)${edge.after}`, 'giu') },
 ];
 
+/**
+ * The negation-antithesis: a sentence that says what a thing was not, immediately followed by the
+ * sentence that says what it was. "It was not a handshake. It was a grip." Once in a chapter it is a
+ * hard, good sentence; as a habit the reader starts predicting the shape of the next sentence before
+ * reading it, and a reviewer of a finished book named it first among that book's defects.
+ *
+ * Measured over 131 manuscripts this pipeline produced, of 4000 words and up: these pairs sit at 0
+ * per 1000 words at the median, 0.10 at the third quartile and 0.25 at the 95th percentile, and the
+ * book the complaint was written about sits at 1.16 — above every other manuscript measured, and
+ * above the next highest by twofold. Both halves of the shape are counted: the denied copula
+ * restated, and the second consecutive sentence denying the same subject again ("He did not shift
+ * his weight. He did not check his watch.").
+ *
+ * English only. The Russian shape exists — "Это был не вопрос. Это была команда." — but no budget for
+ * it was measured, and a threshold carried across a language is a guess wearing a number.
+ */
+const antithesisShapes: { languages: string[]; patterns: RegExp[] }[] = [
+  { languages: ['english', 'en'], patterns: [
+    /\b(It|That|This|There|He|She|They)\s+(was|were|is|are|had been)\s+not\b[^.!?]*[.!?]["”']?\s+\1\s+\2\b/g,
+    /\b(He|She|They|It)\s+(did|does|had|could|would)\s+not\s+[^.!?]*[.!?]["”']?\s+\1\s+\2\s+not\b/g,
+  ] },
+];
+
+/**
+ * The words a sentence-opening frame is allowed to keep. Everything else in the first four words is
+ * masked, so "He did not look back" and "He did not turn around" collapse to one frame and a habit
+ * becomes countable. A frame is only counted when three of its four words are function words:
+ * "the * * *" is the English language, not a tic.
+ */
+const openingFrameWords: { languages: string[]; words: Set<string> } = {
+  languages: ['english', 'en'],
+  words: new Set(('the a an he she it they i we you his her their its there that this these those and but or not no was were is are am be been'
+    + ' had has have did do does could would should will can may might of to in on at with for as if when then so still again').split(' ')),
+};
+
 const forLanguage = <T extends { languages: string[] }>(table: T[], language: string) =>
   table.find(entry => entry.languages.some(name => language.toLowerCase().includes(name)));
 
@@ -70,6 +111,33 @@ const isTagged = (line: string) => (line.match(/[—–]/g) || []).length > 1 ||
 const wordsIn = (text: string) => (text.match(/[\p{L}\p{N}]+/gu) || []).length;
 const count = (text: string, pattern: RegExp) => (text.match(new RegExp(pattern.source, pattern.flags)) || []).length;
 
+const sentencesIn = (text: string) => text.split(/(?<=[.!?…])["”']?\s+/).map(item => item.trim()).filter(Boolean);
+
+/** Every sentence pair in the text that denies a thing and then names its replacement. */
+export function antithesisPairs(text: string, language: string): string[] {
+  const shapes = forLanguage(antithesisShapes, language);
+  if (!shapes) return [];
+  return shapes.patterns.flatMap(pattern => [...text.matchAll(new RegExp(pattern.source, pattern.flags))].map(match => match[0]));
+}
+
+/**
+ * Sentence openings grouped by their frame: the first four words with everything but the function
+ * words masked out. Returns the frames a writer leans on, commonest first, each with the sentences
+ * that use it, so a finding can quote the habit rather than describe it.
+ */
+export function openingFrames(text: string, language: string): { frame: string; sentences: string[] }[] {
+  if (!openingFrameWords.languages.some(name => language.toLowerCase().includes(name))) return [];
+  const grouped = new Map<string, string[]>();
+  for (const sentence of sentencesIn(text)) {
+    const tokens = (sentence.toLowerCase().match(/[a-z']+/g) || []).slice(0, 4);
+    if (tokens.length < 4) continue;
+    const frame = tokens.map(token => (openingFrameWords.words.has(token) ? token : '*')).join(' ');
+    if (frame.split(' ').filter(token => token !== '*').length < 3) continue;
+    grouped.set(frame, [...(grouped.get(frame) || []), sentence]);
+  }
+  return [...grouped.entries()].map(([frame, sentences]) => ({ frame, sentences })).sort((a, b) => b.sentences.length - a.sentences.length);
+}
+
 export function prosodyMetrics(text: string, language = ''): ProsodyMetrics {
   const paragraphs = paragraphsOf(text);
   const speech = paragraphs.filter(isSpeech);
@@ -79,6 +147,8 @@ export function prosodyMetrics(text: string, language = ''): ProsodyMetrics {
   const stacked = forLanguage(stackedAdjectives, language);
   const serial = forLanguage(serialExplanations, language);
   const per1000 = (matches: number) => words ? (matches * 1000) / words : 0;
+  const antithesis = forLanguage(antithesisShapes, language);
+  const frames = openingFrames(text, language);
   return {
     words,
     paragraphs: paragraphs.length,
@@ -89,6 +159,9 @@ export function prosodyMetrics(text: string, language = ''): ProsodyMetrics {
     similesPer1000: simile ? per1000(count(text, simile.pattern)) : undefined,
     stackedAdjectivesPer1000: stacked ? per1000(count(text, stacked.pattern)) : undefined,
     serialExplanationsPer1000: serial ? per1000(count(text, serial.pattern)) : undefined,
+    negatedAntithesisPer1000: antithesis ? per1000(antithesisPairs(text, language).length) : undefined,
+    repeatedFramePer1000: frames.length ? per1000(frames[0].sentences.length) : undefined,
+    repeatedFrame: frames.length ? frames[0].frame : undefined,
   };
 }
 
@@ -105,8 +178,29 @@ export interface ProsodyBudget {
   stackedAdjectivesPer1000: number;
   medianParagraphWords: number;
   serialExplanationsPer1000: number;
+  negatedAntithesisPer1000: number;
+  repeatedFramePer1000: number;
 }
-export const defaultProsodyBudget: ProsodyBudget = { similesPer1000: 5, stackedAdjectivesPer1000: 5.6, medianParagraphWords: 90, serialExplanationsPer1000: 1.5 };
+/**
+ * The two syntax budgets were measured the same way, over 131 manuscripts this pipeline has written
+ * (4000 words and up, English). Negation-antithesis pairs: median 0, q75 0.10, q95 0.25. The most-used
+ * sentence-opening frame: median 0.67 per 1000 words, q75 0.81, q95 1.23, and 1.56 in the densest
+ * manuscript that nobody complained about. The ceilings sit at those 95th percentiles, so a finding
+ * means "this book leans on one shape harder than this pipeline usually does": at these figures seven
+ * of the 131 are over the first and five over the second.
+ */
+export const defaultProsodyBudget: ProsodyBudget = { similesPer1000: 5, stackedAdjectivesPer1000: 5.6, medianParagraphWords: 90, serialExplanationsPer1000: 1.5, negatedAntithesisPer1000: 0.25, repeatedFramePer1000: 1.3 };
+
+/**
+ * Where a habit stops being a preference and becomes the thing the reader notices instead of the
+ * story. A writer's standing tic is not a defect of the chapter it appears in — the tagged-speech
+ * measure taught that, after one live chapter carried the same unfixable finding through nine rounds
+ * — so the band from the ceiling to here informs a repair without blocking one. Past these figures
+ * the chapter is the outlier: two of the 131 manuscripts are over the first of them and one over the
+ * second, and the book whose reviewer opened with this complaint is in both — 1.16 and 2.86, against
+ * 0.37 and 1.56 in the densest manuscript nobody complained about.
+ */
+export const syntaxBlocking = { negatedAntithesisPer1000: 0.5, repeatedFramePer1000: 2 };
 
 /** Drift inside one book: a chapter well above what this book's accepted chapters do is an outlier. */
 export const driftFactor = 1.25;
@@ -160,6 +254,28 @@ export function prosodyIssues(chapter: number, version: ChapterVersion, language
       evidence: quote(sentences.slice(0, 4)),
     });
   }
+  // A rate alone is not a habit in a short text: one sentence in a 70-word fixture measures 13 per
+  // 1000 words. A habit is a thing done repeatedly, so the count has to clear a floor of its own.
+  const pairs = antithesisPairs(version.content, language);
+  if (pairs.length >= 3 && over(metrics.negatedAntithesisPer1000, budget.negatedAntithesisPer1000, reference?.negatedAntithesisPer1000)) {
+    issues.push({
+      id: 'negation-antithesis', category: 'voice',
+      severity: metrics.negatedAntithesisPer1000! > syntaxBlocking.negatedAntithesisPer1000 ? 'major' : 'minor',
+      description: `${pairs.length} passage(s) deny a thing and then assert its replacement in the next sentence — ${metrics.negatedAntithesisPer1000!.toFixed(2)} per 1000 words against a ceiling of ${budget.negatedAntithesisPer1000}. The reader learns the shape and reads the second sentence before it arrives.`,
+      instruction: `This is a pattern across the chapter, not only the ${Math.min(pairs.length, 4)} passages quoted below. Keep at most one of these — the one whose denial the reader would actually have assumed — and rewrite the rest as the positive statement alone, deleting the sentence that says what the thing was not. Do not replace a deleted denial with a different negation, and change nothing else in those passages.`,
+      evidence: quote(pairs.slice(0, 4)),
+    });
+  }
+  const top = openingFrames(version.content, language)[0];
+  if (top && top.sentences.length >= 5 && over(metrics.repeatedFramePer1000, budget.repeatedFramePer1000, reference?.repeatedFramePer1000)) {
+    issues.push({
+      id: 'repeated-sentence-frame', category: 'voice',
+      severity: metrics.repeatedFramePer1000! > syntaxBlocking.repeatedFramePer1000 ? 'major' : 'minor',
+      description: `${top.sentences.length} sentences open on the same frame ("${top.frame}", where * is any word) — ${metrics.repeatedFramePer1000!.toFixed(2)} per 1000 words against a ceiling of ${budget.repeatedFramePer1000}.`,
+      instruction: `Rewrite most of these so they do not start the same way: say the thing the sentence is for, in its own construction, or fold the sentence into the one before it. Keep at the most two of them, where the echo is doing deliberate work. Do not answer this by swapping one repeated opening for another repeated opening, and change no events, dialogue or facts.`,
+      evidence: quote(top.sentences.slice(0, 5)),
+    });
+  }
   if (over(metrics.medianParagraphWords, budget.medianParagraphWords, reference?.medianParagraphWords)) {
     const longest = paragraphsOf(version.content).sort((a, b) => wordsIn(b) - wordsIn(a)).slice(0, 3);
     issues.push({
@@ -186,21 +302,43 @@ export function prosodyIssues(chapter: number, version: ChapterVersion, language
  * body a repair had cut away. Every check we have looks at meaning: repetition, knowledge, beats,
  * texture. None of them looks at whether the text is still whole, and a reader sees it immediately.
  *
- * Deliberately narrow. Speech that runs over several paragraphs opens each one with a quotation mark
- * and closes only the last, so an unclosed paragraph is legitimate whenever the next one carries the
- * speech on — and a paragraph that opens speech, breaks for narration and resumes is indistinguishable
- * by counting alone from that same shape damaged. It is left alone. Across 1,177 paragraphs of
- * accepted chapters this rule fires once, on the seam above, and never on prose in another
- * typography: Russian dialogue carries no quotation marks at all.
+ * Narrow, but no longer blind. Three things were wrong with the first version of this rule and each
+ * of them hid the same defect from a finished book:
+ *
+ * It split on blank lines while every other measure here splits on any newline, so a manuscript
+ * written one paragraph per line was read as a single paragraph and its quotation marks always
+ * balanced. It counted only the straight `"`, and the writer produces typographic `“ ”`, so entire
+ * English books went unexamined. And it excused any unclosed paragraph whose neighbour opened with a
+ * quotation mark — which in a dialogue scene is nearly every neighbour.
+ *
+ * The defect that survived all three: `“I mean it,” Clark said. “You can push me away… I will still
+ * be there. The idling engine filled the alley…` — a line of speech that is never closed, with the
+ * narration continuing inside it, in a chapter a reviewer read and reported. Multi-paragraph speech
+ * is still excused, but only in its real shape: one opening mark, nothing closed, and the speech
+ * carried on below. A paragraph holding a closed line and then an open one is damaged whatever
+ * follows it. Over 170 stored manuscripts the rule fires on 28, at one to three paragraphs each,
+ * and the ones read by hand were all genuine — spliced sentences, mixed typography, lost line ends —
+ * and never on prose in another typography: Russian dialogue carries no quotation marks at all.
  */
 export function brokenParagraphs(content: string): string[] {
-  const paragraphs = content.split(/\n\s*\n/).map(item => item.trim());
+  const paragraphs = paragraphsOf(content);
   const broken: string[] = [];
   paragraphs.forEach((paragraph, index) => {
-    if (!paragraph || paragraph.split('"').length % 2 === 1) return;
     const next = paragraphs[index + 1] || '';
-    // An unclosed quotation is speech continuing into the paragraph below it.
-    if (paragraph.startsWith('"') && next.startsWith('"')) return;
+    const straight = (paragraph.match(/"/g) || []).length;
+    if (straight) {
+      if (straight % 2 === 0) return;
+      // One mark and nothing else is speech continuing into the paragraph below it. Two marks and a
+      // third is a closed line plus an open one, and that paragraph is damaged however the next
+      // paragraph begins.
+      if (straight === 1 && paragraph.startsWith('"') && /^["“]/.test(next)) return;
+      broken.push(paragraph);
+      return;
+    }
+    const opens = (paragraph.match(/[“]/g) || []).length;
+    const closes = (paragraph.match(/[”]/g) || []).length;
+    if (opens === closes) return;
+    if (opens === 1 && closes === 0 && paragraph.startsWith('“') && /^["“]/.test(next)) return;
     broken.push(paragraph);
   });
   return broken;
@@ -501,6 +639,11 @@ export function referenceMetrics(earlier: PriorProse[], language: string): Proso
     similesPer1000: median(each.map(item => item.similesPer1000)),
     stackedAdjectivesPer1000: median(each.map(item => item.stackedAdjectivesPer1000)),
     serialExplanationsPer1000: median(each.map(item => item.serialExplanationsPer1000)),
+    negatedAntithesisPer1000: median(each.map(item => item.negatedAntithesisPer1000)),
+    repeatedFramePer1000: median(each.map(item => item.repeatedFramePer1000)),
+    // A book's habitual opening frame is not a median of names: whichever chapter is being compared
+    // reports its own, and the rate above is what the comparison is for.
+    repeatedFrame: undefined,
   };
 }
 

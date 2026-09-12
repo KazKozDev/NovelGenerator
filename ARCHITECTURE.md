@@ -71,6 +71,29 @@ the lexical duplicate check already blocks, caught after rewording, so they are 
 the same way and repaired by deletion. A passage recycled from an earlier chapter is
 reported against both chapters and repaired in the later one.
 
+**A sentence shape used as a formula is measured, not debated.** Two syntactic habits are
+counted against what this pipeline actually writes, over 131 stored manuscripts of 4000
+words and up: sentence pairs that deny a thing and then assert its replacement ("It was
+not a handshake. It was a grip."), and the single most-used sentence-opening frame, with
+everything but the function words masked ("he did not *"). Both sit at their 95th
+percentile as a ceiling — 0.25 and 1.3 per 1000 words — and block only well past it, at
+0.5 and 2.0, where the chapter is an outlier rather than a writer with a habit. The book
+that prompted the measure reads 1.16 and 2.86, above every other manuscript measured. A
+count floor goes with the rate: three pairs, five sentences on one frame. English only,
+because that is where the distribution was measured. The manuscript contract carries the
+matching clause, so the writer is told before the reviewer has to report it.
+
+**Damage is read as well as meaning.** A paragraph that opens a line of speech and never
+closes it — narration running on inside the quotation marks — fails the chapter. The check
+existed but saw almost nothing: it split on blank lines while the writer produces one
+paragraph per line, counted only the straight `"` while the writer produces typographic
+`“ ”`, and excused any unclosed paragraph whose neighbour opened with a quotation mark,
+which in a dialogue scene is nearly every neighbour. It also ran only against the previous
+version, so a first draft that arrived broken was never examined. A spoken line that
+returns word for word, in this chapter or out of an earlier one, is reported as a minor
+finding: a refrain can be deliberate, a character's signature line handed back to them
+unchanged is what made one reviewer say he had stopped sounding like a person.
+
 **Planned exchanges must reach the page as speech.** Each planned scene declares whether
 its conflict is carried by speech, action or solitude. A chapter whose plan contains a
 speech-driven scene and whose prose contains no spoken line is rejected; spoken lines
