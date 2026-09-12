@@ -414,9 +414,11 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
         aria-label="Open System Architecture Guide"
         className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 text-zinc-400 hover:text-indigo-400 light:text-zinc-500 light:hover:text-indigo-600 border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-indigo-500/40 light:border-zinc-200/80 light:bg-white light:hover:bg-zinc-100 shadow-sm ${className}`}
       >
+        {/* The ring is gone, so the mark carries the button on its own: drawn against the glyph's
+            bounds rather than the circle's, it fills the frame the circle used to occupy. */}
         <svg
-          className="w-3.5 h-3.5 transition-transform duration-200 hover:scale-110"
-          viewBox="0 0 24 24"
+          className="w-5 h-5 transition-transform duration-200 hover:scale-110"
+          viewBox="7 4 10 16"
           fill="none"
           stroke="currentColor"
           strokeWidth="2.2"
