@@ -32,7 +32,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800 light:bg-zinc-100 border border-zinc-700 light:border-zinc-300 text-zinc-300 light:text-zinc-800">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
@@ -109,7 +109,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm leading-relaxed text-zinc-300 light:text-zinc-700">
+        <div className="p-6 overflow-y-auto space-y-6 text-sm leading-relaxed text-zinc-300 light:text-zinc-800">
           {activeTab === 'pipeline' && (
             <div className="space-y-4">
               <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
@@ -121,8 +121,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-indigo-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px]">1</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">1</span>
                     Authorial Contract
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -131,8 +131,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-emerald-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px]">2</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">2</span>
                     Causal Blueprint & Outline
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -141,8 +141,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-amber-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-[10px]">3</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">3</span>
                     Scene Staging & Direction
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -151,8 +151,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-cyan-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[10px]">4</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">4</span>
                     Prose Drafting (Writer)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -161,8 +161,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-purple-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center text-[10px]">5</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">5</span>
                     Local Quality Check (1–5 Edits)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -171,8 +171,8 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-rose-400 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-rose-500/20 flex items-center justify-center text-[10px]">6</span>
+                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">6</span>
                     Forward-Only Seal
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
@@ -198,7 +198,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                   <span className="font-semibold text-sm text-zinc-200 light:text-zinc-900">
                     Prose Generator & Story Architect (LLM)
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-zinc-800 light:bg-zinc-100 border border-zinc-700 light:border-zinc-300 text-zinc-300 light:text-zinc-800">
                     Cloud / Local Ollama
                   </span>
                 </div>
@@ -224,7 +224,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                         Encodes each paragraph into a 384-dimensional vector. Computes cosine similarity across paragraphs in 10ms to detect stylistic echoes and repeated motifs.
                       </p>
                     </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
                       Default Active
                     </span>
                   </div>
@@ -239,7 +239,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                         Deep joint evaluation of suspicious candidate pairs (top 8). Analyzes paragraphs simultaneously in shared context to distinguish deliberate leitmotif from unintended repetition.
                       </p>
                     </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
                       WebGPU
                     </span>
                   </div>
@@ -330,7 +330,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-emerald-400 text-xs mb-1">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 text-xs mb-1">
                     Why Forward-Only Mode is Crucial
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed">
@@ -355,7 +355,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
 
               <div className="space-y-3 text-xs">
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-amber-400 mb-1">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
                     Automatic Idle GPU Unloading (Idle Release)
                   </div>
                   <p className="text-zinc-400 light:text-zinc-600">
@@ -364,7 +364,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-indigo-400 mb-1">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
                     Local Weight Caching (Zero-Download Re-runs)
                   </div>
                   <p className="text-zinc-400 light:text-zinc-600">
@@ -373,7 +373,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-emerald-400 mb-1">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
                     Fault-Tolerant Persistence (BrowserRunStore)
                   </div>
                   <p className="text-zinc-400 light:text-zinc-600">
@@ -412,7 +412,7 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
         onClick={() => setIsOpen(true)}
         title="System Architecture & Documentation Guide"
         aria-label="Open System Architecture Guide"
-        className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 text-zinc-400 hover:text-indigo-400 light:text-zinc-500 light:hover:text-indigo-600 border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-indigo-500/40 light:border-zinc-200/80 light:bg-white light:hover:bg-zinc-100 shadow-sm ${className}`}
+        className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-900 border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-zinc-700 light:border-zinc-300 light:border-zinc-200/80 light:bg-white light:hover:bg-zinc-100 shadow-sm ${className}`}
       >
         {/* The ring is gone, so the mark carries the button on its own: drawn against the glyph's
             bounds rather than the circle's, it fills the frame the circle used to occupy. */}
