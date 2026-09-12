@@ -728,6 +728,28 @@ export function characterLimits(run: NovelRun, chapter: ChapterRecord): string {
  * while every automated check passed the chapter. Asked with the plan's own declaration in hand it
  * becomes a question about the page: this scene was to be seen through this person, is it.
  */
+/**
+ * What earlier chapters have already described, explained or played out — put to the reviewer as a
+ * question about this chapter.
+ *
+ * The record exists and is kept for exactly this defect, and only the writer was ever shown it. A
+ * reader of a finished book put the complaint plainly: the reader understood the meaning of the
+ * counting on the roof in chapter one, and chapters two and four went on explaining it — "he counted
+ * because", "he had stopped keeping count", the habit's significance stated again in new words each
+ * time. Nothing measures that. The lexical and embedding checks compare wording, and a fresh
+ * explanation of an old meaning shares neither; the review reads one chapter and cannot know the
+ * meaning is old.
+ *
+ * These notes can. Each was taken from an accepted chapter's own prose, and a chapter that explains
+ * one of them again is telling the reader something the reader already has.
+ */
+export function alreadyExplained(run: NovelRun, chapter: ChapterRecord): string {
+  const told = [...new Set(run.chapters.filter(item => item.number < chapter.number).flatMap(item => item.alreadyTold || []))].slice(-24);
+  if (!told.length) return '';
+  return `ALREADY GIVEN IN EARLIER CHAPTERS — described, explained or played out on the page before this chapter, taken from those chapters' own prose:\n${JSON.stringify(told)}\n`
+    + `Report as 'pacing' a passage that gives one of them to the reader a second time: the same room described again, a habit or a gesture whose meaning is stated again in new words, a relation between two people explained again because the chapter wanted the weight. A recurring image is not the defect and neither is a character thinking about something twice — the defect is the reader being told again what they were told. The chapter may refer to any of these freely, the way people refer to what they both already know.\n`;
+}
+
 export function viewpointQuestion(chapter: ChapterRecord): string {
   const scenes = (chapter.plan.detailedScenes || []).filter(scene => scene.pov);
   if (!scenes.length) return '';
@@ -743,7 +765,7 @@ export async function reviewChapter(run: NovelRun, chapter: ChapterRecord, versi
     const prompt = `${specPrompt(run.spec)}\n\nREVIEW CHAPTER ${chapter.number}, REVISION ${version.revision}.\nPLAN (intent, not established fact):\n${JSON.stringify(planWithoutRetelling(chapter.plan))}\nACCEPTED CANON BEFORE THIS CHAPTER:\n${JSON.stringify(canonForPrompt(canonBefore(run, chapter.number)))}\nPLANNED PROMISES (the whole book's schedule):\n${JSON.stringify(run.blueprint?.promises || [])}\nSCHEDULED FOR THIS CHAPTER ONLY:\n${JSON.stringify((run.blueprint?.promises || []).filter(promise => promise.setupChapter === chapter.number || promise.payoffChapter === chapter.number))}\n${previous && previous.revision !== version.revision ? `WHAT THE PREVIOUS ACCEPTED VERSION ESTABLISHED (preserve its events, names, clues and outcome unless this revision explicitly targets them):\n${JSON.stringify(established(previous))}\nSENTENCES THAT VERSION HAD AND THIS ONE DOES NOT — a revision may cut, but not lose a scene:\n${JSON.stringify(sentencesLost(previous.content, version.content))}\nREVISION PURPOSE: ${version.reason}\n` : ''}\nFULL CANDIDATE PROSE:\n${version.content}\n\n${obligations.length ? `WHAT THIS CHAPTER UNDERTOOK, and what a general review will not think to ask: answer each of these against the prose, and report the ones the chapter does not deliver — the move that is reported instead of performed, the failure softened into a recovery, the cost named instead of paid, the promise the page does not actually establish. A delivered obligation needs no finding.\n${obligations.map((item, index) => `${index + 1}. ${item}`).join('\n')}\n` : ''}Check for a beat played out twice — a confrontation, refusal, discovery or admission that reaches its point, ends, and is staged again ('pacing' or 'plot'). Check causal plot advancement, central conflict (${run.blueprint?.centralConflict}), believable choices and consequences, knowledge acquisition, distinct dialogue voices, POV/tense/style/audience, scene completeness,${REVIEW_COHERENCE} intentional pacing and emotional hooks.
 KNOWLEDGE: a character must not state or rely on a specific fact the story has not given them. A guess, a doubt, a wrong hypothesis, a reaction to something directly perceived, and anything the author contract above already establishes are not leaks. When you report one, the repair you ask for must take the knowledge away — turn the statement into a guess, a question, or cut it. Never ask for a source to be invented for it: a revision may not add memory or backstory, so that instruction cannot be carried out and the same finding returns every round until the chapter runs out of budget.
 ALSO: an action hedged with two alternative reasons ('plot' or 'voice'); narration or dialogue explaining subtext and moral takeaways instead of showing them ('voice' or 'character'); a prominent object handled and given no function ('plot'); a character repeating one thought in new words ('dialogue').
-${characterLimits(run, chapter)}${viewpointQuestion(chapter)}CONSTRAINTS: report as 'canon' a passage where this chapter acts as though one of the standing constraints listed in the canon above were gone — a route taken that was closed, a person acting without what they said they required, a deadline passed without consequence — unless this chapter's own prose takes the constraint away on the page. Lifting a constraint is an event; assuming it away is the defect. A constraint this chapter has no occasion to touch is not a defect.
+${characterLimits(run, chapter)}${viewpointQuestion(chapter)}${alreadyExplained(run, chapter)}CONSTRAINTS: report as 'canon' a passage where this chapter acts as though one of the standing constraints listed in the canon above were gone — a route taken that was closed, a person acting without what they said they required, a deadline passed without consequence — unless this chapter's own prose takes the constraint away on the page. Lifting a constraint is an event; assuming it away is the defect. A constraint this chapter has no occasion to touch is not a defect.
 PROMISES: report a missing setup or payoff only for a promise scheduled for this chapter; one due later is not unresolved here. A revelation this chapter makes that an earlier chapter did not prepare is a defect of the book, not of this chapter — nothing written here can plant a clue in a chapter already finished, and the whole-book review checks that. The final chapter must fulfil the requested ending without a forced next-chapter hook.
 These are directions to look in, not a list to fill: most will be clean in most chapters, and one defect per dimension is a review inventing them.
 ${issueFormat}${retry}`;

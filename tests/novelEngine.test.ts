@@ -6,7 +6,7 @@ import { createBookSpec, chapterRole, type ChapterRecord, type NovelRun } from '
 import { plannedBeatsFrom } from './beatStub';
 import { apparatusResidue, castNotInOutline, compactPlanningContext, createRun, looseJoins, NovelEngine, nextSweep, unchanged, validateBlueprint, validateChapterPlan } from '../utils/novel/engine';
 import { acceptCandidate, acceptedVersion, addCandidate, canonBefore, canonForPrompt, canonForScene, emptyStoryState, endingIssues, nextUnacceptedChapter, rebuildCanon, standingConditions } from '../utils/novel/storyState';
-import { analyseChapter, beatCoverageIssue, characterLimits, viewpointQuestion, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
+import { alreadyExplained, analyseChapter, beatCoverageIssue, characterLimits, viewpointQuestion, copiedFromEarlier, demoteHedgedKnowledge, demoteSuggestions, generateProse, replayedBeats, restatedFromEarlierScenes, parseObject, reviewChapter, structuredResponse, type NovelLLM } from '../utils/novel/review';
 import { MemoryRunStore } from '../utils/novel/runStore';
 import { compileBook, metadata } from '../utils/novel/presentation';
 import { writeScene } from '../utils/novel/writer';
@@ -2161,5 +2161,21 @@ describe('Whose eyes the scene is seen through', () => {
     await writeScene(run, run.chapters[0], 1, async prompt => { seen = prompt; return JSON.stringify({ prose: 'Prose.' }); });
     expect(seen).toContain('seen through one person — Bruce');
     expect(seen).toContain('The previous scene was seen through someone else (Alfred)');
+  });
+});
+
+describe('What the book has already told the reader', () => {
+  it('reaches the reviewer, not only the writer', () => {
+    const run = runWithPlans();
+    run.chapters[0].alreadyTold = ['the counting on the roof and what it means to Bruce', 'the archive described'];
+    run.chapters[1].alreadyTold = ['the archive described'];
+    const asked = alreadyExplained(run, run.chapters[2]);
+    // Deduplicated, and quoted so a finding can name what is being told twice.
+    expect(asked).toContain('the counting on the roof');
+    expect(asked.match(/the archive described/g)).toHaveLength(1);
+    // The first chapter has nothing before it, and a run whose chapters kept no record asks nothing.
+    expect(alreadyExplained(run, run.chapters[0])).toBe('');
+    const blank = runWithPlans();
+    expect(alreadyExplained(blank, blank.chapters[2])).toBe('');
   });
 });
