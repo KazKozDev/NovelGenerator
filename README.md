@@ -41,8 +41,8 @@ world rules, a causal map, an ending and a chapter map — and refuses to write 
 construction its own review found incoherent. A premise name nobody in the cast answers to
 fails that review in code, not by opinion.
 
-A measured run: 3 chapters, 8,878 words, 47 model calls, about 25 minutes on Ollama cloud
-models.
+A measured run: 7 chapters, 15,390 words, 122 model calls, about 40 minutes on Ollama
+cloud models.
 
 ## Keep continuity without rereading the book
 
@@ -72,7 +72,8 @@ DONE status=COMPLETE_WITH_WARNINGS calls=47 tokens~362683
 ```
 
 Every call is logged with its route, model, prompt size and duration. `--out` holds
-`manuscript.md`, `snapshot.json` and `run.log`.
+`manuscript.md`, `snapshot.json` and `run.log`. `--provider gemini` runs the same pipeline
+against the Gemini transport instead, with `--writer`/`--editor` as model names.
 
 ## How it works
 
@@ -125,7 +126,7 @@ Set in the app before generation starts.
 - A browser with IndexedDB — the manuscript, its memory and the audit are stored there
 - A Gemini API key, or Ollama running locally or in Ollama Cloud
 - A model that honours JSON Schema output and returns long prose in your language
-- Verified pairing: `deepseek-v4.1-flash:cloud` writing, `mistral-large-3:675b-cloud` editing
+- Known to complete a book: `deepseek-v4.1-flash:cloud` and `mistral-large-3:675b-cloud`
 
 ## Limitations
 
@@ -138,6 +139,9 @@ Set in the app before generation starts.
   outright rather than returning a short answer
 - Prose texture is measured only as repeated phrasing: the audit reports a beat the book
   returns to at a rate ("breath hitched", seven times), not sentence rhythm or register
+- The writer/editor split was only recently made explicit at the call site; the books
+  measured above were written before that fix, with the editor model drafting every scene,
+  so the pairing above is verified to finish a book but not yet as the roles now read
 - Editorial gates support revision; they do not guarantee coherence or literary merit
 
 <details>
