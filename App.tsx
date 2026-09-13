@@ -34,6 +34,7 @@ const App: React.FC = () => {
     currentChapterProcessing,
     totalChaptersToProcess,
     resetGenerator,
+    editSettings,
     currentStoryOutline,
     currentChapterPlan,
     isResumable,
@@ -156,14 +157,25 @@ const App: React.FC = () => {
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{error}</p>
-            <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Continue where it stopped, with current models</button>
-
-            <button
-              onClick={handleReset}
-              className="mt-3 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
-            >
-              Start a new book
-            </button>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
+              {/* A refused design is usually fixed by changing the premise or the
+                  editor model. Without this, reaching the form again costs the
+                  author everything they typed. */}
+              <button
+                onClick={editSettings}
+                disabled={isLoading}
+                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+              >
+                Change the premise or models
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+              >
+                Start a new book
+              </button>
+            </div>
           </div>
         )}
 

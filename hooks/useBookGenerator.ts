@@ -91,7 +91,10 @@ export default function useBookGenerator() {
     }
     if (manuscript.length) setLastSavedAt(Date.now());
     const input = store.loadInput();
-    setHasUnfinished(!!input && manuscript.length < input.chapter_count);
+    // A book with no chapter written is not work to continue: it is a book that
+    // never started. The form, still holding the premise, is where the author
+    // belongs — a resume card offering "0 of 3 chapters written" is not an offer.
+    setHasUnfinished(!!input && manuscript.length > 0 && manuscript.length < input.chapter_count);
   }
 
   function publishFinal() {
@@ -281,6 +284,21 @@ export default function useBookGenerator() {
     else setCurrentStep(GenerationStep.Idle);
   }
 
+  /**
+   * Back to the form after a failure, with the premise, the settings and the
+   * stored project intact. Starting over is the other button; this one exists
+   * because a design the reviewer refused is usually fixed by changing the
+   * premise or the editor model, and retyping both to reach that form is a
+   * punishment for a failure the author did not cause.
+   */
+  function editSettings() {
+    epoch.current++;
+    busy.current = false;
+    setIsLoading(false);
+    setError(null);
+    setCurrentStep(GenerationStep.Idle);
+  }
+
   async function resetGenerator() {
     epoch.current++;
     busy.current = false;
@@ -307,7 +325,7 @@ export default function useBookGenerator() {
     isLoading, currentStep, error,
     isResumable: hasUnfinished && !isLoading,
     storeReady, exportProject, importProject,
-    startGeneration, continueGeneration, resetGenerator,
+    startGeneration, continueGeneration, resetGenerator, editSettings,
     finalBookContent,
     finalMetadataJson,
     generatedChapters,
