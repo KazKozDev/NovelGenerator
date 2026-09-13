@@ -1,4 +1,5 @@
 import { renderPrompt, systemContract } from '../prompts';
+import { wornPhrases } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import type { AuditStatus, BookDesign, FinalReport, ReaderThread, StoryState } from './types';
 
@@ -44,5 +45,22 @@ export async function auditBook(input: AuditInput, finishedAllChapters: boolean,
     throw new Error('Final audit returned no findings array.');
   }
   const report = raw as FinalReport;
-  return { ...report, status: settleAuditStatus(report, finishedAllChapters) };
+  // Measured, not asked: the reviewer reads structure, promises and continuity,
+  // and a tic repeated every few pages is invisible at that altitude — the model
+  // is reading for what happens, and "his breath hitched" happening seven times
+  // is not an event. A rate over the whole manuscript is something code can see
+  // and a reader feels, so it is reported beside the model's findings.
+  const worn = wornPhrases(input.manuscript.map(item => item.text).join('\n\n'));
+  const findings = worn.length
+    ? [...report.findings, {
+        category: 'prose-texture',
+        severity: 'minor',
+        description: `The book leans on repeated phrasing: ${worn.map(item => `"${item.phrase}" ${item.uses}×`).join(', ')}.`,
+        evidence_refs: [],
+        reader_impact: 'A phrase returning every few pages reads as a writing formula rather than as description.',
+        certainty: 'measured',
+      }]
+    : report.findings;
+  const measured = { ...report, findings };
+  return { ...measured, status: settleAuditStatus(measured, finishedAllChapters) };
 }

@@ -106,7 +106,11 @@ the design before any prose exists, so the first scene's writer already sees the
 spellings.
 
 The audit reads the whole manuscript against the contract, the dramatic core, the causal
-map and the ending, plus final state and threads. It never rewrites: the manuscript it
+map and the ending, plus final state and threads. One finding is measured rather than
+asked: `wornPhrases` counts two- and three-word content phrases across the finished book
+and reports the ones that return at a rate. A reviewer reading for what happens cannot see
+a tic — "his breath hitched" seven times is not an event — and capitalized spans are
+skipped, because a book repeating its own device by name is repeating its subject. It never rewrites: the manuscript it
 checked is the manuscript that ships. `settleAuditStatus` computes the status in code —
 findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`.
 

@@ -163,6 +163,69 @@ export function tiredPhrases(texts: string[], minUses = 4, maxPhrases = 5): Tire
     .map(item => ({ phrase: item.phrase, uses: item.sentences }));
 }
 
+export interface WornPhrase {
+  phrase: string;
+  uses: number;
+  per1000: number;
+}
+
+/**
+ * Short phrases the book leans on as a formula.
+ *
+ * The 4-gram motif detector above counts distinct sentences and needs two
+ * content words inside four, so it sees a circled refrain and misses the tic
+ * that actually marks generated prose: a two-word somatic beat — "breath
+ * hitched", "stomach twisted" — reused every few pages inside different
+ * sentences. This counts raw uses of 2- and 3-word content phrases across the
+ * whole manuscript and reports the ones that recur at a rate, not merely a
+ * count, so a long book is not flagged for what a short one would be.
+ *
+ * Measured, not judged: a deliberate refrain and a verbal tic look identical
+ * here, which is why the finding reports a rate and never blocks.
+ */
+export function wornPhrases(content: string, minUses = 4, minPer1000 = 0.5, maxPhrases = 6): WornPhrase[] {
+  const total = wordsOf(content).length;
+  if (total < 500) return [];
+  const counts = new Map<string, number>();
+  for (const sentence of splitSentences(content)) {
+    // Case is kept while tokenizing: a capitalized word is a name or the book's
+    // own device ("Soul Echo"), and a book repeating its subject is not a tic.
+    // Possessives and contractions fold into the word rather than splitting
+    // into "harry s" and "didn t".
+    const tokens = sentence
+      .replace(/n['’]t\b/gi, ' not')
+      .replace(/['’](s|re|ve|ll|d|m)\b/gi, '')
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+    const usable = tokens.map(token => {
+      const lower = token.toLowerCase();
+      if (token[0] !== lower[0]) return null;
+      return isContentWord(lower) && lower.length > 1 ? lower : null;
+    });
+    for (let size = 2; size <= 3; size++) {
+      for (let start = 0; start + size <= usable.length; start++) {
+        const gram = usable.slice(start, start + size);
+        if (gram.some(word => word === null)) continue;
+        const key = gram.join(' ');
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+  }
+  const flagged = [...counts]
+    .map(([phrase, uses]) => ({ phrase, uses, per1000: (uses / total) * 1000 }))
+    .filter(item => item.uses >= minUses && item.per1000 >= minPer1000)
+    .sort((first, second) => second.uses - first.uses || first.phrase.localeCompare(second.phrase));
+  // A three-word run that only reports because the two-word tic inside it does
+  // is the same finding said twice; the shorter, more frequent one wins.
+  const kept: WornPhrase[] = [];
+  for (const item of flagged) {
+    if (kept.some(seen => item.phrase.includes(seen.phrase))) continue;
+    kept.push(item);
+    if (kept.length >= maxPhrases) break;
+  }
+  return kept;
+}
+
 export interface RhythmReport {
   sentences: number;
   firstMedian: number;

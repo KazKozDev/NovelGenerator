@@ -135,8 +135,8 @@ Set in the app before generation starts.
   written; the error screen offers to change the premise or the models and try again
 - A model that ignores JSON Schema stalls the run, and a capped output budget fails a call
   outright rather than returning a short answer
-- Prose texture — sentence-shape habits, repeated gestures — is not measured; the audit
-  reads structure, promises and continuity, not style
+- Prose texture is measured only as repeated phrasing: the audit reports a beat the book
+  returns to at a rate ("breath hitched", seven times), not sentence rhythm or register
 - Editorial gates support revision; they do not guarantee coherence or literary merit
 
 <details>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bestsellerAdvisory,
+  wornPhrases,
   extractPremiseNames,
   hookScore,
   measureTexture,
@@ -107,5 +108,32 @@ describe('analytics detectors', () => {
   it('advises on a weak hook and a recap ending', () => {
     const findings = bestsellerAdvisory('It was a quiet morning. There was bread. In summary, they had a fine day.');
     expect(findings.map(finding => finding.id)).toContain('weak-opening-hook');
+  });
+});
+
+describe('wornPhrases', () => {
+  // One sentence carrying the tic, repeated with different surroundings, the way
+  // a generated book actually wears a somatic beat out.
+  const filler = 'The room held its shapes in the grey afternoon and nobody moved through them. ';
+  const tic = (n: number) => Array.from({ length: n }, (_, i) => `On the ${i + 1} day his breath hitched against the cold air. `).join('');
+
+  it('reports a two-word beat that returns at a rate, with its count', () => {
+    const text = tic(7) + filler.repeat(120);
+    const found = wornPhrases(text);
+    const hitched = found.find(item => item.phrase === 'breath hitched');
+    expect(hitched?.uses).toBe(7);
+    expect(hitched!.per1000).toBeGreaterThan(0.5);
+  });
+
+  it('says nothing about a book that repeats its own subject by name', () => {
+    // "Soul Echo" is the book's device, not a tic: capitalized spans are skipped.
+    const text = 'The Soul Echo flared between them. '.repeat(12) + filler.repeat(120);
+    expect(wornPhrases(text).some(item => item.phrase.includes('echo'))).toBe(false);
+  });
+
+  it('does not report contractions or short books', () => {
+    const text = "She didn't know what he didn't say. ".repeat(10) + filler.repeat(120);
+    expect(wornPhrases(text).some(item => item.phrase.includes('didn'))).toBe(false);
+    expect(wornPhrases(tic(9))).toEqual([]);
   });
 });
