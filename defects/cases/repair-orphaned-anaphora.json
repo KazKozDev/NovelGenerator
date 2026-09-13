@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "repair-orphaned-anaphora",
+  "title": "Repair removes the antecedent but leaves the sentence that points to it",
+  "provenance": {
+    "kind": "live-run",
+    "note": "Quoted in the newlyOrphaned source comment from a live repaired chapter. Names redacted to synthetic tokens."
+  },
+  "manuscript": {
+    "language": "English",
+    "quote": "Zor's back arched against the parapet. It was not Pax's wrist."
+  },
+  "diagnosis": "The surviving sentence is grammatical but its pronoun and contrast refer to a sentence the repair deleted.",
+  "obligation": {
+    "owner": "repair-guard",
+    "module": "utils/novel/prosody.ts",
+    "check": "newlyOrphaned"
+  },
+  "current": {
+    "status": "caught",
+    "detector": {
+      "module": "utils/novel/prosody.ts",
+      "check": "newlyOrphaned",
+      "finding": "orphaned-sentence"
+    }
+  },
+  "test": {
+    "kind": "newly-orphaned",
+    "before": "Zor's back arched against the parapet. His fingers closed on metal and crushed it. It was not Pax's wrist. He let go.",
+    "after": "Zor's back arched against the parapet. It was not Pax's wrist. He let go.",
+    "expected": "It was not Pax's wrist."
+  }
+}

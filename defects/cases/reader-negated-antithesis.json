@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "reader-negated-antithesis",
+  "title": "Negation followed by its positive replacement becomes a formula",
+  "provenance": {
+    "kind": "external-reader",
+    "note": "The two sentence forms are the examples preserved in the prose-craft and prosody source comments after a finished-book reading."
+  },
+  "manuscript": {
+    "language": "English",
+    "quote": "It was not a handshake. It was a grip. He did not shift his weight. He did not check his watch."
+  },
+  "diagnosis": "Repeated denial-and-replacement makes the next sentence predictable and spends two sentences stating one fact.",
+  "obligation": {
+    "owner": "generation-contract",
+    "module": "utils/novel/proseCraft.ts",
+    "check": "manuscriptContract"
+  },
+  "current": {
+    "status": "caught",
+    "detector": {
+      "module": "utils/novel/prosody.ts",
+      "check": "prosodyIssues",
+      "finding": "negation-antithesis"
+    }
+  },
+  "test": {
+    "kind": "prosody-issue",
+    "language": "English",
+    "text": "It was not a handshake. It was a grip. He did not shift his weight. He did not check his watch. It was not a greeting. It was a warning. The room held its breath while the clock continued above the door.",
+    "expectedFinding": "negation-antithesis"
+  }
+}

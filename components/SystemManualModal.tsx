@@ -116,67 +116,79 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 Data Lineage: From Premise to Finished Manuscript
               </h3>
               <p className="text-xs text-zinc-400 light:text-zinc-600">
-                The generator avoids monolithic unguided writing by structuring novel production into a multi-tier Causal Blueprint:
+                One rule runs the whole engine: code brings evidence, the model disposes it — and everything
+                happens before a prose token exists. Nothing rewrites prose on its own; nothing revisits a sealed chapter.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">1</span>
-                    Authorial Contract
+                    Book Design (P01)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Fixes genre, language (e.g. English, Russian), POV, tense, tone, chapter count, and target word budget. Serves as immutable foundation for all downstream generation.
+                    Premise becomes a compact construction: contract, cast, rules, causal map, ending, chapter map.
+                    Every person the premise names must be cast under that name; every concrete given (a warehouse,
+                    a check, a fiber) must earn a home in the construction. Code verifies both.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">2</span>
-                    Causal Blueprint & Outline
+                    Design Review (P02)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Architects overall plot, central conflict, character arcs, and dramatic promises—tracking where every Chekhovian gun is planted and in which chapter it must fire.
+                    Up to 3 attempts to make the plan executable. Blocking issues fail the book loudly instead of
+                    producing prose on a broken plan. First-time majors on re-review soften so the loop converges;
+                    repeated flags keep full force. The kinetic test rejects outcomes that restate the setup.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">3</span>
-                    Scene Staging & Direction
+                    Chapter Plan + Pre-Write Gate (P03)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Each chapter is decomposed into scenes with explicit participants, conflict, setting, sensory anchors, and dramatic shift to prevent wandering narrative.
+                    One chapter planned from confirmed state. Verbatim sniffer plus semantic gate (Off / Light / Full)
+                    bring restaging and clash suspicions before prose exists; the review disposes them, hard verdicts
+                    become writer instructions stitched into the package.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">4</span>
-                    Prose Drafting (Writer)
+                    Scene Write (P04)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Generates prose adhering to setting continuity (no restating room decor if characters remain in place), single-take climaxes, and emotional pulse.
+                    The writer's package is confirmed memory only: exact name spellings on record, tired phrases to
+                    retire, the newest knowledge notes (memory keeps everything; attention decays). One scene, one take.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">5</span>
-                    Local Quality Check (1–5 Edits)
+                    Track & Fold (P05)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Verifies canon consistency and NLI contradiction checks against previous chapters. If flaws exist, performs at most 1–2 targeted edits (top 5 defects).
+                    Deltas enter memory with evidence or not at all. Missed names are recovered from the prose by code;
+                    near-twin drift (one letter off an established name) blocks the line: one rewrite with the exact spelling demanded,
+                    a second consecutive break fails loudly.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
                     <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">6</span>
-                    Forward-Only Seal
+                    Forward Seal (P06–P07)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Accepted chapter is permanently locked. Canon facts and world events are extracted into novel memory. The next chapter builds strictly on top of this sealed canon.
+                    The plan is reconciled with what was actually written; next-chapter inputs carry forward. Accepted
+                    chapters lock permanently — future chapters can never rewrite the past. Final audit reports integrity
+                    with coverage, never edits silently.
                   </p>
                 </div>
               </div>
@@ -203,7 +215,10 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                   </span>
                 </div>
                 <p className="text-xs text-zinc-400 light:text-zinc-600">
-                  <strong className="text-zinc-300 light:text-zinc-800">Gemini (2.5 Flash / Pro)</strong> or local <strong className="text-zinc-300 light:text-zinc-800">Ollama</strong> (Llama 3, Qwen 2.5, DeepSeek). Handles scene prose, dialogue, dramatic tension, and local targeted line editing.
+                  <strong className="text-zinc-300 light:text-zinc-800">Gemini (2.5 Flash / Pro)</strong> or local <strong className="text-zinc-300 light:text-zinc-800">Ollama</strong> (Llama 3, Qwen 2.5, DeepSeek). Two routes: writer (prose, plans)
+                  and validator (reviews, extraction). Set a separate validator model — otherwise the author judges
+                  its own prose. Every run-log line carries the serving model, so after the fact you can see what
+                  actually fired.
                 </p>
               </div>
 
@@ -217,11 +232,12 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                   <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Fast Semantic Repetition Scanner (Embeddings)
+                        Light Pre-Write Check (Embeddings)
                       </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/all-MiniLM-L6-v2 · ~23 MB</div>
+                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/all-MiniLM-L6-v2 · ~90 MB</div>
                       <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Encodes each paragraph into a 384-dimensional vector. Computes cosine similarity across paragraphs in 10ms to detect stylistic echoes and repeated motifs.
+                        Scores each planned scene against finished paragraphs by cosine similarity — paraphrase-level
+                        restaging before prose exists. Default mode; findings advise the plan review, never block.
                       </p>
                     </div>
                     <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
@@ -236,11 +252,12 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                       </div>
                       <div className="text-zinc-500 font-mono text-[11px]">onnx-community/bge-reranker-v2-m3-ONNX · ~600 MB</div>
                       <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Deep joint evaluation of suspicious candidate pairs (top 8). Analyzes paragraphs simultaneously in shared context to distinguish deliberate leitmotif from unintended repetition.
+                        Deep joint evaluation of suspicious candidate pairs. Stronger recall than the light cosine check,
+                        at the cost of a large download. Full gate mode only.
                       </p>
                     </div>
                     <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
-                      WebGPU
+                      Full mode
                     </span>
                   </div>
 
@@ -251,11 +268,13 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                       </div>
                       <div className="text-zinc-500 font-mono text-[11px]">Xenova/nli-deberta-v3-base · ~250 MB</div>
                       <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Evaluates logical entailment and contradiction between claims in new chapters and established canon facts, with calibrated thresholds to suppress false positives.
+                        Evaluates entailment and contradiction between a scene's claims and confirmed state —
+                        plan-vs-memory clashes string checks cannot see. Full gate mode only; weaker on
+                        non-English prose.
                       </p>
                     </div>
                     <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
-                      Optional
+                      Full mode
                     </span>
                   </div>
 
@@ -326,6 +345,13 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                     <li><strong className="text-zinc-300 light:text-zinc-800">Canon Facts:</strong> Character states, spatial locations, recovered items, uncovered secrets.</li>
                     <li><strong className="text-zinc-300 light:text-zinc-800">Story Events:</strong> Irreversible choices made and their lasting consequences for the world.</li>
                     <li><strong className="text-zinc-300 light:text-zinc-800">Plot Promises:</strong> Guarantees that narrative seeds and setups receive earned payoffs before the conclusion.</li>
+                    <li><strong className="text-zinc-300 light:text-zinc-800">Name Registry:</strong> Canonical spelling of every proper name, with aliases (a diminutive beside the full form).
+                      A near-twin with no declared referent (one letter off an established name) is a continuity break: one rewrite
+                      with the exact spelling, then loud failure.</li>
+                    <li><strong className="text-zinc-300 light:text-zinc-800">Premise Givens:</strong> Every concrete premise element must earn a home in the construction.
+                      A coherent plan that declines to tell the promised story fails review like any broken one.</li>
+                    <li><strong className="text-zinc-300 light:text-zinc-800">Kinetic Rule:</strong> An outcome must move someone's position, possession, knowledge, or
+                      commitment past the setup. A prolonged posture in the same words is stasis, not an event.</li>
                   </ul>
                 </div>
 
@@ -374,6 +400,17 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
+                    Writer-Package Decay (Attention, Not Amnesia)
+                  </div>
+                  <p className="text-zinc-400 light:text-zinc-600">
+                    Memory keeps every confirmed note; the writer's package carries the newest eight per participant.
+                    Reviewers always read the full state, so decay trims attention, never evidence. Old slots without
+                    a name shelf load fine — the registry starts accumulating from the next scene.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
                     Fault-Tolerant Persistence (BrowserRunStore)
                   </div>
                   <p className="text-zinc-400 light:text-zinc-600">
@@ -417,7 +454,7 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
         {/* The ring is gone, so the mark carries the button on its own: drawn against the glyph's
             bounds rather than the circle's, it fills the frame the circle used to occupy. */}
         <svg
-          className="w-5 h-5 transition-transform duration-200 hover:scale-110"
+          className="w-4 h-4 transition-transform duration-200 hover:scale-110"
           viewBox="7 4 10 16"
           fill="none"
           stroke="currentColor"

@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
+import ChapterChecks from './ChapterChecks';
+import { measureTexture } from '../utils/novel/analytics';
 import ProgressBar from './ProgressBar';
 import ThemeToggle from './ThemeToggle';
 import SystemManualToggle from './SystemManualModal';
 import PlanView from './PlanView';
 import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
-import ChapterChecks from './ChapterChecks';
+
 import SaveStatusIndicator from './SaveStatusIndicator';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Button } from './common/Button';
@@ -61,8 +63,31 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
   const activeChapter = generatedChapters[selectedChapterIdx] || generatedChapters[currentChapterProcessing - 1] || null;
   const activeChapterNum = selectedChapterIdx + 1;
-  const activeTitle = activeChapter?.title || (activeChapterNum === currentChapterProcessing ? 'Generating...' : `Chapter ${activeChapterNum}`);
+  // The stored title may already carry its number ("Chapter 1" from the v2
+  // hook, "Chapter 1: The Awakening" from older runs): strip it before the
+  // heading adds its own, so the number never prints twice.
+  const storedTitle = (activeChapter?.title || '').trim();
+  const titleBody = storedTitle.replace(/^chapter\s+\d+\s*:?\s*/i, '').trim();
+  const activeTitle = titleBody || (activeChapterNum === currentChapterProcessing ? 'Generating...' : '');
+  const proseHeading = activeTitle ? `Chapter ${activeChapterNum}: ${activeTitle}` : `Chapter ${activeChapterNum}`;
   const activeContent = activeChapter?.content || '';
+  // Measured live from the shown text: stored texture (when present) wins,
+  // otherwise the bar computes over whatever prose is on screen.
+  const liveTexture = useMemo(
+    () => (activeContent.trim() ? measureTexture(activeContent) : null),
+    [activeContent],
+  );
+  const texture = activeChapter?.texture
+    ? {
+        dialogueShare: activeChapter.texture.dialogueShare,
+        medianParagraphWords: activeChapter.texture.medianParagraphWords,
+        similesPer1000: activeChapter.texture.similesPer1000 ?? liveTexture?.similesPer1000 ?? 0,
+        taggedSpeechShare: activeChapter.texture.taggedSpeechShare ?? liveTexture?.taggedSpeechShare ?? 0,
+        findings: activeChapter.texture.findings,
+      }
+    : liveTexture
+      ? { ...liveTexture, findings: [] as { id: string; description: string }[] }
+      : null;
 
   // Determine stage description
   const isWritingProse = currentStep === GenerationStep.GeneratingChapters || currentStep === GenerationStep.FinalEditingPass;
@@ -229,27 +254,23 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           data-testid="zone-prose"
           className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet`}
         >
-          {activeChapter?.texture && (
+          {texture && (
             <div className="shrink-0 px-6 pt-3 text-xs text-zinc-500 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-zinc-800 pb-2">
               <span className="uppercase tracking-wide text-zinc-600">Measured</span>
-              <span>dialogue <span className="tabular-nums text-zinc-400">{Math.round(activeChapter.texture.dialogueShare * 100)}%</span></span>
-              <span>median paragraph <span className="tabular-nums text-zinc-400">{activeChapter.texture.medianParagraphWords}w</span></span>
-              {activeChapter.texture.similesPer1000 !== undefined && (
-                <span>comparisons/1k <span className="tabular-nums text-zinc-400">{activeChapter.texture.similesPer1000.toFixed(1)}</span></span>
-              )}
-              {activeChapter.texture.taggedSpeechShare !== undefined && (
-                <span>lines with a beat <span className="tabular-nums text-zinc-400">{Math.round(activeChapter.texture.taggedSpeechShare * 100)}%</span></span>
-              )}
-              {activeChapter.texture.findings.length > 0 && (
-                <span className="basis-full text-zinc-400" title={activeChapter.texture.findings.map(finding => finding.description).join('\n')}>
-                  {activeChapter.texture.findings.map(finding => finding.id).join(' · ')}
+              <span>dialogue <span className="tabular-nums text-zinc-400">{Math.round(texture.dialogueShare * 100)}%</span></span>
+              <span>median paragraph <span className="tabular-nums text-zinc-400">{texture.medianParagraphWords}w</span></span>
+              <span>comparisons/1k <span className="tabular-nums text-zinc-400">{texture.similesPer1000.toFixed(1)}</span></span>
+              <span>lines with a beat <span className="tabular-nums text-zinc-400">{Math.round(texture.taggedSpeechShare * 100)}%</span></span>
+              {texture.findings.length > 0 && (
+                <span className="basis-full text-zinc-400" title={texture.findings.map(finding => finding.description).join('\n')}>
+                  {texture.findings.map(finding => finding.id).join(' · ')}
                 </span>
               )}
             </div>
           )}
           {isWritingProse || activeContent ? (
             <StreamingContentView
-              title={`Chapter ${activeChapterNum}: ${activeTitle}`}
+              title={proseHeading}
               content={activeContent}
               fullHeight={true}
             />
@@ -267,8 +288,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             data-testid="zone-agent-inspector"
             className="lg:col-span-2 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
           >
-            <ChapterChecks content={activeContent} chapterNum={activeChapterNum} />
-
+            {(isWritingProse || activeContent) && (
+              <ChapterChecks content={activeContent} chapterNum={activeChapterNum} />
+            )}
             <div className="border-t border-zinc-800 mt-2 pt-2 flex flex-col min-h-0 flex-1 overflow-hidden">
               <div className="shrink-0 flex items-baseline justify-between pb-2">
                 <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>

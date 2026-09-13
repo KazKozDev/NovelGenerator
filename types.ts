@@ -21,6 +21,14 @@ export interface Character {
    * for. Breaking one silently is the defect.
    */
   limits?: string[];
+  /**
+   * What this person hides, as a short noun phrase in the manuscript language
+   * ("делец синдиката", "сын короля"). Nobody speaks it aloud until
+   * revealChapter; a book planned before the field existed exposes nothing.
+   */
+  secret?: string;
+  /** First chapter where the book exposes secret; the check sleeps from there on. */
+  revealChapter?: number;
 }
 
 export enum ChapterGenerationStage {
@@ -87,7 +95,32 @@ export enum GenerationStep {
 }
 
 // Detailed scene structure for comprehensive chapter planning
-export interface DetailedScene {
+export interface LegacyDetailedSceneFields {
+  /** @deprecated Checkpoint compatibility only; current plans do not produce these fields. */
+  duration?: string;
+  /** @deprecated Checkpoint compatibility only; current plans do not produce these fields. */
+  mood?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use staging and accepted canon. */
+  initialState?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use keyMoments and shift. */
+  characterDecisions?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use outcome. */
+  consequenceForNextScene?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use accepted canon and staging. */
+  continuityRequirements?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use keyMoments. */
+  informationRevealed?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use scheduled promises. */
+  informationWithheld?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use shift. */
+  emotionalDelta?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use conflict and outcomeType. */
+  prohibitedShortcuts?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use outcome and chapter ending. */
+  exitHook?: string;
+}
+
+export interface DetailedScene extends LegacyDetailedSceneFields {
   sceneId: string; // Unique identifier for the scene
   location: string; // Where the scene takes place
   participants: string[]; // Characters involved in this scene
@@ -116,8 +149,8 @@ export interface DetailedScene {
   /**
    * Whose eyes the scene is seen through. In a limited narrative voice one scene has one viewpoint,
    * and the place a generated chapter loses it is inside a scene rather than at a scene break: a
-   * finished book spent a page in Alfred's kitchen and then, with no break and no name, continued in
-   * Clark's body — "The mark on his throat was there" — with "his" pointing at the wrong man.
+   * finished book spent a page in one character's kitchen and then, with no break and no name,
+   * continued in another character's body — with the pronoun pointing at the wrong man.
    * Declared here so the writer is told whose scene it is, and so a reviewer can be asked a question
    * with an answer instead of being asked to notice.
    */
@@ -126,19 +159,7 @@ export interface DetailedScene {
   freshConstraint?: string;
   /** One-line staging: positions, key objects within reach, and the physical conditions constraining action as the scene opens. */
   staging?: string;
-  duration: string; // Estimated time span (e.g., "10 minutes", "several hours")
-  mood: string; // Emotional atmosphere of the scene
   keyMoments: string[]; // Specific beats or events within the scene
-  /** Explicit scene contract. Optional so saved plans created before v4.3 remain readable. */
-  initialState?: string;
-  characterDecisions?: string[];
-  consequenceForNextScene?: string;
-  continuityRequirements?: string[];
-  informationRevealed?: string[];
-  informationWithheld?: string[];
-  emotionalDelta?: string;
-  prohibitedShortcuts?: string[];
-  exitHook?: string;
 }
 
 // Specific events that drive the narrative forward
@@ -294,9 +315,9 @@ export interface LLMProviderConfig {
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
   /**
-   * Reasoning models judge poorly with thinking off and answer trivially instead. Ollama returns
-   * their reasoning in a separate field, so enabling it here never reaches the manuscript.
-   * Configured per role: enable it for a validator, never for the prose writer.
+   * Reasoning trace for the prose writer only. Structured validator calls run
+   * under a tight output cap that reasoning would spend before the answer, so
+   * the generator forces thinking off on that route regardless of this flag.
    */
   think?: boolean;
 }

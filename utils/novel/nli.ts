@@ -29,7 +29,12 @@ export type NLIScorer = (premise: string, hypothesis: string) => Promise<NLIScor
 
 import type { ProgressCallback } from './modelProgress';
 import { loadWithFallback, localModelWorker, progressOptions } from './modelProgress';
-import { sentencesOf } from './review';
+function sentencesOf(content: string): string[] {
+  return content
+    .split(/(?<=[.!?…])\s+|\n\s*\n/)
+    .map(item => item.trim())
+    .filter(item => item.split(/\s+/).filter(Boolean).length >= 3);
+}
 
 /** Browser-first default; override with any NLI checkpoint plus its label order. */
 export const DEFAULT_NLI_MODEL = 'Xenova/nli-deberta-v3-base';
@@ -105,8 +110,8 @@ export interface ContradictionFinding {
 }
 
 /**
- * Naturalizes telegraphic canon claims ("Alice location: hangar") into standard
- * grammatical propositions ("Alice is at hangar.") so NLI models evaluate semantic
+ * Naturalizes telegraphic canon claims ("Zor location: Harbor") into standard
+ * grammatical propositions ("Zor is at Harbor.") so NLI models evaluate semantic
  * dependencies properly instead of misclassifying syntax artifacts as contradictions.
  */
 export function naturalizeClaim(claim: string): string {

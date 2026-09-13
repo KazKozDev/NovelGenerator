@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "createdAt": "2026-09-12",
+  "language": "English",
+  "purpose": "External descriptive reference point, not an automatic pass/fail threshold.",
+  "method": "Project Gutenberg UTF-8 text between its START/END markers; hard-wrapped lines joined within blank-line-delimited paragraphs; measured with utils/novel/prosody.ts.",
+  "reproduce": "npx vite-node scripts/measure-prose-benchmark.ts",
+  "works": [
+    {
+      "title": "Pride and Prejudice",
+      "author": "Jane Austen",
+      "genre": "romance / social novel",
+      "source": "https://www.gutenberg.org/ebooks/1342.txt.utf-8",
+      "sourceSha256": "3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75",
+      "words": 128700,
+      "medianParagraphWords": 30,
+      "dialogueShare": 0.5368672777999203,
+      "negatedAntithesisPer1000": 0.00777000777000777,
+      "repeatedFramePer1000": 0.2331002331002331
+    },
+    {
+      "title": "Frankenstein; Or, The Modern Prometheus",
+      "author": "Mary Wollstonecraft Shelley",
+      "genre": "gothic / science fiction",
+      "source": "https://www.gutenberg.org/ebooks/84.txt.utf-8",
+      "sourceSha256": "7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3",
+      "words": 75363,
+      "medianParagraphWords": 80,
+      "dialogueShare": 0.3889585947302384,
+      "negatedAntithesisPer1000": 0,
+      "repeatedFramePer1000": 0.22557488422700794
+    },
+    {
+      "title": "The Adventures of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "genre": "detective fiction",
+      "source": "https://www.gutenberg.org/ebooks/1661.txt.utf-8",
+      "sourceSha256": "922e2a12ccb43a4c9544c260b2166c6ad2097aeb5957faeee113f173bb857cd0",
+      "words": 105969,
+      "medianParagraphWords": 21,
+      "dialogueShare": 0.8688138256087982,
+      "negatedAntithesisPer1000": 0.00943672206022516,
+      "repeatedFramePer1000": 0.32084855004765545
+    }
+  ],
+  "aggregate": {
+    "medianParagraphWords": { "median": 30, "maximum": 80 },
+    "dialogueShare": { "median": 0.5368672777999203, "maximum": 0.8688138256087982 },
+    "negatedAntithesisPer1000": { "median": 0.00777000777000777, "maximum": 0.00943672206022516 },
+    "repeatedFramePer1000": { "median": 0.2331002331002331, "maximum": 0.32084855004765545 }
+  }
+}

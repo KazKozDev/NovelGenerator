@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "id": "reader-unclosed-dialogue",
+  "title": "Narration continues inside an unclosed spoken line",
+  "provenance": {
+    "kind": "external-reader",
+    "note": "Quoted in the brokenParagraphs source comment from a reviewed finished chapter. Names redacted to synthetic tokens."
+  },
+  "manuscript": {
+    "language": "English",
+    "quote": "“I mean it,” Zor said. “You can push me away… I will still be there. The idling engine filled the alley…"
+  },
+  "diagnosis": "A closing quotation mark was lost, so narration is rendered as speech and the paragraph is visibly incomplete.",
+  "obligation": {
+    "owner": "review",
+    "module": "utils/novel/prosody.ts",
+    "check": "brokenParagraphs"
+  },
+  "current": {
+    "status": "caught",
+    "detector": {
+      "module": "utils/novel/prosody.ts",
+      "check": "brokenParagraphs",
+      "finding": "unpaired-dialogue-quote"
+    }
+  },
+  "test": {
+    "kind": "broken-paragraph",
+    "text": "“I mean it,” Zor said. “You can push me away… I will still be there. The idling engine filled the alley…",
+    "expectedExcerpt": "I mean it"
+  }
+}

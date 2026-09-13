@@ -4,16 +4,13 @@
 import React, { useEffect } from 'react';
 import useBookGenerator from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
-import ManuscriptRevision from './components/ManuscriptRevision';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import SystemManualToggle from './components/SystemManualModal';
-import ModelSwitch from './components/ModelSwitch';
-import LocalModelToggles from './components/LocalModelToggles';
 import BookDisplay from './components/BookDisplay';
 import SaveBook from './components/SaveBook';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
-import ApprovalView from './components/ApprovalView';
+
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
 import { installConsoleBridge, logToTerminal, watchMainThreadStalls } from './utils/terminalLogger';
@@ -28,7 +25,6 @@ const App: React.FC = () => {
     setStorySettings,
     startGeneration,
     continueGeneration,
-    regenerateOutline,
     isLoading,
     currentStep,
     error,
@@ -39,13 +35,13 @@ const App: React.FC = () => {
     totalChaptersToProcess,
     resetGenerator,
     currentStoryOutline,
-    setCurrentStoryOutline,
     currentChapterPlan,
     isResumable,
     agentLogs,
     lastSavedAt,
-    reviseChapter,
-    reviewCompleted, applyEditorial, editorial, manuscriptHistory,
+    exportProject,
+    importProject,
+    storeReady,
   } = useBookGenerator();
 
   const hasConnectedRef = React.useRef(false);
@@ -67,23 +63,17 @@ const App: React.FC = () => {
 
 
   const handleStartGeneration = () => {
+    if (!storeReady) return;
     if (storyPremise && numChapters >= 3) {
-      startGeneration(storyPremise, numChapters);
-    } else if (isResumable) {
-      // For resuming, premise and chapters are already in state
       startGeneration(storyPremise, numChapters);
     } else {
       // Basic validation feedback, can be improved
       alert("Please provide a story premise and at least 3 chapters.");
     }
   };
-  
+
   const handleContinue = () => {
     continueGeneration();
-  };
-
-  const handleRegenerateOutline = () => {
-    regenerateOutline();
   };
 
   const handleReset = () => {
@@ -128,6 +118,25 @@ const App: React.FC = () => {
           {saveControl}
           <button
             type="button"
+            onClick={exportProject}
+            title="Download the whole project slot (§10): design, plans, scenes, memory, manuscript, report"
+            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+          >
+            Export project
+          </button>
+          <label
+            title="Restore a project from an exported .project.json file"
+            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
+          >
+            Import project
+            <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
+            }} />
+          </label>
+          <button
+            type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
             className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
@@ -137,7 +146,7 @@ const App: React.FC = () => {
           </div>
         </div>
         <p className="text-zinc-500 text-xs  text-left">
-          From your idea to a complete manuscript, with optional editing afterwards.
+          A finished story before your coffee gets cold.
         </p>
       </header>
       )}
@@ -147,9 +156,7 @@ const App: React.FC = () => {
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{error}</p>
-            {isResumable && <ModelSwitch />}
-            {isResumable && <LocalModelToggles />}
-            {isResumable && <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Retry with these models</button>}
+            <button onClick={handleContinue} disabled={isLoading} className="mt-3 mr-3 underline">Continue where it stopped, with current models</button>
 
             <button
               onClick={handleReset}
@@ -160,7 +167,22 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && (
+        {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && (
+          <div className="border border-zinc-800 rounded p-4 md:p-5 text-sm text-zinc-300">
+            <p className="font-medium">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
+            <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
+            <div className="mt-3 flex gap-3">
+              <button onClick={handleContinue} disabled={isLoading} className="px-3 py-1 bg-zinc-200 text-zinc-900 rounded text-xs font-medium">Continue writing</button>
+              <button onClick={handleReset} className="px-3 py-1 border border-zinc-700 rounded text-xs">Discard and start new</button>
+            </div>
+          </div>
+        )}
+
+        {currentStep === GenerationStep.Idle && !finalBookContent && !storeReady && (
+          <p className="text-zinc-500 text-xs">Opening project storage…</p>
+        )}
+
+        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && storeReady && (
           <>
             <UserInput
               storyPremise={storyPremise}
@@ -181,20 +203,9 @@ const App: React.FC = () => {
         {currentStep === GenerationStep.GeneratingOutline && (
           <div className="text-center py-12">
             <LoadingSpinner />
-            <p className="mt-4 text-zinc-300 text-sm font-medium">Generating story outline...</p>
-            <p className="mt-1 text-zinc-500 text-xs">Formulating narrative arc and chapter milestones</p>
+            <p className="mt-4 text-zinc-300 text-sm font-medium">Designing the book...</p>
+            <p className="mt-1 text-zinc-500 text-xs">Causal map, characters, chapter plan and construction review</p>
           </div>
-        )}
-
-        {currentStep === GenerationStep.WaitingForOutlineApproval && !isLoading && (
-            <ApprovalView
-              title="Review & Edit Story Outline"
-              content={currentStoryOutline}
-              onContentChange={setCurrentStoryOutline}
-              onApprove={handleContinue}
-              onRegenerate={handleRegenerateOutline}
-              isLoading={isLoading}
-            />
         )}
 
 
@@ -220,11 +231,6 @@ const App: React.FC = () => {
 
         {finalBookContent && finalMetadataJson && (
           <>
-            <div className="mb-4 space-y-3">
-              <button className="underline" disabled={isLoading} onClick={() => void reviewCompleted()}>{isLoading ? 'Working…' : 'Review completed book'}</button>
-              {editorial && <><p className="whitespace-pre-wrap">{editorial.report}</p>{!!editorial.proposals?.length && <button className="underline" disabled={isLoading} onClick={() => void applyEditorial()}>Apply proposed edits as a new version</button>}</>}
-              {manuscriptHistory.map((version, index) => <details key={`${version.at}-${index}`}><summary>Original manuscript · version {index + 1}</summary><SaveBook content={version.content} metadata={{ title: version.title }} /><pre className="whitespace-pre-wrap">{version.content}</pre></details>)}
-            </div>
             <BookDisplay
               bookContent={finalBookContent}
               metadataJson={finalMetadataJson}
@@ -237,7 +243,7 @@ const App: React.FC = () => {
             )}
           </>
         )}
-        {!isLoading && generatedChapters.length > 0 && <div className="shrink-0 max-h-[60vh] overflow-auto"><ManuscriptRevision chapters={generatedChapters} onRevise={reviseChapter} /></div>}
+
       </main>
       <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
         <div className="text-center text-zinc-500 text-xs">

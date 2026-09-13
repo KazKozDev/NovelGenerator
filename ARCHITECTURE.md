@@ -65,11 +65,35 @@ Measured prose texture is recorded on every candidate version: comparison densit
 paragraph length distribution, dialogue share, and semantic repetition found with
 embeddings. Three of these measurements act, and the rest only report.
 
+**Decisive scenes are selected before they are repaired.** A scene with effective
+`narrativeWeight` 4 or 5 gets two independent writer drafts. The application scores
+both immutable candidates on blocking deterministic findings, target-length deviation
+and the presence of speech where the plan says speech carries the conflict, then keeps
+the lower-risk draft. It records scores and the chosen index, not the discarded prose.
+Ordinary scenes still cost one call, and a tie preserves the first draft.
+
+**Style has a forward state of its own.** Before each scene, accepted chapters are
+reduced to a voice registry: dominant sentence-opening frames, whole-book texture
+measurements, and bounded `alreadyTold` material such as images, gestures and
+descriptions whose work is spent. The registry contains no prose sample to imitate.
+It tells the writer what the book has leaned on and what it has already used.
+
+**Writer prompts are measured as an interface.** The scene request, author contract,
+canon, continuity, chapter orientation, prose guidance and correction each have a
+named character budget. Every scene call records their sizes, budget overruns and the
+share occupied by the current scene request. Canon is never silently truncated to hit
+a budget; an overrun remains visible in checkpoint telemetry.
+
 **Repetition fails a chapter.** Paragraphs whose embeddings sit above the tail of what a
 real manuscript produces — cosine 0.80, against a median of 0.585 — are the same defect
 the lexical duplicate check already blocks, caught after rewording, so they are treated
 the same way and repaired by deletion. A passage recycled from an earlier chapter is
-reported against both chapters and repaired in the later one.
+reported against both chapters and repaired in the later one. Rare wordings travel
+forward instead of blocking: each accepted chapter's 4-grams carrying a word nothing
+before used reach the next chapter's planner as spent phrasing, which must not be
+reused or closely varied. Speech is excluded — a refrain is the line-level check's
+business. An abbreviation the reader meets first after chapter 1 is a minor finding
+against the chapter that introduces it.
 
 **A sentence shape used as a formula is measured, not debated.** Two syntactic habits are
 counted against what this pipeline actually writes, over 131 stored manuscripts of 4000
@@ -101,6 +125,12 @@ with the description, reach the writer inside the character design, and the chap
 is asked about them by name, for the people that chapter's scenes contain. A limit may be
 broken only by paying for it on the page. A book planned before the field existed is judged
 against nothing.
+
+**A character's secret travels in the data, not in a word list.** The blueprint declares,
+per character, `secret` — the hidden thing itself as a short noun phrase in the manuscript
+language — and `revealChapter` with the chapter that exposes it. Each book is checked
+against its own secrets: those words in direct speech fail the chapter until the reveal
+chapter, whatever the book is about. No list in the code names any secret.
 
 **A scene declares whose eyes it is seen through.** `pov` names one of the scene's own
 participants; a viewpoint outside the room is refused, unless one person is in it and the
@@ -163,14 +193,44 @@ setup/payoff evidence. Extraction requests reference source paragraph IDs; the a
 source presence; semantic truth and literary quality still depend on model review.
 The system cannot guarantee absence of subtle contradictions or commercial success.
 
+Facts and events carry story time as `atHour`, hours from the story's start, when
+the prose pins them to it — never inferred from the plan. The cross-chapter review
+asks whether the chapter contradicts a recorded hour. A missing hour never
+contradicts anything; vagueness is not a defect.
+
+The chapter planner sees the book's open debts: required promises scheduled for
+payoff at or before that chapter with no payoff recorded. The chapter must close
+each on the page or release it explicitly — a debt settled offscreen, in summary,
+or by another character's report is not closed.
+
 Edits are candidates, never in-place replacements of accepted text. Acceptance
 invalidates later chapters and their derived canon. Their prose and version history
 remain available for revalidation. Chapter summaries and facts are extracted again
 from the accepted revision. No post-validation ending rewrite runs afterward.
 
-Whole-book review sees the complete evidence ledger and blueprint; local reviews see
-full chapter prose. The global pass checks causality, escalation and required payoffs.
-Line editing acts only on specific issues. A final global pass follows all changes.
+Whole-book structural review sees the complete evidence ledger and blueprint; local
+reviews see full chapter prose. Before either global review, a deterministic book pass
+measures the accepted prose both as a whole and as an ordered chapter series: chapter
+length trajectory, dialogue and paragraph texture, repeated opening frames and the
+curve of planned scene outcomes. The final global review additionally receives every
+accepted chapter in reading order and asks one prose-level question about repetition
+that accumulates across chapters. Line editing acts only on specific issues. A final
+global pass follows all changes.
+
+English syntax metrics carry two reference points. The internal ceilings remain the
+measured distribution of pipeline manuscripts. `benchmarks/external-prose-v1.json`
+adds a versioned external reference measured from three public-domain Project Gutenberg
+works; it stores source URLs, source hashes, method and aggregate numbers, never the
+books. `scripts/measure-prose-benchmark.ts` reproduces it. External measurements are
+descriptive rather than a universal literary threshold, but a whole-book syntax finding
+must exceed both the internal ceiling and the external reference maximum.
+
+Every active `DetailedScene` field has a compile-time owner in
+`ACTIVE_SCENE_FIELD_CONSUMERS`: writer, review, beat registry, diversity check,
+book-structure check, word allocation or candidate selection. The current planner no
+longer emits `duration`, `mood`, or the unused expanded transition graph. Those names
+remain optional legacy checkpoint fields only; four can still be read best-effort by
+the writer when an old saved plan contains them.
 
 ## Persistence and transport
 
@@ -215,6 +275,16 @@ Run `npm test`, `npx tsc --noEmit`, and `npm run build`.
 `ollamaStreaming.test.ts` checks partial and terminal transport records. These tests
 prove control flow and contracts, not model literary performance.
 
+Reader and live-run findings are retained in `defects/cases/`, one JSON card per
+observable defect. Each card names the generation contract, review, or repair guard
+that owns it and records whether that check catches it now. Cards marked `caught`
+must carry executable detector input; `defectRegistry.test.ts` validates the registry
+and runs those checks. A new complaint therefore starts as evidence and a named gap,
+then becomes a regression in the same artifact when the responsible check exists.
+
 For live evidence, record the provider/model, complete run checkpoint, accepted
 revisions, review reports, exported manuscript, call durations and any unresolved issues.
 Do not infer ongoing generation from an old log line or a saved stage alone.
+`npm run probe:scene -- qwen3.5:4b` is the bounded live check for the decisive-scene
+policy: it writes two drafts of one 300-word scene, prints deterministic scores and
+prompt telemetry, and stores neither candidate.
