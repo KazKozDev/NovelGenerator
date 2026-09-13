@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
-import { recurrentMotifs, rhythmDrift } from '../utils/novel/coherence';
-import { bestsellerAdvisory, hookScore, uniqueNgramRatio } from '../utils/novel/diversity';
+import { bestsellerAdvisory, hookScore, recurrentMotifs, rhythmDrift, uniqueNgramRatio } from '../utils/novel/analytics';
 
 /**
  * Live coherence checks for the chapter under the cursor. Same measured
- * metrics as CoherencePanel, but compact rows for the inspector column and
- * recomputed as the prose streams in. Advisory only — nothing here judges.
+ * metrics as the old inspector column, recomputed as the prose streams in.
+ * Advisory only — nothing here judges.
  */
 export default function ChapterChecks({ content, chapterNum }: { content: string; chapterNum: number }) {
   const rows = useMemo(() => {

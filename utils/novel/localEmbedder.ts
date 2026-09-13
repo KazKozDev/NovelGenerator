@@ -13,7 +13,8 @@
  * model ID changes, every fitted cosine threshold must be recalibrated on
  * runs/ (see reranker.ts for how the current ones were fitted).
  */
-import type { Embedder } from './prosody';
+/** Restored without ./prosody: the embedder contract in one line. */
+export type Embedder = (inputs: string[]) => Promise<number[][]>;
 import type { ProgressCallback } from './modelProgress';
 import { loadWithFallback, localModelWorker, progressOptions } from './modelProgress';
 

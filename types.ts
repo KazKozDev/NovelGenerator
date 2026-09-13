@@ -8,6 +8,27 @@ export interface Character {
   relationships_text?: string; // For storing raw text from LLM if needed
   location: string; // Last known location
   emotional_state: string;
+  /**
+   * What this character cannot do and what they will not do — the two together, because on the page
+   * they fail the same way. A reviewer of a finished book listed them in one breath: an ordinary man
+   * tearing an invulnerable one's suit with his fingers, human teeth leaving a mark that lasts days,
+   * a man who does not kill using a living person to stop a rifle, and a character too badly hurt to
+   * drive taking the wheel two paragraphs after the prose said he could not.
+   *
+   * Physical and standing both: "cannot lift more than a strong man can", "will not kill, and will
+   * not let a death happen to buy himself an advantage". The prose may break one only by paying for
+   * it on the page — a stated cost, a changed condition, a choice the character makes and answers
+   * for. Breaking one silently is the defect.
+   */
+  limits?: string[];
+  /**
+   * What this person hides, as a short noun phrase in the manuscript language
+   * ("делец синдиката", "сын короля"). Nobody speaks it aloud until
+   * revealChapter; a book planned before the field existed exposes nothing.
+   */
+  secret?: string;
+  /** First chapter where the book exposes secret; the check sleeps from there on. */
+  revealChapter?: number;
 }
 
 export enum ChapterGenerationStage {
@@ -74,7 +95,32 @@ export enum GenerationStep {
 }
 
 // Detailed scene structure for comprehensive chapter planning
-export interface DetailedScene {
+export interface LegacyDetailedSceneFields {
+  /** @deprecated Checkpoint compatibility only; current plans do not produce these fields. */
+  duration?: string;
+  /** @deprecated Checkpoint compatibility only; current plans do not produce these fields. */
+  mood?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use staging and accepted canon. */
+  initialState?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use keyMoments and shift. */
+  characterDecisions?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use outcome. */
+  consequenceForNextScene?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use accepted canon and staging. */
+  continuityRequirements?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use keyMoments. */
+  informationRevealed?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use scheduled promises. */
+  informationWithheld?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use shift. */
+  emotionalDelta?: string;
+  /** @deprecated Checkpoint compatibility only; current plans use conflict and outcomeType. */
+  prohibitedShortcuts?: string[];
+  /** @deprecated Checkpoint compatibility only; current plans use outcome and chapter ending. */
+  exitHook?: string;
+}
+
+export interface DetailedScene extends LegacyDetailedSceneFields {
   sceneId: string; // Unique identifier for the scene
   location: string; // Where the scene takes place
   participants: string[]; // Characters involved in this scene
@@ -84,25 +130,36 @@ export interface DetailedScene {
   narrativeWeight?: number; // Relative page space (1–5), not elapsed story time
   /** How the scene's conflict reaches the page. 'speech' obliges the prose to dramatize it in direct speech. */
   conflictCarriedBy?: 'speech' | 'action' | 'solitude';
-  /** Distinct dramatic shape of the scene (chase, confession, heist, trial, road, interrogation, negotiation, escape). */
+  /**
+   * Distinct dramatic shape of the scene. One of SCENE_SHAPES in utils/novel/diversity.ts
+   * (confrontation, negotiation, investigation, discovery, confession, pursuit, escape, preparation,
+   * aftermath, reflection); the plan validator normalizes near misses and rejects anything else.
+   */
   sceneShape?: string;
+  /**
+   * What this scene moves, declared before it is written and verified against the prose afterwards:
+   * the register that changes, the state it changes from and the state it changes to.
+   */
+  shift?: { register: 'knowledge' | 'resource' | 'relationship' | 'initiative' | 'position'; from: string; to: string };
+  /**
+   * How the scene's attempt ends: won at a cost, lost and made worse, or won outright. A chapter is
+   * allowed at most one 'clean', because a scene that costs nothing leaves the next one nothing.
+   */
+  outcomeType?: 'costly-success' | 'setback' | 'clean';
+  /**
+   * Whose eyes the scene is seen through. In a limited narrative voice one scene has one viewpoint,
+   * and the place a generated chapter loses it is inside a scene rather than at a scene break: a
+   * finished book spent a page in one character's kitchen and then, with no break and no name,
+   * continued in another character's body — with the pronoun pointing at the wrong man.
+   * Declared here so the writer is told whose scene it is, and so a reviewer can be asked a question
+   * with an answer instead of being asked to notice.
+   */
+  pov?: string;
   /** Binding fresh-idea constraint for this scene (genre mix, setting card, ban). */
   freshConstraint?: string;
   /** One-line staging: positions, key objects within reach, and the physical conditions constraining action as the scene opens. */
   staging?: string;
-  duration: string; // Estimated time span (e.g., "10 minutes", "several hours")
-  mood: string; // Emotional atmosphere of the scene
   keyMoments: string[]; // Specific beats or events within the scene
-  /** Explicit scene contract. Optional so saved plans created before v4.3 remain readable. */
-  initialState?: string;
-  characterDecisions?: string[];
-  consequenceForNextScene?: string;
-  continuityRequirements?: string[];
-  informationRevealed?: string[];
-  informationWithheld?: string[];
-  emotionalDelta?: string;
-  prohibitedShortcuts?: string[];
-  exitHook?: string;
 }
 
 // Specific events that drive the narrative forward
@@ -177,6 +234,14 @@ export interface ParsedChapterPlan {
   characterArcs?: CharacterEmotionalArc[]; // Emotional journeys for each character
   actionSequences?: ActionSequence[]; // Physical action and movement sequences
 
+  /**
+   * What the validator had to put right in this plan before accepting it. A plan is refused where it
+   * is wrong about the book — a person not in the cast, a promise paid before it is set up — and put
+   * right where it merely contradicts itself in a way only one field can be wrong about. Recorded so
+   * a correction is never silent.
+   */
+  normalizations?: string[];
+
   // PACING AND STRUCTURE
   targetWordCount?: number; // Estimated length for this chapter
   sceneTransitions?: string[]; // How scenes connect and flow into each other
@@ -225,6 +290,7 @@ export interface StorySettings {
   generationSpeedMode?: GenerationSpeedMode;
   chapterMode?: ChapterMode;
   skipEditing?: boolean;
+  forwardOnly?: boolean;
 }
 
 // Agent activity log for UI display
@@ -249,9 +315,9 @@ export interface LLMProviderConfig {
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
   /**
-   * Reasoning models judge poorly with thinking off and answer trivially instead. Ollama returns
-   * their reasoning in a separate field, so enabling it here never reaches the manuscript.
-   * Configured per role: enable it for a validator, never for the prose writer.
+   * Reasoning trace for the prose writer only. Structured validator calls run
+   * under a tight output cap that reasoning would spend before the answer, so
+   * the generator forces thinking off on that route regardless of this flag.
    */
   think?: boolean;
 }

@@ -2,6 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeGeminiSchema } from '../services/geminiService';
 
 describe('sanitizeGeminiSchema', () => {
+  it('keeps an integer-or-null field an integer, and marks it nullable', () => {
+    // The line that killed two live books: type: ['integer','null'] fell through to the default and
+    // the model was told payoffChapter is a string. It answered "4", and then omitted it entirely.
+    const cleaned = sanitizeGeminiSchema({
+      type: 'object',
+      required: ['payoffChapter'],
+      properties: { payoffChapter: { type: ['integer', 'null'] } },
+    });
+    expect(cleaned.properties.payoffChapter).toEqual({ type: 'integer', nullable: true });
+    expect(cleaned.required).toEqual(['payoffChapter']);
+    // An explicit nullable:false beside a nullable union does not take the null away.
+    expect(sanitizeGeminiSchema({ type: ['string', 'null'], nullable: false })).toEqual({ type: 'string', nullable: true });
+  });
+
   it('strips additionalProperties and non-Gemini fields from object schemas', () => {
     const rawSchema = {
       type: 'object',
@@ -102,22 +116,26 @@ describe('sanitizeGeminiSchema', () => {
     });
   });
 
-  it('normalizes missing type when properties or items are present', () => {
-    const rawSchema = {
-      properties: {
-        tag: {}
-      }
-    };
+  it('drops a property that says nothing instead of calling it a string', () => {
+    // The generic contract schema the pipeline builds — required keys, empty
+    // property bodies — used to describe a whole book design to Gemini as eight
+    // strings. It answered with a 1.4k skeleton whose chapter_map was a
+    // sentence, and validation killed the run on the first call.
+    // Nothing is said about the node or its one property: the whole node drops.
+    expect(sanitizeGeminiSchema({ properties: { tag: {} } })).toBeUndefined();
+    // A declared object keeps its type and loses the properties that said nothing.
+    expect(sanitizeGeminiSchema({ type: 'object', properties: { tag: {} } })).toEqual({ type: 'object' });
 
-    const sanitized = sanitizeGeminiSchema(rawSchema);
+    const keys = ['contract', 'characters', 'chapter_map'];
+    const loose = { type: 'object', required: keys, properties: Object.fromEntries(keys.map(k => [k, {}])) };
+    const sanitized = sanitizeGeminiSchema(loose);
+    expect(sanitized.properties).toBeUndefined();
+    expect(sanitized.required).toBeUndefined();
 
-    expect(sanitized).toEqual({
+    // A node that does say something still normalizes as before.
+    expect(sanitizeGeminiSchema({ properties: { tag: { description: 'a label' } } })).toEqual({
       type: 'object',
-      properties: {
-        tag: {
-          type: 'string'
-        }
-      }
+      properties: { tag: { type: 'string', description: 'a label' } },
     });
   });
 

@@ -18,11 +18,43 @@ const readable = (value: unknown): string | undefined => {
   if (typeof value === 'string') return value.trim() || undefined;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
-    const parts = value.map(item => typeof item === 'string' ? item : (item as { sceneId?: string })?.sceneId).filter(Boolean);
-    return parts.length ? parts.join(' · ') : undefined;
+    const parts = value
+      .map(item => typeof item === 'string' ? item.trim() : (typeof item === 'number' ? String(item) : (item as { sceneId?: string })?.sceneId))
+      .filter(Boolean);
+    return parts.length ? (parts as string[]).join(' · ') : undefined;
   }
   return undefined;
 };
+
+/** snake_case and camelCase keys become plain labels; known acronyms stay uppercase. */
+const prettyLabel = (key: string): string => {
+  if (LABELS[key]) return LABELS[key];
+  if (key === 'pov_id') return 'POV';
+  if (key === 'event_ids') return 'Events';
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .split('_')
+    .map(word => {
+      const lower = word.toLowerCase();
+      if (lower === 'pov') return 'POV';
+      if (lower === 'id' || lower === 'ids') return 'IDs';
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ')
+    .trim();
+};
+
+type Entry = { label: string; value: string };
+
+const recordEntries = (record: Record<string, unknown>, order: string[] = []): Entry[] => {
+  const keys = [...order.filter(key => key in record), ...Object.keys(record).filter(key => !order.includes(key))];
+  return keys
+    .map(key => ({ label: prettyLabel(key), value: readable(record[key]) || '' }))
+    .filter(entry => Boolean(entry.value));
+};
+
+/** Chapter-map entries read best in decision order, with the chapter number as the heading. */
+const CHAPTER_ORDER = ['function', 'main_change', 'setup_or_payoff', 'dependencies', 'event_ids', 'pov_id', 'target_words'];
 
 /**
  * A plan is a set of decisions, not a data structure. Raw JSON puts braces and quotes between the
@@ -32,15 +64,47 @@ export default function PlanView({ content, className = '' }: { content: string;
   const [expanded, setExpanded] = useState(false);
 
   let parsed: Record<string, unknown> | undefined;
+  let listed: Record<string, unknown>[] | undefined;
   try {
     const value = JSON.parse(content);
-    if (value && typeof value === 'object' && !Array.isArray(value)) parsed = value;
+    if (Array.isArray(value) && value.every(item => item && typeof item === 'object')) {
+      listed = value as Record<string, unknown>[];
+    } else if (value && typeof value === 'object') {
+      parsed = value as Record<string, unknown>;
+    }
   } catch { /* not JSON: it is prose, and prose renders as prose */ }
+
+  // A chapter map is a list of per-chapter decisions: one readable card each,
+  // decision order, chapter number as the heading. No braces reach the reader.
+  if (listed?.length) {
+    return (
+      <div className={`${className} space-y-4`}>
+        {listed.map((record, index) => {
+          const chapter = readable(record.chapter);
+          const entries = recordEntries(record, CHAPTER_ORDER).filter(entry => entry.label !== 'Chapter');
+          if (!entries.length) return null;
+          return (
+            <section key={chapter || String(index)}>
+              {chapter && <h4 className="text-xs font-semibold text-zinc-200">Chapter {chapter}</h4>}
+              <dl className="mt-2 space-y-3">
+                {entries.map(entry => (
+                  <div key={entry.label}>
+                    <dt className="text-xs font-semibold uppercase text-zinc-500">{entry.label}</dt>
+                    <dd className="text-xs text-zinc-300 mt-1">{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
 
   if (!parsed) return <MarkdownView content={content} className={className} />;
 
   const all = Object.entries(parsed)
-    .map(([key, value]) => ({ key, label: LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()), value: readable(value) }))
+    .map(([key, value]) => ({ key, label: prettyLabel(key), value: readable(value) }))
     .filter((entry): entry is { key: string; label: string; value: string } => Boolean(entry.value));
 
   if (!all.length) return <MarkdownView content={content} className={className} />;

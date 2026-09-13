@@ -6,8 +6,8 @@ import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
 import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
+import { currentGateMode, setSemanticGateMode, type GateMode } from '../utils/novel/v2/semanticGate';
 import { fetchOllamaModels } from '../services/ollamaService';
-import LocalModelToggles from './LocalModelToggles';
 import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
@@ -36,9 +36,10 @@ const UserInput: React.FC<UserInputProps> = ({
   isLoading,
 }) => {
   const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
+  const [semanticGate, setSemanticGate] = useState<GateMode>(() => currentGateMode());
   const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
     const stored = getStoredValidatorConfig();
-    return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? true, enabled: Boolean(stored) };
+    return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? false, enabled: Boolean(stored) };
   });
 
   const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
@@ -62,6 +63,33 @@ const UserInput: React.FC<UserInputProps> = ({
           const updated = { ...providerConfig, ollamaModel: models[0] };
           setProviderConfig(updated);
           saveStoredProviderConfig(updated);
+        }
+      } else {
+        setFetchStatus({
+          success: false,
+          message: 'Ollama is reachable, but model list is empty. Pull a model via `ollama pull llama3.1`.'
+        });
+      }
+    } catch (err: any) {
+      setFetchStatus({
+        success: false,
+        message: err.message || 'Cannot connect to Ollama. Make sure Ollama server is running.'
+      });
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
+  const handleFetchEditorModels = async () => {
+    setIsFetchingModels(true);
+    setFetchStatus(null);
+    try {
+      const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
+      setOllamaModels(models);
+      if (models.length > 0) {
+        setFetchStatus({ success: true, message: `Found ${models.length} models in Ollama` });
+        if (!models.includes(validator.ollamaModel)) {
+          updateValidator({ ollamaModel: models[0] });
         }
       } else {
         setFetchStatus({
@@ -178,6 +206,9 @@ const UserInput: React.FC<UserInputProps> = ({
                     const updated = { ...providerConfig, ollamaEndpoint: e.target.value };
                     setProviderConfig(updated);
                     saveStoredProviderConfig(updated);
+                    if (validator.enabled && validator.provider === 'ollama') {
+                      updateValidator({ ollamaEndpoint: e.target.value });
+                    }
                   }}
                   placeholder="/api/ollama"
                   className="text-xs py-1.5"
@@ -239,6 +270,47 @@ const UserInput: React.FC<UserInputProps> = ({
               </div>
             </div>
 
+            <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={providerConfig.think ?? false}
+                onChange={(e) => {
+                  const updated = { ...providerConfig, think: e.target.checked };
+                  setProviderConfig(updated);
+                  saveStoredProviderConfig(updated);
+                }}
+                className="accent-zinc-200"
+              />
+              <span className="font-medium">Reasoning (think)</span>
+            </label>
+            <p className="text-xs text-zinc-500">
+              Reasoning models spend the output budget on thinking before answering — on capped
+              calls the answer gets cut off. Keep off unless the prose clearly needs it.
+            </p>
+
+            <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+              <span className="font-medium">Semantic pre-write check</span>
+              <select
+                value={semanticGate}
+                onChange={(e) => {
+                  const mode = e.target.value as GateMode;
+                  setSemanticGate(mode);
+                  setSemanticGateMode(mode);
+                }}
+                className="bg-zinc-900 border border-zinc-800 rounded text-xs px-2 py-1 text-zinc-300"
+              >
+                <option value="light">Light — fast, ~90MB</option>
+                <option value="full">Full — slow, ~700MB</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+            <p className="text-xs text-zinc-500">
+              Local models read each chapter plan against finished prose and confirmed state
+              before writing. Light catches paraphrase-level restaging; full adds plan-vs-memory
+              clashes. Findings advise the plan review, never block. Weights download once
+              with progress shown, then run on your machine. Off is reported in the run warnings.
+            </p>
+
             {fetchStatus && (
               <div
                 className={`text-xs px-3 py-2 rounded ${
@@ -252,6 +324,121 @@ const UserInput: React.FC<UserInputProps> = ({
             )}
           </div>
         )}
+
+        {/* Editor (critic) model — a different model than the writer catches blind spots
+            the writer cannot see in its own prose. Off means the writer judges itself. */}
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
+          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={validator.enabled}
+              onChange={(e) => updateValidator(e.target.checked
+                // Entering with the writer's current endpoint so the editor never
+                // points at a stale address from an older stored config.
+                ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint }
+                : { enabled: false })}
+              className="accent-zinc-200"
+            />
+            <span className="font-medium">Separate editor model</span>
+          </label>
+          <p className="text-xs text-zinc-500">
+            The editor reviews chapter plans and prose. A different model than the writer is strongly
+            recommended — off means the writer judges its own text, which is the weakest configuration.
+          </p>
+
+          {validator.enabled && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => updateValidator({ provider: 'gemini' })}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                    validator.provider === 'gemini'
+                      ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-300'
+                  }`}
+                >
+                  Gemini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateValidator({ provider: 'ollama' })}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                    validator.provider === 'ollama'
+                      ? 'bg-zinc-200 text-zinc-900 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-300'
+                  }`}
+                >
+                  Ollama
+                </button>
+              </div>
+
+              {validator.provider === 'gemini' ? (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                    Editor Gemini Model
+                  </label>
+                  <Input
+                    type="text"
+                    value={validator.geminiModel || ''}
+                    onChange={(e) => {
+                      const typed = e.target.value.trim();
+                      const change: Partial<LLMProviderConfig & { enabled: boolean }> = {};
+                      if (typed) change.geminiModel = typed;
+                      else change.geminiModel = undefined;
+                      updateValidator(change);
+                    }}
+                    placeholder={GEMINI_MODEL_NAME}
+                    className="text-xs py-1.5 font-mono"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Pick a different model than the writer — empty means the default ({GEMINI_MODEL_NAME})
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-zinc-400">
+                      Editor Ollama Model
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleFetchEditorModels}
+                      disabled={isFetchingModels}
+                      className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
+                    </button>
+                  </div>
+                  {ollamaModels.length > 0 ? (
+                    <Select
+                      value={validator.ollamaModel}
+                      onChange={(e) => updateValidator({ ollamaModel: e.target.value })}
+                      className="text-xs py-1.5"
+                    >
+                      {ollamaModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      type="text"
+                      value={validator.ollamaModel}
+                      onChange={(e) => updateValidator({ ollamaModel: e.target.value })}
+                      placeholder="llama3.1"
+                      className="text-xs py-1.5"
+                    />
+                  )}
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Uses the same Ollama endpoint as the writer
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
       </div>
 
@@ -324,14 +511,6 @@ const UserInput: React.FC<UserInputProps> = ({
             <Input id="targetWords" type="number" min={300} max={10000} step={100}
               value={storySettings.targetWordsPerChapter || 4000}
               onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
-          </div>
-          <div>
-            <label htmlFor="chapterMode" className="block text-sm font-medium text-zinc-400 mb-1.5">Chapter drafting mode</label>
-            <Select id="chapterMode" value={storySettings.chapterMode || 'auto'} onChange={event => setStorySettings({ ...storySettings, chapterMode: event.target.value === 'auto' ? undefined : event.target.value as 'full' | 'scene' })}>
-              <option value="auto">Automatic — whole short chapters, scenes for long chapters</option>
-              <option value="scene">Scene by scene (recommended for 2500–5000 words — full volume & deep dialogue)</option>
-              <option value="full">Full chapter in 1 prompt (fast — best for up to 1500–2000 words)</option>
-            </Select>
           </div>
           <div>
             <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>

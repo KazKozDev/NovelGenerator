@@ -1,0 +1,97 @@
+# P03_CHAPTER_PLAN — the nearest chapter
+
+When: before each chapter.
+
+TASK
+Plan only the current chapter, based on the actually written story.
+Prepare scenes so the writer can immediately create full prose.
+
+Book construction:
+{{book_design_digest}}
+
+Chapter:
+{{chapter_number}} of {{chapter_count}}
+
+Chapter purpose in the overall map:
+{{chapter_map_entry}}
+
+Current state:
+{{current_state}}
+
+Previous chapter outcome:
+{{previous_chapter_outcome}}
+
+Open promises and finale dependencies:
+{{open_threads_and_ending_requirements}}
+
+Remaining length:
+{{remaining_word_budget}}
+
+REQUIREMENTS
+- Define what this chapter adds and what changes by its end.
+- Choose the scene count by content.
+- For each scene set participant intentions, starting conditions,
+  and a substantive outcome.
+- Participants are character ids exactly as cast — never roles,
+  names, or descriptions. A role where an id should be is not resolved
+  by guessing: it becomes an unknown-participant problem for the review,
+  mapped against the roster in words or refused, never substituted silently.
+- A required outcome states a change — position, possession, knowledge,
+  or commitment held differently at the end. Never a prolonged posture
+  in the setup's own words; an outcome that restates the setup is
+  rejected in code before any review.
+- Account for the actions of other parties even when they happen off POV.
+- Distinguish changes of situation, relationships, knowledge, and understanding.
+- Leave the writer freedom in lines, details, and the course of interaction.
+- Do not introduce a new line without a function and room for its consequences.
+- Do not repeat what was already shown for the sake of length.
+- Do not demand equal intensity and structure of all scenes.
+- In required_fact_refs cite only identifiers from the facts array
+  of the current state. Character knowledge and premise givens are already
+  in the scene package — do not duplicate them with fact refs. If a scene
+  must establish something for the first time, leave the refs empty and let
+  the scene establish it.
+
+BEFORE ANSWERING
+Check availability of knowledge and means, transitions between scenes,
+the necessity of each scene, and the feasibility of the outcome.
+
+If the chapter contradicts the accepted state and requires revising
+the overall map, return status = "needs_replan" with a concrete reason.
+Do not hide the problem with an invented event in the past.
+
+FORMAT
+JSON only:
+
+{
+  "status": "ready",
+  "chapter": 1,
+  "function": "",
+  "starting_situation": "",
+  "ending_change": "",
+  "scenes": [
+    {
+      "id": "CH01_S01",
+      "pov_id": "",
+      "location": "",
+      "story_time": "",
+      "participants": [],
+      "initial_conditions": [],
+      "function": "",
+      "participant_intentions": [
+        {"character_id": "", "intention": "", "reason_now": ""}
+      ],
+      "pressure_or_uncertainty": "",
+      "development": "",
+      "required_outcome": "",
+      "flexible_elements": [],
+      "required_fact_refs": [],
+      "required_source_refs": [],
+      "setup_or_payoff": [],
+      "transition_to_next": "",
+      "target_words": 0
+    }
+  ],
+  "forward_dependencies": [],
+  "replan_reason": null
+}

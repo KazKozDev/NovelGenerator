@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
-import { stepName } from '../hooks/useBookGenerator';
+import { elapsedLabel } from '../components/RunClock';
+import { bookTitle, splitError, stepName } from '../hooks/useBookGenerator';
 import { GenerationStep } from '../types';
 
 describe('ThreeZoneGenerationView', () => {
@@ -57,12 +58,34 @@ describe('ThreeZoneGenerationView', () => {
     // Zone 2: Live Prose Stream
     expect(html).toContain('data-testid="zone-prose"');
 
-    // Zone 3: Agent Activity & Telemetry
+    // Zone 3: live chapter checks above the agent telemetry.
     expect(html).toContain('data-testid="zone-agent-inspector"');
     expect(html).toContain('Strategy: polish');
-    // Zone 3 is split: live chapter checks on top, the log below.
     expect(html).toContain('data-testid="zone-checks"');
     expect(html).toContain('Originality');
+  });
+
+  it('never doubles the chapter number in the prose heading', () => {
+    // The v2 hook stores bare titles ("Chapter 1"); the view must not
+    // prefix its own "Chapter N:" on top of one.
+    const bare = [{ title: 'Chapter 1', content: 'Ann climbed while the storm took the rail.' }];
+    const named = [{ title: 'Chapter 1: The Awakening', content: 'Ann climbed while the storm took the rail.' }];
+    const render = (chapters: { title: string; content: string }[]) => renderToStaticMarkup(
+      <ThreeZoneGenerationView
+        currentStep={GenerationStep.GeneratingChapters}
+        currentChapterProcessing={1}
+        totalChaptersToProcess={1}
+        currentStoryOutline=""
+        currentChapterPlan=""
+        generatedChapters={chapters}
+        agentLogs={[]}
+        isLoading={false}
+      />,
+    );
+    expect(render(bare)).not.toContain('Chapter 1: Chapter 1');
+    expect(render(bare)).toContain('Chapter 1');
+    expect(render(named)).not.toContain('Chapter 1: Chapter 1');
+    expect(render(named)).toContain('Chapter 1: The Awakening');
   });
 
   it('renders a long chapter plan without cutting its text', () => {
@@ -115,6 +138,33 @@ describe('ThreeZoneGenerationView', () => {
     expect(html).not.toContain('The doubling becomes undeniable.');
   });
 
+  it('renders a chapter map array as labelled cards instead of raw JSON', () => {
+    const plan = JSON.stringify([
+      { chapter: 1, function: 'Establish the dark lighthouse.', main_change: 'Ann faces the crisis.', event_ids: ['E01', 'E02'], pov_id: 'C01', target_words: 2500 },
+      { chapter: 2, function: 'Escalate through the failed repair.', main_change: 'The lens resists.', event_ids: ['E05'], pov_id: 'C01', target_words: 2500 },
+    ]);
+    const chapters = [{ ...mockChapters[0], plan }, ...mockChapters.slice(1)];
+
+    const html = renderToStaticMarkup(
+      <ThreeZoneGenerationView
+        currentStep={GenerationStep.GeneratingChapters}
+        currentChapterProcessing={1}
+        totalChaptersToProcess={2}
+        currentStoryOutline="outline"
+        currentChapterPlan=""
+        generatedChapters={chapters}
+        agentLogs={mockLogs}
+      />
+    );
+
+    expect(html).toContain('Establish the dark lighthouse.');
+    expect(html).toContain('Main Change');
+    expect(html).toContain('E01 · E02');
+    expect(html).toContain('>POV<');
+    expect(html).not.toContain('&quot;function&quot;');
+    expect(html).not.toContain('&quot;event_ids&quot;');
+  });
+
   it('shows the measured texture of the chapter on screen, findings included', () => {
     const measured = [{
       title: 'Chapter 1: The Awakening',
@@ -144,13 +194,46 @@ describe('ThreeZoneGenerationView', () => {
 });
 
 describe('The agent log', () => {
-  it('names the step instead of quoting its system prompt', () => {
-    expect(stepName('You extract evidence from fiction, separating accepted events from intentions. Respond only with JSON. OUTPUT CONTRACT: Return exactly one complete JSON object.')).toBe('Extracting what the chapter established');
-    expect(stepName('You are a rigorous fiction continuity and developmental editor. Respond only with the requested JSON.')).toBe('Reviewing the chapter');
-    expect(stepName('You keep the continuity record for a novel in progress. You report only what the supplied prose establishes and compose nothing of your own.')).toBe('Noting what the scene established');
-    expect(stepName('You perform targeted fiction revision on named passages. Return only the requested JSON.')).toBe('Repairing the passages a finding names');
-    expect(stepName('You are the single prose writer for this novel.')).toBe('Writing a scene');
+  it('names the step instead of quoting its prompt', () => {
+    expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Designing the book');
+    expect(stepName('Check whether the provided plan is ready for writing.')).toBe('Reviewing the plan');
+  });
+
+  it('titles a book by its design, and cuts a fallback premise at a word', () => {
+    expect(bookTitle('The Sorrow Light', 'A lighthouse keeper on a dying coast')).toBe('The Sorrow Light');
+    expect(bookTitle('   ', 'A short premise')).toBe('A short premise');
+    const premise = 'A lighthouse keeper on a dying coast discovers that the ships she guides home have been sinking for thirty years.';
+    const fallback = bookTitle(undefined, premise);
+    expect(fallback.length).toBeLessThanOrEqual(81);
+    expect(fallback.endsWith('…')).toBe(true);
+    expect(premise.startsWith(fallback.slice(0, -1))).toBe(true);
+    expect(fallback.slice(0, -1).endsWith(' ')).toBe(false);
+    expect(bookTitle(undefined, '   ')).toBe('Untitled book');
+  });
+
+  it('shows a failure as one line, with the reviewer prose behind a disclosure', () => {
+    const refusal = 'Book design not executable after 3 attempts. Unresolved:\n[blocking] causal_map.E08: the plan never says why the magic cannot be regenerated. Required decision: clarify it.';
+    const split = splitError(refusal);
+    expect(split.headline).toBe('Book design not executable after 3 attempts.');
+    expect(split.detail).toContain('causal_map.E08');
+    const short = splitError('Time budget exhausted.');
+    expect(short.headline).toBe('Time budget exhausted.');
+    expect(short.detail).toBe('');
+    expect(splitError('').headline).toBe('Generation failed.');
+  });
+
+  it('says how long the run has been going in units a waiting reader uses', () => {
+    expect(elapsedLabel(20 * 1000)).toBe('under a minute');
+    expect(elapsedLabel(7 * 60 * 1000)).toBe('7 min');
+    expect(elapsedLabel(60 * 60 * 1000)).toBe('1 h');
+    expect(elapsedLabel(72 * 60 * 1000)).toBe('1 h 12 min');
+    expect(elapsedLabel(-5)).toBe('');
+    expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
+    expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
+    expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');
+    expect(stepName('Refine the forward plan based on the actually written chapter.')).toBe('Reconciling the plan');
+    expect(stepName('Check the integrity of the finished book.')).toBe('Auditing the finished book');
     // Anything unrecognised is shown as itself, shortened, rather than as nothing.
-    expect(stepName('Some system prompt nobody has mapped yet')).toBe('Some system prompt nobody has mapped yet');
+    expect(stepName('Some prompt nobody has mapped yet')).toBe('Some prompt nobody has mapped yet');
   });
 });
