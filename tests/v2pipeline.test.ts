@@ -3,7 +3,7 @@ import { Orchestrator } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { BrowserProjectStore, emptyState, MemoryProjectStore } from '../utils/novel/v2/store';
 import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/novel/v2/planner';
-import { buildSceneHandoff } from '../utils/novel/v2/handoff';
+import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/handoff';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
@@ -499,6 +499,28 @@ describe('v2 chapter pipeline end to end', () => {
     const handoff = store.chapterScenes(1)[0].handoff;
     expect(handoff?.previous_outcome).toBe('Zor reaches the lamp room.');
     expect(handoff?.known_to_reader).toContain('Zor reaches the lamp room.');
+  });
+
+  it('normalizes object-shaped forward entries instead of calling trim on them', () => {
+    const base = buildSceneHandoff({
+      scene: plan(1).scenes[0], state: applyDelta(emptyState(), delta(), 'CH01_S01').state,
+      delta: delta(), resolutions: [], threads: [],
+    });
+    const malformed = {
+      ...forward(),
+      consequences_to_carry_forward: [{ description: 'The lamp is now dark.' }],
+      next_chapter_inputs: {
+        ...forward().next_chapter_inputs,
+        active_intentions: [{ character_id: 'C01', intention: 'Relight the lamp.' }],
+        necessary_content: [{ content: 'Show the failed ignition.' }],
+      },
+      unresolved_blockers: [{ question: 'Who cut the fuel line?' }],
+    } as unknown as ReturnType<typeof forward>;
+    const result = applyForwardToHandoff(base, malformed);
+    expect(result.confirmed_changes).toContain('The lamp is now dark.');
+    expect(result.active_intentions).toContain('C01: Relight the lamp.');
+    expect(result.required_new_outcome).toBe('Show the failed ignition.');
+    expect(result.open_questions).toContain('Who cut the fuel line?');
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {

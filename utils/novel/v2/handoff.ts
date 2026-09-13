@@ -1,18 +1,24 @@
 import type { ForwardUpdate, ReaderThread, SceneHandoff, ScenePlan, StateDelta, StoryState } from './types';
 import type { QuestionResolution } from './tracker';
 
-function unique(items: string[]): string[] {
-  return [...new Set(items.map(item => item.trim()).filter(Boolean))];
-}
-
 function describeUnknown(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(describeUnknown).filter(Boolean).join('; ');
   if (!value || typeof value !== 'object') return '';
   const item = value as Record<string, unknown>;
-  for (const key of ['description', 'commitment', 'intention', 'decision', 'action']) {
-    if (typeof item[key] === 'string') return item[key] as string;
+  if (typeof item.character_id === 'string' && typeof item.intention === 'string') {
+    return `${item.character_id}: ${item.intention}`;
+  }
+  for (const key of ['description', 'consequence', 'commitment', 'intention', 'decision', 'action', 'question', 'content', 'outcome']) {
+    if (typeof item[key] === 'string') return (item[key] as string).trim();
   }
   try { return JSON.stringify(value); } catch { return ''; }
+}
+
+/** LLM JSON schemas constrain the top level, but some models wrap list entries in objects. */
+function unique(items: unknown[]): string[] {
+  return [...new Set(items.map(describeUnknown).filter(Boolean))];
 }
 
 function deltaChanges(delta: StateDelta): string[] {
@@ -27,11 +33,11 @@ function deltaChanges(delta: StateDelta): string[] {
 }
 
 function actualOutcome(delta: StateDelta, scene: ScenePlan, changes: string[]): string {
-  return delta.events.at(-1)?.description
+  return describeUnknown(delta.events.at(-1)?.description
     || delta.state_changes.at(-1)?.after
     || delta.knowledge_changes.at(-1)?.learned
     || changes.at(-1)
-    || scene.required_outcome;
+    || scene.required_outcome);
 }
 
 export function buildSceneHandoff(input: {
@@ -82,13 +88,20 @@ export function buildSceneHandoff(input: {
 }
 
 export function applyForwardToHandoff(handoff: SceneHandoff, forward: ForwardUpdate): SceneHandoff {
+  const consequences = Array.isArray(forward.consequences_to_carry_forward) ? forward.consequences_to_carry_forward : [];
+  const blockers = Array.isArray(forward.unresolved_blockers) ? forward.unresolved_blockers : [];
+  const next = forward.next_chapter_inputs && typeof forward.next_chapter_inputs === 'object'
+    ? forward.next_chapter_inputs : { active_intentions: [], necessary_content: [] };
+  const intentions = Array.isArray(next.active_intentions) ? next.active_intentions : [];
+  const necessary = Array.isArray(next.necessary_content) ? next.necessary_content : [];
+  const chapterOutcome = describeUnknown(forward.chapter_outcome) || handoff.previous_outcome;
   return {
     ...handoff,
-    confirmed_changes: unique([...handoff.confirmed_changes, ...forward.consequences_to_carry_forward]),
-    open_questions: unique([...handoff.open_questions, ...forward.unresolved_blockers]),
-    active_intentions: unique([...forward.next_chapter_inputs.active_intentions]),
-    previous_outcome: forward.chapter_outcome || handoff.previous_outcome,
-    required_new_outcome: forward.next_chapter_inputs.necessary_content.join('; '),
-    forbidden_restatements: unique([...handoff.forbidden_restatements, forward.chapter_outcome]),
+    confirmed_changes: unique([...handoff.confirmed_changes, ...consequences]),
+    open_questions: unique([...handoff.open_questions, ...blockers]),
+    active_intentions: unique(intentions),
+    previous_outcome: chapterOutcome,
+    required_new_outcome: unique(necessary).join('; '),
+    forbidden_restatements: unique([...handoff.forbidden_restatements, chapterOutcome]),
   };
 }

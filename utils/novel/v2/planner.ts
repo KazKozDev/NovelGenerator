@@ -106,13 +106,13 @@ export async function rebaseScenePlan(input: {
   });
   const raw = await structuredResponse(prompt, system, llm, SCENE_KEYS, parsed => {
     const candidate = parsed as ScenePlan;
-    if (!candidate.required_outcome?.trim()) {
+    if (typeof candidate.required_outcome !== 'string' || !candidate.required_outcome.trim()) {
       throw new Error(`Scene ${input.scene.id} rebase returned no required outcome.`);
     }
     if (candidate.id !== input.scene.id) {
       throw new Error(`Scene rebase changed id ${input.scene.id} to ${candidate.id || '(empty)'}.`);
     }
-    if (input.handoff.previous_outcome.trim()
+    if (typeof input.handoff.previous_outcome === 'string' && input.handoff.previous_outcome.trim()
       && isStaticOutcome(input.handoff.previous_outcome, candidate.required_outcome)) {
       throw new Error(`Scene ${candidate.id} repeats the accepted outcome instead of advancing it.`);
     }
