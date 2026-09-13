@@ -10,10 +10,10 @@ import StreamingContentView from './StreamingContentView';
 import AgentActivityLog from './AgentActivityLog';
 
 import SaveStatusIndicator from './SaveStatusIndicator';
+import { RunClock } from './RunClock';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Button } from './common/Button';
 import { MarkdownView } from './common/MarkdownView';
-
 export interface ThreeZoneGenerationViewProps {
   currentStep: GenerationStep;
   currentChapterProcessing: number;
@@ -122,6 +122,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <div className="flex items-center gap-2 text-zinc-400 text-xs">
               <LoadingSpinner className="!my-0 !h-3.5 !w-3.5" />
               <span>Generating</span>
+              <RunClock agentLogs={agentLogs} isLoading={isLoading} />
             </div>
           )}
           {isResumable && !isLoading && onResumeGeneration && (

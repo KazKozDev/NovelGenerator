@@ -3,6 +3,7 @@
 
 import React, { useEffect } from 'react';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
+import { RunClock } from './components/RunClock';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
@@ -223,6 +224,9 @@ const App: React.FC = () => {
             <LoadingSpinner />
             <p className="mt-4 text-zinc-300 text-sm font-medium">Designing the book...</p>
             <p className="mt-1 text-zinc-500 text-xs">Causal map, characters, chapter plan and construction review</p>
+            {/* The longest single wait in a run, and the one with no chapter
+                view to show progress in. Without a clock it reads as hung. */}
+            <p className="mt-3 text-xs"><RunClock agentLogs={agentLogs} isLoading={isLoading} /></p>
           </div>
         )}
 

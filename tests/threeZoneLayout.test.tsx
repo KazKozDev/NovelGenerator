@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
+import { elapsedLabel } from '../components/RunClock';
 import { bookTitle, splitError, stepName } from '../hooks/useBookGenerator';
 import { GenerationStep } from '../types';
 
@@ -219,6 +220,14 @@ describe('The agent log', () => {
     expect(short.headline).toBe('Time budget exhausted.');
     expect(short.detail).toBe('');
     expect(splitError('').headline).toBe('Generation failed.');
+  });
+
+  it('says how long the run has been going in units a waiting reader uses', () => {
+    expect(elapsedLabel(20 * 1000)).toBe('under a minute');
+    expect(elapsedLabel(7 * 60 * 1000)).toBe('7 min');
+    expect(elapsedLabel(60 * 60 * 1000)).toBe('1 h');
+    expect(elapsedLabel(72 * 60 * 1000)).toBe('1 h 12 min');
+    expect(elapsedLabel(-5)).toBe('');
     expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
     expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
     expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');
