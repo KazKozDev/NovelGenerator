@@ -34,5 +34,3 @@ runs/
 # Serena agent workspace
 .serena/
 
-# BookNLP / F-Coref virtualenv for the speech map (see scripts/speech-map.py)
-.venv-booknlp/
