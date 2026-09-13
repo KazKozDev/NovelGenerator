@@ -131,8 +131,9 @@ Set in the app before generation starts.
 
 - Business Source License 1.1 — source available, not an OSI open-source licence
 - Verified on macOS only; there is no CI, so Linux and Windows are untested
-- The construction review can refuse a design three times and end the run before a page is
-  written; the error screen offers to change the premise or the models and try again
+- The construction review can still end a run before a page is written, but only over what
+  code charges — a premise name nobody in the cast answers to; its own remaining objections
+  travel into the contract instead, and the error screen offers a way back to the form
 - A model that ignores JSON Schema stalls the run, and a capped output budget fails a call
   outright rather than returning a short answer
 - Prose texture is measured only as repeated phrasing: the audit reports a beat the book
@@ -150,7 +151,7 @@ npm test
 
 ```
  Test Files  13 passed (13)
-      Tests  116 passed (116)
+      Tests  122 passed (122)
 ```
 
 ### Production build
