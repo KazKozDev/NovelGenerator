@@ -1,17 +1,23 @@
-# NovelGenerator — AI novel writing app for Gemini and Ollama
+# NovelGenerator — local AI novel generator for Gemini and Ollama
 
-Turn a one-paragraph premise into a full manuscript, chapter by chapter.
+NovelGenerator is a source-available AI novel writer that turns a one-paragraph premise
+into a full manuscript, chapter by chapter. Run it with Gemini or use Ollama as a local AI
+writer with your own model.
+
+It is built for long-form story generation rather than isolated prompts: causal planning,
+persistent story memory, explicit scene handoffs and continuity checks keep characters,
+facts and open plot threads available as the novel grows.
 
 
 
 <!-- TODO(user): screenshot predates the current engine — re-capture the generation view -->
 ![The generation view while chapters are written and reviewed](https://github.com/user-attachments/assets/e04135c1-9196-467c-a0d2-71628c28ab27)
 
-Runs on your machine · Gemini or Ollama · Source available
+AI novel generator · Local LLM and Ollama · Long-form fiction · Persistent story memory · Continuity checking
 
 ---
 
-## Quick start
+## Run the AI novel generator locally
 
 ```bash
 git clone https://github.com/KazKozDev/NovelGenerator.git
@@ -36,7 +42,14 @@ engine designs the book, reviews its own construction, then writes chapter by ch
 scene by scene without asking you to approve anything mid-run. Export the finished book as
 EPUB, PDF, TXT or Markdown, and the audit as JSON.
 
-## Write a novel from a one-paragraph premise
+### Use Ollama as a local AI novel writer
+
+Select **Ollama** in the app to write with a model served from your machine. This is the
+local/private path: manuscript generation does not require sending the premise or chapters
+to Gemini. You can use one model for prose and a separate Ollama model for planning,
+continuity review and the final audit.
+
+## Write a full novel chapter by chapter
 
 The premise is the whole input. From it the engine builds one compact construction — cast,
 world rules, a causal map, an ending and a chapter map — and refuses to write against a
@@ -53,9 +66,12 @@ what changed — events, locations, who knows what, which promises opened and cl
 each record must cite the paragraph that proves it; a citation pointing nowhere is rejected
 and asked again.
 
-The next scene is planned from that memory rather than from the outline, so chapter 7 is
-written against what the book established, not against what chapter 1 intended. A scene
-that contradicts confirmed state is rewritten once, with the contradiction named.
+The accepted scene produces an explicit handoff: what the reader already knows, what
+actually changed, which question remains open and what the next scene must accomplish
+differently. The next scene's causal plan is rebased on that handoff before prose is
+written, so chapter 7 follows what the book established, not merely what chapter 1
+intended. A scene that contradicts confirmed state is rewritten once, with the
+contradiction named.
 
 ## Run a full book from the terminal and inspect every model call
 
@@ -81,7 +97,7 @@ against the Gemini transport instead, with `--writer`/`--editor` as model names.
 
 Two models, two roles. The **writer** produces prose. The **editor** plans, reviews,
 extracts memory and audits the finished book; without a separate editor the writer judges
-its own prose, which is the weakest configuration this engine allows. Seven prompts live as
+its own prose, which is the weakest configuration this engine allows. Eight prompts live as
 files under `prompts/`, one per stage, and code never hand-builds them — it names a prompt
 and supplies its variables. Before any prose exists, structural doubts about a scene (no
 viewpoint, an outcome that changes nothing, a location the memory contradicts) go to a
@@ -91,7 +107,7 @@ scene costs at most the call in flight: reopening offers to continue, and finish
 keep their manuscript and memory.
 
 ```
-premise → design → plan review → chapter plan → scene → story memory → audit → export
+premise → design → chapter plan → scene → handoff → rebase → next scene → audit → export
 ```
 
 ## Configuration
@@ -157,7 +173,7 @@ npm test
 
 ```
  Test Files  13 passed (13)
-      Tests  122 passed (122)
+      Tests  126 passed (126)
 ```
 
 ### Production build
