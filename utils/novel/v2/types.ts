@@ -155,6 +155,23 @@ export interface ChapterPlan {
   replan_reason: string | null;
 }
 
+/**
+ * The explicit semantic boundary between two scenes. Unlike StoryState, which
+ * is the durable ledger, this is the compact writing contract for what the
+ * next scene inherits, must not explain again, and still has to change.
+ */
+export interface SceneHandoff {
+  after_scene_id: string;
+  known_to_reader: string[];
+  confirmed_changes: string[];
+  current_conditions: Record<string, string>;
+  open_questions: string[];
+  active_intentions: string[];
+  previous_outcome: string;
+  required_new_outcome: string;
+  forbidden_restatements: string[];
+}
+
 /** One memory delta from P05: only text-confirmed changes, every record quoted. */
 export interface BeliefChange {
   character_id: string;

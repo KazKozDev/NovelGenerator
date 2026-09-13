@@ -17,6 +17,9 @@ SCENE TASK
 STARTING STATE
 {{scene_start_state}}
 
+STATE HANDOFF FROM ACCEPTED PROSE
+{{state_handoff}}
+
 PARTICIPANTS
 {{character_cards}}
 
@@ -62,6 +65,12 @@ Complete the scene's substantive movement without padding for word count.
 
 WRITING
 - Start in a concrete situation, honoring the previous transition.
+- Treat everything in known_to_reader as already understood by the reader.
+  Do not explain forbidden_restatements again; mention one only when the current
+  action changes its consequence or meaning.
+- Resolve only open_questions that this scene can answer on the page.
+- Make the ending materially different from previous_outcome and satisfy
+  required_new_outcome through action, discovery, loss, or commitment.
 - Drive the scene through intentions, actions, perception, and interaction.
 - Let lines depend on what the speakers pursue,
   what they know, and what they are willing to say.

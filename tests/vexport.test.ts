@@ -32,6 +32,14 @@ function filled(): MemoryProjectStore {
   store.saveInput(input);
   store.saveDesign(design());
   store.saveManuscript(1, 'Zor climbed.');
+  store.saveScene({
+    id: 'CH01_S01', chapter: 1, prose: 'Zor climbed.', paragraph_ids: ['p1'], plan: null, delta: null,
+    handoff: {
+      after_scene_id: 'CH01_S01', known_to_reader: ['Zor climbed.'], confirmed_changes: ['Zor climbed.'],
+      current_conditions: {}, open_questions: ['What is upstairs?'], active_intentions: [],
+      previous_outcome: 'Zor climbed.', required_new_outcome: '', forbidden_restatements: ['Zor climbed.'],
+    },
+  });
   store.saveState({ facts: [], events: [{ id: 'x', description: 'd', participants: [], evidence_refs: [] }], conditions: {}, knowledge: {}, beliefs: {}, reader_disclosures: [], names: [] });
   store.saveStateSnapshot(1, store.loadState());
   store.saveThreads([{ id: 't1', description: 'door', status: 'open', setup_refs: [], payoff_refs: [] }]);
@@ -49,6 +57,7 @@ describe('project snapshot', () => {
     restoreSnapshot(fresh, JSON.parse(JSON.stringify(snap)));
     expect(fresh.manuscript()).toEqual([{ chapter: 1, text: 'Zor climbed.' }]);
     expect(fresh.loadStateSnapshot(1)?.events).toHaveLength(1);
+    expect(fresh.chapterScenes(1)[0].handoff?.open_questions).toEqual(['What is upstairs?']);
     expect(fresh.loadThreads()).toHaveLength(1);
     expect(fresh.loadChapterMap()).toHaveLength(1);
     expect(fresh.checkpoints()).toContain('chapter-1');

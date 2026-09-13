@@ -1,4 +1,4 @@
-import type { BookDesign, ChapterMapEntry, ChapterPlan, FinalReport, ProjectInput, ReaderThread, StateDelta, StoryState, StyleContract } from './types';
+import type { BookDesign, ChapterMapEntry, ChapterPlan, FinalReport, ProjectInput, ReaderThread, SceneHandoff, StateDelta, StoryState, StyleContract } from './types';
 import type { QuestionResolution } from './tracker';
 
 /**
@@ -19,6 +19,8 @@ export interface SceneRecord {
   paragraph_ids: string[];
   plan: ChapterPlan['scenes'][number] | null;
   delta: StateDelta | null;
+  /** Explicit semantic state passed to the next scene, persisted with the evidence that produced it. */
+  handoff?: SceneHandoff;
   /** Answers folded with the delta, so a resume replays instead of re-asking. */
   resolutions?: QuestionResolution[];
 }

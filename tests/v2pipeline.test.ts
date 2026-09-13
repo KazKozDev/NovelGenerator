@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { Orchestrator } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { BrowserProjectStore, emptyState, MemoryProjectStore } from '../utils/novel/v2/store';
-import { buildSceneContext, checkReadiness } from '../utils/novel/v2/planner';
+import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/novel/v2/planner';
+import { buildSceneHandoff } from '../utils/novel/v2/handoff';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
@@ -113,6 +114,14 @@ function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
       const chapter = prompt.includes('"chapter":2') || prompt.includes('Chapter:\n2 of') ? 2 : 1;
       return JSON.stringify(plan(chapter));
     }
+    if (prompt.includes('Update the next scene plan against the explicit handoff')) {
+      const match = prompt.match(/Original scene plan:\n(\{[^\n]+\})/);
+      const scene = match ? JSON.parse(match[1]) : plan(2).scenes[0];
+      if (prompt.includes('"previous_outcome":"Zor reaches the lamp room."')) {
+        scene.required_outcome = 'Zor commits to opening the sea door.';
+      }
+      return JSON.stringify(scene);
+    }
     if (prompt.includes('Write a full literary scene')) return PROSE;
     if (prompt.includes('Extract the essential changes from the new scene')) return JSON.stringify(deltaReply());
     if (prompt.includes('Refine the forward plan')) return JSON.stringify(forward());
@@ -124,9 +133,10 @@ function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
 describe('v2 chapter pipeline end to end', () => {
   it('writes two chapters from confirmed memory and audits clean', async () => {
     const store = new MemoryProjectStore();
+    const llm = fullLlm();
     const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2())
-      .runBook(input, fullLlm());
-    expect(result.status).toBe('COMPLETE');
+      .runBook(input, llm);
+    expect(result.status, result.stoppedReason).toBe('COMPLETE');
     expect(result.report?.status).toBe('COMPLETE');
     const manuscript = store.manuscript();
     expect(manuscript).toHaveLength(2);
@@ -136,6 +146,9 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.loadState().events).toHaveLength(2);
     expect(store.chapterScenes(1)).toHaveLength(1);
     expect(store.runLog().map(e => e.stage)).toContain('audit');
+    expect(store.runLog().map(e => e.stage)).toContain('scene-rebase');
+    expect(vi.mocked(llm).mock.calls.some(([prompt]) => prompt.includes('STATE HANDOFF FROM ACCEPTED PROSE')
+      && prompt.includes('Zor reaches the lamp room.'))).toBe(true);
   });
 
   it('stops the book on a blocking contradiction instead of writing past it', async () => {
@@ -162,7 +175,7 @@ describe('v2 chapter pipeline end to end', () => {
 
     const result = await new Orchestrator(store, { maxCalls: 500, maxTimeMs: 60000 }, new ChapterPipelineV2())
       .runBook(input, fullLlm());
-    expect(result.status).toBe('COMPLETE');
+    expect(result.status, result.stoppedReason).toBe('COMPLETE');
     // The partial scene is gone, the junk delta with it; memory holds one event per chapter.
     expect(store.chapterScenes(2)).toHaveLength(1);
     expect(store.chapterScenes(2)[0].prose).toContain('Zor climbed');
@@ -267,6 +280,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(outcome.warnings.join(' ')).toMatch(/leaves open questions unresolved/);
     expect(store.manuscript()).toHaveLength(1);
     expect(store.loadState().events).toHaveLength(1);
+    expect(store.chapterScenes(1)[0].handoff?.open_questions).toContain('Who rang?');
   });
 
   it('folds answered questions into memory and leaves the rest out', async () => {
@@ -416,6 +430,75 @@ describe('v2 chapter pipeline end to end', () => {
     expect(checkReadiness(design(), emptyState(), restating).map(p => p.code)).toContain('static-outcome');
     const moving = { ...plan(1).scenes[0], function: 'f', development: 'd', required_outcome: 'Zor reaches the lamp room.' };
     expect(checkReadiness(design(), emptyState(), moving).map(p => p.code)).not.toContain('static-outcome');
+  });
+
+  it('builds an explicit handoff with accepted changes and unresolved questions', () => {
+    const changed = {
+      ...delta(),
+      events: [{ description: 'Zor opens the sea door.', participants: ['C01'], evidence_refs: ['p1'] }],
+      reader_disclosures: ['The door answers to the lamp.'],
+      uncertainties: [{ question: 'Who built the door?', evidence_refs: ['p1'], relevant_to_next_scene: true }],
+    };
+    const state = applyDelta(emptyState(), changed, 'CH01_S01').state;
+    const handoff = buildSceneHandoff({
+      scene: plan(1).scenes[0],
+      nextScene: { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Zor crosses the threshold.' },
+      state,
+      delta: changed,
+      resolutions: [{ question: 'Who built the door?', resolution: 'The text does not say.', kind: 'unresolved', subject: '', evidence_refs: ['p1'] }],
+      threads: [],
+    });
+    expect(handoff.previous_outcome).toBe('Zor opens the sea door.');
+    expect(handoff.known_to_reader).toContain('The door answers to the lamp.');
+    expect(handoff.open_questions).toContain('Who built the door?');
+    expect(handoff.required_new_outcome).toBe('Zor crosses the threshold.');
+    expect(handoff.forbidden_restatements).toContain('Zor opens the sea door.');
+  });
+
+  it('puts the full handoff into the next writer package', () => {
+    const handoff = {
+      after_scene_id: 'CH01_S01',
+      known_to_reader: ['The lamp is broken.'],
+      confirmed_changes: ['Zor lost the key.'],
+      current_conditions: { 'C01.location': 'Shore' },
+      open_questions: ['Who rang the bell?'],
+      active_intentions: ['C01: recover the key'],
+      previous_outcome: 'Zor lost the key.',
+      required_new_outcome: 'Zor finds a witness.',
+      forbidden_restatements: ['The lamp is broken.'],
+    };
+    const ctx = buildSceneContext(design(), emptyState(), plan(1).scenes[0], '', [], [], handoff);
+    expect(ctx.vars.state_handoff).toContain('Who rang the bell?');
+    expect(ctx.vars.state_handoff).toContain('The lamp is broken.');
+    expect(ctx.vars.state_handoff).toContain(plan(1).scenes[0].required_outcome);
+  });
+
+  it('rejects a rebased scene that repeats the accepted outcome and retries it', async () => {
+    const original = { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Zor reaches the lamp room.' };
+    const handoff = {
+      after_scene_id: 'CH01_S01', known_to_reader: [], confirmed_changes: [], current_conditions: {},
+      open_questions: [], active_intentions: [], previous_outcome: 'Zor reaches the lamp room.',
+      required_new_outcome: original.required_outcome, forbidden_restatements: [],
+    };
+    let calls = 0;
+    const llm: NovelLLM = vi.fn(async () => JSON.stringify({
+      ...original,
+      required_outcome: calls++ === 0 ? 'Zor reaches the lamp room.' : 'Zor gives the lamp key to Pax.',
+    }));
+    const rebased = await rebaseScenePlan({
+      design: design(), scene: original, handoff, state: emptyState(), openThreads: [],
+      story_language: 'English', planning_language: 'English',
+    }, llm);
+    expect(rebased.required_outcome).toBe('Zor gives the lamp key to Pax.');
+    expect(llm).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists the forward outcome in the last scene handoff', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    const handoff = store.chapterScenes(1)[0].handoff;
+    expect(handoff?.previous_outcome).toBe('Zor reaches the lamp room.');
+    expect(handoff?.known_to_reader).toContain('Zor reaches the lamp room.');
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {

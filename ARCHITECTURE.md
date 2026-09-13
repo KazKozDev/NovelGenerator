@@ -17,7 +17,7 @@ error, never an empty success.
 
 ## Prompts are files
 
-The seven pipeline prompts and the shared system contract live under `prompts/`, one per
+The pipeline prompts and the shared system contract live under `prompts/`, one per
 file. Application code never hand-builds them: it names a prompt and supplies its
 variables through `renderPrompt`, and `fillTemplate` throws on any `{{hole}}` left
 unfilled. `promptVariables` reports what a template declares, so a test can hold code and
@@ -28,6 +28,7 @@ prompt to the same contract — `tests/prompts.test.ts`.
 | `P01_BOOK_DESIGN` | one compact construction: contract, cast, rules, causal map, ending, chapter map |
 | `P02_PLAN_REVIEW` | construction review, and later each scene's readiness |
 | `P03_CHAPTER_PLAN` | one chapter, from confirmed memory |
+| `P03_SCENE_REBASE` | rebase the next scene on the accepted scene handoff |
 | `P04_SCENE_WRITE` | one scene, from a verified package |
 | `P05_STATE_UPDATE` | what the written scene changed, against paragraph evidence |
 | `P06_FORWARD_UPDATE` | reconcile the remaining plan with what was written |
@@ -80,6 +81,13 @@ one correction pass that names the dangling refs, so the retry answers a concret
 question. P05 states what a ref is; code enforcing a rule the prompt never stated is how
 a run dies citing a scene id it had every reason to think was valid.
 
+**Every accepted scene also emits a persisted semantic handoff.** It names what the
+reader already knows, what just changed, current conditions, still-open questions,
+active intentions, the previous outcome, the next required outcome, and meanings that
+must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
+scene's causal plan against this handoff; P04 receives the same object when writing.
+The last scene's handoff is enriched by P06 and becomes the next chapter's input.
+
 **A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
 book.** The writer sees exactly what broke and rewrites against it; only a second
 consecutive break fails loudly. A name variant is the same path: the model, reading both
@@ -89,7 +97,7 @@ carries the verdict. Code never decides by string similarity.
 **Open questions are settled from the text, not carried as silent gaps.** Uncertainties
 relevant to the next scene and non-blocking contradictions go to one bounded call. If that
 call dies, memory keeps what the delta proved and the questions travel on as an explicit
-warning — never as answers.
+warning and remain in the persisted handoff — never as answers.
 
 **Scenes are joined in code**, separated by `***`. No model stitches a chapter together.
 

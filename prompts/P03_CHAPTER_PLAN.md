@@ -21,6 +21,9 @@ Current state:
 Previous chapter outcome:
 {{previous_chapter_outcome}}
 
+Explicit state handoff from the last accepted scene:
+{{state_handoff}}
+
 Open promises and finale dependencies:
 {{open_threads_and_ending_requirements}}
 
@@ -45,6 +48,10 @@ REQUIREMENTS
 - Leave the writer freedom in lines, details, and the course of interaction.
 - Do not introduce a new line without a function and room for its consequences.
 - Do not repeat what was already shown for the sake of length.
+- Treat handoff.known_to_reader and handoff.forbidden_restatements as already
+  established. Each scene must transform or exploit them, not explain them again.
+- Keep handoff.open_questions open until a planned action can answer them from
+  evidence. Make the first scene's result distinct from handoff.previous_outcome.
 - Do not demand equal intensity and structure of all scenes.
 - In required_fact_refs cite only identifiers from the facts array
   of the current state. Character knowledge and premise givens are already

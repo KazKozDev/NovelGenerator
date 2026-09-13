@@ -2,11 +2,12 @@ import { drainRetryNotices, type NovelLLM } from './llm';
 import { reviewPlan } from './reviewer';
 import { applyPlanUpdates, updateForward, type ForwardInput } from './forward';
 import type { ChapterPipeline } from './orchestrator';
-import { buildSceneContext, planChapter } from './planner';
+import { buildSceneContext, planChapter, rebaseScenePlan } from './planner';
 import { writeSceneV2 } from './sceneWriter';
 import { emptyState, type ProjectStore } from './store';
 import { applyDelta, applyResolutions, applyThreads, paragraphsWithIds, resolveOpenQuestions, trackScene, type QuestionResolution } from './tracker';
 import { runPrewriteGate } from './semanticGate';
+import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
 import type { BookDesign, StoryState } from './types';
 
 /**
@@ -62,6 +63,16 @@ export class ChapterPipelineV2 implements ChapterPipeline {
 
     const entry = design.chapter_map.find(item => item.chapter === chapter);
     const threads = store.loadThreads();
+    const previousRecord = store.chapterScenes(chapter - 1).at(-1);
+    let handoff = previousRecord?.handoff || (previousRecord?.delta && previousRecord.plan
+      ? buildSceneHandoff({
+          scene: previousRecord.plan,
+          state: store.loadState(),
+          delta: previousRecord.delta,
+          resolutions: previousRecord.resolutions || [],
+          threads,
+        })
+      : null);
     // Resume reuses the saved plan when scenes already exist against it: the
     // planner is not deterministic across runs, and a fresh plan would orphan
     // the stored scenes and force every one of them to be rewritten.
@@ -85,6 +96,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           .reduce((sum, item) => sum + (item.target_words || 0), 0),
         story_language: storyLanguage,
         planning_language: planningLanguage,
+        previousHandoff: handoff,
       }, llm);
       if (plan.status === 'needs_replan') {
         throw new Error(`Chapter ${chapter} cannot be written as planned: ${plan.replan_reason || 'no reason given'}.`);
@@ -121,7 +133,8 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           : 'nothing beyond the verbatim check (semantic gate off)';
       store.log('gate', `Semantic pre-write check (${prewrite.mode}): ${coverage}.`);
     }
-    for (const scene of plan.scenes) {
+    for (let sceneIndex = 0; sceneIndex < plan.scenes.length; sceneIndex++) {
+      let scene = plan.scenes[sceneIndex];
       // A stored scene with a folded delta replays: same fold functions, same
       // ids, same memory — no model calls, no doubled events. A partial record
       // (no delta: the run died mid-scene) is regenerated below.
@@ -130,7 +143,18 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         const replayed = applyDelta(store.loadState(), stored.delta, scene.id);
         const settled = applyResolutions(replayed.state, stored.resolutions || [], scene.id);
         store.saveState(settled);
-        store.saveThreads(applyThreads(store.loadThreads(), stored.delta, scene.id));
+        const replayedThreads = applyThreads(store.loadThreads(), stored.delta, scene.id);
+        store.saveThreads(replayedThreads);
+        handoff = stored.handoff || buildSceneHandoff({
+          scene: stored.plan || scene,
+          nextScene: plan.scenes[sceneIndex + 1],
+          state: settled,
+          delta: stored.delta,
+          resolutions: stored.resolutions || [],
+          threads: replayedThreads,
+          previous: handoff,
+        });
+        if (!stored.handoff) store.saveScene({ ...stored, handoff });
         const tail = stored.prose.split(/\n\s*\n/).map(text => text.trim()).filter(Boolean).at(-1) || '';
         previousTail = tail.slice(-600);
         excerpts.push(`[${scene.id}] ${tail.slice(-300)}`);
@@ -138,7 +162,21 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         store.log('scene', `Scene ${scene.id} replayed from the stored draft; no rewrite.`);
         continue;
       }
-      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, excerpts, priorChapters);
+      if (handoff) {
+        scene = await rebaseScenePlan({
+          design,
+          scene,
+          handoff,
+          state: store.loadState(),
+          openThreads: store.loadThreads().filter(item => item.status === 'open').map(item => item.description),
+          story_language: storyLanguage,
+          planning_language: planningLanguage,
+        }, llm);
+        plan = { ...plan, scenes: plan.scenes.map((item, index) => index === sceneIndex ? scene : item) };
+        store.saveChapterPlan(plan);
+        store.log('scene-rebase', `Scene ${scene.id} rebased on handoff from ${handoff.after_scene_id}.`);
+      }
+      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, excerpts, priorChapters, handoff);
       const problems = [...contextProblems, ...(prewrite.problems.get(scene.id) || [])];
       if (problems.length) {
         // The §6 model gate: code found structural doubts, P02 disposes them
@@ -217,9 +255,19 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         }
       }
       store.saveState(settled);
-      store.saveThreads(applyThreads(store.loadThreads(), delta, sceneRef));
+      const updatedThreads = applyThreads(store.loadThreads(), delta, sceneRef);
+      store.saveThreads(updatedThreads);
+      handoff = buildSceneHandoff({
+        scene,
+        nextScene: plan.scenes[sceneIndex + 1],
+        state: settled,
+        delta,
+        resolutions,
+        threads: updatedThreads,
+        previous: handoff,
+      });
       const numbered = paragraphsWithIds(prose);
-      store.saveScene({ id: scene.id, chapter, prose, paragraph_ids: numbered.map(p => p.id), plan: scene, delta, resolutions });
+      store.saveScene({ id: scene.id, chapter, prose, paragraph_ids: numbered.map(p => p.id), plan: scene, delta, resolutions, handoff });
       const tail = numbered.at(-1)?.text || '';
       previousTail = tail.slice(-600);
       excerpts.push(`[${scene.id}] ${tail.slice(-300)}`);
@@ -253,6 +301,10 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     // The reconciled map replaces the design's map for the chapters ahead.
     design.chapter_map = appliedPlan.design.chapter_map;
     store.saveDesign(appliedPlan.design);
+    const lastScene = store.chapterScenes(chapter).at(-1);
+    if (lastScene?.handoff) {
+      store.saveScene({ ...lastScene, handoff: applyForwardToHandoff(lastScene.handoff, forward) });
+    }
     if (forward.unresolved_blockers.length) {
       warnings.push(`Unresolved after chapter ${chapter}: ${forward.unresolved_blockers.join('; ')}.`);
     }

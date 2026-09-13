@@ -11,11 +11,12 @@ function sampleVars(name: 'system-contract' | Parameters<typeof promptVariables>
 }
 
 describe('Pipeline prompts on disk', () => {
-  it('covers all seven pipeline stages', () => {
+  it('covers every pipeline prompt', () => {
     expect(PIPELINE_PROMPT_NAMES).toEqual([
       'P01_BOOK_DESIGN',
       'P02_PLAN_REVIEW',
       'P03_CHAPTER_PLAN',
+      'P03_SCENE_REBASE',
       'P04_SCENE_WRITE',
       'P05_STATE_UPDATE',
       'P06_FORWARD_UPDATE',

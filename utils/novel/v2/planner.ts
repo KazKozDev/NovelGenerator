@@ -2,7 +2,7 @@ import { renderPrompt, systemContract } from '../prompts';
 import { contentWords, sharedDistinctivePhrasing, tiredPhrases } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import { storyNames } from './tracker';
-import type { BookDesign, ChapterPlan, ScenePlan, StoryState } from './types';
+import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState } from './types';
 
 /**
  * A required outcome that adds no content word to its own setup: the scene
@@ -37,6 +37,7 @@ export interface ChapterPlannerInput {
   remainingWords: number;
   story_language: string;
   planning_language: string;
+  previousHandoff?: SceneHandoff | null;
 }
 
 export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan {
@@ -71,6 +72,7 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     chapter_map_entry: JSON.stringify(entry || {}),
     current_state: JSON.stringify(input.currentState),
     previous_chapter_outcome: input.previousOutcome || '(opening chapter)',
+    state_handoff: input.previousHandoff ? JSON.stringify(input.previousHandoff) : '(no earlier accepted scene)',
     open_threads_and_ending_requirements: JSON.stringify({ open_threads: input.openThreads, ending_requirements: input.endingRequirements }),
     remaining_word_budget: String(input.remainingWords),
   });
@@ -78,6 +80,46 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     ['status', 'chapter', 'function', 'starting_situation', 'ending_change', 'scenes', 'forward_dependencies', 'replan_reason'],
     parsed => parsed, { temperature: 0.3, maxTokens: 8192, route: 'writer' });
   return validateChapterPlan(raw, input.chapter);
+}
+
+const SCENE_KEYS = ['id', 'pov_id', 'location', 'story_time', 'participants', 'initial_conditions',
+  'function', 'participant_intentions', 'pressure_or_uncertainty', 'development', 'required_outcome',
+  'flexible_elements', 'required_fact_refs', 'required_source_refs', 'setup_or_payoff',
+  'transition_to_next', 'target_words'];
+
+export async function rebaseScenePlan(input: {
+  design: BookDesign;
+  scene: ScenePlan;
+  handoff: SceneHandoff;
+  state: StoryState;
+  openThreads: string[];
+  story_language: string;
+  planning_language: string;
+}, llm: NovelLLM): Promise<ScenePlan> {
+  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const prompt = renderPrompt('P03_SCENE_REBASE', {
+    story_contract: JSON.stringify(input.design.contract),
+    scene_plan: JSON.stringify(input.scene),
+    state_handoff: JSON.stringify({ ...input.handoff, required_new_outcome: input.scene.required_outcome }),
+    confirmed_state: JSON.stringify(input.state),
+    open_threads: JSON.stringify(input.openThreads),
+  });
+  const raw = await structuredResponse(prompt, system, llm, SCENE_KEYS, parsed => {
+    const candidate = parsed as ScenePlan;
+    if (!candidate.required_outcome?.trim()) {
+      throw new Error(`Scene ${input.scene.id} rebase returned no required outcome.`);
+    }
+    if (candidate.id !== input.scene.id) {
+      throw new Error(`Scene rebase changed id ${input.scene.id} to ${candidate.id || '(empty)'}.`);
+    }
+    if (input.handoff.previous_outcome.trim()
+      && isStaticOutcome(input.handoff.previous_outcome, candidate.required_outcome)) {
+      throw new Error(`Scene ${candidate.id} repeats the accepted outcome instead of advancing it.`);
+    }
+    return candidate;
+  },
+    { temperature: 0.2, maxTokens: 8192, route: 'writer' }) as ScenePlan;
+  return raw;
 }
 
 export interface SceneContext {
@@ -174,6 +216,7 @@ export function buildSceneContext(
   previousTail: string,
   sourceExcerpts: string[] = [],
   priorChapters: PriorChapter[] = [],
+  handoff?: SceneHandoff | null,
 ): SceneContext {
   const known = new Map(design.characters.map(c => [c.id, c]));
   // Who is who is meaning, and meaning is the model's job. Code matches
@@ -238,6 +281,7 @@ export function buildSceneContext(
         participants: scene.participants,
         initial_conditions: scene.initial_conditions,
       }),
+      state_handoff: handoff ? JSON.stringify({ ...handoff, required_new_outcome: scene.required_outcome }) : '(no earlier accepted scene)',
       character_cards: JSON.stringify(cards),
       cast_roster: design.characters.map(character =>
         `${character.id} — ${character.name} — ${character.story_function}`).join('\n') || '(cast empty)',
