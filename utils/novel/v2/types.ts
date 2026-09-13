@@ -18,6 +18,8 @@ export interface PremiseGiven {
 }
 
 export interface DesignContract {
+  /** Short title from P01, in the manuscript language. Books designed before the field existed have none. */
+  working_title?: string;
   explicit_requirements: string[];
   premise_givens?: PremiseGiven[];
   /** Names the P01 model judges to be proper names in the premise — code checks coverage, never judges. */

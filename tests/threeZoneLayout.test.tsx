@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
-import { stepName } from '../hooks/useBookGenerator';
+import { bookTitle, stepName } from '../hooks/useBookGenerator';
 import { GenerationStep } from '../types';
 
 describe('ThreeZoneGenerationView', () => {
@@ -196,6 +196,18 @@ describe('The agent log', () => {
   it('names the step instead of quoting its prompt', () => {
     expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Designing the book');
     expect(stepName('Check whether the provided plan is ready for writing.')).toBe('Reviewing the plan');
+  });
+
+  it('titles a book by its design, and cuts a fallback premise at a word', () => {
+    expect(bookTitle('The Sorrow Light', 'A lighthouse keeper on a dying coast')).toBe('The Sorrow Light');
+    expect(bookTitle('   ', 'A short premise')).toBe('A short premise');
+    const premise = 'A lighthouse keeper on a dying coast discovers that the ships she guides home have been sinking for thirty years.';
+    const fallback = bookTitle(undefined, premise);
+    expect(fallback.length).toBeLessThanOrEqual(81);
+    expect(fallback.endsWith('…')).toBe(true);
+    expect(premise.startsWith(fallback.slice(0, -1))).toBe(true);
+    expect(fallback.slice(0, -1).endsWith(' ')).toBe(false);
+    expect(bookTitle(undefined, '   ')).toBe('Untitled book');
     expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
     expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
     expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');

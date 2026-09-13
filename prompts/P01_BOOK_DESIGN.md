@@ -39,6 +39,9 @@ WORK ORDER
 5. Define the intended resolution of the central conflict
    and the prior events it requires.
 6. Distribute development across the given number of chapters.
+7. Give the book a working_title in the manuscript language: a short title
+   this story could carry, drawn from what the book is actually about. Not
+   the premise restated, and not a subtitle.
 
 CONSTRUCTION REQUIREMENTS
 - Cast every person the premise names, under that premise-given name;
@@ -69,6 +72,7 @@ Fill lists as needed; chapter_map contains exactly
 
 {
   "contract": {
+    "working_title": "",
     "explicit_requirements": [],
     "premise_givens": [
       {"given": "", "kind": "person | thing | situation | fact"}

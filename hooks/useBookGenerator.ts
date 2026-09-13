@@ -34,6 +34,21 @@ export function stepName(prompt: string): string {
   return matched ? matched[1] : prompt.slice(0, 60);
 }
 
+/**
+ * The book's own title when the design carries one. A book designed before P01
+ * named its titles falls back to the premise — trimmed at a word, never
+ * mid-word, because "...the ships she guides home ha" reads as damage.
+ */
+export function bookTitle(declared: string | undefined, premise: string): string {
+  if (typeof declared === 'string' && declared.trim()) return declared.trim();
+  const text = premise.trim();
+  if (!text) return 'Untitled book';
+  if (text.length <= 80) return text;
+  const cut = text.slice(0, 80);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[,;:\s]+$/, '')}…`;
+}
+
 /** React presents snapshots; the v2 store owns execution state. */
 export default function useBookGenerator() {
   const [storyPremise, setStoryPremise] = useState('');
@@ -85,10 +100,11 @@ export default function useBookGenerator() {
     if (!input) return;
     const manuscript = store.manuscript();
     const report = store.loadReport();
-    const content = `# ${input.premise.slice(0, 80)}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
+    const title = bookTitle(getStore().loadDesign()?.contract?.working_title, input.premise);
+    const content = `# ${title}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
     setFinalBookContent(content);
     setFinalMetadataJson(JSON.stringify({
-      title: input.premise.slice(0, 80),
+      title,
       chapters: manuscript.map(({ chapter, text }) => ({ chapter, words: text.split(/\s+/).filter(Boolean).length })),
       audit: report ? { status: report.status, summary: report.summary } : null,
       premise: input.premise,
