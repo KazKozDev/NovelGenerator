@@ -97,6 +97,29 @@ warning — never as answers.
 plan updates for the chapters that follow; accepted prose outranks the old plan, and only
 affected chapters change. Skipped updates and unresolved blockers become chapter warnings.
 
+### What a chapter actually costs
+
+Every structured call declares its route explicitly, or takes the default `structuredResponse`
+falls back to (`'validator'`); `writeSceneV2` is the one call that bypasses that wrapper —
+it wants raw prose, not JSON — so it declares its own route too, the same way. Nothing in
+the pipeline reaches a model without one of the two roles named at the call site.
+
+| Call | Route | When | Per chapter |
+| --- | --- | --- | --- |
+| Chapter plan (P03) | writer | Once, unless a saved plan is reused on resume | 1 |
+| Scene readiness (P02) | validator | Only when code raised a structural doubt (`pov-absent`, `location-mismatch`, a restaging match, …) | 0–1 per scene |
+| Write the scene (P04) | writer | Every scene; one retry only if the answer is empty or came back as JSON instead of prose | 1 per scene |
+| Track the scene (P05) | validator | Every scene, against the prose just written; one correction pass if a citation points nowhere | 1 per scene |
+| Rewrite on contradiction | writer + validator | Only when the tracked delta blocks continuation — one full redraft, not a repair | 0–1 pair per scene |
+| Resolve open questions | validator | Only when the scene left an uncertainty or a non-blocking contradiction for the next scene | 0–1 per scene |
+| Forward reconciliation (P06) | validator | Once, after the last scene | 1 |
+
+A chapter of four scenes with no contradictions and half its scenes flagged for readiness
+lands at 1 + 4×(0.5 + 1 + 1 + 1) + 1 ≈ 16 calls — the range a live run actually shows. The
+writer only ever sees P03 and P04: the plan and the prose. Every other call is the editor
+reading what already exists and reporting on it in a few hundred tokens, never generating
+the manuscript itself — a large model earns its cost by judging, not by drafting.
+
 ## Memory and evidence
 
 `StoryState` holds facts, events, conditions, per-character knowledge and beliefs, reader
