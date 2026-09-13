@@ -302,7 +302,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               {/* Quick Agent Status Telemetry */}
               <div className="shrink-0 grid grid-cols-2 gap-2 pt-2">
                 <div className="py-1">
-                  <div className="text-xs font-semibold uppercase text-zinc-500">Specialists</div>
+                  <div className="text-xs font-semibold uppercase text-zinc-500">Pipeline</div>
                   <div className="text-xs text-zinc-300 mt-0.5 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                     Active
