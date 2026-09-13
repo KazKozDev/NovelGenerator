@@ -99,6 +99,9 @@ export class Orchestrator {
         && storedInput.chapter_count === input.chapter_count;
       let design: BookDesign;
       let review: PlanReview | null;
+      // A design the review never fully cleared still writes, with the
+      // objections carried into the contract — the reader is told which ones.
+      const designWarnings: string[] = [];
       if (sameBook && storedDesign) {
         design = storedDesign;
         review = null;
@@ -113,13 +116,20 @@ export class Orchestrator {
         this.store.saveStyleContract(design.style_contract);
         this.store.checkpoint('design');
         this.store.log('design', `Book designed and reviewed: ${design.characters.length} characters, ${design.causal_map.length} causal events.`);
+        if (!review.ready) {
+          const unresolved = review.issues.filter(item => item?.severity === 'blocking' || item?.severity === 'major');
+          for (const item of unresolved) {
+            designWarnings.push(`The design review still objects to ${item.target_ref}: ${item.problem} It travels as a requirement the chapters must meet.`);
+          }
+          this.store.log('design', `Review unresolved on ${unresolved.length} point(s); carried into the contract.`);
+        }
       }
 
       if (!this.pipeline) {
         return { status: 'PARTIAL', design, review, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: 'Chapter pipeline not attached yet.' };
       }
       const finished = new Set(this.store.manuscript().map(item => item.chapter));
-      const warnings: string[] = [];
+      const warnings: string[] = [...designWarnings];
       for (let chapter = 1; chapter <= input.chapter_count; chapter++) {
         this.onProgress('chapter', chapter);
         if (finished.has(chapter)) {

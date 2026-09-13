@@ -154,7 +154,11 @@ describe('v2 reviewer', () => {
       }
       return JSON.stringify(design());
     });
-    await expect(designReviewedBook(input, llm, 1)).rejects.toThrow(/not executable/);
+    // The objection survives the rounds, so it is written into the contract the
+    // chapters must satisfy — a judgement the prose can answer never ends a book.
+    const settled = await designReviewedBook(input, llm, 1);
+    expect(settled.review.ready).toBe(false);
+    expect(settled.design.contract.explicit_requirements.join(' ')).toContain('R01');
   });
 
   it('refuses a coherent design that recasts premise names out of the book', async () => {
@@ -170,7 +174,7 @@ describe('v2 reviewer', () => {
     await expect(designReviewedBook(triangle, llm, 0)).rejects.toThrow(/Pax/);
   });
 
-  it('fails loudly when fixes run out', async () => {
+  it('carries the reviewer objection into the contract when fixes run out', async () => {
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
       if (prompt.includes('Check whether the provided plan is ready')) {
         return JSON.stringify({ ready: false, issues: [{ id: 'I01', severity: 'blocking', target_ref: 'E01', category: 'causality', problem: 'No cause', evidence_refs: [], consequence_for_writing: 'x', required_decision: 'd', suggested_adjustment: 's' }] });
@@ -181,7 +185,24 @@ describe('v2 reviewer', () => {
       { story_language: 'English', planning_language: 'English', story_contract: '{}' },
       'scope', design(), '', '', llm,
     )).resolves.toMatchObject({ ready: false });
-    await expect(designReviewedBook(input, llm, 0)).rejects.toThrow(/not executable/);
+    const settled = await designReviewedBook(input, llm, 0);
+    expect(settled.review.ready).toBe(false);
+    expect(settled.design.contract.explicit_requirements.join(' ')).toContain('E01: d');
+  });
+
+  it('still refuses when what code charges is unresolved', async () => {
+    // A premise name nobody answers to is not a judgement the prose can answer:
+    // the book would not be the book that was asked for.
+    const triangle: ProjectInput = { ...input, premise: 'A love triangle of Zor, Pax and someone else.' };
+    const llm: NovelLLM = vi.fn(async (prompt: string) => {
+      if (prompt.includes('Prepare a compact book construction') || prompt.includes('Refine the previous plan against these findings')) {
+        const d = design();
+        d.contract.premise_names = ['Zor', 'Pax'];
+        return JSON.stringify(d);
+      }
+      return JSON.stringify({ ready: true, issues: [] });
+    });
+    await expect(designReviewedBook(triangle, llm, 1)).rejects.toThrow(/not executable[\s\S]*Pax/);
   });
 });
 

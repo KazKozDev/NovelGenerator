@@ -142,7 +142,24 @@ export async function designReviewedBook(
     priorSummary = issueSummary(review.issues);
     if (review.ready) return { design, review };
     if (round >= maxFixes) {
-      throw new Error(`Book design not executable after ${maxFixes + 1} attempts. Unresolved:\n${issueSummary(review.issues)}`);
+      // What code charges is objective and fatal: a premise name nobody answers
+      // to, a premise given the construction never places. The book cannot be
+      // written because it would not be the book that was asked for.
+      const codeCharges = [...groundingIssues(design, input.premise, round), ...givenCharges(design, round)];
+      if (codeCharges.length) {
+        throw new Error(`Book design not executable after ${maxFixes + 1} attempts. Unresolved:\n${issueSummary(codeCharges)}`);
+      }
+      // What the model still objects to is a judgement, and after three rounds
+      // of the same objection it is usually a demand the prose can satisfy —
+      // "say how they both got to the clearing" is a sentence, not a redesign.
+      // It travels as a requirement the chapters must meet, the way a blocking
+      // scene verdict already does, instead of ending a book nobody has read.
+      const unresolved = review.issues.filter(item => item?.severity === 'blocking' || item?.severity === 'major');
+      design.contract.explicit_requirements = [
+        ...(Array.isArray(design.contract.explicit_requirements) ? design.contract.explicit_requirements : []),
+        ...unresolved.map(item => `${item.target_ref}: ${item.required_decision || item.problem}`),
+      ];
+      return { design, review };
     }
     const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
     const prompt = renderPrompt('P02_PLAN_REVIEW', {
