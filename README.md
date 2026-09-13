@@ -2,18 +2,20 @@
 
 Turn a one-paragraph premise into a full manuscript, chapter by chapter.
 
-```bash
-git clone https://github.com/KazKozDev/NovelGenerator.git
-```
+
 
 <!-- TODO(user): screenshot predates the current engine — re-capture the generation view -->
-![The generation view while chapters are written and reviewed](https://github.com/user-attachments/assets/854e630c-e902-410a-b789-9706189e3abc)
+![The generation view while chapters are written and reviewed](https://github.com/user-attachments/assets/e04135c1-9196-467c-a0d2-71628c28ab27)
 
 Runs on your machine · Gemini or Ollama · Source available
 
 ---
 
 ## Quick start
+
+```bash
+git clone https://github.com/KazKozDev/NovelGenerator.git
+```
 
 ```bash
 cd NovelGenerator
