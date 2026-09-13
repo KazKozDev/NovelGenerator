@@ -157,17 +157,25 @@ export function sanitizeGeminiSchema(schema: unknown): any {
   if (raw.properties && typeof raw.properties === 'object' && !Array.isArray(raw.properties)) {
     const cleanedProps: Record<string, any> = {};
     for (const [key, propVal] of Object.entries(raw.properties)) {
-      cleanedProps[key] = sanitizeGeminiSchema(propVal);
+      const cleanedProp = sanitizeGeminiSchema(propVal);
+      // A property that says nothing — `{}` — is dropped rather than described.
+      // Calling it a string is the same failure as the type-union one above, and
+      // worse in bulk: the generic contract schema declares eight unknown fields,
+      // so the whole book design was described to the model as eight strings and
+      // came back as a 1.4k skeleton with chapter_map as a sentence.
+      if (cleanedProp !== undefined) cleanedProps[key] = cleanedProp;
     }
-    cleaned.properties = cleanedProps;
+    if (Object.keys(cleanedProps).length) cleaned.properties = cleanedProps;
   }
 
   if (Array.isArray(raw.required)) {
     const requiredList = raw.required.filter((item): item is string => typeof item === 'string');
+    // Required names only mean something beside the properties that describe
+    // them; demanding fields the schema never describes is how the loose
+    // contract schema reached Gemini as eight required strings.
     if (cleaned.properties) {
-      cleaned.required = requiredList.filter(key => Object.prototype.hasOwnProperty.call(cleaned.properties, key));
-    } else {
-      cleaned.required = requiredList;
+      const kept = requiredList.filter(key => Object.prototype.hasOwnProperty.call(cleaned.properties, key));
+      if (kept.length) cleaned.required = kept;
     }
   }
 
@@ -181,10 +189,14 @@ export function sanitizeGeminiSchema(schema: unknown): any {
       cleaned.type = 'object';
     } else if (cleaned.items) {
       cleaned.type = 'array';
-    } else if (cleaned.enum) {
+    } else if (cleaned.enum || cleaned.format) {
+      cleaned.type = 'string';
+    } else if (cleaned.description) {
       cleaned.type = 'string';
     } else {
-      cleaned.type = 'string';
+      // Nothing was said about this node. Saying "string" invents a constraint;
+      // the caller drops an undefined node instead.
+      return undefined;
     }
   }
 
@@ -230,7 +242,10 @@ export async function generateGeminiText(
       if (jsonOnly) generationConfig.responseMimeType = "application/json";
       if (responseSchema) {
           generationConfig.responseMimeType = "application/json";
-          generationConfig.responseSchema = sanitizeGeminiSchema(responseSchema);
+          const sanitized = sanitizeGeminiSchema(responseSchema);
+          // A schema left with nothing to say constrains nothing, and sending it
+          // narrows the answer for no reason. JSON mode alone is what works.
+          if (sanitized?.properties || sanitized?.items) generationConfig.responseSchema = sanitized;
       }
 
       const finalSystemInstruction = systemInstruction 
@@ -309,7 +324,8 @@ export async function generateGeminiTextStream(
       }
       if (responseSchema) {
           generationConfig.responseMimeType = "application/json";
-          generationConfig.responseSchema = sanitizeGeminiSchema(responseSchema);
+          const sanitized = sanitizeGeminiSchema(responseSchema);
+          if (sanitized?.properties || sanitized?.items) generationConfig.responseSchema = sanitized;
       }
 
       const finalSystemInstruction = systemInstruction 
