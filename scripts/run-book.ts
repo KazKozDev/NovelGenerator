@@ -1,11 +1,14 @@
 /**
- * Test-run driver: drives the v2 pipeline with real Ollama models from a
- * terminal, logging every model call to stdout and a file. Run with:
+ * Test-run driver: drives the v2 pipeline with real models from a terminal,
+ * logging every model call to stdout and a file. Run with:
  *
  *   npx vite-node scripts/run-book.ts --writer deepseek-v4.1-flash:cloud \
  *     --editor mistral-large-3:675b-cloud --chapters 4 \
  *     --premise "Harry Potter has fallen in love with Voldemort." \
  *     --out runs/manual-test
+ *
+ * --provider gemini uses the Gemini transport instead, with --writer/--editor
+ * as model names and GEMINI_API_KEY from the environment or .env.local.
  */
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,6 +17,7 @@ import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { snapshotProject } from '../utils/novel/v2/export';
 import { generateOllamaText } from '../services/ollamaService';
+import { generateGeminiText } from '../services/geminiService';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 
 function arg(name: string, fallback: string): string {
@@ -21,6 +25,7 @@ function arg(name: string, fallback: string): string {
   return index !== -1 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
 }
 
+const provider = arg('provider', 'ollama');
 const endpoint = arg('endpoint', 'http://127.0.0.1:11434');
 const writerModel = arg('writer', 'deepseek-v4.1-flash:cloud');
 const editorModel = arg('editor', 'mistral-large-3:675b-cloud');
@@ -29,6 +34,10 @@ const premise = arg('premise', 'Harry Potter has fallen in love with Voldemort.'
 const genre = arg('genre', 'fantasy');
 const totalWords = Number(arg('words', '8000'));
 const outDir = arg('out', 'runs/manual-test');
+// A longer book needs a longer leash than the in-app default: the budget is the
+// run's own, not a property of the pipeline.
+const maxCalls = Number(arg('max-calls', '200'));
+const maxMinutes = Number(arg('max-minutes', '60'));
 
 mkdirSync(outDir, { recursive: true });
 const logFile = join(outDir, 'run.log');
@@ -39,7 +48,8 @@ function log(line: string): void {
 }
 
 async function main(): Promise<void> {
-  log(`models writer=${writerModel} editor=${editorModel} endpoint=${endpoint}`);
+  log(`provider=${provider} writer=${writerModel} editor=${editorModel}${provider === 'ollama' ? ` endpoint=${endpoint}` : ''}`);
+  log(`budget calls=${maxCalls} minutes=${maxMinutes}`);
   log(`book chapters=${chapters} genre=${genre} words=${totalWords} premise=${premise}`);
   const store = new MemoryProjectStore();
   let calls = 0;
@@ -57,10 +67,13 @@ async function main(): Promise<void> {
     const started = Date.now();
     for (let attempt = 1; ; attempt++) {
       try {
-        const result = await generateOllamaText(
-          prompt, system, undefined, options?.temperature ?? 0.2,
-          model, endpoint, options?.maxTokens ?? 16384,
-        );
+        const result = provider === 'gemini'
+          ? await generateGeminiText(prompt, system, options?.schema, options?.temperature ?? 0.2,
+            undefined, undefined, options?.maxTokens ?? 16384, Boolean(options?.json), model)
+          : await generateOllamaText(
+            prompt, system, undefined, options?.temperature ?? 0.2,
+            model, endpoint, options?.maxTokens ?? 16384,
+          );
         log(`OK#${calls} attempt=${attempt} ${((Date.now() - started) / 1000).toFixed(0)}s answer=${result.length}ch`);
         return result;
       } catch (error) {
@@ -74,7 +87,7 @@ async function main(): Promise<void> {
       }
     }
   };
-  const orchestrator = new Orchestrator(store, undefined, new ChapterPipelineV2(),
+  const orchestrator = new Orchestrator(store, { maxCalls, maxTimeMs: maxMinutes * 60 * 1000 }, new ChapterPipelineV2(),
     (stage, chapter) => log(`STAGE ${stage}${chapter ? ` ch${chapter}` : ''} calls=${calls}`));
   const result = await orchestrator.runBook({
     premise,
