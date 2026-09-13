@@ -28,12 +28,12 @@ export async function writeSceneV2(input: SceneWriterInput, llm: NovelLLM): Prom
   const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
   const prompt = renderPrompt('P04_SCENE_WRITE', input.contextVars);
   try {
-    return cleanProse(await llm(prompt, system, { temperature: 0.7, maxTokens: 8192 }));
+    return cleanProse(await llm(prompt, system, { temperature: 0.7, maxTokens: 8192, route: 'writer' }));
   } catch (first) {
     const retry = await llm(
       `${prompt}\nYour previous answer was unusable (${first instanceof Error ? first.message : first}). Return only the finished scene prose now.`,
       system,
-      { temperature: 0.7, maxTokens: 8192 },
+      { temperature: 0.7, maxTokens: 8192, route: 'writer' },
     );
     return cleanProse(retry);
   }
