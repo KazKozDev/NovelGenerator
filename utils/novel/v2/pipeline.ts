@@ -191,7 +191,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         delta = await track(prose);
         applied = applyDelta(store.loadState(), delta, sceneRef);
         if (applied.blockers.length) {
-          throw new Error(`Scene ${scene.id} contradicts confirmed state: ${applied.blockers.join('; ')}.`);
+          throw new Error(`Scene ${scene.id} contradicts confirmed state: ${applied.blockers.join('; ').replace(/\.$/, '')}.`);
         }
       }
       // What the scene left open that the next scene needs is settled from the

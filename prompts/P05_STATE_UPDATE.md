@@ -43,13 +43,19 @@ EXTRACT
   thing it is, and refers_to — the character id or the already recorded name
   it means (a diminutive beside the full form). Leave refers_to empty only
   when the scene introduces the thing itself for the first time.
-- Every spelling the scene uses for a RECORDED name that is not its
-  canonical spelling or a recorded alias: report it in name_variants with
-  the used spelling, the recorded one, and evidence. Only you, reading both
-  the prose and the record, may judge a variant — a near-twin is guilty
+- A variant is a different SPELLING of a recorded name — "Zarka" for
+  recorded "Zarko", "Michail" for "Mikhail". Report those in name_variants
+  with the used spelling, the recorded one, and evidence. Only you, reading
+  both the prose and the record, may judge a variant — a near-twin is guilty
   until the scene establishes it as its own thing with its own refers_to.
   Variants block the line: the writer gets one rewrite with the exact
   spelling.
+- A form of address is NOT a variant. A title with the name ("Keeper Voss",
+  "Dr. Reyes"), the given name or the surname alone, and an epithet the
+  scene attaches to a recorded person all leave the name itself intact.
+  Report those in proper_names with refers_to pointing at the recorded
+  entry; they become aliases. Calling a character by their title is how
+  people talk, and a book that may not do it is not written in English.
 - Events that happened.
 - Changes of location, condition, possession, and relationships.
 - Gained knowledge and changed beliefs.
