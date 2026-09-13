@@ -2,7 +2,7 @@
 
 
 import React, { useEffect } from 'react';
-import useBookGenerator from './hooks/useBookGenerator';
+import useBookGenerator, { splitError } from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
@@ -156,7 +156,13 @@ const App: React.FC = () => {
         {error && (
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
-            <p className="whitespace-pre-wrap">{error}</p>
+            <p className="whitespace-pre-wrap">{splitError(error).headline}</p>
+            {splitError(error).detail && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-red-300/80 hover:text-red-200">What the review said</summary>
+                <p className="mt-2 whitespace-pre-wrap text-xs text-red-300/90 max-h-64 overflow-y-auto">{splitError(error).detail}</p>
+              </details>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
               {/* A refused design is usually fixed by changing the premise or the

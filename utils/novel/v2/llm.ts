@@ -81,7 +81,7 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
   // disabled service, or an exhausted output budget: the retry resends the whole prompt under the same
   // cap, so it fails identically while doubling the wait — and the real reason then arrives wrapped in
   // "remained unvalidated after two attempts", which reads like a model problem.
-  const unanswerable = /exceeded your API quota|quota exceeded|API key not valid|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED|requests per day|has not been used in project|token limit|cut off before its JSON|output token budget/i;
+  const unanswerable = /exceeded your API quota|quota exceeded|API key not valid|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED|requests per day|has not been used in project|token limit|cut off before its JSON|output token budget|not found, try pulling it|model .* not found|ECONNREFUSED|Failed to fetch/i;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const schema = options.schema || { type: 'object', required: keys, properties: Object.fromEntries(keys.map(key => [key, {}])), additionalProperties: true };
@@ -95,5 +95,7 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
       retryNotices.push({ at: new Date().toISOString(), keys, attempt: attempt + 1, error: failure.slice(0, 300) });
     }
   }
-  throw new Error(`Structured response remained unvalidated after two attempts (${options.route ?? 'validator'}; expected fields: ${keys.join(', ')}): ${failure}`);
+  // The cause first: a reader deciding what to do next needs the model's own
+  // complaint, not the list of fields it failed to produce.
+  throw new Error(`${failure.replace(/^Error:\s*/, '')}\nThe ${options.route ?? 'validator'} call failed twice; it was asked for: ${keys.join(', ')}.`);
 }

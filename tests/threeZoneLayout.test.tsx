@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
-import { bookTitle, stepName } from '../hooks/useBookGenerator';
+import { bookTitle, splitError, stepName } from '../hooks/useBookGenerator';
 import { GenerationStep } from '../types';
 
 describe('ThreeZoneGenerationView', () => {
@@ -208,6 +208,17 @@ describe('The agent log', () => {
     expect(premise.startsWith(fallback.slice(0, -1))).toBe(true);
     expect(fallback.slice(0, -1).endsWith(' ')).toBe(false);
     expect(bookTitle(undefined, '   ')).toBe('Untitled book');
+  });
+
+  it('shows a failure as one line, with the reviewer prose behind a disclosure', () => {
+    const refusal = 'Book design not executable after 3 attempts. Unresolved:\n[blocking] causal_map.E08: the plan never says why the magic cannot be regenerated. Required decision: clarify it.';
+    const split = splitError(refusal);
+    expect(split.headline).toBe('Book design not executable after 3 attempts.');
+    expect(split.detail).toContain('causal_map.E08');
+    const short = splitError('Time budget exhausted.');
+    expect(short.headline).toBe('Time budget exhausted.');
+    expect(short.detail).toBe('');
+    expect(splitError('').headline).toBe('Generation failed.');
     expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
     expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
     expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');

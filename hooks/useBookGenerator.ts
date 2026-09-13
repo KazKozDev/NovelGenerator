@@ -49,6 +49,26 @@ export function bookTitle(declared: string | undefined, premise: string): string
   return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[,;:\s]+$/, '')}…`;
 }
 
+/**
+ * A failure reported to the reader: the headline first, the rest on request.
+ * A refused design arrives as the reviewer's own prose — required decisions,
+ * consequences, alternatives — and three of those in a red box is a wall
+ * nobody reads, least of all the person deciding whether to try again.
+ */
+export function splitError(message: string): { headline: string; detail: string } {
+  const text = (message || '').trim();
+  if (!text) return { headline: 'Generation failed.', detail: '' };
+  const firstLine = text.split('\n')[0].trim();
+  // A sentence end, not a decimal point or an abbreviation: the period must be
+  // followed by a space and a capital, or end the line.
+  const sentence = firstLine.match(/^.*?[.!?](?=\s+[A-Z"'\u201c]|$)/)?.[0]?.trim() || firstLine;
+  const headline = sentence.length > 200 ? `${sentence.slice(0, 200).trimEnd()}…` : sentence;
+  const detail = text.startsWith(headline.replace(/…$/, '')) && text.length > headline.length
+    ? text.slice(headline.replace(/…$/, '').length).trim()
+    : text === headline ? '' : text;
+  return { headline, detail };
+}
+
 /** React presents snapshots; the v2 store owns execution state. */
 export default function useBookGenerator() {
   const [storyPremise, setStoryPremise] = useState('');
