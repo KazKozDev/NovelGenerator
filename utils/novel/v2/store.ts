@@ -1,4 +1,4 @@
-import type { BookDesign, ChapterMapEntry, ChapterPlan, FinalReport, ProjectInput, ReaderThread, SceneHandoff, StateDelta, StoryState, StyleContract } from './types';
+import type { BookDesign, ChapterMapEntry, ChapterPlan, EndingReadiness, FinalReport, ProjectInput, ReaderThread, SceneHandoff, StateDelta, StoryState, StyleContract } from './types';
 import type { QuestionResolution } from './tracker';
 
 /**
@@ -47,6 +47,9 @@ export interface ProjectStore {
   loadState(): StoryState;
   saveThreads(threads: ReaderThread[]): void;
   loadThreads(): ReaderThread[];
+  /** What the ending still needs, as of the last finished chapter. */
+  saveEndingReadiness(readiness: EndingReadiness): void;
+  loadEndingReadiness(): EndingReadiness | null;
   saveManuscript(chapter: number, text: string): void;
   manuscript(): { chapter: number; text: string }[];
   saveReport(report: FinalReport): void;
@@ -76,6 +79,7 @@ export class MemoryProjectStore implements ProjectStore {
   private scenes: SceneRecord[] = [];
   private state: StoryState = emptyState();
   private threads: ReaderThread[] = [];
+  private readiness: EndingReadiness | null = null;
   private chapters = new Map<number, string>();
   private report: FinalReport | null = null;
   private entries: RunLogEntry[] = [];
@@ -100,6 +104,8 @@ export class MemoryProjectStore implements ProjectStore {
   loadState(): StoryState { return this.state; }
   saveThreads(threads: ReaderThread[]): void { this.threads = threads; }
   loadThreads(): ReaderThread[] { return this.threads; }
+  saveEndingReadiness(readiness: EndingReadiness): void { this.readiness = readiness; }
+  loadEndingReadiness(): EndingReadiness | null { return this.readiness; }
   saveManuscript(chapter: number, text: string): void { this.chapters.set(chapter, text); }
   manuscript(): { chapter: number; text: string }[] {
     return [...this.chapters.entries()].map(([chapter, text]) => ({ chapter, text }));
@@ -131,6 +137,7 @@ export class MemoryProjectStore implements ProjectStore {
     this.scenes = [];
     this.state = emptyState();
     this.threads = [];
+    this.readiness = null;
     this.chapters = new Map();
     this.report = null;
     this.entries = [];
@@ -197,6 +204,8 @@ export class BrowserProjectStore extends MemoryProjectStore {
     const state = this.read<StoryState>('state');
     if (state) super.saveState(state);
     super.saveThreads(this.read<ReaderThread[]>('threads') || []);
+    const readiness = this.read<EndingReadiness>('ending_readiness');
+    if (readiness) super.saveEndingReadiness(readiness);
     for (const { chapter, text } of this.read<{ chapter: number; text: string }[]>('manuscript') || []) {
       super.saveManuscript(chapter, text);
     }
@@ -234,6 +243,10 @@ export class BrowserProjectStore extends MemoryProjectStore {
   }
   saveState(state: StoryState): void { super.saveState(state); this.write('state', state); }
   saveThreads(threads: ReaderThread[]): void { super.saveThreads(threads); this.write('threads', threads); }
+  saveEndingReadiness(readiness: EndingReadiness): void {
+    super.saveEndingReadiness(readiness);
+    this.write('ending_readiness', readiness);
+  }
   saveManuscript(chapter: number, text: string): void {
     super.saveManuscript(chapter, text);
     const all = (this.read<{ chapter: number; text: string }[]>('manuscript') || []).filter(m => m.chapter !== chapter);
@@ -263,7 +276,7 @@ export class BrowserProjectStore extends MemoryProjectStore {
   clearAll(): void {
     super.clearAll();
     if (!this.backend) return;
-    for (const key of ['input', 'design', 'chapter_map', 'style', 'plans', 'scenes', 'state', 'threads', 'manuscript', 'report', 'log', 'checkpoints', 'snaps']) {
+    for (const key of ['input', 'design', 'chapter_map', 'style', 'plans', 'scenes', 'state', 'threads', 'ending_readiness', 'manuscript', 'report', 'log', 'checkpoints', 'snaps']) {
       this.remove(key);
     }
   }

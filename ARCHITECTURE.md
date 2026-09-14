@@ -55,6 +55,13 @@ prose, which survives reload), the open threads, the ending's required setup and
 budget still ahead. A plan that cannot be written returns `needs_replan` and stops the
 chapter rather than writing against it.
 
+**The ending's requirements shrink as the book establishes them.** After each chapter P06
+reports which of the design's `required_setup` items the accepted text has established,
+which still stand, and whether the chapters left can carry them. That reading is persisted
+(`ending_readiness`) and the next chapter is planned against what remains, not against the
+full list; a capacity problem — three preparations, two chapters — is raised as a warning
+while there is still budget to spend on it, instead of surfacing in the final audit.
+
 **Code brings doubts; the model disposes them.** Before prose exists,
 `buildSceneContext` raises structural problems by name — `pov-absent`, `empty-task`,
 `location-mismatch`, `missing-fact`, `static-outcome`, `unknown-participant`,

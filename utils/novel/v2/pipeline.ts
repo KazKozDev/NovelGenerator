@@ -1,6 +1,6 @@
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { reviewPlan } from './reviewer';
-import { applyPlanUpdates, updateForward, type ForwardInput } from './forward';
+import { applyPlanUpdates, readEndingReadiness, remainingEndingRequirements, updateForward, type ForwardInput } from './forward';
 import type { ChapterPipeline } from './orchestrator';
 import { buildSceneContext, planChapter, rebaseScenePlan } from './planner';
 import { writeSceneV2 } from './sceneWriter';
@@ -92,7 +92,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         currentState: store.loadState(),
         previousOutcome: previousText ? `End of the previous chapter:\n${previousText.slice(-600)}` : '(opening chapter)',
         openThreads: threads.filter(t => t.status === 'open').map(t => t.description),
-        endingRequirements: design.ending.required_setup,
+        endingRequirements: remainingEndingRequirements(design, store.loadEndingReadiness()),
         remainingWords: design.chapter_map.filter(item => item.chapter >= chapter)
           .reduce((sum, item) => sum + (item.target_words || 0), 0),
         story_language: storyLanguage,
@@ -314,6 +314,18 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     const lastScene = store.chapterScenes(chapter).at(-1);
     if (lastScene?.handoff) {
       store.saveScene({ ...lastScene, handoff: applyForwardToHandoff(lastScene.handoff, forward) });
+    }
+    // What the ending still needs is read once and kept: the next chapter is planned
+    // against the requirements that are still standing, not against the design's full
+    // list, and a book running out of chapters to prepare them says so now rather than
+    // in the final audit, when there is nothing left to spend on the fix.
+    const readiness = readEndingReadiness(forward);
+    store.saveEndingReadiness(readiness);
+    store.log('ending', readiness.remaining_requirements.length
+      ? `After chapter ${chapter} the ending still needs: ${readiness.remaining_requirements.join('; ')}.`
+      : `After chapter ${chapter} every ending requirement on record is established.`);
+    for (const problem of readiness.capacity_problems) {
+      warnings.push(`Ending capacity after chapter ${chapter}: ${problem}`);
     }
     // Same reason applyForwardToHandoff normalizes: the schema pins the key, not its contents.
     const blockers = stringList(forward.unresolved_blockers);

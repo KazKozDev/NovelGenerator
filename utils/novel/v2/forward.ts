@@ -1,6 +1,7 @@
 import { renderPrompt, systemContract } from '../prompts';
 import { structuredResponse, type NovelLLM } from './llm';
-import type { BookDesign, ForwardUpdate } from './types';
+import { matchKey, stringList } from './normalize';
+import type { BookDesign, EndingReadiness, ForwardUpdate } from './types';
 
 /**
  * ForwardUpdate (P06): after a chapter, reconcile the accepted text with the
@@ -62,4 +63,35 @@ export function applyPlanUpdates(design: BookDesign, update: ForwardUpdate): { d
     }
   }
   return { design: { ...design, chapter_map: chapters }, skipped };
+}
+
+/**
+ * The ending readiness as the model reported it, with every list made a list of
+ * strings. Nothing is judged here: whether a requirement is really established is
+ * P06's reading of the accepted text, and code only carries the verdict.
+ */
+export function readEndingReadiness(update: ForwardUpdate): EndingReadiness {
+  const readiness = update.ending_readiness && typeof update.ending_readiness === 'object'
+    ? update.ending_readiness : {} as EndingReadiness;
+  return {
+    established_requirements: stringList(readiness.established_requirements),
+    remaining_requirements: stringList(readiness.remaining_requirements),
+    capacity_problems: stringList(readiness.capacity_problems),
+  };
+}
+
+/**
+ * What the planner should still be told to prepare. The design's required_setup
+ * stays authoritative — a model that forgets a requirement cannot retire it — so
+ * the list is the design's own, minus what the last reading found established,
+ * plus anything the reading added that the design never named.
+ */
+export function remainingEndingRequirements(design: BookDesign, readiness: EndingReadiness | null): string[] {
+  const required = stringList(design.ending?.required_setup);
+  if (!readiness) return required;
+  const established = new Set(readiness.established_requirements.map(matchKey));
+  const standing = required.filter(item => !established.has(matchKey(item)));
+  const known = new Set(standing.map(matchKey));
+  const added = readiness.remaining_requirements.filter(item => !known.has(matchKey(item)) && !established.has(matchKey(item)));
+  return [...standing, ...added];
 }

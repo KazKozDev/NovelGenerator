@@ -261,6 +261,17 @@ export interface ReaderThread {
   payoff_refs: string[];
 }
 
+/**
+ * What the ending still needs, judged after a chapter against the accepted text.
+ * `required_setup` in the design says what the book must prepare; this says how
+ * much of it is standing, and whether the chapters left can carry the rest.
+ */
+export interface EndingReadiness {
+  established_requirements: string[];
+  remaining_requirements: string[];
+  capacity_problems: string[];
+}
+
 export interface ForwardUpdate {
   chapter_outcome: string;
   consequences_to_carry_forward: string[];
@@ -272,7 +283,7 @@ export interface ForwardUpdate {
     source_refs_to_retrieve: string[];
   };
   plan_updates: { chapter: number; field: string; old_value: string; new_value: string; reason: string }[];
-  ending_readiness: { established_requirements: string[]; remaining_requirements: string[]; capacity_problems: string[] };
+  ending_readiness: EndingReadiness;
   unresolved_blockers: string[];
 }
 

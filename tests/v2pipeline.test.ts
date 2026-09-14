@@ -4,6 +4,7 @@ import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { BrowserProjectStore, emptyState, MemoryProjectStore } from '../utils/novel/v2/store';
 import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/novel/v2/planner';
 import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/handoff';
+import { readEndingReadiness, remainingEndingRequirements } from '../utils/novel/v2/forward';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
@@ -560,6 +561,49 @@ describe('v2 chapter pipeline end to end', () => {
       delta: carried, resolutions: [], threads: [],
     });
     expect(handoff.active_intentions).toEqual(['C01: Relight the lamp. (The dark grows.)']);
+  });
+
+  it('plans the next chapter against the ending requirements still standing', () => {
+    const design2 = { ...design(), ending: { ...design().ending, required_setup: ['The key is cut.', 'Pax learns to swim.'] } };
+    expect(remainingEndingRequirements(design2, null)).toEqual(['The key is cut.', 'Pax learns to swim.']);
+    const readiness = readEndingReadiness({
+      ...forward(),
+      ending_readiness: {
+        established_requirements: ['the key is cut'],
+        remaining_requirements: [{ requirement: 'Someone must open the sea door.' }],
+        capacity_problems: ['Two chapters left for three preparations.'],
+      },
+    } as unknown as ReturnType<typeof forward>);
+    expect(readiness.remaining_requirements).toEqual(['Someone must open the sea door.']);
+    // The design's list stays authoritative; the reading only retires and adds.
+    expect(remainingEndingRequirements(design2, readiness))
+      .toEqual(['Pax learns to swim.', 'Someone must open the sea door.']);
+  });
+
+  it('keeps the ending readiness and warns when the chapters left cannot carry it', async () => {
+    const store = new MemoryProjectStore();
+    const base = fullLlm();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => (
+      prompt.includes('Refine the forward plan')
+        ? JSON.stringify({
+            ...forward(),
+            ending_readiness: {
+              established_requirements: ['The lamp room is reachable.'],
+              remaining_requirements: ['Someone must open the sea door.'],
+              capacity_problems: ['One chapter left for two preparations.'],
+            },
+          })
+        : base(prompt, system, options)
+    ));
+    const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    expect(store.loadEndingReadiness()?.remaining_requirements).toEqual(['Someone must open the sea door.']);
+    expect(warnings.join(' ')).toContain('One chapter left for two preparations.');
+    expect(store.runLog().some(e => e.stage === 'ending')).toBe(true);
+    // Chapter 2 is planned against what is left, not against the design's full list.
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    const planPrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
+      .filter(prompt => prompt.includes('Plan only the current chapter')).at(-1) || '';
+    expect(planPrompt).toContain('Someone must open the sea door.');
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {
