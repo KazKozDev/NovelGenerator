@@ -27,6 +27,9 @@ Explicit state handoff from the last accepted scene:
 Open promises and finale dependencies:
 {{open_threads_and_ending_requirements}}
 
+Stagings of the recently accepted scenes (who was present, where, through whose eyes):
+{{recent_scene_shapes}}
+
 Remaining length:
 {{remaining_word_budget}}
 
@@ -48,6 +51,11 @@ REQUIREMENTS
 - Leave the writer freedom in lines, details, and the course of interaction.
 - Do not introduce a new line without a function and room for its consequences.
 - Do not repeat what was already shown for the sake of length.
+- Vary the staging against the recent scenes above: a chapter of scenes with the
+  same people in the same room, one after another, reads as stalling however
+  well each is written. Change who is present, where it happens, or through
+  whose eyes — or give the repetition a reason the chapter needs. This is about
+  the shape of scenes, not about forbidding a location the story lives in.
 - Treat handoff.known_to_reader and handoff.forbidden_restatements as already
   established. Each scene must transform or exploit them, not explain them again.
 - Keep handoff.open_questions open until a planned action can answer them from

@@ -2,6 +2,7 @@ import { renderPrompt, systemContract } from '../prompts';
 import { contentWords, sharedDistinctivePhrasing, tiredPhrases } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import { storyNames } from './tracker';
+import { describeShapes, repeatedStaging, sceneShape, type SceneShape } from './shapes';
 import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState } from './types';
 
 /**
@@ -38,6 +39,8 @@ export interface ChapterPlannerInput {
   story_language: string;
   planning_language: string;
   previousHandoff?: SceneHandoff | null;
+  /** Stagings of the accepted scenes, so the plan can vary them instead of repeating them. */
+  recentShapes?: SceneShape[];
 }
 
 export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan {
@@ -72,6 +75,7 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     chapter_map_entry: JSON.stringify(entry || {}),
     current_state: JSON.stringify(input.currentState),
     previous_chapter_outcome: input.previousOutcome || '(opening chapter)',
+    recent_scene_shapes: describeShapes(input.recentShapes || []),
     state_handoff: input.previousHandoff ? JSON.stringify(input.previousHandoff) : '(no earlier accepted scene)',
     open_threads_and_ending_requirements: JSON.stringify({ open_threads: input.openThreads, ending_requirements: input.endingRequirements }),
     remaining_word_budget: String(input.remainingWords),
@@ -130,7 +134,7 @@ export interface SceneContext {
 }
 
 export interface ReadinessProblem {
-  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'restaging-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
+  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'repeated-staging' | 'restaging-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
   detail: string;
 }
 
@@ -148,7 +152,7 @@ export interface PriorChapter {
  * other from the cards, needing no fact) from an invented dependency, or a
  * planned arrival from a teleport.
  */
-export function checkReadiness(design: BookDesign, state: StoryState, scene: ScenePlan, priorChapters: PriorChapter[] = []): ReadinessProblem[] {
+export function checkReadiness(design: BookDesign, state: StoryState, scene: ScenePlan, priorChapters: PriorChapter[] = [], recentShapes: SceneShape[] = []): ReadinessProblem[] {
   const problems: ReadinessProblem[] = [];
   if (scene.pov_id && !(scene.participants || []).includes(scene.pov_id)) {
     const names = new Map(design.characters.map(c => [c.id, c.name]));
@@ -181,6 +185,10 @@ export function checkReadiness(design: BookDesign, state: StoryState, scene: Sce
       }
     }
   }
+  // Structural repetition: same people, same place, again. Measured on the plan
+  // alone, so it costs nothing and lands before a prose token exists.
+  const repetition = repeatedStaging(sceneShape(scene), recentShapes);
+  if (repetition) problems.push({ code: 'repeated-staging', detail: repetition });
   // Pre-write restaging sniff: the plan's own wording against finished prose.
   // A shared distinctive phrase means the scene is about to redress an
   // already shown staging — cheapest fixed here, before a prose token exists.
@@ -217,6 +225,7 @@ export function buildSceneContext(
   sourceExcerpts: string[] = [],
   priorChapters: PriorChapter[] = [],
   handoff?: SceneHandoff | null,
+  recentShapes: SceneShape[] = [],
 ): SceneContext {
   const known = new Map(design.characters.map(c => [c.id, c]));
   // Who is who is meaning, and meaning is the model's job. Code matches
@@ -226,7 +235,7 @@ export function buildSceneContext(
   // the P02 review, which maps it against the roster in words; the writer
   // executes the mapping. Nothing is substituted silently, nothing throws.
   const participants = scene.participants || [];
-  const problems = checkReadiness(design, state, scene, priorChapters);
+  const problems = checkReadiness(design, state, scene, priorChapters, recentShapes);
   for (const entry of participants) {
     const token = entry.trim().toLowerCase().replace(/['’]s\b/g, '').replace(/['’]$/g, '');
     const exact = known.has(entry)

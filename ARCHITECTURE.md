@@ -64,7 +64,7 @@ while there is still budget to spend on it, instead of surfacing in the final au
 
 **Code brings doubts; the model disposes them.** Before prose exists,
 `buildSceneContext` raises structural problems by name — `pov-absent`, `empty-task`,
-`location-mismatch`, `missing-fact`, `missing-source`, `static-outcome`, `unknown-participant`,
+`location-mismatch`, `missing-fact`, `missing-source`, `repeated-staging`, `static-outcome`, `unknown-participant`,
 `restaging-suspect` — and an optional local semantic gate adds two more kinds of
 evidence. Nothing there blocks on its own: the doubts go to a P02 readiness review, and a
 blocking verdict becomes a `continuity_requirements` instruction inside the writer's
@@ -94,6 +94,14 @@ active intentions, the previous outcome, the next required outcome, and meanings
 must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
 scene's causal plan against this handoff; P04 receives the same object when writing.
 The last scene's handoff is enriched by P06 and becomes the next chapter's input.
+
+**Repetition is measured by shape, not only by phrase.** Every accepted scene leaves a
+staging — who was present, where, through whose eyes — and `recentShapes` hands the last
+six to the chapter planner so a chapter is planned against what the book just did. The
+same measurement runs before each scene: a third consecutive scene in the same staging, or
+a staging owning half the recent window, becomes a `repeated-staging` doubt for the
+readiness review. Nothing is banned and no word list grows; code says the shape repeats and
+the model decides whether that is stalling or the point.
 
 **A callback travels as the paragraph it calls back to.** A scene plan's
 `required_source_refs` name earlier text by paragraph (`CH02_S01#p3`) or by the id of a

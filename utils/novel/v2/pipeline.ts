@@ -10,6 +10,7 @@ import { runPrewriteGate } from './semanticGate';
 import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
 import { stringList } from './normalize';
 import { resolveSourceRefs } from './retrieval';
+import { recentShapes } from './shapes';
 import type { BookDesign, StoryState } from './types';
 
 /**
@@ -99,6 +100,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         story_language: storyLanguage,
         planning_language: planningLanguage,
         previousHandoff: handoff,
+        recentShapes: recentShapes(store, chapter - 1),
       }, llm);
       if (plan.status === 'needs_replan') {
         throw new Error(`Chapter ${chapter} cannot be written as planned: ${plan.replan_reason || 'no reason given'}.`);
@@ -191,7 +193,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
       // The chapter tails still follow, for continuity of voice rather than of fact.
       const sources = resolveSourceRefs(scene.required_source_refs, store, store.loadState());
       const sceneSources = [...sources.excerpts, ...excerpts];
-      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, sceneSources, priorChapters, handoff);
+      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, sceneSources, priorChapters, handoff, recentShapes(store, chapter));
       const problems = [...contextProblems, ...(prewrite.problems.get(scene.id) || [])];
       if (sources.missing.length) {
         problems.push({

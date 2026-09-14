@@ -6,6 +6,7 @@ import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/nov
 import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/handoff';
 import { readEndingReadiness, remainingEndingRequirements } from '../utils/novel/v2/forward';
 import { resolveSourceRefs } from '../utils/novel/v2/retrieval';
+import { describeShapes, recentShapes, repeatedStaging, sceneShape } from '../utils/novel/v2/shapes';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, paragraphsWithIds, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
@@ -658,6 +659,52 @@ describe('v2 chapter pipeline end to end', () => {
     const gatePrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
       .find(prompt => prompt.includes('missing-source')) || '';
     expect(gatePrompt).toContain('CH01_S01#p9');
+  });
+
+  it('names a third scene running in the same staging and leaves two alone', () => {
+    const staged = (id: string, participants: string[], location: string) =>
+      ({ ...plan(1).scenes[0], id, participants, location });
+    const shape = (id: string, participants: string[], location: string) => sceneShape(staged(id, participants, location));
+    const twice = [shape('CH01_S01', ['C01', 'C02'], 'The lamp room'), shape('CH01_S02', ['C01', 'C02'], 'the lamp room ')];
+    // Two in a row is a conversation continuing; the third is the pattern.
+    expect(repeatedStaging(shape('CH01_S02', ['C01', 'C02'], 'The lamp room'), twice.slice(0, 1))).toBe('');
+    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The lamp room'), twice))
+      .toMatch(/keeps the staging of the 2 scenes before it/);
+    // Order of participants is not a difference; a different room is.
+    expect(repeatedStaging(shape('CH01_S03', ['C02', 'C01'], 'The lamp room'), twice)).not.toBe('');
+    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The sea door'), twice)).toBe('');
+    // And it reaches the readiness gate as a named doubt, not as a silent note.
+    const problems = checkReadiness(design(), emptyState(), staged('CH01_S03', ['C01', 'C02'], 'The lamp room'), [], twice);
+    expect(problems.map(item => item.code)).toContain('repeated-staging');
+  });
+
+  it('flags a staging that owns half the window even when it is not consecutive', () => {
+    const shape = (id: string, participants: string[], location: string) =>
+      sceneShape({ ...plan(1).scenes[0], id, participants, location });
+    const recent = [
+      shape('CH01_S01', ['C01', 'C02'], 'The lamp room'),
+      shape('CH01_S02', ['C01'], 'The stair'),
+      shape('CH01_S03', ['C01', 'C02'], 'The lamp room'),
+      shape('CH01_S04', ['C02'], 'The sea door'),
+      shape('CH02_S01', ['C01', 'C02'], 'The lamp room'),
+      shape('CH02_S02', ['C01'], 'The stair'),
+    ];
+    expect(repeatedStaging(shape('CH02_S03', ['C01', 'C02'], 'The lamp room'), recent))
+      .toMatch(/repeats a staging already used 3 times/);
+  });
+
+  it('gives the chapter planner the stagings of the accepted scenes', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    const shapes = recentShapes(store, 1);
+    expect(shapes).toHaveLength(1);
+    expect(describeShapes(shapes)).toContain('CH01_S01');
+    const llm = fullLlm();
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    const planPrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
+      .find(prompt => prompt.includes('Plan only the current chapter')) || '';
+    expect(planPrompt).toContain('Stagings of the recently accepted scenes');
+    expect(planPrompt).toContain(describeShapes(shapes.slice(0, 1)).split('\n')[0]);
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {
