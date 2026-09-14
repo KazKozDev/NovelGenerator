@@ -95,6 +95,16 @@ must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates t
 scene's causal plan against this handoff; P04 receives the same object when writing.
 The last scene's handoff is enriched by P06 and becomes the next chapter's input.
 
+**A relationship is current state, not a fixed card.** Character cards hold who two
+people were to each other when the book was designed; what they are to each other now
+lives in `conditions` under a directed key (`C01->C02.trust`), in words, and travels into
+the writer's package ahead of the card. P05 records such a move only from a deed the scene
+showed, with the paragraph cited — a character declaring trust is a belief, and memory
+keeps it as one. A relationship change that cites nothing, or that no deed in the scene
+supports, is not folded: it comes back as a `refused` note, warned on the chapter and
+written to the run log, so an interpretation of the scene never becomes a fact about the
+world by default.
+
 **Repetition is measured by shape, not only by phrase.** Every accepted scene leaves a
 staging — who was present, where, through whose eyes — and `recentShapes` hands the last
 six to the chapter planner so a chapter is planned against what the book just did. The

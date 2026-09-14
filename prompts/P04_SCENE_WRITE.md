@@ -50,6 +50,12 @@ never as decoration.
 AVAILABLE INFORMATION
 {{character_knowledge_and_beliefs}}
 
+WHERE THESE PEOPLE STAND WITH EACH OTHER NOW
+This is what the written story has proved, and it outranks the starting
+relationships in the character cards. Where nothing is recorded, the cards
+still hold. Write them as they stand here, not as they began.
+{{participant_relationships}}
+
 RELEVANT RULES AND EARLIER EVENTS
 {{relevant_facts}}
 

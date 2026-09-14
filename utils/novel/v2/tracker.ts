@@ -1,6 +1,7 @@
 import { renderPrompt, systemContract } from '../prompts';
 import { extractPremiseNames } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
+import { isRelationKey, relationChangeRefused } from './relationships';
 import type { ExtractedName, ProperName, ReaderThread, StateDelta, StoryState } from './types';
 
 /** States persisted before the name registry existed carry no names shelf. */
@@ -251,6 +252,8 @@ export function applyResolutions(state: StoryState, resolutions: QuestionResolut
 export interface ApplyResult {
   state: StoryState;
   blockers: string[];
+  /** Changes memory declined to fold, with the reason. Reported, never silent. */
+  refused: string[];
 }
 
 /**
@@ -278,12 +281,20 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
     knownEventIds.add(id);
     next.events.push({ id, description: event.description, participants: event.participants, evidence_refs: event.evidence_refs });
   });
+  const refused: string[] = [];
   for (const change of delta.state_changes) {
     // The model sometimes repeats the field inside the entity ("C02.location"
     // + "location"); the key must not stutter.
     const key = change.entity_id === change.field || change.entity_id.endsWith(`.${change.field}`)
       ? change.entity_id
       : `${change.entity_id}.${change.field}`;
+    if (isRelationKey(key)) {
+      const reason = relationChangeRefused(delta, change);
+      if (reason) {
+        refused.push(`${sceneRef}: "${key}" was not moved to "${change.after}" because ${reason}.`);
+        continue;
+      }
+    }
     next.conditions[key] = change.after;
   }
   for (const change of delta.knowledge_changes) {
@@ -316,7 +327,7 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
       blockers.push(`Name variant in ${sceneRef}: "${used}" is used for recorded "${recorded}". Use the recorded spelling verbatim, or establish "${used}" in the scene as a different thing.`);
     }
   }
-  return { state: next, blockers };
+  return { state: next, blockers, refused };
 }
 
 export function applyThreads(threads: ReaderThread[], delta: StateDelta, sceneRef: string): ReaderThread[] {

@@ -3,6 +3,7 @@ import { contentWords, sharedDistinctivePhrasing, tiredPhrases } from '../analyt
 import { structuredResponse, type NovelLLM } from './llm';
 import { storyNames } from './tracker';
 import { describeShapes, repeatedStaging, sceneShape, type SceneShape } from './shapes';
+import { describeRelations, relationsFor } from './relationships';
 import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState } from './types';
 
 /**
@@ -299,6 +300,7 @@ export function buildSceneContext(
         `"${item.phrase}" — ${item.uses} uses already; name the thing by its barest noun from here on`).join('\n')
         || '(nothing worn out yet)',
       character_knowledge_and_beliefs: JSON.stringify(knowledge),
+      participant_relationships: describeRelations(relationsFor(state, scene.participants || [])),
       relevant_facts: JSON.stringify(relevantFacts),
       source_excerpts: JSON.stringify(sourceExcerpts.length ? sourceExcerpts : (scene.required_source_refs || [])),
       previous_scene_tail: previousTail || '(scene opens the chapter)',

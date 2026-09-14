@@ -7,6 +7,7 @@ import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/hand
 import { readEndingReadiness, remainingEndingRequirements } from '../utils/novel/v2/forward';
 import { resolveSourceRefs } from '../utils/novel/v2/retrieval';
 import { describeShapes, recentShapes, repeatedStaging, sceneShape } from '../utils/novel/v2/shapes';
+import { describeRelations, parseRelation, relationsFor } from '../utils/novel/v2/relationships';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, paragraphsWithIds, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
@@ -705,6 +706,49 @@ describe('v2 chapter pipeline end to end', () => {
       .find(prompt => prompt.includes('Plan only the current chapter')) || '';
     expect(planPrompt).toContain('Stagings of the recently accepted scenes');
     expect(planPrompt).toContain(describeShapes(shapes.slice(0, 1)).split('\n')[0]);
+  });
+
+  it('moves a bond on a deed and refuses to move it on a declaration', () => {
+    const rescue = {
+      ...delta(),
+      state_changes: [{ entity_id: 'C01->C02', field: 'trust', before: 'wary', after: 'trusts him in the water', evidence_refs: ['p2'] }],
+    };
+    const moved = applyDelta(emptyState(), rescue, 'CH01_S01');
+    expect(moved.state.conditions['C01->C02.trust']).toBe('trusts him in the water');
+    expect(moved.refused).toEqual([]);
+    // The same change with no deed and nothing learned in the scene: words, not a bond.
+    const talk = { ...rescue, events: [], knowledge_changes: [] };
+    const declared = applyDelta(emptyState(), talk, 'CH01_S01');
+    expect(declared.state.conditions['C01->C02.trust']).toBeUndefined();
+    expect(declared.refused.join(' ')).toMatch(/no deed and nothing learned/);
+    // And with a deed but no citation, it is still refused.
+    const uncited = { ...rescue, state_changes: [{ ...rescue.state_changes[0], evidence_refs: [] }] };
+    expect(applyDelta(emptyState(), uncited, 'CH01_S01').refused.join(' ')).toMatch(/cites no paragraph/);
+  });
+
+  it('shows the writer where the participants stand now, not where they started', async () => {
+    const state = { ...emptyState(), conditions: { 'C01->C02.trust': 'in his debt since the water', 'C03->C04.trust': 'unchanged' } };
+    const relations = relationsFor(state, ['C01', 'C02']);
+    expect(relations).toHaveLength(1);
+    expect(parseRelation('C01->C02.trust', 'x')).toMatchObject({ from: 'C01', to: 'C02', kind: 'trust' });
+    expect(describeRelations(relations)).toBe('C01 → C02 (trust): in his debt since the water');
+    const ctx = buildSceneContext(design(), state, plan(1).scenes[0], '', [], [], null, []);
+    expect(ctx.vars.participant_relationships).toContain('in his debt since the water');
+    expect(ctx.vars.participant_relationships).not.toContain('unchanged');
+  });
+
+  it('warns the chapter when memory declines a relationship change', async () => {
+    const store = new MemoryProjectStore();
+    const declared = () => ({
+      ...delta(),
+      events: [],
+      knowledge_changes: [],
+      state_changes: [{ entity_id: 'C01->C02', field: 'trust', before: 'wary', after: 'devoted', evidence_refs: ['p1'] }],
+    });
+    const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(declared));
+    expect(warnings.join(' ')).toMatch(/"C01->C02.trust" was not moved to "devoted"/);
+    expect(store.loadState().conditions['C01->C02.trust']).toBeUndefined();
+    expect(store.runLog().some(e => e.stage === 'memory')).toBe(true);
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {

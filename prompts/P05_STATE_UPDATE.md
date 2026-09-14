@@ -58,6 +58,14 @@ EXTRACT
   people talk, and a book that may not do it is not written in English.
 - Events that happened.
 - Changes of location, condition, possession, and relationships.
+- A relationship change is a state_change with a directed entity id:
+  entity_id "C01->C02", field "trust" (or "debt", "hostility", "loyalty" —
+  name the bond that moved), before and after in words. Record it only when
+  the scene shows the deed that moved it, and cite that paragraph. Someone
+  saying they trust another person is a belief, not a bond that changed;
+  memory keeps the words as a belief and leaves the relationship where it
+  was. Both directions are separate: a rescue may put one in debt without
+  making the other trust them.
 - Gained knowledge and changed beliefs.
 - Significant decisions, commitments, and intentions.
 - Information disclosed to the reader.

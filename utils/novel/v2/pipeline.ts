@@ -258,6 +258,12 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           throw new Error(`Scene ${scene.id} contradicts confirmed state: ${applied.blockers.join('; ').replace(/\.$/, '')}.`);
         }
       }
+      // A bond that moved with nothing behind it stays where it was, and says so:
+      // an interpretation of the scene is not a change to the world.
+      for (const note of applied.refused) {
+        warnings.push(`Scene ${scene.id}: ${note}`);
+        store.log('memory', note);
+      }
       // What the scene left open that the next scene needs is settled from the
       // text now, not carried as a silent gap: one bounded call, then memory.
       // If that call dies (a blown output budget, a disabled backend), the
