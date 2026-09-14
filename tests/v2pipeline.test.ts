@@ -523,6 +523,45 @@ describe('v2 chapter pipeline end to end', () => {
     expect(result.open_questions).toContain('Who cut the fuel line?');
   });
 
+  it('reports malformed forward blockers as text instead of throwing on them', async () => {
+    const store = new MemoryProjectStore();
+    const base = fullLlm();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => (
+      prompt.includes('Refine the forward plan')
+        ? JSON.stringify({ ...forward(), unresolved_blockers: [{ question: 'Who cut the fuel line?' }] })
+        : base(prompt, system, options)
+    ));
+    const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    expect(warnings.join(' ')).toContain('Who cut the fuel line?');
+    expect(warnings.join(' ')).not.toContain('[object Object]');
+  });
+
+  it('writes the planned scene when the rebase will not validate', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    const base = fullLlm();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => (
+      prompt.includes('Update the next scene plan against the explicit handoff')
+        ? '{"nothing":"usable"}'
+        : base(prompt, system, options)
+    ));
+    const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    expect(store.chapterScenes(2)).toHaveLength(1);
+    expect(store.chapterScenes(2)[0].plan?.required_outcome).toBe(plan(2).scenes[0].required_outcome);
+    expect(warnings.join(' ')).toMatch(/kept its planned causal chain/);
+    expect(store.runLog().some(e => e.stage === 'scene-rebase' && /rebase failed/.test(e.detail))).toBe(true);
+  });
+
+  it('keeps one entry when an intention arrives with and without its reason', () => {
+    const withReason = { ...plan(1).scenes[0], participant_intentions: [{ character_id: 'C01', intention: 'Relight the lamp.', reason_now: 'The dark grows.' }] };
+    const carried = { ...delta(), intentions_and_commitments: [{ character_id: 'C01', intention: 'Relight the lamp.' }] };
+    const handoff = buildSceneHandoff({
+      scene: plan(1).scenes[0], nextScene: withReason, state: applyDelta(emptyState(), carried, 'CH01_S01').state,
+      delta: carried, resolutions: [], threads: [],
+    });
+    expect(handoff.active_intentions).toEqual(['C01: Relight the lamp. (The dark grows.)']);
+  });
+
   it('keeps entity-qualified condition keys from doubling', () => {
     const moved = { ...delta(), state_changes: [{ entity_id: 'C01.location', field: 'location', before: null, after: 'Lamp room', evidence_refs: ['p1'] }] };
     const state = applyDelta(emptyState(), moved, 'CH01_S01').state;

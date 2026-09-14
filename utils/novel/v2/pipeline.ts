@@ -8,6 +8,7 @@ import { emptyState, type ProjectStore } from './store';
 import { applyDelta, applyResolutions, applyThreads, paragraphsWithIds, resolveOpenQuestions, trackScene, type QuestionResolution } from './tracker';
 import { runPrewriteGate } from './semanticGate';
 import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
+import { stringList } from './normalize';
 import type { BookDesign, StoryState } from './types';
 
 /**
@@ -163,18 +164,27 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         continue;
       }
       if (handoff) {
-        scene = await rebaseScenePlan({
-          design,
-          scene,
-          handoff,
-          state: store.loadState(),
-          openThreads: store.loadThreads().filter(item => item.status === 'open').map(item => item.description),
-          story_language: storyLanguage,
-          planning_language: planningLanguage,
-        }, llm);
-        plan = { ...plan, scenes: plan.scenes.map((item, index) => index === sceneIndex ? scene : item) };
-        store.saveChapterPlan(plan);
-        store.log('scene-rebase', `Scene ${scene.id} rebased on handoff from ${handoff.after_scene_id}.`);
+        // A rebase that will not validate is a worse plan than the one the chapter planner
+        // already approved — not a reason to lose the chapter. The scene is written as
+        // planned and the reader is told the handoff did not reach it.
+        try {
+          scene = await rebaseScenePlan({
+            design,
+            scene,
+            handoff,
+            state: store.loadState(),
+            openThreads: store.loadThreads().filter(item => item.status === 'open').map(item => item.description),
+            story_language: storyLanguage,
+            planning_language: planningLanguage,
+          }, llm);
+          plan = { ...plan, scenes: plan.scenes.map((item, index) => index === sceneIndex ? scene : item) };
+          store.saveChapterPlan(plan);
+          store.log('scene-rebase', `Scene ${scene.id} rebased on handoff from ${handoff.after_scene_id}.`);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          warnings.push(`Scene ${scene.id} kept its planned causal chain: the rebase on ${handoff.after_scene_id} failed (${reason}).`);
+          store.log('scene-rebase', `Scene ${scene.id} rebase failed; writing the planned scene. ${reason}`);
+        }
       }
       const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, excerpts, priorChapters, handoff);
       const problems = [...contextProblems, ...(prewrite.problems.get(scene.id) || [])];
@@ -305,8 +315,10 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     if (lastScene?.handoff) {
       store.saveScene({ ...lastScene, handoff: applyForwardToHandoff(lastScene.handoff, forward) });
     }
-    if (forward.unresolved_blockers.length) {
-      warnings.push(`Unresolved after chapter ${chapter}: ${forward.unresolved_blockers.join('; ')}.`);
+    // Same reason applyForwardToHandoff normalizes: the schema pins the key, not its contents.
+    const blockers = stringList(forward.unresolved_blockers);
+    if (blockers.length) {
+      warnings.push(`Unresolved after chapter ${chapter}: ${blockers.join('; ')}.`);
     }
     return { warnings };
   }

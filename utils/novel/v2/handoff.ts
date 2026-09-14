@@ -1,24 +1,20 @@
 import type { ForwardUpdate, ReaderThread, SceneHandoff, ScenePlan, StateDelta, StoryState } from './types';
 import type { QuestionResolution } from './tracker';
+import { describeUnknown, stringList, unique } from './normalize';
 
-function describeUnknown(value: unknown): string {
-  if (typeof value === 'string') return value.trim();
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return value.map(describeUnknown).filter(Boolean).join('; ');
-  if (!value || typeof value !== 'object') return '';
-  const item = value as Record<string, unknown>;
-  if (typeof item.character_id === 'string' && typeof item.intention === 'string') {
-    return `${item.character_id}: ${item.intention}`;
+/**
+ * The same intention arrives from the next scene's plan with its reason and from the
+ * delta without it. Matching on the text before the reason keeps one entry — the
+ * longer rendering, so the reason survives.
+ */
+function uniqueIntentions(items: unknown[]): string[] {
+  const kept = new Map<string, string>();
+  for (const text of unique(items)) {
+    const key = text.replace(/\s*\([^()]*\)\s*$/, '').trim().toLowerCase();
+    const previous = kept.get(key);
+    if (!previous || text.length > previous.length) kept.set(key, text);
   }
-  for (const key of ['description', 'consequence', 'commitment', 'intention', 'decision', 'action', 'question', 'content', 'outcome']) {
-    if (typeof item[key] === 'string') return (item[key] as string).trim();
-  }
-  try { return JSON.stringify(value); } catch { return ''; }
-}
-
-/** LLM JSON schemas constrain the top level, but some models wrap list entries in objects. */
-function unique(items: unknown[]): string[] {
-  return [...new Set(items.map(describeUnknown).filter(Boolean))];
+  return [...kept.values()];
 }
 
 function deltaChanges(delta: StateDelta): string[] {
@@ -72,8 +68,8 @@ export function buildSceneHandoff(input: {
     confirmed_changes: changes,
     current_conditions: { ...input.state.conditions },
     open_questions: [...unresolved],
-    active_intentions: unique([
-      ...(input.nextScene?.participant_intentions || []).map(item => `${item.character_id}: ${item.intention} (${item.reason_now})`),
+    active_intentions: uniqueIntentions([
+      ...(input.nextScene?.participant_intentions || []),
       ...(input.delta.intentions_and_commitments || []).map(describeUnknown),
     ]),
     previous_outcome: outcome,
@@ -88,18 +84,18 @@ export function buildSceneHandoff(input: {
 }
 
 export function applyForwardToHandoff(handoff: SceneHandoff, forward: ForwardUpdate): SceneHandoff {
-  const consequences = Array.isArray(forward.consequences_to_carry_forward) ? forward.consequences_to_carry_forward : [];
-  const blockers = Array.isArray(forward.unresolved_blockers) ? forward.unresolved_blockers : [];
+  const consequences = stringList(forward.consequences_to_carry_forward);
+  const blockers = stringList(forward.unresolved_blockers);
   const next = forward.next_chapter_inputs && typeof forward.next_chapter_inputs === 'object'
     ? forward.next_chapter_inputs : { active_intentions: [], necessary_content: [] };
-  const intentions = Array.isArray(next.active_intentions) ? next.active_intentions : [];
-  const necessary = Array.isArray(next.necessary_content) ? next.necessary_content : [];
+  const intentions = stringList(next.active_intentions);
+  const necessary = stringList(next.necessary_content);
   const chapterOutcome = describeUnknown(forward.chapter_outcome) || handoff.previous_outcome;
   return {
     ...handoff,
     confirmed_changes: unique([...handoff.confirmed_changes, ...consequences]),
     open_questions: unique([...handoff.open_questions, ...blockers]),
-    active_intentions: unique(intentions),
+    active_intentions: uniqueIntentions(intentions),
     previous_outcome: chapterOutcome,
     required_new_outcome: unique(necessary).join('; '),
     forbidden_restatements: unique([...handoff.forbidden_restatements, chapterOutcome]),
