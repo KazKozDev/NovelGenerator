@@ -107,7 +107,7 @@ scene costs at most the call in flight: reopening offers to continue, and finish
 keep their manuscript and memory.
 
 ```
-premise → design → chapter plan → scene → handoff → rebase → next scene → audit → export
+premise → design → plan review → chapter plan → scene → handoff → rebase → next scene → audit → export
 ```
 
 ## Configuration
@@ -173,7 +173,7 @@ npm test
 
 ```
  Test Files  13 passed (13)
-      Tests  126 passed (126)
+      Tests  141 passed (141)
 ```
 
 ### Production build
