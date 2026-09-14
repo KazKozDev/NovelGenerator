@@ -5,7 +5,8 @@ import { BrowserProjectStore, emptyState, MemoryProjectStore } from '../utils/no
 import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/novel/v2/planner';
 import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/handoff';
 import { readEndingReadiness, remainingEndingRequirements } from '../utils/novel/v2/forward';
-import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
+import { resolveSourceRefs } from '../utils/novel/v2/retrieval';
+import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, paragraphsWithIds, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
 
@@ -604,6 +605,59 @@ describe('v2 chapter pipeline end to end', () => {
     const planPrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
       .filter(prompt => prompt.includes('Plan only the current chapter')).at(-1) || '';
     expect(planPrompt).toContain('Someone must open the sea door.');
+  });
+
+  it('retrieves the exact earlier paragraph a scene must return to', () => {
+    const store = new MemoryProjectStore();
+    // Paragraph ids come from paragraphsWithIds, which folds a very short opening into the next block.
+    const prose = 'The lamp room smelled of oil and older weather, and nobody had aired it since the spring.\n\nZor pocketed the brass key without a word, and the room did not object to the theft of its one lock.\n\nOutside, the sea kept its distance and made a show of not listening to any of it.';
+    store.saveScene({
+      id: 'CH01_S01', chapter: 1, prose, paragraph_ids: ['p1', 'p2', 'p3'], plan: null, delta: null,
+    });
+    const state = {
+      ...emptyState(),
+      events: [{ id: 'CH01_S01-e1', description: 'Zor takes the key.', participants: ['C01'], evidence_refs: ['p2'] }],
+    };
+    const byParagraph = resolveSourceRefs(['CH01_S01#p2'], store, state);
+    expect(byParagraph.excerpts).toEqual(['[CH01_S01#p2] Zor pocketed the brass key without a word, and the room did not object to the theft of its one lock.']);
+    expect(byParagraph.missing).toEqual([]);
+    // A recorded event resolves through its own evidence to the same paragraph.
+    expect(resolveSourceRefs(['CH01_S01-e1'], store, state).excerpts).toEqual(byParagraph.excerpts);
+  });
+
+  it('reports a callback reference that no written paragraph answers', () => {
+    const store = new MemoryProjectStore();
+    store.saveScene({ id: 'CH01_S01', chapter: 1, prose: 'One paragraph only.', paragraph_ids: ['p1'], plan: null, delta: null });
+    const resolved = resolveSourceRefs(['CH01_S01#p9', 'the bit about the lamp', 'CH07_S01#p1'], store, emptyState());
+    expect(resolved.excerpts).toEqual([]);
+    expect(resolved.missing).toEqual(['CH01_S01#p9', 'the bit about the lamp', 'CH07_S01#p1']);
+  });
+
+  it('hands the writer the cited paragraph and sends an unresolvable citation to the gate', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    const base = fullLlm();
+    const llm: NovelLLM = vi.fn(async (prompt, system, options) => {
+      if (prompt.includes('Plan only the current chapter') && !prompt.includes('Chapter:\n1 of')) {
+        const chapterPlan = plan(2);
+        chapterPlan.scenes[0].required_source_refs = ['CH01_S01#p1', 'CH01_S01#p9'];
+        return JSON.stringify(chapterPlan);
+      }
+      if (prompt.includes('Update the next scene plan against the explicit handoff')) {
+        const match = prompt.match(/Original scene plan:\n(\{[^\n]+\})/);
+        return JSON.stringify(match ? JSON.parse(match[1]) : plan(2).scenes[0]);
+      }
+      return base(prompt, system, options);
+    });
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    const first = paragraphsWithIds(store.chapterScenes(1)[0].prose)[0].text;
+    const writePrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
+      .find(prompt => prompt.includes('Write a full literary scene') && prompt.includes('CH01_S01#p1')) || '';
+    expect(writePrompt).toContain(first.slice(0, 40));
+    expect(store.runLog().some(e => e.stage === 'retrieval')).toBe(true);
+    const gatePrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
+      .find(prompt => prompt.includes('missing-source')) || '';
+    expect(gatePrompt).toContain('CH01_S01#p9');
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {

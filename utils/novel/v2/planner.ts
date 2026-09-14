@@ -130,7 +130,7 @@ export interface SceneContext {
 }
 
 export interface ReadinessProblem {
-  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'restaging-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
+  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'restaging-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
   detail: string;
 }
 

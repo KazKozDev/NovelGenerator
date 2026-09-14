@@ -64,7 +64,7 @@ while there is still budget to spend on it, instead of surfacing in the final au
 
 **Code brings doubts; the model disposes them.** Before prose exists,
 `buildSceneContext` raises structural problems by name — `pov-absent`, `empty-task`,
-`location-mismatch`, `missing-fact`, `static-outcome`, `unknown-participant`,
+`location-mismatch`, `missing-fact`, `missing-source`, `static-outcome`, `unknown-participant`,
 `restaging-suspect` — and an optional local semantic gate adds two more kinds of
 evidence. Nothing there blocks on its own: the doubts go to a P02 readiness review, and a
 blocking verdict becomes a `continuity_requirements` instruction inside the writer's
@@ -94,6 +94,14 @@ active intentions, the previous outcome, the next required outcome, and meanings
 must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
 scene's causal plan against this handoff; P04 receives the same object when writing.
 The last scene's handoff is enriched by P06 and becomes the next chapter's input.
+
+**A callback travels as the paragraph it calls back to.** A scene plan's
+`required_source_refs` name earlier text by paragraph (`CH02_S01#p3`) or by the id of a
+recorded fact or event, and `resolveSourceRefs` hands the writer those paragraphs verbatim
+under their references — the chapter tails follow as continuity of voice, not of fact. A
+reference no stored paragraph answers becomes a `missing-source` doubt for the readiness
+review: either the callback rests on nothing written, or the reference is wrong, and both
+are decided before the scene leans on it.
 
 **A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
 book.** The writer sees exactly what broke and rewrites against it; only a second

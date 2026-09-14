@@ -33,6 +33,10 @@ REQUIREMENTS
   knowledge, relationship, or commitment must be held differently afterward.
 - If the original scene no longer has a distinct function, repurpose it to the
   smallest necessary consequence of the accepted change. Do not pad or restage.
+- Keep required_source_refs pointing at text that exists: SCENE_ID#pN
+  (CH02_S01#p3) or the id of a recorded fact or event (CH02_S01-e2). Add one
+  only when the scene must return to that passage exactly; drop a reference
+  the correction made irrelevant.
 - Use only character ids already present in the original plan or confirmed state.
 - Return the complete scene plan in the original schema, with no wrapper.
 

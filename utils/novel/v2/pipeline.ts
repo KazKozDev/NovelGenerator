@@ -9,6 +9,7 @@ import { applyDelta, applyResolutions, applyThreads, paragraphsWithIds, resolveO
 import { runPrewriteGate } from './semanticGate';
 import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
 import { stringList } from './normalize';
+import { resolveSourceRefs } from './retrieval';
 import type { BookDesign, StoryState } from './types';
 
 /**
@@ -186,8 +187,21 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           store.log('scene-rebase', `Scene ${scene.id} rebase failed; writing the planned scene. ${reason}`);
         }
       }
-      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, excerpts, priorChapters, handoff);
+      // A callback to an earlier detail travels as the paragraph that established it.
+      // The chapter tails still follow, for continuity of voice rather than of fact.
+      const sources = resolveSourceRefs(scene.required_source_refs, store, store.loadState());
+      const sceneSources = [...sources.excerpts, ...excerpts];
+      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, sceneSources, priorChapters, handoff);
       const problems = [...contextProblems, ...(prewrite.problems.get(scene.id) || [])];
+      if (sources.missing.length) {
+        problems.push({
+          code: 'missing-source',
+          detail: `Scene ${scene.id} cites earlier text that cannot be retrieved: ${sources.missing.join(', ')}. A reference reads SCENE_ID#pN or the id of a recorded fact or event. Either the callback rests on nothing written, or the reference is malformed — decide which before the scene leans on it.`,
+        });
+      }
+      if (sources.excerpts.length) {
+        store.log('retrieval', `Scene ${scene.id} retrieved ${sources.excerpts.length} exact excerpt(s) for its callbacks.`);
+      }
       if (problems.length) {
         // The §6 model gate: code found structural doubts, P02 disposes them
         // before prose exists. Blocking verdicts become explicit writer
@@ -199,7 +213,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           `Scene ${scene.id} readiness before prose. Cast roster (id — name — function):\n${design.characters.map(character => `${character.id} — ${character.name} — ${character.story_function}`).join('\n')}\nCode-level doubts:\n${problems.map(p => `- ${p.code}: ${p.detail}`).join('\n')}`,
           scene,
           JSON.stringify(store.loadState()),
-          JSON.stringify(excerpts),
+          JSON.stringify(sceneSources),
           llm,
         );
         const hard = check.issues.filter(item => item.severity === 'blocking' || item.severity === 'major');

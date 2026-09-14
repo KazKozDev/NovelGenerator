@@ -58,6 +58,13 @@ REQUIREMENTS
   in the scene package — do not duplicate them with fact refs. If a scene
   must establish something for the first time, leave the refs empty and let
   the scene establish it.
+- In required_source_refs cite the earlier text a scene must return to
+  exactly — a remembered line, an object described once, a promise made in
+  its own words. A reference is either SCENE_ID#pN (CH02_S01#p3) or the id
+  of a recorded fact or event (CH02_S01-e2), and the cited paragraph is
+  handed to the writer verbatim. Cite nothing for a scene that invents its
+  own detail: a reference that resolves to no written paragraph is reported
+  as a defect, not quietly ignored.
 
 BEFORE ANSWERING
 Check availability of knowledge and means, transitions between scenes,

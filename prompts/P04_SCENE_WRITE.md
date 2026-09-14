@@ -54,6 +54,10 @@ RELEVANT RULES AND EARLIER EVENTS
 {{relevant_facts}}
 
 EXACT EXCERPTS FOR RETURNING TO DETAILS
+Each excerpt is the earlier paragraph itself, under its reference. When this
+scene returns to one, return to what it actually says — the same object, the
+same words spoken, the same promise — instead of a plausible version of it.
+Do not quote an excerpt back at length: use the detail, do not re-narrate it.
 {{source_excerpts}}
 
 END OF THE PREVIOUS SCENE
