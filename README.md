@@ -193,20 +193,3 @@ npm run build && npm run preview
 
 </div>
 
-## Local models
-
-Two models run locally and are on by default: a cross-encoder (544MB) and an NLI head
-(233MB). They are what catches a scene retold in fresh words, or a plan that contradicts
-what the book already established. There is no setting: the lighter one that
-existed reported coverage it did not have, and a check you can quietly turn down is a check
-nobody can trust the absence of.
-
-The browser fetches them from Hugging Face on first use. To serve them from the application
-instead, fetch them once and stage them where Vite can reach them:
-
-```bash
-npx vite-node scripts/warm-models.ts
-```
-
-They land in `public/models/` (git-ignored, ~780MB) and the page loads them from localhost
-after that. 
