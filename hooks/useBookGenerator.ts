@@ -11,7 +11,7 @@ import { playSuccessSound } from '../utils/soundUtils';
 
 const DEFAULT_SETTINGS: StorySettings = {
   genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
-  writingStyle: 'descriptive', language: 'English', tense: 'past',
+  writingStyle: 'descriptive', tense: 'past',
   ending: 'closed', targetWordsPerChapter: 4000,
 };
 
@@ -257,8 +257,6 @@ export default function useBookGenerator() {
         storySettings.tense ? `Tense: ${storySettings.tense}.` : '',
         storySettings.ending ? `Ending: ${storySettings.ending}.` : '',
       ].filter(Boolean).join(' ') || '(none)',
-      story_language: storySettings.language || 'English',
-      planning_language: 'English',
     };
     inputRef.current = input;
     setStoryPremise(premise);

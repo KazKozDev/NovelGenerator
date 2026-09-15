@@ -9,8 +9,8 @@ import type { StateDelta, StoryState } from './types';
  * a friendship could arrive with nothing behind it, both for free.
  *
  * A relationship lives in `conditions` like any other current condition, under a
- * directed key: `C01->C02.trust`. Directed, because Zor trusting Pax is not Pax
- * trusting Zor. The value is words, not a number — code never grades a bond, it
+ * directed key: `C01->C02.trust`. Directed, because C01 trusting C02 is not C02
+ * trusting C01. The value is words, not a number — code never grades a bond, it
  * only carries what the scene proved and shows it to the writer instead of the
  * card.
  */

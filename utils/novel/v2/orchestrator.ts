@@ -1,6 +1,7 @@
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { auditBook } from './auditor';
 import { designReviewedBook } from './reviewer';
+import { validateBookDesign } from './designer';
 import { emptyState, MemoryProjectStore, type ProjectStore } from './store';
 import type { BookDesign, FinalReport, PlanReview, ProjectInput } from './types';
 
@@ -94,7 +95,20 @@ export class Orchestrator {
       // unfinished chapter; finished chapters keep their manuscript and memory.
       const storedInput = this.store.loadInput();
       const storedDesign = this.store.loadDesign();
-      const sameBook = !!storedInput && !!storedDesign
+      // A stored design is resumed only if it still validates. One that does not
+      // was written against an older schema, and continuing it would mean
+      // planning every remaining chapter against budgets it never declared.
+      const resumable = (() => {
+        if (!storedDesign) return false;
+        try {
+          validateBookDesign(storedDesign, input.chapter_count);
+          return true;
+        } catch {
+          this.store.log('resume', 'The stored design does not meet the current schema; designing the book again.');
+          return false;
+        }
+      })();
+      const sameBook = !!storedInput && resumable
         && storedInput.premise === input.premise
         && storedInput.chapter_count === input.chapter_count;
       let design: BookDesign;
@@ -157,8 +171,6 @@ export class Orchestrator {
       this.onProgress('audit');
       this.flushRetries();
       const report = await auditBook({
-        story_language: input.story_language,
-        planning_language: input.planning_language,
         design: this.store.loadDesign() || design,
         manuscript: this.store.manuscript(),
         finalState: this.store.loadState(),

@@ -21,6 +21,9 @@
 import { AutoModel, AutoModelForSeq2SeqLM, AutoModelForSequenceClassification, AutoTokenizer } from '@huggingface/transformers';
 import { meanPool, normalize } from './localEmbedder';
 import { loadWithFallback } from './modelProgress';
+import { useLocalModelWeights } from './modelSource';
+
+useLocalModelWeights();
 
 export type LocalModelTask = 'pair-logits' | 'text-logits' | 'generate' | 'embed';
 

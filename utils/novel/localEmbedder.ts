@@ -8,18 +8,21 @@
  * server, no key and no Ollama.
  *
  * Model choice: Xenova/all-MiniLM-L6-v2 (384 dims, ~90MB, q8 smaller) is
- * the browser standard for feature-extraction; the multilingual constant
- * covers Russian prose. Embeddings are NOT comparable across models: if the
+ * the browser standard for feature-extraction. Embeddings are NOT comparable
+ * across models: if the
  * model ID changes, every fitted cosine threshold must be recalibrated on
  * runs/ (see reranker.ts for how the current ones were fitted).
  */
-/** Restored without ./prosody: the embedder contract in one line. */
+/**
+ * The embedder contract, kept for the worker's encoder task. The pipeline no
+ * longer loads a sentence embedder: it served the semantic gate's light mode,
+ * which claimed to check paraphrase restaging and did not catch a scene retold
+ * from one chapter to the next. That mode is gone, and so is its model.
+ */
 export type Embedder = (inputs: string[]) => Promise<number[][]>;
 import type { ProgressCallback } from './modelProgress';
 import { loadWithFallback, localModelWorker, progressOptions } from './modelProgress';
 
-export const DEFAULT_LOCAL_EMBEDDER = 'Xenova/all-MiniLM-L6-v2';
-export const MULTILINGUAL_LOCAL_EMBEDDER = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 
 /**
  * Mean-pool token vectors with the attention mask; padding never votes.
@@ -73,43 +76,3 @@ interface LoadedEncoder {
  * repetition check then reports that it could not be made and the chapter is measured without it,
  * which is what happens on a run with no embedder at all — never a lost chapter.
  */
-export function createLocalEmbedder(model = DEFAULT_LOCAL_EMBEDDER, dtype: 'q8' | 'fp32' = 'q8', onProgress?: ProgressCallback): Embedder {
-  // A caller that wants the download reported keeps the page's own loader; nothing passes one today.
-  const worker = onProgress ? undefined : localModelWorker();
-  if (worker) return inputs => inputs.length ? worker.embed(model, inputs) : Promise.resolve([]);
-  let ready: Promise<LoadedEncoder> | undefined;
-  const load = (): Promise<LoadedEncoder> => loadWithFallback(model, async dtype => {
-    const { AutoTokenizer, AutoModel } = await import('@huggingface/transformers');
-    const [tokenizer, encoder] = await Promise.all([
-      AutoTokenizer.from_pretrained(model, progressOptions(onProgress)),
-      AutoModel.from_pretrained(model, { dtype, ...progressOptions(onProgress) }),
-    ]);
-    return {
-      tokenize: async (inputs: string[]) => tokenizer(inputs, { padding: true, truncation: true }) as never,
-      encode: async (batch: unknown) => encoder(batch as never) as never,
-    };
-  });
-  return async inputs => {
-    if (!inputs.length) return [];
-    ready ||= load();
-    const { tokenize, encode } = await ready;
-    const batch = await tokenize(inputs);
-    const output = await encode(batch);
-    const hidden = output.last_hidden_state.tolist();
-    const mask = batch.attention_mask.tolist();
-    if (hidden.length !== inputs.length) throw new Error('The local embedder returned a different number of vectors than inputs.');
-    return meanPool(hidden, mask).map(normalize);
-  };
-}
-
-const shared = new Map<string, Embedder>();
-
-/** One instance per model: the weights are large and every engine would otherwise download them again. */
-export function sharedLocalEmbedder(model = DEFAULT_LOCAL_EMBEDDER, dtype: 'q8' | 'fp32' = 'q8'): Embedder {
-  const key = `${model}|${dtype}`;
-  const existing = shared.get(key);
-  if (existing) return existing;
-  const created = createLocalEmbedder(model, dtype);
-  shared.set(key, created);
-  return created;
-}

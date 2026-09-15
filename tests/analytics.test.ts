@@ -8,7 +8,6 @@ import {
   recurrentMotifs,
   rhythmDrift,
   sharedDistinctivePhrasing,
-  tiredPhrases,
   uniqueNgramRatio,
 } from '../utils/novel/analytics';
 
@@ -41,20 +40,6 @@ describe('analytics detectors', () => {
     // A capitalized common noun is still extracted — letting it pass is the
     // gaps filter's job, not the extractor's silence.
     expect(extractPremiseNames('Hope dies last in the garrison.')).toEqual(['Hope']);
-  });
-
-  it('flags tired phrases across finished prose for the writer watch', () => {
-    const chapters = [
-      'Vem set the dark blue mug on the counter and waited.',
-      'Zor reached past Vem for the dark blue mug without thinking.',
-      'Kex stared at the dark blue mug while the coffee cooled.',
-      'The dark blue mug sat empty between the three of them.',
-      'Zor climbed the tower stairs while the storm took the rail.',
-    ];
-    const tired = tiredPhrases(chapters);
-    expect(tired.length).toBeGreaterThan(0);
-    expect(tired[0].phrase).toContain('dark blue mug');
-    expect(tiredPhrases(['Zor climbed the tower in silence.'])).toEqual([]);
   });
 
   it('holds rhythm on even prose and flags a collapse', () => {

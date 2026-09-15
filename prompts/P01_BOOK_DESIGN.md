@@ -39,9 +39,16 @@ WORK ORDER
 5. Define the intended resolution of the central conflict
    and the prior events it requires.
 6. Distribute development across the given number of chapters.
-7. Give the book a working_title in the manuscript language: a short title
+7. Give the book a working_title: a short title
    this story could carry, drawn from what the book is actually about. Not
    the premise restated, and not a subtitle.
+8. Declare the profile: what kind of book this is, so the rest of the
+   pipeline checks it against its own form instead of against a generic one.
+   See PROFILE below — it is not decoration, every field is enforced.
+9. Allocate the budgets across chapter_map. Each chapter that meets the
+   central obstacle draws a mechanism from the profile's ledger, states the
+   cost it takes from the protagonist, and takes a rung on the declared
+   pressure curve.
 
 CONSTRUCTION REQUIREMENTS
 - Cast every person the premise names, under that premise-given name;
@@ -54,11 +61,59 @@ CONSTRUCTION REQUIREMENTS
   or a concrete reason it is unavailable.
 - New complications must change the participants' positions.
 - Do not substitute development with one repeated threat in different scenery.
+- Every chapter takes something from someone, in the terms of cost_kinds.
+  A chapter that costs nothing is a chapter that repeats: state the cost.
+- A chapter's mechanism is drawn from mechanism_ledger, and no mechanism
+  carries more chapters than this book's mechanism_reuse rank allows.
+- pressure_rung is a small integer placing the chapter on the declared curve.
+  Its shape is checked against pressure_curve in code, so a rising curve whose
+  rungs never rise is rejected before any chapter is planned.
 - Do not explain every act with trauma or a hidden past.
 - Prepare the means of resolving the conflict before their decisive use.
 - Preserve the features of the original premise.
 - Choose the narrative scheme to fit the story.
 - Do not detail future scenes and do not write prose.
+
+PROFILE
+This is where you say what kind of book this is. Code enforces it afterwards,
+so declare the book you mean to write, not the book that sounds safest.
+
+- pressure_curve: how pressure is meant to move across the whole book.
+  "rising" — it grows chapter by chapter (thriller, horror).
+  "oscillating" — it closes and breaks on purpose (romance, some drama).
+  "investigative" — what grows is what is known, not what threatens (mystery).
+  "flat" — the pressure is a condition, not a rise (much literary fiction).
+  "descending" — the book releases rather than tightens.
+  Choose from what this premise actually is. A wrong curve is worse than a
+  modest one: the chapter rungs are checked against the shape you name here.
+- declared_motifs: the repetitions this book means. A returning image, phrase,
+  or gesture that carries the book is a refrain; the same thing unmeant is a
+  tic. Anything you declare here is exempt from the repetition check up to
+  allowed_uses, and anything you do not declare is counted. Declare only what
+  is load-bearing, give each one a reason, and keep the budgets honest — a
+  large enough exemption disarms the check and the book goes formulaic
+  unnoticed.
+- cost_kinds: what paying a price means in this book. Material loss and injury
+  in one genre; exposure and vulnerability in another; a discarded theory, a
+  burned source, a lost witness in another. Every chapter must be able to take
+  something from someone in these terms.
+- dialogue_weight, staging_variety, mechanism_reuse: low / medium / high only.
+  Never a number, a share, or a percentage — you cannot know the statistics of
+  prose that does not exist yet, and a decimal invented here would be enforced
+  as if it were measured. staging_variety "low" is the honest answer for a
+  deliberately claustrophobic book: one house, one pair of eyes, and the
+  repetition-of-staging check relaxes accordingly. mechanism_reuse "high" is
+  the honest answer for a procedural, where repeating the method is the form.
+- open_ending: true when threads left standing at the end are the design.
+- mechanism_ledger: the distinct ways the central obstacle is met across the
+  book. Not scenes and not plot points — kinds of solution. Chapters draw from
+  this list and spend what they draw, so a book whose ledger is too short will
+  repeat one solution in different scenery, and code will say so before a word
+  is written.
+- ending_invariants: what this book's kind promises a reader, in this book's
+  own words. A mystery that the reader could have solved from clues planted
+  before the revelation. A romance that ends on the pair. A horror that leaves
+  the wrong thing alive. Name what yours owes.
 
 VOICE
 Describe the voice through narrative distance, traits of attention,
@@ -81,10 +136,23 @@ Fill lists as needed; chapter_map contains exactly
     "inferred_decisions": [
       {"decision": "", "reason": ""}
     ],
-    "language": "",
     "tense": "",
     "narrative_perspective": "",
     "genre_expectations_selected": []
+  },
+  "profile": {
+    "pressure_curve": "rising | oscillating | investigative | flat | descending",
+    "curve_reason": "",
+    "declared_motifs": [
+      {"motif": "", "allowed_uses": 0, "reason": ""}
+    ],
+    "cost_kinds": [],
+    "dialogue_weight": "low | medium | high",
+    "staging_variety": "low | medium | high",
+    "mechanism_reuse": "low | medium | high",
+    "open_ending": false,
+    "mechanism_ledger": [],
+    "ending_invariants": []
   },
   "dramatic_core": {
     "distinctive_situation": "",
@@ -145,7 +213,10 @@ Fill lists as needed; chapter_map contains exactly
       "dependencies": [],
       "setup_or_payoff": [],
       "pov_id": null,
-      "target_words": 0
+      "target_words": 0,
+      "mechanism": "",
+      "cost": "",
+      "pressure_rung": 1
     }
   ]
 }

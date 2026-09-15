@@ -21,54 +21,42 @@
 import { contentWords, paragraphsOf, splitSentences } from '../analytics';
 import { contradictionFindings, naturalizeClaim, sharedNLIScorer, type NLIScorer } from '../nli';
 import { rerankRepetitionScore, sharedReranker, type Reranker } from '../reranker';
-import { sharedLocalEmbedder, type Embedder } from '../localEmbedder';
 import type { ChapterPlan, StoryState } from './types';
 import type { PriorChapter, ReadinessProblem } from './planner';
 
-export const SEMANTIC_GATE_KEY = 'novel-semantic-gate';
-
-export type GateMode = 'off' | 'light' | 'full';
-
 /**
- * Light unless the reader chose otherwise: the small embedder downloads on
- * first use with progress shown, never silently. An explicit 'off' is
- * respected and reported once per book; legacy 'on' means full. Without a
- * persistence layer (tests, scripts) there is nobody to consent to a
- * download, so the default there is off.
+ * Two modes, not three, and only one of them is a choice anybody makes.
+ *
+ * A light mode existed — a small embedder scoring the same pairs by cosine,
+ * restaging only — and it was worse than nothing: it ran, it logged that it had
+ * checked for paraphrase restaging, and it let a scene be retold almost beat for
+ * beat from one chapter to the next. A check that reports coverage it does not
+ * have is a check that stops anyone looking.
+ *
+ * 'off' survives it, but not as a setting. There is no switch in the
+ * application and no flag on the runner: a book is written with the models or
+ * it is not written by this pipeline. What 'off' is for is the runtime that has
+ * nowhere to record a choice and nobody to consent to 780MB — a test suite,
+ * which must never reach for the network, and any script that has not said
+ * otherwise. Runners say otherwise with `setGateModeOverride`.
  */
+export type GateMode = 'off' | 'full';
+
+let modeOverride: GateMode | null = null;
+
+export function setGateModeOverride(mode: GateMode | null): void {
+  modeOverride = mode;
+}
+
 export function currentGateMode(): GateMode {
-  try {
-    if (typeof localStorage === 'undefined') return 'off';
-    const stored = localStorage.getItem(SEMANTIC_GATE_KEY);
-    if (stored === 'off' || stored === 'light' || stored === 'full') return stored;
-    return stored === 'on' ? 'full' : 'light';
-  } catch {
-    return 'off';
-  }
-}
-
-export function setSemanticGateMode(mode: GateMode): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(SEMANTIC_GATE_KEY, mode);
-  } catch {
-    /* A setting that cannot persist stays light. */
-  }
-}
-
-/** Kept for older callers: on once meant the full gate, off means off. */
-export function isSemanticGateEnabled(): boolean {
-  return currentGateMode() !== 'off';
-}
-
-export function setSemanticGateEnabled(on: boolean): void {
-  setSemanticGateMode(on ? 'full' : 'off');
+  if (modeOverride) return modeOverride;
+  // A browser is a reader's machine: it gets the whole check, always.
+  return typeof localStorage === 'undefined' ? 'off' : 'full';
 }
 
 export interface GateScorers {
   rerank: Reranker;
   scoreNLI: NLIScorer;
-  embed?: Embedder;
 }
 
 export interface PrewriteGateResult {
@@ -77,25 +65,6 @@ export interface PrewriteGateResult {
   warnings: string[];
   mode: GateMode;
 }
-
-/**
- * Cosine floor for the light leg. A heuristic starting value, not a fitted
- * threshold: set high so the small embedder stays silent unless the pair is
- * close, and every hit still goes to the P02 review for disposal.
- */
-export const LIGHT_COSINE_FLOOR = 0.84;
-
-const cosine = (a: number[], b: number[]): number => {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return na > 0 && nb > 0 ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
-};
 
 const MAX_PAIRS_PER_CHAPTER = 40;
 const MIN_SHARED_WORDS = 3;
@@ -134,14 +103,9 @@ export async function runPrewriteGate(
   };
   let rerank: Reranker | undefined;
   let scoreNLI: NLIScorer | undefined;
-  let embed: Embedder | undefined;
   try {
-    if (resolved === 'full') {
-      rerank = scorers?.rerank || sharedReranker();
-      scoreNLI = scorers?.scoreNLI || sharedNLIScorer();
-    } else {
-      embed = scorers?.embed || sharedLocalEmbedder();
-    }
+    rerank = scorers?.rerank || sharedReranker();
+    scoreNLI = scorers?.scoreNLI || sharedNLIScorer();
 
     // Restaging: scene plan against finished paragraphs, cheapest prefilter
     // first (shared content words), cross-encoder verdict only on survivors.
@@ -165,34 +129,19 @@ export async function runPrewriteGate(
         pairs.push({ sceneId: scene.id, scene: text.slice(0, 1200), ref: candidate.ref, paragraph: candidate.paragraph.slice(0, 1200) });
       }
     }
-    if (pairs.length) {
-      if (resolved === 'full' && rerank) {
-        const scores = await rerank(pairs.map(item => [item.scene, item.paragraph] as [string, string]));
-        pairs.forEach((item, index) => {
-          if ((scores[index] ?? 0) >= rerankRepetitionScore) {
-            push(item.sceneId, {
-              code: 'restaging-suspect',
-              detail: `Scene ${item.sceneId} reads as a retelling of ${item.ref} (paraphrase score ${(scores[index] ?? 0).toFixed(1)}): "${item.paragraph.slice(0, 200)}". If the staging repeats, differentiate it on the page or replan the scene.`,
-            });
-          }
-        });
-      } else if (embed) {
-        const vectors = await embed(pairs.flatMap(item => [item.scene, item.paragraph]));
-        pairs.forEach((item, index) => {
-          const similarity = cosine(vectors[index * 2] || [], vectors[index * 2 + 1] || []);
-          if (similarity >= LIGHT_COSINE_FLOOR) {
-            push(item.sceneId, {
-              code: 'restaging-suspect',
-              detail: `Scene ${item.sceneId} reads as a retelling of ${item.ref} (similarity ${similarity.toFixed(2)}, light check): "${item.paragraph.slice(0, 200)}". If the staging repeats, differentiate it on the page or replan the scene.`,
-            });
-          }
-        });
-      }
+    if (pairs.length && rerank) {
+      const scores = await rerank(pairs.map(item => [item.scene, item.paragraph] as [string, string]));
+      pairs.forEach((item, index) => {
+        if ((scores[index] ?? 0) >= rerankRepetitionScore) {
+          push(item.sceneId, {
+            code: 'restaging-suspect',
+            detail: `Scene ${item.sceneId} reads as a retelling of ${item.ref} (paraphrase score ${(scores[index] ?? 0).toFixed(1)}): "${item.paragraph.slice(0, 200)}". If the staging repeats, differentiate it on the page or replan the scene.`,
+          });
+        }
+      });
     }
 
-    if (resolved !== 'full' || !scoreNLI) {
-      return { problems, warnings: [], mode: resolved };
-    }
+    if (!scoreNLI) return { problems, warnings: [], mode: resolved };
 
     // Plan-vs-memory: the scene's own claims against confirmed state.
     const stateClaims = [

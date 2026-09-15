@@ -1,6 +1,6 @@
 import { renderPrompt, systemContract } from '../prompts';
 import { structuredResponse, type NovelLLM } from './llm';
-import { designBook, premiseGivenGaps, premiseNameGaps, validateBookDesign } from './designer';
+import { designBook, designBudgetGaps, premiseGivenGaps, premiseNameGaps, validateBookDesign } from './designer';
 import type { BookDesign, PlanIssue, PlanReview, ProjectInput } from './types';
 
 /**
@@ -43,6 +43,33 @@ function givenCharges(design: BookDesign, round: number): PlanIssue[] {
 }
 
 /**
+ * The profile's own budgets, as review charges.
+ *
+ * Deliberately major and not blocking: a ledger one entry short is a real
+ * defect and not a reason to refuse to write a book. It goes back to the
+ * designer like any other finding, and if it survives the fix rounds it
+ * travels into the contract as a requirement the chapters must meet — which
+ * is exactly where the plan-time gates will pick it up again.
+ */
+function budgetCharges(design: BookDesign, chapterCount: number, round: number): PlanIssue[] {
+  return designBudgetGaps(design, chapterCount).map((gap, index) => ({
+    id: `B${round + 1}${index + 1}`,
+    severity: 'major' as const,
+    // Keyed by what the gap is, never by where it sat in the list: a fix that
+    // resolves one gap shifts every later index, and the convergence logic then
+    // reads an old target as new — downgrading a real objection, or re-raising a
+    // settled one, purely because the list got shorter.
+    target_ref: `profile:budget:${gap.code}`,
+    category: 'budget',
+    problem: gap.detail,
+    evidence_refs: [],
+    consequence_for_writing: 'The middle of the book repeats itself instead of developing, and nothing downstream can tell the difference.',
+    required_decision: 'Fix the allocation in profile or chapter_map so the budget covers the book.',
+    suggested_adjustment: 'Extend the mechanism ledger, state the missing costs, or place the chapter rungs on the declared curve.',
+  }));
+}
+
+/**
  * PlanReviewer: finds construction problems before a word of prose exists.
  * `ready` is computed here, not trusted from the model: only an empty blocking/
  * major list passes. A design that cannot be executed coherently goes back to
@@ -58,8 +85,6 @@ export function settleReview(raw: unknown): PlanReview {
 }
 
 export interface ReviewContext {
-  story_language: string;
-  planning_language: string;
   story_contract: string;
 }
 
@@ -71,7 +96,7 @@ export async function reviewPlan(
   sourceExcerpts: string,
   llm: NovelLLM,
 ): Promise<PlanReview> {
-  const system = systemContract({ story_language: ctx.story_language, planning_language: ctx.planning_language });
+  const system = systemContract();
   const prompt = renderPrompt('P02_PLAN_REVIEW', {
     review_scope: scope,
     story_contract: ctx.story_contract,
@@ -121,8 +146,6 @@ export async function designReviewedBook(
 ): Promise<{ design: BookDesign; review: PlanReview }> {
   let design = await designBook(input, llm);
   const ctx: ReviewContext = {
-    story_language: input.story_language,
-    planning_language: input.planning_language,
     story_contract: JSON.stringify(design.contract),
   };
   // Targets already litigated in earlier rounds: re-flagging them keeps severity.
@@ -133,7 +156,11 @@ export async function designReviewedBook(
       ? 'Whole book design before any prose is written.'
       : `Re-verify after fixes. Previously raised:\n${priorSummary}\nJudge only whether those fixes worked and whether the fixes broke coherence; settled points stay settled.`;
     const raw = await reviewPlan(ctx, scope, design, '', '', llm);
-    const charges = [...groundingIssues(design, input.premise, round), ...givenCharges(design, round)];
+    const charges = [
+      ...groundingIssues(design, input.premise, round),
+      ...givenCharges(design, round),
+      ...budgetCharges(design, input.chapter_count, round),
+    ];
     const merged: PlanReview = charges.length ? { ready: false, issues: [...raw.issues, ...charges] } : raw;
     const review = round === 0 ? merged : calibrateReview(merged, seenTargets);
     for (const item of review.issues) {
@@ -161,18 +188,19 @@ export async function designReviewedBook(
       ];
       return { design, review };
     }
-    const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
-    const prompt = renderPrompt('P02_PLAN_REVIEW', {
-      review_scope: `Refine the previous plan against these findings, then re-verify it:\n${issueSummary(review.issues)}`,
+    // Its own prompt, not the reviewer's with a different scope line. P02 tells
+    // the model to check a plan and return {ready, issues}; asking that same
+    // text for a whole revised construction gave it two jobs and two output
+    // formats, and it answered with whichever it read last — a verdict the key
+    // check rejected, or the construction handed back unchanged.
+    const system = systemContract();
+    const prompt = renderPrompt('P02_PLAN_REFINE', {
       story_contract: ctx.story_contract,
-      plan: JSON.stringify(design),
-      relevant_state: '(nothing written yet)',
-      source_excerpts: '(none)',
       previous_plan: JSON.stringify(design),
-      review_issues: JSON.stringify(review.issues),
+      review_issues: issueSummary(review.issues),
     });
     const rawDesign = await structuredResponse(prompt, system, llm,
-      ['contract', 'dramatic_core', 'style_contract', 'characters', 'world_rules', 'causal_map', 'ending', 'chapter_map'],
+      ['contract', 'profile', 'dramatic_core', 'style_contract', 'characters', 'world_rules', 'causal_map', 'ending', 'chapter_map'],
       parsed => parsed, { temperature: 0.4, maxTokens: 16384, route: 'writer' });
     design = validateBookDesign(rawDesign, input.chapter_count);
   }

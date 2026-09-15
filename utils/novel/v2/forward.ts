@@ -1,6 +1,7 @@
 import { renderPrompt, systemContract } from '../prompts';
 import { structuredResponse, type NovelLLM } from './llm';
 import { matchKey, stringList } from './normalize';
+import { describeStateDigest } from './stateDigest';
 import type { BookDesign, EndingReadiness, ForwardUpdate } from './types';
 
 /**
@@ -10,8 +11,6 @@ import type { BookDesign, EndingReadiness, ForwardUpdate } from './types';
  */
 
 export interface ForwardInput {
-  story_language: string;
-  planning_language: string;
   design: BookDesign;
   completedChapter: number;
   chapterOutcome: string;
@@ -25,12 +24,14 @@ const FORWARD_KEYS = ['chapter_outcome', 'consequences_to_carry_forward', 'next_
   'plan_updates', 'ending_readiness', 'unresolved_blockers'];
 
 export async function updateForward(input: ForwardInput, llm: NovelLLM): Promise<ForwardUpdate> {
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const prompt = renderPrompt('P06_FORWARD_UPDATE', {
     story_contract: JSON.stringify(input.design.contract),
     chapter_map: JSON.stringify(input.design.chapter_map),
     completed_chapter: input.chapterOutcome,
-    accepted_state: typeof input.acceptedState === 'string' ? input.acceptedState : JSON.stringify(input.acceptedState),
+    accepted_state: typeof input.acceptedState === 'string'
+      ? input.acceptedState
+      : describeStateDigest(input.acceptedState as Parameters<typeof describeStateDigest>[0]),
     open_threads: JSON.stringify(input.openThreads),
     ending_dependencies: JSON.stringify(input.design.ending.required_setup),
     remaining_budget: `${input.remainingChapters} chapters, about ${input.remainingWords} words`,

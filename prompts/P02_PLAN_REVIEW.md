@@ -104,17 +104,3 @@ MAPPING DUTY (scene readiness)
   (map it to the roster entry in words, using the name as the card gives it).
 - If nobody on the roster answers to it, return major, not a guess: state
   how the scene carries the beat without inventing a person.
-
-A plan can be fixed by calling its creator again with a short addition:
-
-Revise the earlier draft according to the attached remarks.
-
-Previous plan:
-{{previous_plan}}
-
-Remarks:
-{{review_issues}}
-
-Fix the affected decisions and their direct dependencies.
-Keep all other decisions and existing IDs.
-Return the full updated JSON in the original schema.

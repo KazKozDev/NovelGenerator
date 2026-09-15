@@ -18,17 +18,71 @@ export interface PremiseGiven {
 }
 
 export interface DesignContract {
-  /** Short title from P01, in the manuscript language. Books designed before the field existed have none. */
-  working_title?: string;
+  /** Short title from P01, in the manuscript's own words. */
+  working_title: string;
   explicit_requirements: string[];
   premise_givens?: PremiseGiven[];
   /** Names the P01 model judges to be proper names in the premise — code checks coverage, never judges. */
   premise_names?: string[];
   inferred_decisions: InferredDecision[];
-  language: string;
   tense: string;
   narrative_perspective: string;
   genre_expectations_selected: string[];
+}
+
+/**
+ * The book profile (§ step 1): what kind of book this is, declared once at
+ * design time and enforced by code ever after.
+ *
+ * Everything here is either a qualitative authorial decision about this
+ * premise — the shape of the pressure curve, which repetitions are deliberate
+ * refrains, what a cost is made of — or an ordinal rank. Never an absolute
+ * number: a model has no access to the distribution of its own future output,
+ * so a declared "dialogue share 0.35" is noise wearing a decimal point. Ranks
+ * are what a model judges reliably; code turns a rank into a numeric band
+ * through a table it owns (profile.ts), and that table is recalibrated from
+ * measured books without touching a single prompt.
+ */
+export type ProfileRank = 'low' | 'medium' | 'high';
+
+/**
+ * How pressure is meant to move across the book. "Rung must rise" is true for
+ * a thriller and false for half of everything else: a mystery escalates
+ * information rather than threat, a romance oscillates on purpose, literary
+ * fiction often descends. Code checks conformance to the declared shape, never
+ * monotonicity as such.
+ */
+export type PressureCurve = 'rising' | 'oscillating' | 'investigative' | 'flat' | 'descending';
+
+/**
+ * A repetition the book means. Without this list the tired-phrase ban would
+ * destroy exactly what makes a literary refrain work, so a motif declared here
+ * is exempt up to its own budget and reported only past it.
+ */
+export interface DeclaredMotif {
+  motif: string;
+  allowed_uses: number;
+  reason: string;
+}
+
+export interface BookProfile {
+  pressure_curve: PressureCurve;
+  curve_reason: string;
+  declared_motifs: DeclaredMotif[];
+  /** What paying a price means in this book — material loss, exposure, a discarded theory. */
+  cost_kinds: string[];
+  /** How much of this book is spoken aloud. */
+  dialogue_weight: ProfileRank;
+  /** low = deliberately claustrophobic (one house, one pair of eyes); high = a book that travels. */
+  staging_variety: ProfileRank;
+  /** high = a procedural genre where a repeated method is the form, not a defect. */
+  mechanism_reuse: ProfileRank;
+  /** True when threads left standing at the end are the design, not a defect. */
+  open_ending: boolean;
+  /** The distinct ways the central obstacle is met. Spent, one per chapter that meets it. */
+  mechanism_ledger: string[];
+  /** Genre promises the finished book must keep, in this book's own words. */
+  ending_invariants: string[];
 }
 
 export interface DramaticCore {
@@ -94,10 +148,25 @@ export interface ChapterMapEntry {
   setup_or_payoff: string[];
   pov_id: string | null;
   target_words: number;
+  /**
+   * The book's own budgets, allocated at design time rather than detected later.
+   * A repetition you have to detect in prose is a repetition you already paid
+   * to write: the mechanism is drawn from the profile's ledger and spent, the
+   * cost says what this chapter takes from the protagonist, and the rung places
+   * the chapter on the declared pressure curve.
+   *
+   * An empty string and a null rung mean the design declined to allocate, which
+   * is a finding the review raises — not a field that may be absent. Absence and
+   * refusal are different facts, and only one of them can be argued with.
+   */
+  mechanism: string;
+  cost: string;
+  pressure_rung: number | null;
 }
 
 export interface BookDesign {
   contract: DesignContract;
+  profile: BookProfile;
   dramatic_core: DramaticCore;
   style_contract: StyleContract;
   characters: CharacterCard[];
@@ -142,6 +211,14 @@ export interface ScenePlan {
   setup_or_payoff: string[];
   transition_to_next: string;
   target_words: number;
+  /**
+   * The class of change this scene's outcome produces — position, possession,
+   * knowledge, commitment, relation, exposure. Not the outcome itself: the
+   * class, so code can see five scenes in a row producing the same kind of
+   * change, which is what iteration looks like from above. Empty when the plan
+   * declined to name one, which the gate reports.
+   */
+  outcome_kind: string;
 }
 
 export interface ChapterPlan {
@@ -153,6 +230,12 @@ export interface ChapterPlan {
   scenes: ScenePlan[];
   forward_dependencies: string[];
   replan_reason: string | null;
+  /** How this chapter meets the obstacle, drawn from the profile's ledger. */
+  mechanism: string;
+  /** What the chapter takes from the protagonist. A chapter that costs nothing is a chapter that repeats. */
+  cost: string;
+  /** Where the chapter sits on the declared pressure curve; null when the plan took none. */
+  pressure_rung: number | null;
 }
 
 /**
@@ -231,8 +314,8 @@ export interface StoryEvent {
  * A proper name on record: canonical spelling, what kind of thing it names,
  * and whom it refers to (a character id, another recorded name, or empty when
  * the scene established it as its own thing). Aliases live on the entry they
- * belong to, so Pax never competes with Paxel but Zarka cannot sneak past
- * Zarko.
+ * belong to, so a diminutive never competes with the full form while a
+ * near-identical spelling cannot sneak past the name it resembles.
  */
 export interface ProperName {
   name: string;
@@ -312,6 +395,4 @@ export interface ProjectInput {
   genre: string;
   target_total_words: number;
   author_requirements: string;
-  story_language: string;
-  planning_language: string;
 }

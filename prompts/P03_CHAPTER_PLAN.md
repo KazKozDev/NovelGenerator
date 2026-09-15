@@ -15,6 +15,12 @@ Chapter:
 Chapter purpose in the overall map:
 {{chapter_map_entry}}
 
+What kind of book this is:
+{{book_profile}}
+
+What this chapter was allocated at design time, and what the book has already spent:
+{{chapter_commitments}}
+
 Current state:
 {{current_state}}
 
@@ -33,9 +39,31 @@ Stagings of the recently accepted scenes (who was present, where, through whose 
 Remaining length:
 {{remaining_word_budget}}
 
+What a previous attempt at this chapter got wrong:
+{{plan_findings}}
+
 REQUIREMENTS
 - Define what this chapter adds and what changes by its end.
-- Choose the scene count by content.
+- State the chapter's mechanism, cost, and pressure_rung.
+  The mechanism is how the obstacle is met here, drawn from the book's
+  ledger above. A mechanism already spent to its allowance cannot carry
+  this chapter too: the same solution working a third time is the reader
+  watching a procedure, not a story. The cost is what this chapter takes
+  from someone, in the terms this book declared. A chapter that takes
+  nothing repeats the chapter before it however different its scenery.
+  The rung places this chapter on the book's declared pressure curve.
+  All three are checked in code against the design's allocation before
+  any prose exists, and a plan that fails them comes back to you with the
+  findings rather than reaching the writer.
+  These three describe the chapter as a whole. They are not a reason to
+  write it as one scene: a chapter meets its obstacle once and still
+  reaches that moment through several situations, and the cost is usually
+  paid in a different scene from the one that earns it.
+- Choose the scene count by content. A chapter is normally two to five
+  scenes; one scene is right only when the chapter is a single unbroken
+  situation, and when it is, say so in the chapter function. Length is not
+  the reason either way — a short chapter can turn twice and a long one can
+  hold a single room.
 - For each scene set participant intentions, starting conditions,
   and a substantive outcome.
 - Participants are character ids exactly as cast — never roles,
@@ -46,6 +74,11 @@ REQUIREMENTS
   or commitment held differently at the end. Never a prolonged posture
   in the setup's own words; an outcome that restates the setup is
   rejected in code before any review.
+- Each scene names its outcome_kind: the class of change its outcome
+  produces, not the outcome itself. Use one of: position, possession,
+  knowledge, commitment, relation, exposure, loss. Scenes running one
+  after another on the same class is what a book looks like from above
+  when it is iterating instead of developing, and it is counted.
 - Account for the actions of other parties even when they happen off POV.
 - Distinguish changes of situation, relationships, knowledge, and understanding.
 - Leave the writer freedom in lines, details, and the course of interaction.
@@ -78,6 +111,14 @@ BEFORE ANSWERING
 Check availability of knowledge and means, transitions between scenes,
 the necessity of each scene, and the feasibility of the outcome.
 
+If findings from a previous attempt are listed above, every one of them is
+measured, not opinion — a mechanism really is spent, a rung really does break
+the declared curve, those scenes really do share a staging. Plan a different
+chapter, not the same chapter re-described: rewording the same scenes to dodge
+the wording of a finding leaves the defect and loses the evidence. If a finding
+is wrong because the chapter map itself no longer fits what has been written,
+say so with status = "needs_replan" instead of planning around it.
+
 If the chapter contradicts the accepted state and requires revising
 the overall map, return status = "needs_replan" with a concrete reason.
 Do not hide the problem with an invented event in the past.
@@ -91,6 +132,9 @@ JSON only:
   "function": "",
   "starting_situation": "",
   "ending_change": "",
+  "mechanism": "",
+  "cost": "",
+  "pressure_rung": 1,
   "scenes": [
     {
       "id": "CH01_S01",
@@ -111,7 +155,8 @@ JSON only:
       "required_source_refs": [],
       "setup_or_payoff": [],
       "transition_to_next": "",
-      "target_words": 0
+      "target_words": 0,
+      "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss"
     }
   ],
   "forward_dependencies": [],

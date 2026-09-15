@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { naturalizeClaim, softmax } from '../utils/novel/nli';
-import { currentGateMode, LIGHT_COSINE_FLOOR, runPrewriteGate, type GateScorers } from '../utils/novel/v2/semanticGate';
+import { currentGateMode, setGateModeOverride, runPrewriteGate, type GateScorers } from '../utils/novel/v2/semanticGate';
 import { emptyState } from '../utils/novel/v2/store';
 import type { ChapterPlan, ScenePlan } from '../utils/novel/v2/types';
 
@@ -28,6 +28,7 @@ const scene = (overrides: Partial<ScenePlan> = {}): ScenePlan => ({
   setup_or_payoff: [],
   transition_to_next: '',
   target_words: 300,
+  outcome_kind: 'position',
   ...overrides,
 });
 
@@ -37,6 +38,9 @@ const plan = (scenes: ScenePlan[]): ChapterPlan => ({
   function: '',
   starting_situation: '',
   ending_change: '',
+  mechanism: 'tend the lamp',
+  cost: 'a night of sleep',
+  pressure_rung: 2,
   scenes,
   forward_dependencies: [],
   replan_reason: null,
@@ -76,43 +80,51 @@ describe('semantic pre-write gate', () => {
     expect(result.problems.size).toBe(0);
   });
 
-  it('flags a close paraphrase in light mode by cosine, no NLI leg', async () => {
+  it('has no mode that claims coverage it does not have', async () => {
+    // A light mode ran a small embedder, reported "paraphrase restaging" in the
+    // run log, and let a scene be retold nearly beat for beat from one chapter
+    // to the next. Either the cross-encoder reads the pair, or nothing claims to.
     const scorers: GateScorers = {
-      rerank: vi.fn(async () => { throw new Error('must not run in light mode'); }),
+      rerank: vi.fn(async () => [9]),
       scoreNLI: vi.fn(async () => ({ contradiction: 0, entailment: 0, neutral: 1 })),
-      // Near-identical vectors for every scene/paragraph pair.
-      embed: vi.fn(async (inputs: string[]) => inputs.map((_, i) => (i % 2 === 0 ? [1, 0] : [0.99, 0.01]))),
     };
-    const result = await runPrewriteGate(plan([scene()]), prior, emptyState(), scorers, 'light');
-    const problems = result.problems.get('CH02_S01') || [];
-    expect(problems.some(p => p.code === 'restaging-suspect' && p.detail.includes('light check'))).toBe(true);
-    expect(result.mode).toBe('light');
-    expect(scorers.scoreNLI).not.toHaveBeenCalled();
+    const result = await runPrewriteGate(plan([scene()]), prior, emptyState(), scorers, 'full');
+    expect(result.mode).toBe('full');
+    expect(scorers.rerank).toHaveBeenCalled();
+    const off = await runPrewriteGate(plan([scene()]), prior, emptyState(), scorers, 'off');
+    expect(off.mode).toBe('off');
+    expect(off.problems.size).toBe(0);
   });
 
-  it('stays quiet in light mode below the cosine floor', async () => {
-    const scorers: GateScorers = {
-      rerank: vi.fn(async () => []),
-      scoreNLI: vi.fn(async () => ({ contradiction: 0, entailment: 0, neutral: 1 })),
-      embed: vi.fn(async (inputs: string[]) => inputs.map((_, i) => (i % 2 === 0 ? [1, 0] : [0, 1]))),
-    };
-    expect(LIGHT_COSINE_FLOOR).toBeGreaterThan(0.8);
-    const result = await runPrewriteGate(plan([scene()]), prior, emptyState(), scorers, 'light');
-    expect(result.problems.get('CH02_S01') || []).toEqual([]);
-  });
-
-  it('defaults to light in the browser and off without storage', () => {
-    expect(currentGateMode()).toBe('off');
-    vi.stubGlobal('localStorage', {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    } as unknown as Storage);
-    try {
-      expect(currentGateMode()).toBe('light');
-    } finally {
-      vi.unstubAllGlobals();
+  it('ignores any stored setting: a browser always gets the whole check', () => {
+    // There is no switch any more. A value left over from when there was one —
+    // 'light', 'off', anything — must not quietly hold a reader at less than
+    // the full check for every book they write afterwards.
+    for (const stored of ['light', 'off', 'on', null]) {
+      vi.stubGlobal('localStorage', { getItem: () => stored, setItem: () => {}, removeItem: () => {} } as unknown as Storage);
+      try {
+        expect(currentGateMode(), `stored ${stored}`).toBe('full');
+      } finally {
+        vi.unstubAllGlobals();
+      }
     }
+  });
+
+  it('stays off only where there is nobody to consent to the download', () => {
+    // Not a setting — a runtime fact. A test suite that reached for 780MB of
+    // weights would not be a test suite, and a script says otherwise for itself.
+    expect(currentGateMode()).toBe('off');
+  });
+
+  it('lets a runner without storage say what it wants', () => {
+    expect(currentGateMode()).toBe('off');
+    setGateModeOverride('full');
+    try {
+      expect(currentGateMode()).toBe('full');
+    } finally {
+      setGateModeOverride(null);
+    }
+    expect(currentGateMode()).toBe('off');
   });
 
   it('degrades to warnings when a scorer dies, never failing the run', async () => {

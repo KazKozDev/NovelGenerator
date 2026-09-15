@@ -39,13 +39,18 @@ Every name on record is spelled exactly as shown. Do not introduce a
 near-identical variant of a recorded name. A diminutive or alias may appear
 only if the scene itself makes clear whom it refers to.
 
-TIRED PHRASES
+PHRASES THIS BOOK HAS USED UP
 {{tired_phrases}}
 
-A phrase on this list already did its work in earlier chapters. Name the
-thing by its barest noun and move on; no new epithets for it, no admirative
-re-description. One more motivated use is allowed when the scene turns on it,
-never as decoration.
+Each line is an exact string the manuscript has already written, with how many
+times. Do not write it again in this scene — not a near variant of it either,
+and not the same image under a different noun. These are not style notes: the
+book's deliberate refrains have already been subtracted from this list, so what
+remains is phrasing that repeated without meaning to, and a reader meets it as
+a formula rather than as description.
+
+Name the thing by its barest noun and move on. No new epithets for it, no
+admirative re-description.
 
 AVAILABLE INFORMATION
 {{character_knowledge_and_beliefs}}

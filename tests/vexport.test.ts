@@ -10,20 +10,23 @@ const input: ProjectInput = {
   genre: 'mystery',
   target_total_words: 2000,
   author_requirements: '',
-  story_language: 'English',
-  planning_language: 'English',
 };
 
 function design(): BookDesign {
   return {
-    contract: { explicit_requirements: [], inferred_decisions: [], language: 'English', tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    contract: { working_title: 'A Working Title', explicit_requirements: [], inferred_decisions: [], tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    profile: {
+      pressure_curve: 'rising' as const, curve_reason: 'r', declared_motifs: [], cost_kinds: ['a light that goes out'],
+      dialogue_weight: 'medium' as const, staging_variety: 'medium' as const, mechanism_reuse: 'medium' as const,
+      open_ending: false, mechanism_ledger: ['climb'], ending_invariants: [],
+    },
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
     characters: [],
     world_rules: [],
     causal_map: [],
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
-    chapter_map: [{ chapter: 1, function: 'f', main_change: 'm', event_ids: [], dependencies: [], setup_or_payoff: [], pov_id: null, target_words: 2000 }],
+    chapter_map: [{ chapter: 1, function: 'f', main_change: 'm', event_ids: [], dependencies: [], setup_or_payoff: [], pov_id: null, target_words: 2000, mechanism: 'climb', cost: 'the light goes out', pressure_rung: 1 }],
   };
 }
 

@@ -1,12 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { PIPELINE_PROMPT_NAMES, promptVariables, renderPrompt, systemContract } from '../utils/novel/prompts';
 
-function sampleVars(name: 'system-contract' | Parameters<typeof promptVariables>[0]): Record<string, string> {
+function sampleVars(name: Parameters<typeof promptVariables>[0]): Record<string, string> {
   const vars: Record<string, string> = {};
-  const names = name === 'system-contract'
-    ? ['story_language', 'planning_language']
-    : promptVariables(name);
-  for (const key of names) vars[key] = `[${key}]`;
+  for (const key of promptVariables(name)) vars[key] = `[${key}]`;
   return vars;
 }
 
@@ -15,12 +12,14 @@ describe('Pipeline prompts on disk', () => {
     expect(PIPELINE_PROMPT_NAMES).toEqual([
       'P01_BOOK_DESIGN',
       'P02_PLAN_REVIEW',
+      'P02_PLAN_REFINE',
       'P03_CHAPTER_PLAN',
       'P03_SCENE_REBASE',
       'P04_SCENE_WRITE',
       'P05_STATE_UPDATE',
       'P06_FORWARD_UPDATE',
       'P07_FINAL_AUDIT',
+      'P08_SPAN_REPAIR',
     ]);
   });
 
@@ -30,7 +29,7 @@ describe('Pipeline prompts on disk', () => {
       expect(rendered).not.toMatch(/\{\{\w+\}\}/);
       expect(rendered.length).toBeGreaterThan(500);
     }
-    const contract = systemContract(sampleVars('system-contract'));
+    const contract = systemContract();
     expect(contract).not.toMatch(/\{\{\w+\}\}/);
   });
 

@@ -47,7 +47,63 @@ reviewer can be trusted with: a premise name nobody answers to (`premiseNameGaps
 premise given the construction never places (`premiseGivenGaps`). A plan can be perfectly
 coherent by simply declining to tell the promised story.
 
+## What kind of book this is
+
+**The design declares a profile, and code enforces it.** P01 returns a `profile` beside
+the contract: the shape of the pressure curve (`rising`, `oscillating`, `investigative`,
+`flat`, `descending`), the refrains this book means to repeat with a budget for each, what
+a cost is made of here, and three ordinal ranks — dialogue weight, staging variety,
+mechanism reuse. The division of labour is the point. A model asked for "dialogue share
+0.35" invents a decimal it has no access to; a model asked for low/medium/high answers the
+question it can actually answer. `profile.ts` owns the table that turns a rank into a
+numeric band, so recalibrating the pipeline after twenty finished books is an edit to one
+table, not to a prompt, and books already written reproduce exactly.
+
+**One machine, different constants.** The same checks run for every genre; only their
+thresholds move. A locked-room horror declares `staging_variety: low` and the
+repeated-staging check relaxes to match, because flagging a book for having the form it
+declared is the fastest way to teach a reader to ignore the warnings. A procedural
+declares `mechanism_reuse: high` and is allowed to repeat its method, which is its genre
+rather than its defect. A mystery declares an `investigative` curve and is checked for
+accumulating information rather than for climbing threat. Nothing here is a genre table
+the repo has to maintain: the model declares, code enforces.
+
+**The budgets are allocated, not detected.** The profile's `mechanism_ledger` holds the
+distinct ways this book meets its central obstacle, and each chapter draws one and spends
+it. Every chapter also states what it takes from someone and which rung it occupies.
+`designBudgetGaps` checks the allocation before a chapter is planned — a ledger too short
+for the chapter count, chapters that cost nothing, rungs that do not trace the declared
+curve — and the findings go back through the design review as `major` charges. A
+repetition you have to detect in prose is a repetition you already paid to write.
+
 ## Inside a chapter
+
+**The plan is checked before it is written, and rejected cheaply.** `checkChapterPlan`
+reads the plan against the design's allocation and the craft ledger, with no model call:
+a mechanism already spent to its allowance, a chapter that declares no cost, a missing
+rung or one that breaks the declared curve, scenes that repeat a staging past this book's
+tolerance, four scenes running on one class of outcome, and an ending whose remaining
+requirements outnumber the chapters left to prepare them.
+
+Promises age here too. The thread ledger records what the book has promised and, since a
+payoff can be cited by id, what it has kept — but recording was never the problem. The
+planner was shown the open list and nothing obliged it to act, so a promise made on the page
+in so many words ("I will return in three days with the terms in writing") could be recorded,
+displayed, ignored, and recorded again as still open for the whole length of a book, three
+books running. A thread standing through two further chapters untouched is now raised, and
+blocked once the chapters left to keep it in have run out.
+
+A blocking finding sends the plan back to the planner with the evidence attached, up to twice. A chapter plan costs one
+or two percent of the tokens of the chapter it describes, so three attempts here are
+cheaper than one prose rewrite — and a prose rewrite cannot fix what is wrong at this
+altitude anyway: no amount of re-writing scene four turns four identical chapters into a
+rising book. When the attempts run out the findings become warnings and travel into the
+writer's package as requirements, the same way an unresolved design objection already
+does. A book that says what is wrong with it beats a book that refuses to exist.
+
+**`needs_replan` is not argued with.** The gate refusing a plan and the planner refusing
+the chapter map are different failures. The first is answered with a better plan; the
+second is the planner's own judgement about the book, and it ends the chapter.
 
 **The plan is made from confirmed memory, not from the design alone.** `planChapter`
 receives the current state, the previous chapter's own tail (600 characters of real
@@ -70,12 +126,35 @@ evidence. Nothing there blocks on its own: the doubts go to a P02 readiness revi
 blocking verdict becomes a `continuity_requirements` instruction inside the writer's
 package. The transition gets shown on the page instead of stopping the book.
 
-**The semantic pre-write gate is advisory and local.** Full mode scores each planned scene
-against finished paragraphs with a cross-encoder and the scene's claims against confirmed
-state with NLI; light mode (the default) uses a ~90MB embedder for restaging only. It
-never throws into the run — unavailable or failed, the book continues on the verbatim
-check alone — and the run log says once per book what the gate actually checked, so a
-clean status never implies coverage the author switched off.
+**Weights are served, not downloaded.** A browser cannot read `node_modules` — it has no
+filesystem, only a sandbox keyed to the page's origin — so transformers.js there fetches
+weights over the network and caches them in Cache Storage, while the same library in Node
+writes plain files into its own package directory. Two caches, because two runtimes, and
+warming one does nothing for the other. `scripts/warm-models.ts` loads all three models once
+in Node and copies what lands in the package cache under `public/models/`, which Vite serves;
+`modelSource.ts` sets `allowLocalModels` and `localModelPath` so the page loads about 780MB from
+localhost instead of from Hugging Face. Remote stays allowed, so a checkout without the local
+copy still works — slower, not broken. `public/models/` is git-ignored: a repository is not a
+CDN. The onnxruntime WASM itself still comes from a CDN; only the model weights are staged.
+
+**The local models run outside the browser too.** The reranker, the embedder and the NLI
+head all fall back to loading transformers.js in-process when there is no worker, so the only
+thing that kept a terminal run on string checks alone was having nowhere to record the
+choice: the mode was read from browser storage, and a script has none. `setGateModeOverride`
+supplies one, and `run-book.ts` takes `--gate off|light|full`. It stays off by default there,
+because nobody in a script can consent to a 600MB download.
+
+**The semantic pre-write gate is advisory, local, and not optional.** A cross-encoder scores
+each planned scene against finished paragraphs (paraphrase restaging) and an NLI head scores
+the scene's claims against confirmed state (plan-vs-memory clashes). There is no setting in
+the application and no flag on the runner. There used to be three modes; the middle one ran a
+small embedder, wrote "paraphrase restaging" into the run log, and let a scene be retold
+nearly beat for beat from one chapter to the next — a check that reports coverage it does not
+have is a check that stops anyone looking. `off` survives it only as a runtime fact, for the
+places with nowhere to record a choice and nobody to consent to 780MB: a test suite, which
+must never reach for the network, and any script that has not called `setGateModeOverride`.
+A stored value from when the switch existed is ignored, so nobody is quietly held below the
+full check for every book they write afterwards.
 
 **A scene is written once, from its own package.** The writer gets the scene, the
 previous scene's tail and one short excerpt per earlier scene — not the book's outline.
@@ -147,10 +226,11 @@ the pipeline reaches a model without one of the two roles named at the call site
 
 | Call | Route | When | Per chapter |
 | --- | --- | --- | --- |
-| Chapter plan (P03) | writer | Once, unless a saved plan is reused on resume | 1 |
+| Chapter plan (P03) | writer | Once, unless a saved plan is reused on resume; up to twice more if the plan gate rejects it before prose | 1–3 |
 | Scene readiness (P02) | validator | Only when code raised a structural doubt (`pov-absent`, `location-mismatch`, a restaging match, …) | 0–1 per scene |
 | Write the scene (P04) | writer | Every scene; one retry only if the answer is empty or came back as JSON instead of prose | 1 per scene |
 | Track the scene (P05) | validator | Every scene, against the prose just written; one correction pass if a citation points nowhere | 1 per scene |
+| Span repair (P08) | writer | Only when the scene repeats earlier prose verbatim; carries the duplicated sentences, not the scene | 0–1 per scene |
 | Rewrite on contradiction | writer + validator | Only when the tracked delta blocks continuation — one full redraft, not a repair | 0–1 pair per scene |
 | Resolve open questions | validator | Only when the scene left an uncertainty or a non-blocking contradiction for the next scene | 0–1 per scene |
 | Forward reconciliation (P06) | validator | Once, after the last scene | 1 |
@@ -160,6 +240,83 @@ lands at 1 + 4×(0.5 + 1 + 1 + 1) + 1 ≈ 16 calls — the range a live run actu
 writer only ever sees P03 and P04: the plan and the prose. Every other call is the editor
 reading what already exists and reporting on it in a few hundred tokens, never generating
 the manuscript itself — a large model earns its cost by judging, not by drafting.
+
+## The craft ledger
+
+`StoryState` is the ledger of the world — what happened, who knows it, where everyone
+stands. `ledger.ts` is the ledger of the form: which mechanisms are spent, which rungs are
+taken, which classes of change the scenes keep producing, which phrasing is worn through,
+and how the measured texture is drifting from what the book declared. It is written by
+code at scene acceptance, never by a model and never from a plan.
+
+**The ban list is enumerated, not advised.** `wornLedger` reads the whole accepted
+manuscript rather than a window — a tic that started in chapter two is exactly the one
+nobody can see by chapter seven — subtracts the profile's declared refrains up to their
+budgets, and hands the writer exact strings it may not write. A model told to vary its
+language varies nothing; a model handed fourteen exact strings does not write them. A
+declaration buys permission, not immunity: past its budget a refrain is counted again.
+
+**Declared against measured is itself a signal.** `textureDrift` compares the book's
+measured dialogue share against the band its declared weight resolves to, and reports it
+per chapter rather than at the final audit. A book that declared itself dialogue-forward
+and is writing four percent dialogue has not been written badly; it has failed to execute
+its own intent, which is a different problem with a different fix. Alongside it,
+`signatureTics` reports what a reviewer reading for events structurally cannot see — the
+"it was not X, it was Y" construction at a rate, sentences that all open on one word,
+prose running at a single speed — and `numericContradictions` catches a town founded in
+1811 on page one and in 1841 on page thirty, which no state tracker sees because the
+number was never an event.
+
+**The manuscript is written in English.** The system contract says so, no call carries a
+language parameter, and the prose checks are built for one typography: English stop words,
+English quotation marks, the "it was not X, it was Y" construction. That is a deliberate
+narrowing — a check that has to hedge about which convention it is reading is a check
+nobody trusts.
+
+## Which numbers are measured and which are judgements
+
+The pipeline decides things with thresholds, and they are not all worth the same.
+
+**Measured.** The cross-encoder's repetition line (4.5) was fitted over 525 cross-chapter
+pairs from finished runs, and the run length that counts a word sequence as duplicated (8)
+was fitted the same way: two books from the same writer, different stories, share 140 runs
+of four words, 40 of five, 12 of six, 7 of seven, 3 of eight — the four-to-six band is idiom
+and chance, and at eight the hits are the premise's own nouns or the model's own habit.
+
+**Judgements.** Every band in `profile.ts` — dialogue share per rank, staging tolerance,
+mechanism reuse — and every rate in `signatureTics`. They are labelled as such in the code
+rather than left to look like the measured ones. They cannot honestly be fitted on this
+pipeline's own output: a corpus of books it generated would calibrate the checks to the
+habits they exist to catch. Fitting them needs published prose of each kind, or generated
+books a person has marked good and bad.
+
+**Neither.** Where a signal can be had without a threshold at all, it is preferred.
+`textureDrift` reports the dialogue share of each chapter and says when every chapter gives
+less to speech than the one before — that needs only the book's own numbers, and it caught a
+run falling 7.4% to 5.2% to 3.8% while the band said the same thing three times over.
+
+## Repair is a sentence, not a scene
+
+When a scene turns out to repeat prose the book already wrote, the expensive answer is to
+write the scene again: a full writing call, a full tracking call, and a different scene
+whose delta, handoff and tail differ from the one the following scenes were planned
+against. One repetition becomes a cascade.
+
+Two detectors feed it, and they see different things. `repeatedSpans` returns exact word
+runs and costs nothing. `retoldParagraphs` puts the cross-encoder — the same model and the
+same fitted threshold the pre-write gate uses on scene plans — over this scene's paragraphs
+against the accepted book, and catches the paragraph retold in fresh words, which no string
+match reaches. It runs only when the local models are switched on, and with them off the
+repair is exactly what it was. `duplicatedSentences` maps every hit to the sentences holding
+it, and only those sentences travel to P08 and come back. The result is spliced
+by exact string replacement, so a replacement that does not apply cleanly does not apply
+at all — the scene is never left in a state nobody chose. The rule that makes this safe is
+in the prompt and in the shape of the call: a replacement carries the same information as
+the sentence it replaces. Nothing happens that did not happen, so the repair runs before
+the scene is ever tracked and memory is untouched. A failed repair leaves a repetition in
+the book, which is a blemish; a half-applied one leaves a scene nobody wrote.
+
+Full scene rewriting stays where it was: a tracked delta that contradicts confirmed state.
 
 ## Memory and evidence
 

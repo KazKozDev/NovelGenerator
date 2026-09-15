@@ -13,13 +13,23 @@ const input: ProjectInput = {
   genre: 'mystery',
   target_total_words: 4000,
   author_requirements: '',
-  story_language: 'English',
-  planning_language: 'English',
 };
 
 function design(chapters = 2): BookDesign {
   return {
-    contract: { explicit_requirements: [], inferred_decisions: [], language: 'English', tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    contract: { working_title: 'A Working Title', explicit_requirements: [], inferred_decisions: [], tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    profile: {
+      pressure_curve: 'rising' as const,
+      curve_reason: 'the sea closes in',
+      declared_motifs: [],
+      cost_kinds: ['a light that goes out'],
+      dialogue_weight: 'medium' as const,
+      staging_variety: 'medium' as const,
+      mechanism_reuse: 'medium' as const,
+      open_ending: false,
+      mechanism_ledger: ['climb to the lamp', 'open the door', 'wait out the storm', 'read the log'],
+      ending_invariants: ['the door is explained'],
+    },
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
     characters: [{ id: 'C01', name: 'Qux', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] }],
@@ -28,6 +38,8 @@ function design(chapters = 2): BookDesign {
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
     chapter_map: Array.from({ length: chapters }, (_, i) => ({
       chapter: i + 1, function: 'f', main_change: 'm', event_ids: [], dependencies: [], setup_or_payoff: [], pov_id: 'C01', target_words: 2000,
+      mechanism: ['climb to the lamp', 'open the door', 'wait out the storm', 'read the log'][i % 4],
+      cost: 'the light goes out', pressure_rung: i + 1,
     })),
   };
 }
@@ -83,7 +95,7 @@ describe('v2 reviewer', () => {
   it('refines a blocked design and returns once the review passes', async () => {
     let reviews = 0;
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
-      if (prompt.includes('Refine the previous plan against these findings')) return JSON.stringify(design());
+      if (prompt.includes('Revise the construction below')) return JSON.stringify(design());
       if (prompt.includes('Prepare a compact book construction')) return JSON.stringify(design());
       if (prompt.includes('Check whether the provided plan is ready')) {
         reviews++;
@@ -127,7 +139,7 @@ describe('v2 reviewer', () => {
       ready: false, issues: [{ id: 'I01', severity, target_ref: target, category: 'causality', problem: 'p', evidence_refs: [], consequence_for_writing: 'x', required_decision: 'd', suggested_adjustment: 's' }],
     });
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
-      if (prompt.includes('Refine the previous plan against these findings')) return JSON.stringify(design());
+      if (prompt.includes('Revise the construction below')) return JSON.stringify(design());
       if (prompt.includes('Prepare a compact book construction')) return JSON.stringify(design());
       if (prompt.includes('Check whether the provided plan is ready')) {
         reviews++;
@@ -146,7 +158,7 @@ describe('v2 reviewer', () => {
       ready: false, issues: [{ id: 'I01', severity, target_ref: target, category: 'causality', problem: 'p', evidence_refs: [], consequence_for_writing: 'x', required_decision: 'd', suggested_adjustment: 's' }],
     });
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
-      if (prompt.includes('Refine the previous plan against these findings')) return JSON.stringify(design());
+      if (prompt.includes('Revise the construction below')) return JSON.stringify(design());
       if (prompt.includes('Prepare a compact book construction')) return JSON.stringify(design());
       if (prompt.includes('Check whether the provided plan is ready')) {
         reviews++;
@@ -182,7 +194,7 @@ describe('v2 reviewer', () => {
       return JSON.stringify(design());
     });
     await expect(reviewPlan(
-      { story_language: 'English', planning_language: 'English', story_contract: '{}' },
+      { story_contract: '{}' },
       'scope', design(), '', '', llm,
     )).resolves.toMatchObject({ ready: false });
     const settled = await designReviewedBook(input, llm, 0);
@@ -195,7 +207,7 @@ describe('v2 reviewer', () => {
     // the book would not be the book that was asked for.
     const triangle: ProjectInput = { ...input, premise: 'A love triangle of Zor, Pax and someone else.' };
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
-      if (prompt.includes('Prepare a compact book construction') || prompt.includes('Refine the previous plan against these findings')) {
+      if (prompt.includes('Prepare a compact book construction') || prompt.includes('Revise the construction below')) {
         const d = design();
         d.contract.premise_names = ['Zor', 'Pax'];
         return JSON.stringify(d);
@@ -209,7 +221,7 @@ describe('v2 reviewer', () => {
 describe('v2 orchestrator', () => {
   function readyLlm(): NovelLLM {
     return vi.fn(async (prompt: string) => {
-      if (prompt.includes('Prepare a compact book construction') || prompt.includes('Refine the previous plan against these findings')) return JSON.stringify(design());
+      if (prompt.includes('Prepare a compact book construction') || prompt.includes('Revise the construction below')) return JSON.stringify(design());
       if (prompt.includes('Check the integrity of the finished book')) {
         return JSON.stringify({
           coverage: { material_examined: 'all', limitations: [] },

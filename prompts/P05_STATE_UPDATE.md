@@ -12,6 +12,9 @@ Accuracy matters more than filling every category.
 Previous state:
 {{prior_state}}
 
+Promises the book has made and not yet kept:
+{{open_threads}}
+
 Names already on record (canonical spellings with aliases):
 {{recorded_names}}
 
@@ -43,8 +46,8 @@ EXTRACT
   thing it is, and refers_to — the character id or the already recorded name
   it means (a diminutive beside the full form). Leave refers_to empty only
   when the scene introduces the thing itself for the first time.
-- A variant is a different SPELLING of a recorded name — "Zarka" for
-  recorded "Zarko", "Michail" for "Mikhail". Report those in name_variants
+- A variant is a different SPELLING of a recorded name — a letter changed,
+  a transliteration differing from the one on record. Report those in name_variants
   with the used spelling, the recorded one, and evidence. Only you, reading
   both the prose and the record, may judge a variant — a near-twin is guilty
   until the scene establishes it as its own thing with its own refers_to.
@@ -81,6 +84,17 @@ CONTRADICTIONS
 Give concrete incompatible statements and their sources.
 No stylistic review.
 Do not rewrite the scene.
+
+PROMISES
+- threads_resolved lists the ids of promises above that THIS scene paid off.
+  Cite the id, exactly as it is given. A promise is paid when the text answers
+  it — the question gets its answer, the threat arrives, the thing set up is
+  used. Not when the scene merely mentions it again.
+- Cite nothing you are not sure of. A promise wrongly marked paid disappears
+  from the book's account of itself, and nothing later can tell it was dropped.
+- threads_opened lists promises this scene makes for the first time: a question
+  the reader now expects answered, a person introduced as mattering, a thing
+  set up to be used later.
 
 FORMAT
 JSON only:

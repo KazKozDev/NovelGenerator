@@ -38,6 +38,9 @@ REQUIREMENTS
   only when the scene must return to that passage exactly; drop a reference
   the correction made irrelevant.
 - Use only character ids already present in the original plan or confirmed state.
+- Keep outcome_kind the class of change the new outcome actually produces. A
+  rebase that moves the outcome usually moves its class too; carrying the old
+  label forward would hide the move from every check downstream.
 - Return the complete scene plan in the original schema, with no wrapper.
 
 FORMAT
@@ -62,5 +65,6 @@ JSON only:
   "required_source_refs": [],
   "setup_or_payoff": [],
   "transition_to_next": "",
-  "target_words": 0
+  "target_words": 0,
+  "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss"
 }

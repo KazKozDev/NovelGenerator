@@ -44,7 +44,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 NovelGenerator Architecture & System Guide
               </h2>
               <p className="text-xs text-zinc-400 light:text-zinc-500">
-                Pipeline workflow, data lineage, and ML model orchestrations
+                How a book is planned, written, checked and recorded — and what runs locally on your machine
               </p>
             </div>
           </div>
@@ -93,7 +93,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                 : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
             }`}
           >
-            Story Canon & Forward-Only
+            Story Canon
           </button>
           <button
             type="button"
@@ -151,9 +151,13 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                     Chapter Plan + Pre-Write Gate (P03)
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    One chapter planned from confirmed state. Verbatim sniffer plus semantic gate (Off / Light / Full)
-                    bring restaging and clash suspicions before prose exists; the review disposes them, hard verdicts
-                    become writer instructions stitched into the package.
+                    One chapter planned from confirmed state, then checked before a word is written: the mechanism it
+                    draws from the book&apos;s ledger, the cost it takes from someone, the rung it occupies on the
+                    declared pressure curve, the staging it repeats, the ending it is running out of room to prepare.
+                    A blocking finding sends the plan back to the planner with the evidence — up to twice, because a
+                    plan costs a fiftieth of the chapter it describes. The local models add restaging and
+                    plan-vs-memory suspicions on top; the review disposes them, and hard verdicts become writer
+                    instructions stitched into the package.
                   </p>
                 </div>
 
@@ -215,7 +219,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                   </span>
                 </div>
                 <p className="text-xs text-zinc-400 light:text-zinc-600">
-                  <strong className="text-zinc-300 light:text-zinc-800">Gemini (2.5 Flash / Pro)</strong> or local <strong className="text-zinc-300 light:text-zinc-800">Ollama</strong> (Llama 3, Qwen 2.5, DeepSeek). Two routes: writer (prose, plans)
+                  <strong className="text-zinc-300 light:text-zinc-800">Gemini</strong> or local <strong className="text-zinc-300 light:text-zinc-800">Ollama</strong>, whichever model you name. Two routes: writer (prose, plans)
                   and validator (reviews, extraction). Set a separate validator model — otherwise the author judges
                   its own prose. Every run-log line carries the serving model, so after the fact you can see what
                   actually fired.
@@ -232,97 +236,54 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
                   <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Light Pre-Write Check (Embeddings)
+                        Cross-Encoder (Paraphrase Repetition)
                       </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/all-MiniLM-L6-v2 · ~90 MB</div>
+                      <div className="text-zinc-500 font-mono text-[11px]">onnx-community/bge-reranker-v2-m3-ONNX · ~544 MB</div>
                       <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Scores each planned scene against finished paragraphs by cosine similarity — paraphrase-level
-                        restaging before prose exists. Default mode; findings advise the plan review, never block.
+                        Reads two passages together and scores how much one retells the other. It is the only check in
+                        the pipeline that catches a scene told a second time in different words, where no sequence of
+                        words repeats. Used twice: on each chapter plan against finished prose before writing, and on
+                        each finished scene against the accepted book. Its threshold was fitted over 525 cross-chapter
+                        pairs from real runs, not chosen.
                       </p>
                     </div>
                     <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
-                      Default Active
+                      Always on
                     </span>
                   </div>
 
                   <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Cross-Encoder Repetition Reranker
+                        Natural Language Inference (Plan vs Memory)
                       </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">onnx-community/bge-reranker-v2-m3-ONNX · ~600 MB</div>
+                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/nli-deberta-v3-base · ~233 MB</div>
                       <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Deep joint evaluation of suspicious candidate pairs. Stronger recall than the light cosine check,
-                        at the cost of a large download. Full gate mode only.
+                        Scores entailment and contradiction between a planned scene&apos;s claims and confirmed state —
+                        a plan that contradicts what the book already established, which no string check can see.
+                        Findings advise the plan review; they never block on their own.
                       </p>
                     </div>
                     <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
-                      Full mode
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Natural Language Inference (NLI Canon Verification)
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/nli-deberta-v3-base · ~250 MB</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Evaluates entailment and contradiction between a scene's claims and confirmed state —
-                        plan-vs-memory clashes string checks cannot see. Full gate mode only; weaker on
-                        non-English prose.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
-                      Full mode
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Language Guard (Language Identification)
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">onnx-community/language_detection-ONNX · ~100 MB</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Ensures prose stays strictly in the contracted language and prevents unintended language leakage or intrusive code-switching.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
-                      Optional
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Ledger Compression (Summarization)
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/distilbart-cnn-6-6 · ~300 MB</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Summarizes sprawling story history when ledger exceeds 8,000 characters, conserving context tokens for generative models.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
-                      Optional
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Genre & Emotion Trajectory Analysis
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">bart-large-mnli (~400 MB) · roberta-base-go_emotions (~130 MB)</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Classifies alignment with target genre and tracks emotional arc (28 granular emotion categories) across the novel's unfolding chapters.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
-                      Optional
+                      Always on
                     </span>
                   </div>
                 </div>
+
+                <p className="text-xs text-zinc-500 light:text-zinc-600">
+                  Two models, and no setting to reduce them. A third existed — a small sentence embedder scoring the
+                  same pairs by cosine — and it was removed: it ran, it wrote &quot;paraphrase restaging&quot; into the
+                  run log, and it let a scene be retold nearly beat for beat from one chapter to the next. A check that
+                  reports coverage it does not have is a check that stops anyone looking.
+                </p>
+
+                <p className="text-xs text-zinc-500 light:text-zinc-600">
+                  Weights load from the application itself when they have been staged there
+                  (<code className="px-1 py-0.5 rounded bg-zinc-800 light:bg-zinc-200 font-mono text-[11px]">npx vite-node scripts/warm-models.ts</code>),
+                  and from Hugging Face otherwise. Either way the browser caches them once and runs them on your
+                  machine; nothing of the manuscript leaves it. A model unused for five minutes is disposed and the
+                  worker gives its memory back.
+                </p>
               </div>
             </div>
           )}
@@ -330,10 +291,11 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
           {activeTab === 'canon' && (
             <div className="space-y-4">
               <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                Story Canon & Forward-Only Discipline
+                Story Canon, and Why the Book Only Moves Forward
               </h3>
               <p className="text-xs text-zinc-400 light:text-zinc-600">
-                How ironclad plot integrity is guaranteed without getting trapped in infinite revision cascades.
+                What the book records about itself, what it allocates before writing, and why a finished chapter is
+                never reopened.
               </p>
 
               <div className="space-y-3">
@@ -357,13 +319,36 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
 
                 <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
                   <div className="font-medium text-zinc-300 light:text-zinc-800 text-xs mb-1">
-                    Why Forward-Only Mode is Crucial
+                    Finished Chapters Are Never Rewritten
                   </div>
                   <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed">
-                    In naive iterative systems, a minor continuity issue in Chapter 3 causes the editor to retroactively rewrite Chapter 1. But modifying Chapter 1 alters canon facts and invalidates Chapters 2 and 3—triggering an infinite cascading rewrite loop.
+                    Let a continuity problem in Chapter 3 send the editor back to Chapter 1, and the fix changes the
+                    facts Chapters 2 and 3 were written against. There is no bottom to that.
                   </p>
                   <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed mt-2">
-                    In <strong className="text-zinc-200 light:text-zinc-800">Forward-Only</strong> mode, a strict monotonic invariant applies: <em>"Chapter drafts → verified against established canon (1–5 targeted edits) → permanently sealed"</em>. Future chapters can never invalidate or rewrite past chapters, guaranteeing deterministic completion within planned budget.
+                    So the book only moves forward. A chapter&apos;s state is snapshotted when it finishes and becomes
+                    the resume point; the post-chapter reconciliation may change the chapters still ahead and never the
+                    ones behind. Everything that can be fixed is fixed earlier, where it is cheap — in the plan, before
+                    prose exists — and what is left is repaired within the scene that has it: a sentence duplicating
+                    earlier prose is replaced in place, carrying the same information, so no delta is recomputed and no
+                    later scene is disturbed. A full redraft happens only when a tracked change contradicts confirmed
+                    state, and only once.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
+                  <div className="font-medium text-zinc-300 light:text-zinc-800 text-xs mb-1">
+                    Budgets, Allocated Before Anything Is Written
+                  </div>
+                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed">
+                    The design declares what kind of book this is: the shape of its pressure curve, the repetitions it
+                    means as refrains, what paying a price consists of here, and the distinct ways its central obstacle
+                    can be met. Chapters draw from that ledger and spend what they draw.
+                  </p>
+                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed mt-2">
+                    A repetition you have to detect in the prose is a repetition you already paid to write. A middle act
+                    that circles instead of building is decided in the plan, and no amount of rewriting scene four turns
+                    four identical chapters into a rising book.
                   </p>
                 </div>
               </div>

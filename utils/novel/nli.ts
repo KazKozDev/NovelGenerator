@@ -110,8 +110,8 @@ export interface ContradictionFinding {
 }
 
 /**
- * Naturalizes telegraphic canon claims ("Zor location: Harbor") into standard
- * grammatical propositions ("Zor is at Harbor.") so NLI models evaluate semantic
+ * Naturalizes telegraphic canon claims ("C01 location: the harbour") into standard
+ * grammatical propositions ("C01 is at the harbour.") so NLI models evaluate semantic
  * dependencies properly instead of misclassifying syntax artifacts as contradictions.
  */
 export function naturalizeClaim(claim: string): string {

@@ -18,13 +18,23 @@ const input: ProjectInput = {
   genre: 'mystery',
   target_total_words: 4000,
   author_requirements: '',
-  story_language: 'English',
-  planning_language: 'English',
 };
 
 function design(): BookDesign {
   return {
-    contract: { explicit_requirements: [], inferred_decisions: [], language: 'English', tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    contract: { working_title: 'A Working Title', explicit_requirements: [], inferred_decisions: [], tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    profile: {
+      pressure_curve: 'rising' as const,
+      curve_reason: 'the sea closes in',
+      declared_motifs: [],
+      cost_kinds: ['a light that goes out'],
+      dialogue_weight: 'medium' as const,
+      staging_variety: 'medium' as const,
+      mechanism_reuse: 'medium' as const,
+      open_ending: false,
+      mechanism_ledger: ['climb to the lamp', 'open the door', 'wait out the storm', 'read the log'],
+      ending_invariants: ['the door is explained'],
+    },
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
     characters: [{ id: 'C01', name: 'Zor', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: ['The light must stay lit.'], initial_beliefs: [] }],
@@ -33,6 +43,7 @@ function design(): BookDesign {
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
     chapter_map: [1, 2].map(n => ({
       chapter: n, function: 'f', main_change: 'm', event_ids: [], dependencies: [], setup_or_payoff: [], pov_id: 'C01', target_words: 2000,
+      mechanism: n === 1 ? 'climb to the lamp' : 'open the door', cost: 'the light goes out', pressure_rung: n,
     })),
   };
 }
@@ -44,6 +55,9 @@ function plan(chapter: number) {
     function: 'f',
     starting_situation: 's',
     ending_change: 'Zor finds the door.',
+    mechanism: chapter === 1 ? 'climb to the lamp' : 'open the door',
+    cost: 'the light goes out',
+    pressure_rung: chapter,
     scenes: [{
       id: `CH0${chapter}_S01`,
       pov_id: 'C01',
@@ -62,6 +76,7 @@ function plan(chapter: number) {
       setup_or_payoff: [],
       transition_to_next: '',
       target_words: 800,
+      outcome_kind: 'position',
     }],
     forward_dependencies: [],
     replan_reason: null,
@@ -69,6 +84,10 @@ function plan(chapter: number) {
 }
 
 const PROSE = 'Zor climbed while the storm took the rail from her hands.\n\nThe lamp room smelled of hot glass and rain.';
+// Chapter two repeats one sentence of chapter one and says something new in the
+// other: exactly the case span repair exists for, and the case where rewriting
+// the whole scene would be the wrong answer.
+const PROSE_2 = 'The lamp room smelled of hot glass and rain.\n\nBelow the gallery the sea door stood open on nothing at all.';
 
 function delta() {
   return {
@@ -126,7 +145,20 @@ function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
       }
       return JSON.stringify(scene);
     }
-    if (prompt.includes('Write a full literary scene')) return PROSE;
+    if (prompt.includes('Write a full literary scene')) {
+      return prompt.includes('CH02_S01') ? PROSE_2 : PROSE;
+    }
+    if (prompt.includes('Rewrite the listed sentences')) {
+      // The fixture writes the same prose twice on purpose, so the repair fires.
+      // It answers the way the contract asks: same information, different words.
+      return JSON.stringify({
+        replacements: [{
+          original: 'The lamp room smelled of hot glass and rain.',
+          replacement: 'Hot glass and rain were the whole smell of the lamp room.',
+          refused_because: '',
+        }],
+      });
+    }
     if (prompt.includes('Extract the essential changes from the new scene')) return JSON.stringify(deltaReply());
     if (prompt.includes('Refine the forward plan')) return JSON.stringify(forward());
     if (prompt.includes('Check the integrity of the finished book')) return JSON.stringify(audit());
@@ -182,7 +214,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(result.status, result.stoppedReason).toBe('COMPLETE');
     // The partial scene is gone, the junk delta with it; memory holds one event per chapter.
     expect(store.chapterScenes(2)).toHaveLength(1);
-    expect(store.chapterScenes(2)[0].prose).toContain('Zor climbed');
+    expect(store.chapterScenes(2)[0].prose).toContain('the sea door stood open');
     expect(store.loadState().events).toHaveLength(2);
     expect(store.manuscript()).toHaveLength(2);
   });
@@ -240,17 +272,19 @@ describe('v2 chapter pipeline end to end', () => {
     const bad = { ...delta(), events: [{ description: 'x', participants: [], evidence_refs: ['p9'] }] };
     let calls = 0;
     const llm: NovelLLM = vi.fn(async () => JSON.stringify(calls++ === 0 ? bad : delta()));
-    const tracked = await trackScene({ story_language: 'English', planning_language: 'English', priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [] }, llm);
+    const tracked = await trackScene({ priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [], openThreads: [] }, llm);
     expect(tracked.events).toHaveLength(1);
     expect(calls).toBe(2);
     const stubborn: NovelLLM = vi.fn(async () => JSON.stringify(bad));
-    await expect(trackScene({ story_language: 'English', planning_language: 'English', priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [] }, stubborn)).rejects.toThrow(/points nowhere/);
+    await expect(trackScene({ priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [], openThreads: [] }, stubborn)).rejects.toThrow(/points nowhere/);
   });
 
   it('backstops names the extraction missed from the prose itself', async () => {
-    const prose = 'Zor heard the radio clearly through the static.\n\nStation Pax, this is the Zarka. Do you read?';
+    // Each name occurs where a capital is not compulsory, which is what marks it
+    // as a name rather than the first word of a sentence.
+    const prose = 'The radio came through clearly for Zor despite the static.\n\nThis is Station Pax calling the Zarka. Do you read?';
     const llm: NovelLLM = vi.fn(async () => JSON.stringify(delta()));
-    const tracked = await trackScene({ story_language: 'English', planning_language: 'English', priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [] }, llm);
+    const tracked = await trackScene({ priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [], openThreads: [] }, llm);
     const names = tracked.proper_names.map(item => item.name);
     expect(names).toContain('Zarka');
     expect(names).toContain('Station Pax');
@@ -400,7 +434,7 @@ describe('v2 chapter pipeline end to end', () => {
       sent = prompt;
       return JSON.stringify({ ...delta(), name_variants: [{ used: 'Zarka', recorded: 'Zarko', evidence_refs: ['p1'] }] });
     });
-    const tracked = await trackScene({ story_language: 'English', planning_language: 'English', priorState, scenePlan: {}, sceneProse: radio, sourceExcerpts: [] }, llm);
+    const tracked = await trackScene({ priorState, scenePlan: {}, sceneProse: radio, sourceExcerpts: [], openThreads: [] }, llm);
     expect(sent).toMatch(/Zarko/);
     const applied = applyDelta(priorState, tracked, 'CH02_S01');
     expect(applied.blockers.join(' ')).toMatch(/Zarka.*Zarko/);
@@ -491,7 +525,6 @@ describe('v2 chapter pipeline end to end', () => {
     }));
     const rebased = await rebaseScenePlan({
       design: design(), scene: original, handoff, state: emptyState(), openThreads: [],
-      story_language: 'English', planning_language: 'English',
     }, llm);
     expect(rebased.required_outcome).toBe('Zor gives the lamp key to Pax.');
     expect(llm).toHaveBeenCalledTimes(2);
@@ -838,7 +871,7 @@ describe('v2 chapter pipeline end to end', () => {
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
     expect(outcome.warnings.join(' ')).toMatch(/must establish: Differentiate the staging/);
     expect(store.manuscript()).toHaveLength(2);
-    expect(store.manuscript().find(item => item.chapter === 2)?.text).toContain('Zor climbed');
+    expect(store.manuscript().find(item => item.chapter === 2)?.text).toContain('the sea door stood open');
   });
 
   it('carries semantic gate suspicions into the plan review', async () => {

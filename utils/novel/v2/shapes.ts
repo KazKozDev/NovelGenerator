@@ -82,17 +82,32 @@ export function shapeRepetition(shape: SceneShape, recent: SceneShape[]): ShapeR
   return { run, window };
 }
 
+/** How patient this book is with a repeated staging, from its declared profile. */
+export interface StagingTolerance {
+  /** Consecutive scenes in one staging allowed before it is raised. */
+  stagingRun: number;
+  /** Appearances inside the recent window allowed before it is raised. */
+  stagingWindow: number;
+}
+
+const DEFAULT_TOLERANCE: StagingTolerance = { stagingRun: 2, stagingWindow: 3 };
+
 /**
- * Worth raising before prose: a third consecutive scene in the same staging, or
- * a staging that owns half the recent window. Two in a row is a conversation
- * continuing, not a pattern.
+ * Worth raising before prose: too many consecutive scenes in the same staging,
+ * or a staging that owns too much of the recent window.
+ *
+ * "Too many" is the book's own number, not a constant. A deliberately
+ * claustrophobic book — one house, one pair of eyes — would otherwise be
+ * flagged for having the form it declared, which is the fastest way to teach a
+ * pipeline's users to ignore it. The profile says how patient to be; this only
+ * counts.
  */
-export function repeatedStaging(shape: SceneShape, recent: SceneShape[]): string {
+export function repeatedStaging(shape: SceneShape, recent: SceneShape[], tolerance: StagingTolerance = DEFAULT_TOLERANCE): string {
   const { run, window } = shapeRepetition(shape, recent);
-  if (run.length >= 2) {
-    return `Scene ${shape.scene} keeps the staging of the ${run.length} scenes before it (${run.join(', ')}): ${describeShape(shape)}. A third turn in the same room with the same people needs a reason on the page — a different pressure, a different participant, a different place — or the scene should be replanned.`;
+  if (run.length >= tolerance.stagingRun) {
+    return `Scene ${shape.scene} keeps the staging of the ${run.length} scenes before it (${run.join(', ')}): ${describeShape(shape)}. Another turn in the same room with the same people needs a reason on the page — a different pressure, a different participant, a different place — or the scene should be replanned.`;
   }
-  if (window.length >= 3) {
+  if (window.length >= tolerance.stagingWindow) {
     return `Scene ${shape.scene} repeats a staging already used ${window.length} times in the last ${recent.length} scenes (${window.join(', ')}): ${describeShape(shape)}. Vary who is present, where, or through whose eyes, unless the repetition is the point.`;
   }
   return '';

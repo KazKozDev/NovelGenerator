@@ -10,8 +10,6 @@ import type { AuditStatus, BookDesign, FinalReport, ReaderThread, StoryState } f
  */
 
 export interface AuditInput {
-  story_language: string;
-  planning_language: string;
   design: BookDesign;
   manuscript: { chapter: number; text: string }[];
   finalState: StoryState;
@@ -29,7 +27,7 @@ export function settleAuditStatus(report: FinalReport, finishedAllChapters: bool
 }
 
 export async function auditBook(input: AuditInput, finishedAllChapters: boolean, llm: NovelLLM): Promise<FinalReport> {
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const material = input.manuscript.map(m => `## Chapter ${m.chapter}\n\n${m.text}`).join('\n\n');
   const prompt = renderPrompt('P07_FINAL_AUDIT', {
     story_contract: JSON.stringify(input.design.contract),
@@ -47,7 +45,7 @@ export async function auditBook(input: AuditInput, finishedAllChapters: boolean,
   const report = raw as FinalReport;
   // Measured, not asked: the reviewer reads structure, promises and continuity,
   // and a tic repeated every few pages is invisible at that altitude — the model
-  // is reading for what happens, and "his breath hitched" happening seven times
+  // is reading for what happens, and one somatic beat happening seven times
   // is not an event. A rate over the whole manuscript is something code can see
   // and a reader feels, so it is reported beside the model's findings.
   const worn = wornPhrases(input.manuscript.map(item => item.text).join('\n\n'));

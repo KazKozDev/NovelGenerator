@@ -1,7 +1,9 @@
 import { renderPrompt, systemContract } from '../prompts';
-import { extractPremiseNames } from '../analytics';
+import { contentWords, extractPremiseNames } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import { isRelationKey, relationChangeRefused } from './relationships';
+import { matchKey } from './normalize';
+import { describeStateDigest } from './stateDigest';
 import type { ExtractedName, ProperName, ReaderThread, StateDelta, StoryState } from './types';
 
 /** States persisted before the name registry existed carry no names shelf. */
@@ -18,12 +20,12 @@ export function storyNames(state: StoryState): ProperName[] {
  */
 
 export interface TrackInput {
-  story_language: string;
-  planning_language: string;
   priorState: StoryState;
   scenePlan: unknown;
   sceneProse: string;
   sourceExcerpts: string[];
+  /** The promises still standing, so a payoff can be cited by id instead of guessed at. */
+  openThreads: ReaderThread[];
 }
 
 /** Number the paragraphs so every extracted change can point at its proof. */
@@ -43,8 +45,8 @@ const DELTA_KEYS = ['proper_names', 'name_variants', 'events', 'state_changes', 
   'contradictions', 'uncertainties', 'plan_deviations'];
 
 /**
- * Lowercased, possessives folded anywhere in the span: "Zor's" and "Zor"
- * are one key, and so are "Zor's Pax" and "Zor Pax".
+ * Lowercased, possessives folded anywhere in the span, so a name and its
+ * possessive are one key — inside a multi-word span as well as alone.
  * Display spellings keep their apostrophes; only the key is folded.
  * Folding is normalization, not judgment: it never declares two different
  * names one thing.
@@ -85,8 +87,8 @@ export function mergeProperNames(
       continue;
     }
     // An explicit link is a model decision code honors; anything else that is
-    // not an exact hit registers as its own entry. Whether "Zarka" beside
-    // "Zarko" is drift or a new ship is meaning — judged by the model in
+    // not an exact hit registers as its own entry. Whether a near-identical
+    // spelling is drift or a second thing is meaning — judged by the model in
     // name_variants, never by code similarity. No guessing per book.
     names.push({ name: raw, kind: typeof item?.kind === 'string' ? item.kind.trim() : '', refers_to: typeof item?.refers_to === 'string' ? item.refers_to.trim() : '', aliases: [], first_seen: sceneRef });
     variants.set(key, names[names.length - 1]);
@@ -123,7 +125,7 @@ export function validateDelta(raw: unknown, paragraphIds: string[] = []): StateD
 }
 
 export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<StateDelta> {
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const paragraphs = paragraphsWithIds(input.sceneProse);
   const ids = paragraphs.map(p => p.id);
   const numbered = paragraphs.map(p => `[${p.id}] ${p.text}`).join('\n\n');
@@ -131,7 +133,10 @@ export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<Stat
   // prose and the recorded spellings, may judge a variant. Code never does.
   const recorded = storyNames(input.priorState);
   const base = {
-    prior_state: JSON.stringify(input.priorState),
+    prior_state: describeStateDigest(input.priorState),
+    open_threads: input.openThreads.length
+      ? input.openThreads.map(thread => `${thread.id} — ${thread.description}`).join('\n')
+      : '(no promise is outstanding)',
     recorded_names: recorded.length
       ? recorded.map(entry => `${entry.name}${entry.aliases.length ? ` (also: ${entry.aliases.join(', ')})` : ''} — ${entry.kind || 'unnamed kind'}, first seen ${entry.first_seen}`).join('\n')
       : '(no named entities recorded yet)',
@@ -166,7 +171,9 @@ export function backstopNames(delta: StateDelta, prose: string): StateDelta {
   const reported = new Set((delta.proper_names || []).map(item => normName(item?.name)));
   const numbered = paragraphsWithIds(prose);
   const extra: ExtractedName[] = [];
-  for (const name of extractPremiseNames(prose)) {
+  // Prose, not a premise: a name must earn its capital somewhere a capital is
+  // not compulsory, or the registry fills with sentence openers.
+  for (const name of extractPremiseNames(prose, true)) {
     const key = normName(name);
     if (!key || reported.has(key)) continue;
     reported.add(key);
@@ -330,6 +337,22 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
   return { state: next, blockers, refused };
 }
 
+/**
+ * Does this citation name that thread? An id match, or enough of the thread's
+ * own content words to leave no doubt which promise is meant.
+ */
+export function citesThread(citation: string, thread: ReaderThread): boolean {
+  const cite = matchKey(citation);
+  if (!cite) return false;
+  if (cite === matchKey(thread.id)) return true;
+  if (cite === matchKey(thread.description)) return true;
+  const wanted = contentWords(thread.description);
+  if (wanted.length < 3) return false;
+  const given = new Set(contentWords(citation));
+  const shared = wanted.filter(word => given.has(word)).length;
+  return shared / wanted.length >= 0.6;
+}
+
 export function applyThreads(threads: ReaderThread[], delta: StateDelta, sceneRef: string): ReaderThread[] {
   const next = threads.map(t => ({ ...t, setup_refs: [...t.setup_refs], payoff_refs: [...t.payoff_refs] }));
   for (const opened of delta.threads_opened || []) {
@@ -339,13 +362,19 @@ export function applyThreads(threads: ReaderThread[], delta: StateDelta, sceneRe
     next.push({ id: `${sceneRef}-t${next.length + 1}`, description: text, status: 'open', setup_refs: [sceneRef], payoff_refs: [] });
   }
   // The model cites payoffs in words (description) or by id, wrapped in objects.
-  const resolved = new Set((delta.threads_resolved || []).map(item => {
+  const cited = (delta.threads_resolved || []).map(item => {
     if (typeof item === 'string') return item;
     return item?.id || item?.thread || item?.description || '';
-  }).filter(Boolean));
+  }).filter(Boolean);
   for (const thread of next) {
-    if (thread.status === 'open' && (resolved.has(thread.id) || resolved.has(thread.description))
-      && !thread.payoff_refs.includes(sceneRef)) {
+    if (thread.status !== 'open' || thread.payoff_refs.includes(sceneRef)) continue;
+    // By id first, because the model is now shown the ids. Description matching
+    // is the fallback, and it is by meaning-bearing words rather than by exact
+    // string: a thread's description is a sentence the model wrote several
+    // scenes ago, and requiring it back character for character made resolution
+    // impossible — every promise a book made stayed open, and nothing could tell
+    // a payoff from an abandonment.
+    if (cited.some(item => citesThread(item, thread))) {
       thread.status = 'resolved';
       thread.payoff_refs.push(sceneRef);
     }

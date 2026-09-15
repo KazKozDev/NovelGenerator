@@ -1,9 +1,12 @@
 import { renderPrompt, systemContract } from '../prompts';
-import { contentWords, sharedDistinctivePhrasing, tiredPhrases } from '../analytics';
+import { contentWords, sharedDistinctivePhrasing } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import { storyNames } from './tracker';
-import { describeShapes, repeatedStaging, sceneShape, type SceneShape } from './shapes';
+import { describeShapes, repeatedStaging, sceneShape, type SceneShape, type StagingTolerance } from './shapes';
 import { describeRelations, relationsFor } from './relationships';
+import { bandsFor, describeProfile, profileOf, readRung } from './profile';
+import { describeStateDigest } from './stateDigest';
+import { describeWorn, type WornEntry } from './ledger';
 import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState } from './types';
 
 /**
@@ -37,11 +40,38 @@ export interface ChapterPlannerInput {
   openThreads: string[];
   endingRequirements: string[];
   remainingWords: number;
-  story_language: string;
-  planning_language: string;
   previousHandoff?: SceneHandoff | null;
   /** Stagings of the accepted scenes, so the plan can vary them instead of repeating them. */
   recentShapes?: SceneShape[];
+  /** What the book has already spent of its mechanism ledger, by mechanism. */
+  spentMechanisms?: { mechanism: string; chapters: number[] }[];
+  /** What the plan gate found wrong with the previous attempt at this chapter. */
+  findings?: string;
+}
+
+/**
+ * What the design allocated to this chapter, and what the book has spent so
+ * far, as the planner reads it. The allocation is a commitment the chapter
+ * plan answers to: the planner may depart from it, but then it is departing
+ * from something stated rather than filling an empty field.
+ */
+export function describeCommitments(design: BookDesign, chapter: number, spent: { mechanism: string; chapters: number[] }[] = []): string {
+  const entry = design.chapter_map.find(item => item.chapter === chapter);
+  const profile = profileOf(design);
+  const allowance = bandsFor(profile).mechanismReuse;
+  const lines = [
+    `Allocated to chapter ${chapter}: mechanism "${entry?.mechanism || '(none allocated)'}", cost "${entry?.cost || '(none allocated)'}", pressure rung ${readRung(entry?.pressure_rung) ?? '(none allocated)'}.`,
+  ];
+  if (profile.mechanism_ledger.length) {
+    const used = new Map(spent.map(item => [item.mechanism.toLowerCase(), item.chapters]));
+    lines.push(`Mechanism ledger, with what is left of each (allowance ${allowance} chapter(s) per mechanism):`);
+    for (const mechanism of profile.mechanism_ledger) {
+      const chapters = used.get(mechanism.toLowerCase()) || [];
+      const left = allowance - chapters.length;
+      lines.push(`- ${mechanism} — ${chapters.length ? `spent in chapter(s) ${chapters.join(', ')}; ` : ''}${left > 0 ? `${left} use(s) left` : 'EXHAUSTED, this chapter cannot draw it'}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan {
@@ -58,12 +88,27 @@ export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan 
     ids.add(scene.id);
     if (!scene.required_outcome) throw new Error(`Scene ${scene.id} has no required outcome.`);
   }
-  return { ...plan, status: 'ready', chapter };
+  // The commitments are read, never invented: a chapter that declined to state
+  // one carries the refusal explicitly, so the gate can raise it. Absence and
+  // refusal are the same fact here, and both are arguable; a silent default
+  // would not be.
+  return {
+    ...plan,
+    status: 'ready',
+    chapter,
+    mechanism: typeof plan.mechanism === 'string' ? plan.mechanism : '',
+    cost: typeof plan.cost === 'string' ? plan.cost : '',
+    pressure_rung: readRung((plan as { pressure_rung?: unknown }).pressure_rung),
+    scenes: plan.scenes.map(scene => ({
+      ...scene,
+      outcome_kind: typeof scene.outcome_kind === 'string' ? scene.outcome_kind : '',
+    })),
+  };
 }
 
 export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Promise<ChapterPlan> {
   const entry = input.design.chapter_map.find(item => item.chapter === input.chapter);
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const prompt = renderPrompt('P03_CHAPTER_PLAN', {
     book_design_digest: JSON.stringify({
       dramatic_core: input.design.dramatic_core,
@@ -74,15 +119,18 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     chapter_number: String(input.chapter),
     chapter_count: String(input.design.chapter_map.length),
     chapter_map_entry: JSON.stringify(entry || {}),
-    current_state: JSON.stringify(input.currentState),
+    book_profile: describeProfile(profileOf(input.design)),
+    chapter_commitments: describeCommitments(input.design, input.chapter, input.spentMechanisms || []),
+    current_state: describeStateDigest(input.currentState),
     previous_chapter_outcome: input.previousOutcome || '(opening chapter)',
     recent_scene_shapes: describeShapes(input.recentShapes || []),
     state_handoff: input.previousHandoff ? JSON.stringify(input.previousHandoff) : '(no earlier accepted scene)',
     open_threads_and_ending_requirements: JSON.stringify({ open_threads: input.openThreads, ending_requirements: input.endingRequirements }),
     remaining_word_budget: String(input.remainingWords),
+    plan_findings: input.findings || '(first attempt at this chapter)',
   });
   const raw = await structuredResponse(prompt, system, llm,
-    ['status', 'chapter', 'function', 'starting_situation', 'ending_change', 'scenes', 'forward_dependencies', 'replan_reason'],
+    ['status', 'chapter', 'function', 'starting_situation', 'ending_change', 'mechanism', 'cost', 'pressure_rung', 'scenes', 'forward_dependencies', 'replan_reason'],
     parsed => parsed, { temperature: 0.3, maxTokens: 8192, route: 'writer' });
   return validateChapterPlan(raw, input.chapter);
 }
@@ -90,7 +138,7 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
 const SCENE_KEYS = ['id', 'pov_id', 'location', 'story_time', 'participants', 'initial_conditions',
   'function', 'participant_intentions', 'pressure_or_uncertainty', 'development', 'required_outcome',
   'flexible_elements', 'required_fact_refs', 'required_source_refs', 'setup_or_payoff',
-  'transition_to_next', 'target_words'];
+  'transition_to_next', 'target_words', 'outcome_kind'];
 
 export async function rebaseScenePlan(input: {
   design: BookDesign;
@@ -98,15 +146,13 @@ export async function rebaseScenePlan(input: {
   handoff: SceneHandoff;
   state: StoryState;
   openThreads: string[];
-  story_language: string;
-  planning_language: string;
 }, llm: NovelLLM): Promise<ScenePlan> {
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const prompt = renderPrompt('P03_SCENE_REBASE', {
     story_contract: JSON.stringify(input.design.contract),
     scene_plan: JSON.stringify(input.scene),
     state_handoff: JSON.stringify({ ...input.handoff, required_new_outcome: input.scene.required_outcome }),
-    confirmed_state: JSON.stringify(input.state),
+    confirmed_state: describeStateDigest(input.state),
     open_threads: JSON.stringify(input.openThreads),
   });
   const raw = await structuredResponse(prompt, system, llm, SCENE_KEYS, parsed => {
@@ -153,7 +199,7 @@ export interface PriorChapter {
  * other from the cards, needing no fact) from an invented dependency, or a
  * planned arrival from a teleport.
  */
-export function checkReadiness(design: BookDesign, state: StoryState, scene: ScenePlan, priorChapters: PriorChapter[] = [], recentShapes: SceneShape[] = []): ReadinessProblem[] {
+export function checkReadiness(design: BookDesign, state: StoryState, scene: ScenePlan, priorChapters: PriorChapter[] = [], recentShapes: SceneShape[] = [], tolerance?: StagingTolerance): ReadinessProblem[] {
   const problems: ReadinessProblem[] = [];
   if (scene.pov_id && !(scene.participants || []).includes(scene.pov_id)) {
     const names = new Map(design.characters.map(c => [c.id, c.name]));
@@ -188,7 +234,7 @@ export function checkReadiness(design: BookDesign, state: StoryState, scene: Sce
   }
   // Structural repetition: same people, same place, again. Measured on the plan
   // alone, so it costs nothing and lands before a prose token exists.
-  const repetition = repeatedStaging(sceneShape(scene), recentShapes);
+  const repetition = repeatedStaging(sceneShape(scene), recentShapes, tolerance || bandsFor(profileOf(design)));
   if (repetition) problems.push({ code: 'repeated-staging', detail: repetition });
   // Pre-write restaging sniff: the plan's own wording against finished prose.
   // A shared distinctive phrase means the scene is about to redress an
@@ -227,6 +273,7 @@ export function buildSceneContext(
   priorChapters: PriorChapter[] = [],
   handoff?: SceneHandoff | null,
   recentShapes: SceneShape[] = [],
+  worn: WornEntry[] = [],
 ): SceneContext {
   const known = new Map(design.characters.map(c => [c.id, c]));
   // Who is who is meaning, and meaning is the model's job. Code matches
@@ -236,7 +283,7 @@ export function buildSceneContext(
   // the P02 review, which maps it against the roster in words; the writer
   // executes the mapping. Nothing is substituted silently, nothing throws.
   const participants = scene.participants || [];
-  const problems = checkReadiness(design, state, scene, priorChapters, recentShapes);
+  const problems = checkReadiness(design, state, scene, priorChapters, recentShapes, bandsFor(profileOf(design)));
   for (const entry of participants) {
     const token = entry.trim().toLowerCase().replace(/['’]s\b/g, '').replace(/['’]$/g, '');
     const exact = known.has(entry)
@@ -296,9 +343,10 @@ export function buildSceneContext(
       cast_roster: design.characters.map(character =>
         `${character.id} — ${character.name} — ${character.story_function}`).join('\n') || '(cast empty)',
       named_entities,
-      tired_phrases: tiredPhrases(priorChapters.map(prior => prior.text)).map(item =>
-        `"${item.phrase}" — ${item.uses} uses already; name the thing by its barest noun from here on`).join('\n')
-        || '(nothing worn out yet)',
+      // The craft ledger's list, not a window over the previous chapters: a tic
+      // that started in chapter two is exactly the one nobody can see by chapter
+      // seven, and the book's own declared refrains are already subtracted.
+      tired_phrases: describeWorn(worn),
       character_knowledge_and_beliefs: JSON.stringify(knowledge),
       participant_relationships: describeRelations(relationsFor(state, scene.participants || [])),
       relevant_facts: JSON.stringify(relevantFacts),

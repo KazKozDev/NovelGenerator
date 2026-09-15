@@ -4,7 +4,7 @@
  *
  *   npx vite-node scripts/run-book.ts --writer deepseek-v4.1-flash:cloud \
  *     --editor mistral-large-3:675b-cloud --chapters 4 \
- *     --premise "Harry Potter has fallen in love with Voldemort." \
+ *     --premise "<the premise to write from>" \
  *     --out runs/manual-test
  *
  * --provider gemini uses the Gemini transport instead, with --writer/--editor
@@ -16,6 +16,7 @@ import { Orchestrator } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { snapshotProject } from '../utils/novel/v2/export';
+import { setGateModeOverride } from '../utils/novel/v2/semanticGate';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateGeminiText } from '../services/geminiService';
 import type { NovelLLM } from '../utils/novel/v2/llm';
@@ -30,10 +31,18 @@ const endpoint = arg('endpoint', 'http://127.0.0.1:11434');
 const writerModel = arg('writer', 'deepseek-v4.1-flash:cloud');
 const editorModel = arg('editor', 'mistral-large-3:675b-cloud');
 const chapters = Number(arg('chapters', '4'));
-const premise = arg('premise', 'Harry Potter has fallen in love with Voldemort.');
+const premise = arg('premise', '');
+if (!premise.trim()) {
+  console.error('A premise is required: pass --premise "<the premise to write from>".');
+  process.exit(1);
+}
 const genre = arg('genre', 'fantasy');
 const totalWords = Number(arg('words', '8000'));
 const outDir = arg('out', 'runs/manual-test');
+// The local models, the way the application runs them: about 780MB the first
+// time, cached by the runtime after that. Not a flag — a script has nowhere to
+// record a choice, so it says so here once, and says it the same way every run.
+setGateModeOverride('full');
 // A longer book needs a longer leash than the in-app default: the budget is the
 // run's own, not a property of the pipeline.
 const maxCalls = Number(arg('max-calls', '200'));
@@ -48,7 +57,7 @@ function log(line: string): void {
 }
 
 async function main(): Promise<void> {
-  log(`provider=${provider} writer=${writerModel} editor=${editorModel}${provider === 'ollama' ? ` endpoint=${endpoint}` : ''}`);
+  log(`provider=${provider} writer=${writerModel} editor=${editorModel}${provider === 'ollama' ? ` endpoint=${endpoint}` : ''} gate=full`);
   log(`budget calls=${maxCalls} minutes=${maxMinutes}`);
   log(`book chapters=${chapters} genre=${genre} words=${totalWords} premise=${premise}`);
   const store = new MemoryProjectStore();
@@ -60,6 +69,12 @@ async function main(): Promise<void> {
   const transportFailed = (error: unknown): boolean =>
     /502|500|context canceled|ECONNREFUSED|ETIMEDOUT|aborted|abort|fetch failed|deadline|15 minute|network|socket hang up|ENOTFOUND|EAI_AGAIN/i.test(
       error instanceof Error ? error.message : String(error));
+  let loggedEntries = 0;
+  const flushStoreLog = (): void => {
+    const entries = store.runLog();
+    for (const entry of entries.slice(loggedEntries)) log(`  [${entry.stage}] ${entry.detail}`);
+    loggedEntries = entries.length;
+  };
   const llm: NovelLLM = async (prompt, system, options) => {
     calls++;
     const model = options?.route === 'writer' ? writerModel : editorModel;
@@ -75,6 +90,16 @@ async function main(): Promise<void> {
             model, endpoint, options?.maxTokens ?? 16384,
           );
         log(`OK#${calls} attempt=${attempt} ${((Date.now() - started) / 1000).toFixed(0)}s answer=${result.length}ch`);
+        // An answer this short is never a book design or a scene, and "answer=35ch"
+        // in the log tells you nothing about why. The body is what says whether the
+        // model refused, hit a cap, or returned a shape the contract did not expect.
+        if (result.length < 400) log(`BODY#${calls} ${JSON.stringify(result)}`);
+        // The pipeline's own record — how many scenes were planned, which plans
+        // the gate rejected before prose, what was repaired, what memory refused
+        // — is the most informative thing in a run, and it was reaching the disk
+        // only in the final snapshot. A run that dies never writes one, and a run
+        // in progress could only be read by counting calls and guessing.
+        flushStoreLog();
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -95,9 +120,8 @@ async function main(): Promise<void> {
     genre,
     target_total_words: totalWords,
     author_requirements: '',
-    story_language: 'English',
-    planning_language: 'English',
   }, llm);
+  flushStoreLog();
   writeFileSync(join(outDir, 'snapshot.json'), JSON.stringify(snapshotProject(store), null, 2));
   const manuscript = store.manuscript().map(m => `## Chapter ${m.chapter}\n\n${m.text}`).join('\n\n');
   writeFileSync(join(outDir, 'manuscript.md'), manuscript);

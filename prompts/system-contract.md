@@ -35,6 +35,5 @@ or answer format.
 Perform only the current task. Do not move to later stages.
 No preambles, self-assessment, or offers of further help.
 
-Prose language: {{story_language}}.
-Description language in structured answers: {{planning_language}}.
-Keep JSON keys in English.
+Write the prose in English, and the descriptions in structured answers in
+English. Keep JSON keys in English.

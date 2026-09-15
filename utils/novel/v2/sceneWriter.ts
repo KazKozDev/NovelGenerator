@@ -9,8 +9,6 @@ import type { NovelLLM } from './llm';
  * technical breach. Regeneration is never a routine way to reach a style.
  */
 export interface SceneWriterInput {
-  story_language: string;
-  planning_language: string;
   contextVars: Record<string, string>;
 }
 
@@ -25,7 +23,7 @@ function cleanProse(text: unknown): string {
 }
 
 export async function writeSceneV2(input: SceneWriterInput, llm: NovelLLM): Promise<string> {
-  const system = systemContract({ story_language: input.story_language, planning_language: input.planning_language });
+  const system = systemContract();
   const prompt = renderPrompt('P04_SCENE_WRITE', input.contextVars);
   try {
     return cleanProse(await llm(prompt, system, { temperature: 0.7, maxTokens: 8192, route: 'writer' }));

@@ -8,7 +8,10 @@
  * The callback is best-effort — runtimes that never report still resolve.
  */
 import type { ProgressCallback } from '@huggingface/transformers';
+import { useLocalModelWeights } from './modelSource';
 import type { LocalModelCall, LocalModelResponse } from './localModel.worker';
+
+useLocalModelWeights();
 
 export type { ProgressCallback };
 

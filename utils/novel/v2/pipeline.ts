@@ -11,7 +11,13 @@ import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
 import { stringList } from './normalize';
 import { resolveSourceRefs } from './retrieval';
 import { recentShapes } from './shapes';
-import type { BookDesign, StoryState } from './types';
+import { checkChapterPlan, describeFindings, type PlanFinding } from './planGate';
+import { acceptedProse, openThreadsWithAge, priorOutcomeKinds, priorRungs, spentMechanisms, textureDrift, thinScenes, wornLedger } from './ledger';
+import { profileOf } from './profile';
+import { describeStateDigest } from './stateDigest';
+import { numericContradictions } from '../analytics';
+import { repairRepetition } from './repair';
+import type { BookDesign, ChapterPlan, StoryState } from './types';
 
 /**
  * The v2 chapter pipeline: plan one chapter from confirmed state, write each
@@ -51,6 +57,72 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     store.saveState(seeded);
   }
 
+  /**
+   * Plan the chapter, check it, and plan again until it holds or the budget is
+   * spent. The loop lives here rather than inside the planner because only the
+   * pipeline knows what the book has already spent.
+   *
+   * Why a loop at all: a chapter plan costs one or two percent of the tokens of
+   * the chapter it describes, so three attempts here are cheaper than one prose
+   * rewrite — and a prose rewrite could not fix these findings anyway. A chapter
+   * whose mechanism is spent and whose rung breaks the curve is not a chapter
+   * that was written badly.
+   *
+   * When the budget runs out the findings do not vanish: they become warnings
+   * the reader sees and requirements the chapter is written against, the same
+   * way an unresolved design objection already travels into the contract. A
+   * book that says what is wrong with it beats a book that refuses to exist.
+   */
+  private async planUntilSound(
+    design: BookDesign,
+    chapter: number,
+    store: ProjectStore,
+    llm: NovelLLM,
+    base: Omit<Parameters<typeof planChapter>[0], 'findings'>,
+    warnings: string[],
+    maxReplans = 2,
+  ): Promise<{ plan: ChapterPlan; findings: PlanFinding[] }> {
+    const gateInput = {
+      design,
+      chapter,
+      spentMechanisms: spentMechanisms(store, chapter - 1),
+      priorRungs: priorRungs(store, chapter - 1),
+      recentShapes: recentShapes(store, chapter - 1),
+      priorOutcomeKinds: priorOutcomeKinds(store, chapter - 1),
+      endingRequirements: base.endingRequirements,
+      openThreads: openThreadsWithAge(store),
+      remainingChapters: design.chapter_map.length - chapter + 1,
+    };
+    let findings = '';
+    let last: { plan: ChapterPlan; findings: PlanFinding[] } | null = null;
+    for (let attempt = 0; ; attempt++) {
+      const plan = await planChapter({ ...base, findings: findings || undefined }, llm);
+      this.flushRetries(store);
+      if (plan.status === 'needs_replan') {
+        // The planner refusing the chapter map is a different failure from the
+        // gate refusing the plan, and it is the planner's own judgement about
+        // the book — it ends the chapter rather than being argued with.
+        throw new Error(`Chapter ${chapter} cannot be written as planned: ${plan.replan_reason || 'no reason given'}.`);
+      }
+      const found = checkChapterPlan({ ...gateInput, plan });
+      last = { plan, findings: found };
+      const blocking = found.filter(item => item.severity === 'blocking');
+      if (!blocking.length) {
+        if (attempt) store.log('chapter-plan', `Chapter ${chapter}: plan accepted on attempt ${attempt + 1}.`);
+        return last;
+      }
+      if (attempt >= maxReplans) {
+        for (const item of blocking) {
+          warnings.push(`Chapter ${chapter} was written over an unfixed plan defect (${item.code}): ${item.detail}`);
+        }
+        store.log('chapter-plan', `Chapter ${chapter}: ${blocking.length} plan defect(s) survived ${maxReplans + 1} attempts and travel as writing requirements.`);
+        return last;
+      }
+      findings = describeFindings(found);
+      store.log('chapter-plan', `Chapter ${chapter} attempt ${attempt + 1} rejected before prose: ${blocking.map(item => item.code).join(', ')}.`);
+    }
+  }
+
   async writeChapter(
     design: BookDesign,
     chapter: number,
@@ -60,8 +132,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
   ): Promise<{ warnings: string[] }> {
     const warnings: string[] = [];
     const input = store.loadInput();
-    const storyLanguage = input?.story_language || design.contract.language || 'English';
-    const planningLanguage = input?.planning_language || 'English';
+    const profile = profileOf(design);
     this.seedState(design, store);
 
     const entry = design.chapter_map.find(item => item.chapter === chapter);
@@ -88,7 +159,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     } else {
       // The previous chapter's own tail, not a memory-only note: it survives reload.
       const previousText = store.manuscript().find(item => item.chapter === chapter - 1)?.text || '';
-      plan = await planChapter({
+      const sound = await this.planUntilSound(design, chapter, store, llm, {
         design,
         chapter,
         currentState: store.loadState(),
@@ -97,17 +168,18 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         endingRequirements: remainingEndingRequirements(design, store.loadEndingReadiness()),
         remainingWords: design.chapter_map.filter(item => item.chapter >= chapter)
           .reduce((sum, item) => sum + (item.target_words || 0), 0),
-        story_language: storyLanguage,
-        planning_language: planningLanguage,
         previousHandoff: handoff,
         recentShapes: recentShapes(store, chapter - 1),
-      }, llm);
-      if (plan.status === 'needs_replan') {
-        throw new Error(`Chapter ${chapter} cannot be written as planned: ${plan.replan_reason || 'no reason given'}.`);
+        spentMechanisms: spentMechanisms(store, chapter - 1),
+      }, warnings);
+      plan = sound.plan;
+      // An advisory the gate raised is not worth another planning round and is
+      // still worth the reader knowing: it rides along instead of disappearing.
+      for (const advisory of sound.findings.filter(item => item.severity === 'advisory')) {
+        warnings.push(`Chapter ${chapter} (${advisory.code}): ${advisory.detail}`);
       }
       store.saveChapterPlan(plan);
-      this.flushRetries(store);
-      store.log('chapter-plan', `Chapter ${chapter}: ${plan.scenes.length} scenes planned.`);
+      store.log('chapter-plan', `Chapter ${chapter}: ${plan.scenes.length} scenes planned; mechanism "${plan.mechanism || '(none)'}", rung ${plan.pressure_rung ?? '(none)'}, cost "${plan.cost || '(none)'}".`);
     }
 
     let previousTail = '';
@@ -132,9 +204,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
       store.checkpoint('gate-mode-noted');
       const coverage = prewrite.mode === 'full'
         ? 'paraphrase restaging and plan-vs-memory clashes'
-        : prewrite.mode === 'light'
-          ? 'paraphrase restaging only (plan-vs-memory NLI needs the full mode)'
-          : 'nothing beyond the verbatim check (semantic gate off)';
+        : 'nothing beyond the verbatim check (semantic gate off)';
       store.log('gate', `Semantic pre-write check (${prewrite.mode}): ${coverage}.`);
     }
     for (let sceneIndex = 0; sceneIndex < plan.scenes.length; sceneIndex++) {
@@ -177,8 +247,6 @@ export class ChapterPipelineV2 implements ChapterPipeline {
             handoff,
             state: store.loadState(),
             openThreads: store.loadThreads().filter(item => item.status === 'open').map(item => item.description),
-            story_language: storyLanguage,
-            planning_language: planningLanguage,
           }, llm);
           plan = { ...plan, scenes: plan.scenes.map((item, index) => index === sceneIndex ? scene : item) };
           store.saveChapterPlan(plan);
@@ -193,7 +261,10 @@ export class ChapterPipelineV2 implements ChapterPipeline {
       // The chapter tails still follow, for continuity of voice rather than of fact.
       const sources = resolveSourceRefs(scene.required_source_refs, store, store.loadState());
       const sceneSources = [...sources.excerpts, ...excerpts];
-      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, sceneSources, priorChapters, handoff, recentShapes(store, chapter));
+      // Recomputed per scene, not per chapter: a phrase this chapter has already
+      // worn out must be banned for the next scene, not for the next book.
+      const worn = wornLedger(store, profile);
+      const { vars, problems: contextProblems } = buildSceneContext(design, store.loadState(), scene, previousTail, sceneSources, priorChapters, handoff, recentShapes(store, chapter), worn);
       const problems = [...contextProblems, ...(prewrite.problems.get(scene.id) || [])];
       if (sources.missing.length) {
         problems.push({
@@ -211,10 +282,10 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         // on the page instead of stopping the book. If the writer still breaks
         // continuity, the state tracker catches it with evidence after the fact.
         const check = await reviewPlan(
-          { story_language: storyLanguage, planning_language: planningLanguage, story_contract: JSON.stringify(design.contract) },
+          { story_contract: JSON.stringify(design.contract) },
           `Scene ${scene.id} readiness before prose. Cast roster (id — name — function):\n${design.characters.map(character => `${character.id} — ${character.name} — ${character.story_function}`).join('\n')}\nCode-level doubts:\n${problems.map(p => `- ${p.code}: ${p.detail}`).join('\n')}`,
           scene,
-          JSON.stringify(store.loadState()),
+          describeStateDigest(store.loadState()),
           JSON.stringify(sceneSources),
           llm,
         );
@@ -230,14 +301,35 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         }
       }
       const track = (prose: string) => trackScene({
-        story_language: storyLanguage,
-        planning_language: planningLanguage,
         priorState: store.loadState(),
         scenePlan: scene,
         sceneProse: prose,
         sourceExcerpts: excerpts,
+        openThreads: store.loadThreads().filter(item => item.status === 'open'),
       }, llm);
-      let prose = await writeSceneV2({ story_language: storyLanguage, planning_language: planningLanguage, contextVars: vars }, llm);
+      // Repair before tracking, never after: a replacement carries the same
+      // information as the sentence it replaces, so memory is unaffected — and
+      // running it here means the delta, the handoff and the tail all describe
+      // the prose that actually ships. Only the duplicated sentences travel to
+      // the model, so this costs a fraction of the rewrite it replaces and
+      // leaves the rest of the scene exactly as written.
+      const deduplicate = async (draft: string): Promise<string> => {
+        const earlier = [...priorChapters, ...store.chapterScenes(chapter)
+          .filter(record => record.prose.trim() && record.id !== scene.id)
+          .map(record => ({ ref: record.id, text: record.prose }))];
+        const repair = await repairRepetition({
+          design, scene, prose: draft, earlier,
+        }, llm);
+        if (repair.repaired.length) {
+          store.log('repair', `Scene ${scene.id}: ${repair.repaired.length} sentence(s) rewritten in place for repeating earlier prose.`);
+        }
+        for (const standing of repair.left) {
+          warnings.push(`Scene ${scene.id} repeats earlier prose: ${standing}.`);
+        }
+        this.flushRetries(store);
+        return repair.prose;
+      };
+      let prose = await deduplicate(await writeSceneV2({ contextVars: vars }, llm));
       let delta = await track(prose);
       const sceneRef = scene.id;
       let applied = applyDelta(store.loadState(), delta, sceneRef);
@@ -251,7 +343,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         const prior = Array.isArray(startState.continuity_requirements) ? startState.continuity_requirements as string[] : [];
         startState.continuity_requirements = [...prior, ...applied.blockers.map(blocker => `Do not contradict confirmed state: ${blocker}`)];
         vars.scene_start_state = JSON.stringify(startState);
-        prose = await writeSceneV2({ story_language: storyLanguage, planning_language: planningLanguage, contextVars: vars }, llm);
+        prose = await deduplicate(await writeSceneV2({ contextVars: vars }, llm));
         delta = await track(prose);
         applied = applyDelta(store.loadState(), delta, sceneRef);
         if (applied.blockers.length) {
@@ -310,13 +402,43 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     const scenes = store.chapterScenes(chapter);
     const manuscript = scenes.map(s => s.prose).join('\n\n***\n\n');
     store.saveManuscript(chapter, manuscript);
+    // The craft ledger read back against what the book said it would be. Both of
+    // these are arithmetic over accepted prose — no model call, microseconds —
+    // and both are visible now rather than in the final audit, when saying so
+    // changes nothing that can still be written.
+    const drift = textureDrift(store, profile, chapter);
+    if (drift.drift) {
+      warnings.push(`After chapter ${chapter}: ${drift.drift}`);
+      store.log('texture', drift.drift);
+    }
+    if (drift.trend) {
+      warnings.push(`After chapter ${chapter}: ${drift.trend}`);
+      store.log('texture', drift.trend);
+    }
+    for (const tic of drift.tics) {
+      warnings.push(`After chapter ${chapter} (${tic.id}): ${tic.detail}`);
+      store.log('texture', `${tic.id}: ${tic.detail}`);
+    }
+    // A number that changed between chapters: the state tracker never saw it,
+    // because scenery is not an event. Advisory on purpose — code cannot tell a
+    // founding date that moved from two page numbers that are both correct.
+    // Measured against the book's own rate, so a meditative book is judged as
+    // the meditative book it has been, and only a scene that stopped carrying
+    // its share is named.
+    for (const thin of thinScenes(store, chapter)) {
+      const detail = `Scene ${thin.scene} carries ${thin.events} event(s) across ${thin.words} words — ${thin.rate.toFixed(1)} per thousand, against ${thin.bookRate.toFixed(1)} for the book so far. Less happens here than anywhere else in it.`;
+      warnings.push(detail);
+      store.log('pacing', detail);
+    }
+    for (const clash of numericContradictions(acceptedProse(store, chapter))) {
+      warnings.push(`"${clash.context}" is given as ${clash.values.join(' and as ')} in ${clash.refs.join(', ')}. If these are the same thing, one of them is wrong.`);
+      store.log('continuity', `Numeric clash on "${clash.context}": ${clash.values.join(' / ')} (${clash.refs.join(', ')}).`);
+    }
     // The chapter is finished only here: its state becomes the resume point,
     // so a later run never re-applies these deltas.
     store.saveStateSnapshot(chapter, store.loadState());
 
     const forwardInput: ForwardInput = {
-      story_language: storyLanguage,
-      planning_language: planningLanguage,
       design,
       completedChapter: chapter,
       chapterOutcome: `Chapter ${chapter} written as ${scenes.length} scenes: ${plan.ending_change}`,

@@ -1,12 +1,14 @@
 import systemContractRaw from '../../prompts/system-contract.md?raw';
 import p01Raw from '../../prompts/P01_BOOK_DESIGN.md?raw';
 import p02Raw from '../../prompts/P02_PLAN_REVIEW.md?raw';
+import p02RefineRaw from '../../prompts/P02_PLAN_REFINE.md?raw';
 import p03Raw from '../../prompts/P03_CHAPTER_PLAN.md?raw';
 import p03SceneRebaseRaw from '../../prompts/P03_SCENE_REBASE.md?raw';
 import p04Raw from '../../prompts/P04_SCENE_WRITE.md?raw';
 import p05Raw from '../../prompts/P05_STATE_UPDATE.md?raw';
 import p06Raw from '../../prompts/P06_FORWARD_UPDATE.md?raw';
 import p07Raw from '../../prompts/P07_FINAL_AUDIT.md?raw';
+import p08Raw from '../../prompts/P08_SPAN_REPAIR.md?raw';
 
 /**
  * The pipeline prompts plus the shared system contract live as files under
@@ -17,28 +19,32 @@ import p07Raw from '../../prompts/P07_FINAL_AUDIT.md?raw';
 export type PipelinePromptName =
   | 'P01_BOOK_DESIGN'
   | 'P02_PLAN_REVIEW'
+  | 'P02_PLAN_REFINE'
   | 'P03_CHAPTER_PLAN'
   | 'P03_SCENE_REBASE'
   | 'P04_SCENE_WRITE'
   | 'P05_STATE_UPDATE'
   | 'P06_FORWARD_UPDATE'
-  | 'P07_FINAL_AUDIT';
+  | 'P07_FINAL_AUDIT'
+  | 'P08_SPAN_REPAIR';
 
 const TEMPLATES: Record<PipelinePromptName, string> = {
   P01_BOOK_DESIGN: p01Raw,
   P02_PLAN_REVIEW: p02Raw,
+  P02_PLAN_REFINE: p02RefineRaw,
   P03_CHAPTER_PLAN: p03Raw,
   P03_SCENE_REBASE: p03SceneRebaseRaw,
   P04_SCENE_WRITE: p04Raw,
   P05_STATE_UPDATE: p05Raw,
   P06_FORWARD_UPDATE: p06Raw,
   P07_FINAL_AUDIT: p07Raw,
+  P08_SPAN_REPAIR: p08Raw,
 };
 
 export const PIPELINE_PROMPT_NAMES = Object.keys(TEMPLATES) as PipelinePromptName[];
 
-export function systemContract(vars: Record<string, string>): string {
-  return fillTemplate('system-contract', systemContractRaw, vars);
+export function systemContract(): string {
+  return fillTemplate('system-contract', systemContractRaw, {});
 }
 
 /** Every {{variable}} a template declares, so callers and tests can see the contract. */

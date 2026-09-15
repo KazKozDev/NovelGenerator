@@ -6,7 +6,6 @@ import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
 import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
-import { currentGateMode, setSemanticGateMode, type GateMode } from '../utils/novel/v2/semanticGate';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
@@ -36,7 +35,6 @@ const UserInput: React.FC<UserInputProps> = ({
   isLoading,
 }) => {
   const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
-  const [semanticGate, setSemanticGate] = useState<GateMode>(() => currentGateMode());
   const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
     const stored = getStoredValidatorConfig();
     return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? false, enabled: Boolean(stored) };
@@ -288,27 +286,12 @@ const UserInput: React.FC<UserInputProps> = ({
               calls the answer gets cut off. Keep off unless the prose clearly needs it.
             </p>
 
-            <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
-              <span className="font-medium">Semantic pre-write check</span>
-              <select
-                value={semanticGate}
-                onChange={(e) => {
-                  const mode = e.target.value as GateMode;
-                  setSemanticGate(mode);
-                  setSemanticGateMode(mode);
-                }}
-                className="bg-zinc-900 border border-zinc-800 rounded text-xs px-2 py-1 text-zinc-300"
-              >
-                <option value="light">Light — fast, ~90MB</option>
-                <option value="full">Full — slow, ~700MB</option>
-                <option value="off">Off</option>
-              </select>
-            </label>
             <p className="text-xs text-zinc-500">
-              Local models read each chapter plan against finished prose and confirmed state
-              before writing. Light catches paraphrase-level restaging; full adds plan-vs-memory
-              clashes. Findings advise the plan review, never block. Weights download once
-              with progress shown, then run on your machine. Off is reported in the run warnings.
+              A cross-encoder reads each chapter plan against finished prose, and an NLI head
+              reads the scene's claims against confirmed state, before a word is written —
+              the only check that catches a scene retold in different words. Both run on your
+              machine; the weights download once with progress shown. There is no setting: a
+              check you can quietly turn down is a check nobody can trust the absence of.
             </p>
 
             {fetchStatus && (
@@ -494,7 +477,6 @@ const UserInput: React.FC<UserInputProps> = ({
 
         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
           {([
-            ['language', 'Language', 'English'],
             ['targetAudience', 'Target audience', 'adult'],
             ['narrativeVoice', 'Narrative voice / POV', 'third-limited'],
             ['tone', 'Tone', 'serious'],
@@ -560,16 +542,18 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Continuity and revision</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Continuity</h3>
             <p className="text-xs text-zinc-500">
-              Accepted passages establish the story’s facts. Revisions trigger fresh checks of affected chapters.
+              Accepted passages establish the story’s facts, and every later scene is written against them.
+              Problems are caught in the plan, before the prose exists; a finished chapter is never reopened.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Quality & Export</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Audit &amp; export</h3>
             <p className="text-xs text-zinc-500">
-              Download the finished book immediately. Request a separate review and save edits as a new version.
+              The finished book is read once more against its own design, and what the checks found travels with it.
+              Download the manuscript, or the whole project with its plans, memory and run log.
             </p>
           </div>
         </div>
