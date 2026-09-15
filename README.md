@@ -183,7 +183,6 @@ npm run build && npm run preview
 
 </details>
 
----
 
 <div align="center">
 
