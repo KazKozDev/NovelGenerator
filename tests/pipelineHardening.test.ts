@@ -11,6 +11,7 @@ import { applyThreads, citesThread } from '../utils/novel/v2/tracker';
 import { openThreadsWithAge } from '../utils/novel/v2/ledger';
 import { describeStateDigest, stateDigest } from '../utils/novel/v2/stateDigest';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
+import { budgetFor } from '../utils/novel/v2/orchestrator';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, BookProfile, ChapterPlan, ReaderThread, ScenePlan, StoryState } from '../utils/novel/v2/types';
 
@@ -905,5 +906,25 @@ describe('what a call needs to know about the world', () => {
   it('adds no note to a book short enough to fit whole', () => {
     const young = { ...state, events: state.events.slice(0, 5), reader_disclosures: [] };
     expect(describeStateDigest(young)).toBe(JSON.stringify(stateDigest(young)));
+  });
+});
+
+describe('a budget the length of the book', () => {
+  it('gives a long book more room than a short one', () => {
+    // The wall used to be an hour whatever the book, set when a chapter was a
+    // plan, a scene and an extraction. A chapter now also carries a
+    // cross-encoder, an NLI pass and up to two replans.
+    expect(budgetFor(10).maxTimeMs).toBeGreaterThan(budgetFor(3).maxTimeMs);
+    expect(budgetFor(10).maxCalls).toBeGreaterThan(budgetFor(3).maxCalls);
+  });
+
+  it('never drops below the old hour for a short book', () => {
+    expect(budgetFor(1).maxTimeMs).toBe(60 * 60 * 1000);
+    expect(budgetFor(3).maxCalls).toBe(200);
+  });
+
+  it('still stops a runaway', () => {
+    expect(budgetFor(100).maxTimeMs).toBe(4 * 60 * 60 * 1000);
+    expect(budgetFor(100).maxCalls).toBe(600);
   });
 });

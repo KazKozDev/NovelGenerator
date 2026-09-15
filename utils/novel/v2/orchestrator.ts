@@ -43,7 +43,30 @@ export interface BookResult {
   stoppedReason: string | null;
 }
 
-export const DEFAULT_BUDGET: CallBudget = { maxCalls: 200, maxTimeMs: 60 * 60 * 1000 };
+/**
+ * A wall-clock hour and two hundred calls, for any book of any length.
+ *
+ * The hour was set when a chapter was a plan, a scene, and an extraction. A
+ * chapter now also carries a cross-encoder over its plan and its prose, an NLI
+ * pass over its claims, and up to two replans when the gate refuses it — and a
+ * planning call against a long book's accumulated state is minutes on its own.
+ * Four chapters no longer fit in an hour, and the run died at the wall with
+ * three of them written.
+ *
+ * So the budget is what a book of this length costs, not a constant: twenty
+ * minutes a chapter, never less than an hour, capped at four so a runaway still
+ * stops. Calls scale the same way — a chapter is a plan, a scene package and a
+ * tracking pass per scene, a repair where one is needed, and a reconciliation.
+ */
+export function budgetFor(chapters: number): CallBudget {
+  const perChapter = Math.max(1, chapters);
+  return {
+    maxCalls: Math.min(600, Math.max(200, perChapter * 40)),
+    maxTimeMs: Math.min(4 * 60, Math.max(60, perChapter * 20)) * 60 * 1000,
+  };
+}
+
+export const DEFAULT_BUDGET: CallBudget = budgetFor(3);
 
 export class Orchestrator {
   private callsUsed = 0;
@@ -69,10 +92,11 @@ export class Orchestrator {
     return async (prompt, system, options) => {
       this.callsUsed++;
       if (this.callsUsed > this.budget.maxCalls) {
-        throw new Error(`Call budget exhausted after ${this.budget.maxCalls} calls.`);
+        throw new Error(`Call budget of ${this.budget.maxCalls} calls exhausted with ${this.store.manuscript().length} chapter(s) written. Continuing keeps them and starts the count again.`);
       }
       if (Date.now() - this.startedAt > this.budget.maxTimeMs) {
-        throw new Error('Time budget exhausted.');
+        const finished = this.store.manuscript().length;
+        throw new Error(`Time budget of ${Math.round(this.budget.maxTimeMs / 60000)} minutes exhausted with ${finished} chapter(s) written. Continuing keeps them and starts the clock again.`);
       }
       const result = await llm(prompt, system, options);
       this.tokensUsed += Math.ceil((prompt.length + system.length + result.length) / 4);

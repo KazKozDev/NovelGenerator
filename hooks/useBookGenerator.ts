@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import type { NovelLLM } from '../utils/novel/v2/llm';
-import { Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
+import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { downloadJson, restoreSnapshot, snapshotProject } from '../utils/novel/v2/export';
 import { PersistentProjectStore } from '../utils/novel/v2/persistent';
@@ -190,7 +190,7 @@ export default function useBookGenerator() {
     };
     const poll = setInterval(() => { if (epoch.current === token) refreshFromStore(); }, 1500);
     try {
-      const orchestrator = new Orchestrator(store, undefined, new ChapterPipelineV2(), (stage, chapter) => {
+      const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count), new ChapterPipelineV2(), (stage, chapter) => {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
       });
