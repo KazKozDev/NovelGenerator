@@ -14,15 +14,15 @@ import {
 describe('analytics detectors', () => {
   it('flags a phrase circled across distinct sentences', () => {
     const text = [
-      'The lamp room held its light through the storm.',
-      'He saw the lamp room held its light.',
-      'By midnight the lamp room held its light.',
+      'The upper room held its light through the storm.',
+      'He saw the upper room held its light.',
+      'By midnight the upper room held its light.',
       'She stared at the cold stairs in silence.',
     ].join(' ');
     const motifs = recurrentMotifs(text);
     expect(motifs.length).toBeGreaterThan(0);
     expect(motifs[0].sentences).toBe(3);
-    expect(motifs[0].phrase).toContain('lamp room held its');
+    expect(motifs[0].phrase).toContain('room held its light');
   });
 
   it('ignores ordinary glue repeated everywhere', () => {
@@ -31,12 +31,12 @@ describe('analytics detectors', () => {
   });
 
   it('extracts premise names and skips sentence-start common words', () => {
-    expect(extractPremiseNames('A love triangle of Zor, Pax and someone else.'))
-      .toEqual(['Zor', 'Pax']);
-    expect(extractPremiseNames('After the lighthouse goes dark, keeper Zor Pax must relight it.'))
-      .toEqual(['Zor Pax']);
+    expect(extractPremiseNames('A love triangle of Aren, Miro and someone else.'))
+      .toEqual(['Aren', 'Miro']);
+    expect(extractPremiseNames('After the lighthouse goes dark, keeper Aren Miro must relight it.'))
+      .toEqual(['Aren Miro']);
     // Position alone never disqualifies: a name first is still a name.
-    expect(extractPremiseNames('Zor wept.')).toEqual(['Zor']);
+    expect(extractPremiseNames('Aren wept.')).toEqual(['Aren']);
     // A capitalized common noun is still extracted — letting it pass is the
     // gaps filter's job, not the extractor's silence.
     expect(extractPremiseNames('Hope dies last in the garrison.')).toEqual(['Hope']);
@@ -82,10 +82,10 @@ describe('analytics detectors', () => {
   });
 
   it('finds a staging about to be restaged, and stays quiet otherwise', () => {
-    const chapter = 'The lamp room held its light through the storm. Zor watched the stairs.';
-    const plan = 'Lamp room, night. The lamp room held its light while they waited.';
+    const chapter = 'The upper room held its light through the storm. Aren watched the stairs.';
+    const plan = 'Upper room, night. The upper room held its light while they waited.';
     const shared = sharedDistinctivePhrasing(plan, chapter);
-    expect(shared.some(phrase => phrase.includes('lamp room held its'))).toBe(true);
+    expect(shared.some(phrase => phrase.includes('room held its light'))).toBe(true);
     expect(sharedDistinctivePhrasing('A sunny platform above the roaring waterfall.', chapter)).toEqual([]);
     expect(sharedDistinctivePhrasing('He went to the door.', chapter)).toEqual([]);
   });
@@ -100,19 +100,20 @@ describe('wornPhrases', () => {
   // One sentence carrying the tic, repeated with different surroundings, the way
   // a generated book actually wears a somatic beat out.
   const filler = 'The room held its shapes in the grey afternoon and nobody moved through them. ';
-  const tic = (n: number) => Array.from({ length: n }, (_, i) => `On the ${i + 1} day his breath hitched against the cold air. `).join('');
+  const tic = (n: number) => Array.from({ length: n }, (_, i) => `On the ${i + 1} day his shoulder tightened against the cold air. `).join('');
 
   it('reports a two-word beat that returns at a rate, with its count', () => {
     const text = tic(7) + filler.repeat(120);
     const found = wornPhrases(text);
-    const hitched = found.find(item => item.phrase === 'breath hitched');
-    expect(hitched?.uses).toBe(7);
-    expect(hitched!.per1000).toBeGreaterThan(0.5);
+    const tightened = found.find(item => item.phrase === 'shoulder tightened');
+    expect(tightened?.uses).toBe(7);
+    expect(tightened!.per1000).toBeGreaterThan(0.5);
   });
 
   it('says nothing about a book that repeats its own subject by name', () => {
-    // "Soul Echo" is the book's device, not a tic: capitalized spans are skipped.
-    const text = 'The Soul Echo flared between them. '.repeat(12) + filler.repeat(120);
+    // A capitalized invented term is the book's own device, not a tic:
+    // capitalized spans are skipped.
+    const text = 'The Kindral flared between them. '.repeat(12) + filler.repeat(120);
     expect(wornPhrases(text).some(item => item.phrase.includes('echo'))).toBe(false);
   });
 

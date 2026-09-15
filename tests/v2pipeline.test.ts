@@ -37,7 +37,7 @@ function design(): BookDesign {
     },
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
-    characters: [{ id: 'C01', name: 'Zor', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: ['The light must stay lit.'], initial_beliefs: [] }],
+    characters: [{ id: 'C01', name: 'Aren', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: ['The light must stay lit.'], initial_beliefs: [] }],
     world_rules: [],
     causal_map: [],
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
@@ -54,7 +54,7 @@ function plan(chapter: number) {
     chapter,
     function: 'f',
     starting_situation: 's',
-    ending_change: 'Zor finds the door.',
+    ending_change: 'Aren finds the door.',
     mechanism: chapter === 1 ? 'climb to the lamp' : 'open the door',
     cost: 'the light goes out',
     pressure_rung: chapter,
@@ -69,7 +69,7 @@ function plan(chapter: number) {
       participant_intentions: [{ character_id: 'C01', intention: 'climb', reason_now: 'the light went out' }],
       pressure_or_uncertainty: 'storm',
       development: 'd',
-      required_outcome: 'Zor reaches the lamp room.',
+      required_outcome: 'Aren reaches the upper room.',
       flexible_elements: [],
       required_fact_refs: [],
       required_source_refs: [],
@@ -83,17 +83,17 @@ function plan(chapter: number) {
   };
 }
 
-const PROSE = 'Zor climbed while the storm took the rail from her hands.\n\nThe lamp room smelled of hot glass and rain.';
+const PROSE = 'Aren climbed while the storm took the rail from her hands.\n\nThe upper room smelled of hot glass and rain.';
 // Chapter two repeats one sentence of chapter one and says something new in the
 // other: exactly the case span repair exists for, and the case where rewriting
 // the whole scene would be the wrong answer.
-const PROSE_2 = 'The lamp room smelled of hot glass and rain.\n\nBelow the gallery the sea door stood open on nothing at all.';
+const PROSE_2 = 'The upper room smelled of hot glass and rain.\n\nBelow the gallery the outer door stood open on nothing at all.';
 
 function delta() {
   return {
     proper_names: [],
     name_variants: [],
-    events: [{ description: 'Zor reaches the lamp room.', participants: ['C01'], evidence_refs: ['p1'] }],
+    events: [{ description: 'Aren reaches the upper room.', participants: ['C01'], evidence_refs: ['p1'] }],
     state_changes: [],
     knowledge_changes: [],
     belief_changes: [],
@@ -109,7 +109,7 @@ function delta() {
 
 function forward() {
   return {
-    chapter_outcome: 'Zor reaches the lamp room.',
+    chapter_outcome: 'Aren reaches the upper room.',
     consequences_to_carry_forward: [],
     next_chapter_inputs: { starting_situation: 's', active_intentions: [], necessary_content: [], relevant_fact_refs: [], source_refs_to_retrieve: [] },
     plan_updates: [],
@@ -140,8 +140,8 @@ function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
     if (prompt.includes('Update the next scene plan against the explicit handoff')) {
       const match = prompt.match(/Original scene plan:\n(\{[^\n]+\})/);
       const scene = match ? JSON.parse(match[1]) : plan(2).scenes[0];
-      if (prompt.includes('"previous_outcome":"Zor reaches the lamp room."')) {
-        scene.required_outcome = 'Zor commits to opening the sea door.';
+      if (prompt.includes('"previous_outcome":"Aren reaches the upper room."')) {
+        scene.required_outcome = 'Aren commits to opening the outer door.';
       }
       return JSON.stringify(scene);
     }
@@ -153,8 +153,8 @@ function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
       // It answers the way the contract asks: same information, different words.
       return JSON.stringify({
         replacements: [{
-          original: 'The lamp room smelled of hot glass and rain.',
-          replacement: 'Hot glass and rain were the whole smell of the lamp room.',
+          original: 'The upper room smelled of hot glass and rain.',
+          replacement: 'Hot glass and rain were the whole smell of the upper room.',
           refused_because: '',
         }],
       });
@@ -176,7 +176,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(result.report?.status).toBe('COMPLETE');
     const manuscript = store.manuscript();
     expect(manuscript).toHaveLength(2);
-    expect(manuscript[0].text).toContain('Zor climbed');
+    expect(manuscript[0].text).toContain('Aren climbed');
     // Knowledge seeded from the character card, events folded from the delta.
     expect(store.loadState().knowledge.C01).toContain('The light must stay lit.');
     expect(store.loadState().events).toHaveLength(2);
@@ -184,12 +184,12 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.runLog().map(e => e.stage)).toContain('audit');
     expect(store.runLog().map(e => e.stage)).toContain('scene-rebase');
     expect(vi.mocked(llm).mock.calls.some(([prompt]) => prompt.includes('STATE HANDOFF FROM ACCEPTED PROSE')
-      && prompt.includes('Zor reaches the lamp room.'))).toBe(true);
+      && prompt.includes('Aren reaches the upper room.'))).toBe(true);
   });
 
   it('stops the book on a blocking contradiction instead of writing past it', async () => {
     const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Zor is in two places.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
+    const blocked = { ...delta(), contradictions: [{ description: 'Aren is in two places.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
     const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2())
       .runBook(input, fullLlm(() => blocked));
     expect(result.status).toBe('FAILED');
@@ -214,7 +214,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(result.status, result.stoppedReason).toBe('COMPLETE');
     // The partial scene is gone, the junk delta with it; memory holds one event per chapter.
     expect(store.chapterScenes(2)).toHaveLength(1);
-    expect(store.chapterScenes(2)[0].prose).toContain('the sea door stood open');
+    expect(store.chapterScenes(2)[0].prose).toContain('the outer door stood open');
     expect(store.loadState().events).toHaveLength(2);
     expect(store.manuscript()).toHaveLength(2);
   });
@@ -227,7 +227,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(checkReadiness(d, emptyState(), { ...base, required_outcome: '', function: '' })[0].code).toBe('empty-task');
     const away = { ...emptyState(), conditions: { 'C01.location': 'Harbor' } };
     expect(checkReadiness(d, away, base)[0].code).toBe('location-mismatch');
-    const home = { ...emptyState(), conditions: { 'C01.location': 'Lighthouse lamp room' } };
+    const home = { ...emptyState(), conditions: { 'C01.location': 'Lighthouse upper room' } };
     expect(checkReadiness(d, home, base)).toEqual([]);
   });
 
@@ -235,12 +235,12 @@ describe('v2 chapter pipeline end to end', () => {
     const d = design();
     d.characters = [
       ...d.characters,
-      { id: 'C02', name: 'Paxel', story_function: 'brother who wants to sell', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] },
+      { id: 'C02', name: 'Miroven', story_function: 'brother who wants to sell', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] },
     ];
     const ctx = buildSceneContext(d, emptyState(), { ...plan(1).scenes[0], participants: ['C01', 'Antagonist'] }, '', []);
     expect(ctx.scene.participants).toEqual(['C01', 'Antagonist']);
     expect(ctx.problems.map(p => p.code)).toContain('unknown-participant');
-    expect(ctx.vars.cast_roster).toMatch(/C02.*Paxel/);
+    expect(ctx.vars.cast_roster).toMatch(/C02.*Miroven/);
   });
 
   it('sends unknown fact refs to review instead of killing the chapter', () => {
@@ -268,7 +268,7 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('retries a misquoting extraction once, then fails loudly', async () => {
-    const prose = 'Zor climbed while the storm took the rail.\n\nThe lamp room smelled of hot glass.';
+    const prose = 'Aren climbed while the storm took the rail.\n\nThe upper room smelled of hot glass.';
     const bad = { ...delta(), events: [{ description: 'x', participants: [], evidence_refs: ['p9'] }] };
     let calls = 0;
     const llm: NovelLLM = vi.fn(async () => JSON.stringify(calls++ === 0 ? bad : delta()));
@@ -282,27 +282,27 @@ describe('v2 chapter pipeline end to end', () => {
   it('backstops names the extraction missed from the prose itself', async () => {
     // Each name occurs where a capital is not compulsory, which is what marks it
     // as a name rather than the first word of a sentence.
-    const prose = 'The radio came through clearly for Zor despite the static.\n\nThis is Station Pax calling the Zarka. Do you read?';
+    const prose = 'The radio came through clearly for Aren despite the static.\n\nThis is Marn Relay calling the Kessel. Do you read?';
     const llm: NovelLLM = vi.fn(async () => JSON.stringify(delta()));
     const tracked = await trackScene({ priorState: emptyState(), scenePlan: {}, sceneProse: prose, sourceExcerpts: [], openThreads: [] }, llm);
     const names = tracked.proper_names.map(item => item.name);
-    expect(names).toContain('Zarka');
-    expect(names).toContain('Station Pax');
-    expect(names).toContain('Zor');
-    const ship = tracked.proper_names.find(item => item.name === 'Zarka');
+    expect(names).toContain('Kessel');
+    expect(names).toContain('Marn Relay');
+    expect(names).toContain('Aren');
+    const ship = tracked.proper_names.find(item => item.name === 'Kessel');
     expect(ship?.evidence_refs).toEqual(['p2']);
   });
 
   it('carries only cited paragraphs to the resolution call', async () => {
-    const prose = 'Zor climbed while the storm took the rail.\n\nThe lamp room smelled of hot glass and rain.\n\nFar away the sea kept its own counsel about the door.';
+    const prose = 'Aren climbed while the storm took the rail.\n\nThe upper room smelled of hot glass and rain.\n\nFar away the sea kept its own counsel about the door.';
     let sent = '';
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
       sent = prompt;
       return JSON.stringify({ resolutions: [] });
     });
     await resolveOpenQuestions(prose, [{ question: 'q', evidence_refs: ['p1'] }], llm);
-    expect(sent).toContain('Zor climbed');
-    expect(sent).toContain('lamp room');
+    expect(sent).toContain('Aren climbed');
+    expect(sent).toContain('upper room');
     expect(sent).not.toContain('own counsel');
   });
 
@@ -322,9 +322,9 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('folds answered questions into memory and leaves the rest out', async () => {
-    const prose = 'Zor climbed while the storm took the rail.\n\nThe lamp room smelled of hot glass.';
+    const prose = 'Aren climbed while the storm took the rail.\n\nThe upper room smelled of hot glass.';
     const llm: NovelLLM = vi.fn(async () => JSON.stringify({ resolutions: [
-      { question: 'q1', resolution: 'Zor knows the stairs', kind: 'knowledge', subject: 'C01', evidence_refs: ['p1'] },
+      { question: 'q1', resolution: 'Aren knows the stairs', kind: 'knowledge', subject: 'C01', evidence_refs: ['p1'] },
       { question: 'q2', resolution: 'cannot tell', kind: 'unresolved', subject: '', evidence_refs: ['p9'] },
     ] }));
     const resolutions = await resolveOpenQuestions(prose, [
@@ -334,7 +334,7 @@ describe('v2 chapter pipeline end to end', () => {
     // The second answer cites a paragraph that does not exist: dropped, not guessed.
     expect(resolutions).toHaveLength(1);
     const state = applyResolutions(emptyState(), resolutions, 'CH01_S01');
-    expect(state.knowledge.C01).toEqual(['Zor knows the stairs']);
+    expect(state.knowledge.C01).toEqual(['Aren knows the stairs']);
     expect(state.facts).toHaveLength(0);
   });
 
@@ -349,12 +349,12 @@ describe('v2 chapter pipeline end to end', () => {
       const first = new BrowserProjectStore();
       first.saveInput(input);
       first.saveDesign(design());
-      first.saveManuscript(1, 'Zor climbed.');
+      first.saveManuscript(1, 'Aren climbed.');
       first.saveState({ facts: [], events: [{ id: 'x', description: 'd', participants: [], evidence_refs: [] }], conditions: {}, knowledge: {}, beliefs: {}, reader_disclosures: [], names: [] });
       first.saveStateSnapshot(1, first.loadState());
       const second = new BrowserProjectStore();
       expect(second.restore()).toBe(true);
-      expect(second.manuscript()).toEqual([{ chapter: 1, text: 'Zor climbed.' }]);
+      expect(second.manuscript()).toEqual([{ chapter: 1, text: 'Aren climbed.' }]);
       expect(second.loadStateSnapshot(1)?.events).toHaveLength(1);
       second.clearAll();
       expect(new BrowserProjectStore().restore()).toBe(false);
@@ -374,27 +374,27 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('registers unlinked spellings as new names without judging them', () => {
-    const known = [{ name: 'Zarko', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }];
-    const quiet = mergeProperNames(known, [{ name: 'Zarko', kind: 'ship', refers_to: '', evidence_refs: ['p1'] }], 'CH02_S01');
+    const known = [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }];
+    const quiet = mergeProperNames(known, [{ name: 'Kessen', kind: 'ship', refers_to: '', evidence_refs: ['p1'] }], 'CH02_S01');
     expect(quiet.names).toHaveLength(1);
-    // "Zarka" beside "Zarko" is meaning, not spelling: code registers,
+    // "Kessel" beside "Kessen" is meaning, not spelling: code registers,
     // the model's variant verdict blocks. No similarity heuristics in code.
-    const added = mergeProperNames(known, [{ name: 'Zarka', kind: 'ship', refers_to: '', evidence_refs: ['p2'] }], 'CH02_S01');
+    const added = mergeProperNames(known, [{ name: 'Kessel', kind: 'ship', refers_to: '', evidence_refs: ['p2'] }], 'CH02_S01');
     expect(added.names).toHaveLength(2);
   });
 
   it('turns the model variant verdict into continuity blockers', () => {
-    const state = { ...emptyState(), names: [{ name: 'Zarko', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
-    const flagged = { ...delta(), name_variants: [{ used: 'Zarka', recorded: 'Zarko', evidence_refs: ['p2'] }] };
+    const state = { ...emptyState(), names: [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
+    const flagged = { ...delta(), name_variants: [{ used: 'Kessel', recorded: 'Kessen', evidence_refs: ['p2'] }] };
     const applied = applyDelta(state, flagged, 'CH02_S01');
     expect(applied.blockers).toHaveLength(1);
-    expect(applied.blockers[0]).toMatch(/Zarka.*Zarko/);
+    expect(applied.blockers[0]).toMatch(/Kessel.*Kessen/);
     expect(applied.state.names).toHaveLength(1);
   });
 
   it('merges possessives and leaves different skeletons alone', () => {
-    const folded = [{ name: "Zor's", kind: 'person', refers_to: 'C01', aliases: [], first_seen: 'CH01_S01' }];
-    const merged = mergeProperNames(folded, [{ name: 'Zor', kind: 'person', refers_to: '', evidence_refs: ['p1'] }], 'CH01_S01');
+    const folded = [{ name: "Aren's", kind: 'person', refers_to: 'C01', aliases: [], first_seen: 'CH01_S01' }];
+    const merged = mergeProperNames(folded, [{ name: 'Aren', kind: 'person', refers_to: '', evidence_refs: ['p1'] }], 'CH01_S01');
     expect(merged.names).toHaveLength(1);
     const split = mergeProperNames(
       [{ name: 'Vex', kind: 'thing', refers_to: '', aliases: [], first_seen: 'CH01_S01' }],
@@ -403,47 +403,47 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('folds mid-span possessives to one registry entry', () => {
-    const known = [{ name: "Zor's Pax", kind: 'place', refers_to: '', aliases: [], first_seen: 'CH01_S01' }];
-    const merged = mergeProperNames(known, [{ name: 'Zor Pax', kind: 'place', refers_to: '', evidence_refs: ['p3'] }], 'CH01_S01');
+    const known = [{ name: "Aren's Miro", kind: 'place', refers_to: '', aliases: [], first_seen: 'CH01_S01' }];
+    const merged = mergeProperNames(known, [{ name: 'Aren Miro', kind: 'place', refers_to: '', evidence_refs: ['p3'] }], 'CH01_S01');
     expect(merged.names).toHaveLength(1);
   });
 
   it('registers a declared distinct thing without drift', () => {
-    const known = [{ name: 'Zoran', kind: 'person', refers_to: 'C04', aliases: [], first_seen: 'CH01_S01' }];
+    const known = [{ name: 'Aleth', kind: 'person', refers_to: 'C04', aliases: [], first_seen: 'CH01_S01' }];
     const distinct = mergeProperNames(known,
-      [{ name: 'Zoren', kind: 'person', refers_to: 'C05', evidence_refs: ['p1'] }], 'CH01_S02');
+      [{ name: 'Aleph', kind: 'person', refers_to: 'C05', evidence_refs: ['p1'] }], 'CH01_S02');
     expect(distinct.names).toHaveLength(2);
   });
 
   it('links diminutives via refers_to and leaves short names alone', () => {
-    const known = [{ name: 'Paxel', kind: 'person', refers_to: 'C02', aliases: [], first_seen: 'design' }];
-    const linked = mergeProperNames(known, [{ name: 'Pax', kind: 'person', refers_to: 'Paxel', evidence_refs: ['p1'] }], 'CH01_S01');
-    expect(linked.names[0].aliases).toEqual(['Pax']);
-    const short = mergeProperNames([], [{ name: 'Zor', evidence_refs: ['p1'] }, { name: 'Zora', evidence_refs: ['p2'] }], 'CH01_S01');
+    const known = [{ name: 'Miroven', kind: 'person', refers_to: 'C02', aliases: [], first_seen: 'design' }];
+    const linked = mergeProperNames(known, [{ name: 'Miro', kind: 'person', refers_to: 'Miroven', evidence_refs: ['p1'] }], 'CH01_S01');
+    expect(linked.names[0].aliases).toEqual(['Miro']);
+    const short = mergeProperNames([], [{ name: 'Aren', evidence_refs: ['p1'] }, { name: 'Arel', evidence_refs: ['p2'] }], 'CH01_S01');
     expect(short.names).toHaveLength(2);
   });
 
   it('blocks an undeclared near-twin spelling end to end', async () => {
-    // Chapter 1 established the ship as Zarko. Chapter 2 writes Zarka.
+    // Chapter 1 established the ship as Kessen. Chapter 2 writes Kessel.
     // The model verdict — not code similarity — names the variant,
     // and the line blocks.
-    const priorState = { ...emptyState(), names: [{ name: 'Zarko', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
-    const radio = 'Station Pax, Station Pax. This is the Zarka. Do you read?';
+    const priorState = { ...emptyState(), names: [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
+    const radio = 'Marn Relay, Marn Relay. This is the Kessel. Do you read?';
     let sent = '';
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
       sent = prompt;
-      return JSON.stringify({ ...delta(), name_variants: [{ used: 'Zarka', recorded: 'Zarko', evidence_refs: ['p1'] }] });
+      return JSON.stringify({ ...delta(), name_variants: [{ used: 'Kessel', recorded: 'Kessen', evidence_refs: ['p1'] }] });
     });
     const tracked = await trackScene({ priorState, scenePlan: {}, sceneProse: radio, sourceExcerpts: [], openThreads: [] }, llm);
-    expect(sent).toMatch(/Zarko/);
+    expect(sent).toMatch(/Kessen/);
     const applied = applyDelta(priorState, tracked, 'CH02_S01');
-    expect(applied.blockers.join(' ')).toMatch(/Zarka.*Zarko/);
+    expect(applied.blockers.join(' ')).toMatch(/Kessel.*Kessen/);
   });
 
   it('shows the registry in the writer package, verbatim', () => {
-    const state = { ...emptyState(), names: [{ name: 'Zarko', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
+    const state = { ...emptyState(), names: [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
     const ctx = buildSceneContext(design(), state, plan(1).scenes[0], '', []);
-    expect(ctx.vars.named_entities).toMatch(/Zarko/);
+    expect(ctx.vars.named_entities).toMatch(/Kessen/);
     const fresh = buildSceneContext(design(), emptyState(), plan(1).scenes[0], '', []);
     expect(fresh.vars.named_entities).toMatch(/no named entities/);
     expect(storyNames({} as unknown as Parameters<typeof storyNames>[0])).toEqual([]);
@@ -466,43 +466,43 @@ describe('v2 chapter pipeline end to end', () => {
       required_outcome: 'They stand in the kitchen in silence',
     };
     expect(checkReadiness(design(), emptyState(), restating).map(p => p.code)).toContain('static-outcome');
-    const moving = { ...plan(1).scenes[0], function: 'f', development: 'd', required_outcome: 'Zor reaches the lamp room.' };
+    const moving = { ...plan(1).scenes[0], function: 'f', development: 'd', required_outcome: 'Aren reaches the upper room.' };
     expect(checkReadiness(design(), emptyState(), moving).map(p => p.code)).not.toContain('static-outcome');
   });
 
   it('builds an explicit handoff with accepted changes and unresolved questions', () => {
     const changed = {
       ...delta(),
-      events: [{ description: 'Zor opens the sea door.', participants: ['C01'], evidence_refs: ['p1'] }],
+      events: [{ description: 'Aren opens the outer door.', participants: ['C01'], evidence_refs: ['p1'] }],
       reader_disclosures: ['The door answers to the lamp.'],
       uncertainties: [{ question: 'Who built the door?', evidence_refs: ['p1'], relevant_to_next_scene: true }],
     };
     const state = applyDelta(emptyState(), changed, 'CH01_S01').state;
     const handoff = buildSceneHandoff({
       scene: plan(1).scenes[0],
-      nextScene: { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Zor crosses the threshold.' },
+      nextScene: { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Aren crosses the threshold.' },
       state,
       delta: changed,
       resolutions: [{ question: 'Who built the door?', resolution: 'The text does not say.', kind: 'unresolved', subject: '', evidence_refs: ['p1'] }],
       threads: [],
     });
-    expect(handoff.previous_outcome).toBe('Zor opens the sea door.');
+    expect(handoff.previous_outcome).toBe('Aren opens the outer door.');
     expect(handoff.known_to_reader).toContain('The door answers to the lamp.');
     expect(handoff.open_questions).toContain('Who built the door?');
-    expect(handoff.required_new_outcome).toBe('Zor crosses the threshold.');
-    expect(handoff.forbidden_restatements).toContain('Zor opens the sea door.');
+    expect(handoff.required_new_outcome).toBe('Aren crosses the threshold.');
+    expect(handoff.forbidden_restatements).toContain('Aren opens the outer door.');
   });
 
   it('puts the full handoff into the next writer package', () => {
     const handoff = {
       after_scene_id: 'CH01_S01',
       known_to_reader: ['The lamp is broken.'],
-      confirmed_changes: ['Zor lost the key.'],
+      confirmed_changes: ['Aren lost the key.'],
       current_conditions: { 'C01.location': 'Shore' },
       open_questions: ['Who rang the bell?'],
       active_intentions: ['C01: recover the key'],
-      previous_outcome: 'Zor lost the key.',
-      required_new_outcome: 'Zor finds a witness.',
+      previous_outcome: 'Aren lost the key.',
+      required_new_outcome: 'Aren finds a witness.',
       forbidden_restatements: ['The lamp is broken.'],
     };
     const ctx = buildSceneContext(design(), emptyState(), plan(1).scenes[0], '', [], [], handoff);
@@ -512,21 +512,21 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('rejects a rebased scene that repeats the accepted outcome and retries it', async () => {
-    const original = { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Zor reaches the lamp room.' };
+    const original = { ...plan(1).scenes[0], id: 'CH01_S02', required_outcome: 'Aren reaches the upper room.' };
     const handoff = {
       after_scene_id: 'CH01_S01', known_to_reader: [], confirmed_changes: [], current_conditions: {},
-      open_questions: [], active_intentions: [], previous_outcome: 'Zor reaches the lamp room.',
+      open_questions: [], active_intentions: [], previous_outcome: 'Aren reaches the upper room.',
       required_new_outcome: original.required_outcome, forbidden_restatements: [],
     };
     let calls = 0;
     const llm: NovelLLM = vi.fn(async () => JSON.stringify({
       ...original,
-      required_outcome: calls++ === 0 ? 'Zor reaches the lamp room.' : 'Zor gives the lamp key to Pax.',
+      required_outcome: calls++ === 0 ? 'Aren reaches the upper room.' : 'Aren gives the lamp key to Miro.',
     }));
     const rebased = await rebaseScenePlan({
       design: design(), scene: original, handoff, state: emptyState(), openThreads: [],
     }, llm);
-    expect(rebased.required_outcome).toBe('Zor gives the lamp key to Pax.');
+    expect(rebased.required_outcome).toBe('Aren gives the lamp key to Miro.');
     expect(llm).toHaveBeenCalledTimes(2);
   });
 
@@ -534,8 +534,8 @@ describe('v2 chapter pipeline end to end', () => {
     const store = new MemoryProjectStore();
     await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
     const handoff = store.chapterScenes(1)[0].handoff;
-    expect(handoff?.previous_outcome).toBe('Zor reaches the lamp room.');
-    expect(handoff?.known_to_reader).toContain('Zor reaches the lamp room.');
+    expect(handoff?.previous_outcome).toBe('Aren reaches the upper room.');
+    expect(handoff?.known_to_reader).toContain('Aren reaches the upper room.');
   });
 
   it('normalizes object-shaped forward entries instead of calling trim on them', () => {
@@ -600,20 +600,20 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('plans the next chapter against the ending requirements still standing', () => {
-    const design2 = { ...design(), ending: { ...design().ending, required_setup: ['The key is cut.', 'Pax learns to swim.'] } };
-    expect(remainingEndingRequirements(design2, null)).toEqual(['The key is cut.', 'Pax learns to swim.']);
+    const design2 = { ...design(), ending: { ...design().ending, required_setup: ['The key is cut.', 'Miro learns to swim.'] } };
+    expect(remainingEndingRequirements(design2, null)).toEqual(['The key is cut.', 'Miro learns to swim.']);
     const readiness = readEndingReadiness({
       ...forward(),
       ending_readiness: {
         established_requirements: ['the key is cut'],
-        remaining_requirements: [{ requirement: 'Someone must open the sea door.' }],
+        remaining_requirements: [{ requirement: 'Someone must open the outer door.' }],
         capacity_problems: ['Two chapters left for three preparations.'],
       },
     } as unknown as ReturnType<typeof forward>);
-    expect(readiness.remaining_requirements).toEqual(['Someone must open the sea door.']);
+    expect(readiness.remaining_requirements).toEqual(['Someone must open the outer door.']);
     // The design's list stays authoritative; the reading only retires and adds.
     expect(remainingEndingRequirements(design2, readiness))
-      .toEqual(['Pax learns to swim.', 'Someone must open the sea door.']);
+      .toEqual(['Miro learns to swim.', 'Someone must open the outer door.']);
   });
 
   it('keeps the ending readiness and warns when the chapters left cannot carry it', async () => {
@@ -624,37 +624,37 @@ describe('v2 chapter pipeline end to end', () => {
         ? JSON.stringify({
             ...forward(),
             ending_readiness: {
-              established_requirements: ['The lamp room is reachable.'],
-              remaining_requirements: ['Someone must open the sea door.'],
+              established_requirements: ['The upper room is reachable.'],
+              remaining_requirements: ['Someone must open the outer door.'],
               capacity_problems: ['One chapter left for two preparations.'],
             },
           })
         : base(prompt, system, options)
     ));
     const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
-    expect(store.loadEndingReadiness()?.remaining_requirements).toEqual(['Someone must open the sea door.']);
+    expect(store.loadEndingReadiness()?.remaining_requirements).toEqual(['Someone must open the outer door.']);
     expect(warnings.join(' ')).toContain('One chapter left for two preparations.');
     expect(store.runLog().some(e => e.stage === 'ending')).toBe(true);
     // Chapter 2 is planned against what is left, not against the design's full list.
     await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
     const planPrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
       .filter(prompt => prompt.includes('Plan only the current chapter')).at(-1) || '';
-    expect(planPrompt).toContain('Someone must open the sea door.');
+    expect(planPrompt).toContain('Someone must open the outer door.');
   });
 
   it('retrieves the exact earlier paragraph a scene must return to', () => {
     const store = new MemoryProjectStore();
     // Paragraph ids come from paragraphsWithIds, which folds a very short opening into the next block.
-    const prose = 'The lamp room smelled of oil and older weather, and nobody had aired it since the spring.\n\nZor pocketed the brass key without a word, and the room did not object to the theft of its one lock.\n\nOutside, the sea kept its distance and made a show of not listening to any of it.';
+    const prose = 'The upper room smelled of oil and older weather, and nobody had aired it since the spring.\n\nAren pocketed the brass key without a word, and the room did not object to the theft of its one lock.\n\nOutside, the sea kept its distance and made a show of not listening to any of it.';
     store.saveScene({
       id: 'CH01_S01', chapter: 1, prose, paragraph_ids: ['p1', 'p2', 'p3'], plan: null, delta: null,
     });
     const state = {
       ...emptyState(),
-      events: [{ id: 'CH01_S01-e1', description: 'Zor takes the key.', participants: ['C01'], evidence_refs: ['p2'] }],
+      events: [{ id: 'CH01_S01-e1', description: 'Aren takes the key.', participants: ['C01'], evidence_refs: ['p2'] }],
     };
     const byParagraph = resolveSourceRefs(['CH01_S01#p2'], store, state);
-    expect(byParagraph.excerpts).toEqual(['[CH01_S01#p2] Zor pocketed the brass key without a word, and the room did not object to the theft of its one lock.']);
+    expect(byParagraph.excerpts).toEqual(['[CH01_S01#p2] Aren pocketed the brass key without a word, and the room did not object to the theft of its one lock.']);
     expect(byParagraph.missing).toEqual([]);
     // A recorded event resolves through its own evidence to the same paragraph.
     expect(resolveSourceRefs(['CH01_S01-e1'], store, state).excerpts).toEqual(byParagraph.excerpts);
@@ -699,16 +699,16 @@ describe('v2 chapter pipeline end to end', () => {
     const staged = (id: string, participants: string[], location: string) =>
       ({ ...plan(1).scenes[0], id, participants, location });
     const shape = (id: string, participants: string[], location: string) => sceneShape(staged(id, participants, location));
-    const twice = [shape('CH01_S01', ['C01', 'C02'], 'The lamp room'), shape('CH01_S02', ['C01', 'C02'], 'the lamp room ')];
+    const twice = [shape('CH01_S01', ['C01', 'C02'], 'The upper room'), shape('CH01_S02', ['C01', 'C02'], 'the upper room ')];
     // Two in a row is a conversation continuing; the third is the pattern.
-    expect(repeatedStaging(shape('CH01_S02', ['C01', 'C02'], 'The lamp room'), twice.slice(0, 1))).toBe('');
-    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The lamp room'), twice))
+    expect(repeatedStaging(shape('CH01_S02', ['C01', 'C02'], 'The upper room'), twice.slice(0, 1))).toBe('');
+    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The upper room'), twice))
       .toMatch(/keeps the staging of the 2 scenes before it/);
     // Order of participants is not a difference; a different room is.
-    expect(repeatedStaging(shape('CH01_S03', ['C02', 'C01'], 'The lamp room'), twice)).not.toBe('');
-    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The sea door'), twice)).toBe('');
+    expect(repeatedStaging(shape('CH01_S03', ['C02', 'C01'], 'The upper room'), twice)).not.toBe('');
+    expect(repeatedStaging(shape('CH01_S03', ['C01', 'C02'], 'The outer door'), twice)).toBe('');
     // And it reaches the readiness gate as a named doubt, not as a silent note.
-    const problems = checkReadiness(design(), emptyState(), staged('CH01_S03', ['C01', 'C02'], 'The lamp room'), [], twice);
+    const problems = checkReadiness(design(), emptyState(), staged('CH01_S03', ['C01', 'C02'], 'The upper room'), [], twice);
     expect(problems.map(item => item.code)).toContain('repeated-staging');
   });
 
@@ -716,14 +716,14 @@ describe('v2 chapter pipeline end to end', () => {
     const shape = (id: string, participants: string[], location: string) =>
       sceneShape({ ...plan(1).scenes[0], id, participants, location });
     const recent = [
-      shape('CH01_S01', ['C01', 'C02'], 'The lamp room'),
+      shape('CH01_S01', ['C01', 'C02'], 'The upper room'),
       shape('CH01_S02', ['C01'], 'The stair'),
-      shape('CH01_S03', ['C01', 'C02'], 'The lamp room'),
-      shape('CH01_S04', ['C02'], 'The sea door'),
-      shape('CH02_S01', ['C01', 'C02'], 'The lamp room'),
+      shape('CH01_S03', ['C01', 'C02'], 'The upper room'),
+      shape('CH01_S04', ['C02'], 'The outer door'),
+      shape('CH02_S01', ['C01', 'C02'], 'The upper room'),
       shape('CH02_S02', ['C01'], 'The stair'),
     ];
-    expect(repeatedStaging(shape('CH02_S03', ['C01', 'C02'], 'The lamp room'), recent))
+    expect(repeatedStaging(shape('CH02_S03', ['C01', 'C02'], 'The upper room'), recent))
       .toMatch(/repeats a staging already used 3 times/);
   });
 
@@ -760,7 +760,7 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('shows the writer where the participants stand now, not where they started', async () => {
-    const state = { ...emptyState(), conditions: { 'C01->C02.trust': 'in his debt since the water', 'C03->C04.trust': 'unchanged' } };
+    const state = { ...emptyState(), conditions: { 'C01->C02.trust': 'in his debt since the water', 'Corin->C04.trust': 'unchanged' } };
     const relations = relationsFor(state, ['C01', 'C02']);
     expect(relations).toHaveLength(1);
     expect(parseRelation('C01->C02.trust', 'x')).toMatchObject({ from: 'C01', to: 'C02', kind: 'trust' });
@@ -785,15 +785,15 @@ describe('v2 chapter pipeline end to end', () => {
   });
 
   it('keeps entity-qualified condition keys from doubling', () => {
-    const moved = { ...delta(), state_changes: [{ entity_id: 'C01.location', field: 'location', before: null, after: 'Lamp room', evidence_refs: ['p1'] }] };
+    const moved = { ...delta(), state_changes: [{ entity_id: 'C01.location', field: 'location', before: null, after: 'Upper room', evidence_refs: ['p1'] }] };
     const state = applyDelta(emptyState(), moved, 'CH01_S01').state;
-    expect(state.conditions['C01.location']).toBe('Lamp room');
+    expect(state.conditions['C01.location']).toBe('Upper room');
     expect(state.conditions['C01.location.location']).toBeUndefined();
   });
 
   it('resolves threads cited in words and never pays the same thread twice', () => {
-    const threads = [{ id: 'CH01_S01-t1', description: 'Will Zor find the door?', status: 'open' as const, setup_refs: ['CH01_S01'], payoff_refs: [] as string[] }];
-    const payoff = { ...delta(), threads_resolved: [{ thread: 'Will Zor find the door?' }] };
+    const threads = [{ id: 'CH01_S01-t1', description: 'Will Aren find the door?', status: 'open' as const, setup_refs: ['CH01_S01'], payoff_refs: [] as string[] }];
+    const payoff = { ...delta(), threads_resolved: [{ thread: 'Will Aren find the door?' }] };
     const once = applyThreads(threads, payoff, 'CH01_S01');
     expect(once[0].status).toBe('resolved');
     expect(once[0].payoff_refs).toEqual(['CH01_S01']);
@@ -825,7 +825,7 @@ describe('v2 chapter pipeline end to end', () => {
 
   it('rewrites a scene once on a blocking contradiction instead of killing the book', async () => {
     const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Zor was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
+    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
     let extractions = 0;
     const base = fullLlm(() => (extractions++ === 0 ? blocked : delta()));
     const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
@@ -842,21 +842,21 @@ describe('v2 chapter pipeline end to end', () => {
 
   it('fails loudly when the rewrite breaks continuity again', async () => {
     const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Zor was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
+    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
     await expect(new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(() => blocked)))
       .rejects.toThrow(/contradicts confirmed state/);
   });
 
   it('diverts a restaged scene to review before any prose exists', async () => {
     const store = new MemoryProjectStore();
-    store.saveManuscript(1, 'The lamp room held its light over the stairs. Zor watched.');
+    store.saveManuscript(1, 'The upper room held its light over the stairs. Aren watched.');
     const echoPlan = {
       ...plan(2),
       scenes: [{
         ...plan(2).scenes[0],
-        location: 'Lamp room',
+        location: 'Upper room',
         function: 'An uneasy night together.',
-        development: 'The lamp room held its light while they waited.',
+        development: 'The upper room held its light while they waited.',
         required_outcome: 'They wait by the lamp.',
       }],
     };
@@ -871,7 +871,7 @@ describe('v2 chapter pipeline end to end', () => {
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
     expect(outcome.warnings.join(' ')).toMatch(/must establish: Differentiate the staging/);
     expect(store.manuscript()).toHaveLength(2);
-    expect(store.manuscript().find(item => item.chapter === 2)?.text).toContain('the sea door stood open');
+    expect(store.manuscript().find(item => item.chapter === 2)?.text).toContain('the outer door stood open');
   });
 
   it('carries semantic gate suspicions into the plan review', async () => {

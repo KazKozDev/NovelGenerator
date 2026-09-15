@@ -228,10 +228,9 @@ export function checkChapterPlan(input: PlanGateInput): PlanFinding[] {
   // — Promises left standing too long. The thread ledger records what the book
   //   has promised and, since a payoff can be cited by id, what it has kept.
   //   Recording was never the problem: the planner is shown the open list and
-  //   nothing obliges it to act, so a promise made on the page in so many words
-  //   — "I will return in three days with the terms in writing" — can be
-  //   recorded, displayed, ignored, and recorded again as still open, for the
-  //   whole length of a book. A promise that no chapter has to discharge is a
+  //   nothing obliges it to act, so a promise a character makes out loud, with
+  //   a deadline attached, can be recorded, displayed, ignored, and recorded
+  //   again as still open, for the whole length of a book. A promise that no chapter has to discharge is a
   //   note, not a promise.
   //
   //   Age, not count, is the signal. A thread opened in the last chapter is

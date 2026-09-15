@@ -34,13 +34,13 @@ function filled(): MemoryProjectStore {
   const store = new MemoryProjectStore();
   store.saveInput(input);
   store.saveDesign(design());
-  store.saveManuscript(1, 'Zor climbed.');
+  store.saveManuscript(1, 'Aren climbed.');
   store.saveScene({
-    id: 'CH01_S01', chapter: 1, prose: 'Zor climbed.', paragraph_ids: ['p1'], plan: null, delta: null,
+    id: 'CH01_S01', chapter: 1, prose: 'Aren climbed.', paragraph_ids: ['p1'], plan: null, delta: null,
     handoff: {
-      after_scene_id: 'CH01_S01', known_to_reader: ['Zor climbed.'], confirmed_changes: ['Zor climbed.'],
+      after_scene_id: 'CH01_S01', known_to_reader: ['Aren climbed.'], confirmed_changes: ['Aren climbed.'],
       current_conditions: {}, open_questions: ['What is upstairs?'], active_intentions: [],
-      previous_outcome: 'Zor climbed.', required_new_outcome: '', forbidden_restatements: ['Zor climbed.'],
+      previous_outcome: 'Aren climbed.', required_new_outcome: '', forbidden_restatements: ['Aren climbed.'],
     },
   });
   store.saveState({ facts: [], events: [{ id: 'x', description: 'd', participants: [], evidence_refs: [] }], conditions: {}, knowledge: {}, beliefs: {}, reader_disclosures: [], names: [] });
@@ -55,10 +55,10 @@ describe('project snapshot', () => {
   it('round-trips the whole slot through plain JSON', () => {
     const snap = snapshotProject(filled());
     expect(snap.version).toBe(1);
-    expect(JSON.parse(JSON.stringify(snap)).files.manuscript).toEqual([{ chapter: 1, text: 'Zor climbed.' }]);
+    expect(JSON.parse(JSON.stringify(snap)).files.manuscript).toEqual([{ chapter: 1, text: 'Aren climbed.' }]);
     const fresh = new MemoryProjectStore();
     restoreSnapshot(fresh, JSON.parse(JSON.stringify(snap)));
-    expect(fresh.manuscript()).toEqual([{ chapter: 1, text: 'Zor climbed.' }]);
+    expect(fresh.manuscript()).toEqual([{ chapter: 1, text: 'Aren climbed.' }]);
     expect(fresh.loadStateSnapshot(1)?.events).toHaveLength(1);
     expect(fresh.chapterScenes(1)[0].handoff?.open_questions).toEqual(['What is upstairs?']);
     expect(fresh.loadThreads()).toHaveLength(1);
@@ -89,10 +89,10 @@ describe('persistent store', () => {
     try {
       data.set('ngv2.input', JSON.stringify(input));
       data.set('ngv2.design', JSON.stringify(design()));
-      data.set('ngv2.manuscript', JSON.stringify([{ chapter: 1, text: 'Zor climbed.' }]));
+      data.set('ngv2.manuscript', JSON.stringify([{ chapter: 1, text: 'Aren climbed.' }]));
       const store = await PersistentProjectStore.open();
       expect(store.loadInput()?.premise).toBe(input.premise);
-      expect(store.manuscript()).toEqual([{ chapter: 1, text: 'Zor climbed.' }]);
+      expect(store.manuscript()).toEqual([{ chapter: 1, text: 'Aren climbed.' }]);
       // Legacy keys go away once the book lives in the new slot.
       expect(data.has('ngv2.input')).toBe(false);
     } finally {

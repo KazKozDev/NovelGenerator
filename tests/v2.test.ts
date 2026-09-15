@@ -66,13 +66,13 @@ describe('v2 designer', () => {
 
   it('holds declared, repeated, and multi-word premise names, not one-off common nouns', () => {
     const declared = design();
-    declared.contract.premise_names = ['Zor', 'Pax'];
-    expect(premiseNameGaps(declared, 'A love triangle of Zor, Pax and someone else.'))
-      .toEqual(['Zor', 'Pax']);
+    declared.contract.premise_names = ['Aren', 'Miro'];
+    expect(premiseNameGaps(declared, 'A love triangle of Aren, Miro and someone else.'))
+      .toEqual(['Aren', 'Miro']);
     expect(premiseNameGaps(design(), 'Hope dies last in the garrison.')).toEqual([]);
-    expect(premiseNameGaps(design(), 'Zor Pax inherits the Kex Vum.'))
-      .toEqual(['Zor Pax', 'Kex Vum']);
-    expect(premiseNameGaps(design(), 'Pax broods. Pax waits.')).toEqual(['Pax']);
+    expect(premiseNameGaps(design(), 'Aren Miro inherits the Kex Vum.'))
+      .toEqual(['Aren Miro', 'Kex Vum']);
+    expect(premiseNameGaps(design(), 'Miro broods. Miro waits.')).toEqual(['Miro']);
     expect(premiseNameGaps(design(), 'A lighthouse keeper finds a door in the sea.')).toEqual([]);
   });
 
@@ -174,16 +174,16 @@ describe('v2 reviewer', () => {
   });
 
   it('refuses a coherent design that recasts premise names out of the book', async () => {
-    const triangle: ProjectInput = { ...input, premise: 'A love triangle of Zor, Pax and someone else.' };
+    const triangle: ProjectInput = { ...input, premise: 'A love triangle of Aren, Miro and someone else.' };
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
       if (prompt.includes('Prepare a compact book construction')) {
         const d = design();
-        d.contract.premise_names = ['Zor', 'Pax'];
+        d.contract.premise_names = ['Aren', 'Miro'];
         return JSON.stringify(d);
       }
       return JSON.stringify({ ready: true, issues: [] });
     });
-    await expect(designReviewedBook(triangle, llm, 0)).rejects.toThrow(/Pax/);
+    await expect(designReviewedBook(triangle, llm, 0)).rejects.toThrow(/Miro/);
   });
 
   it('carries the reviewer objection into the contract when fixes run out', async () => {
@@ -205,16 +205,16 @@ describe('v2 reviewer', () => {
   it('still refuses when what code charges is unresolved', async () => {
     // A premise name nobody answers to is not a judgement the prose can answer:
     // the book would not be the book that was asked for.
-    const triangle: ProjectInput = { ...input, premise: 'A love triangle of Zor, Pax and someone else.' };
+    const triangle: ProjectInput = { ...input, premise: 'A love triangle of Aren, Miro and someone else.' };
     const llm: NovelLLM = vi.fn(async (prompt: string) => {
       if (prompt.includes('Prepare a compact book construction') || prompt.includes('Revise the construction below')) {
         const d = design();
-        d.contract.premise_names = ['Zor', 'Pax'];
+        d.contract.premise_names = ['Aren', 'Miro'];
         return JSON.stringify(d);
       }
       return JSON.stringify({ ready: true, issues: [] });
     });
-    await expect(designReviewedBook(triangle, llm, 1)).rejects.toThrow(/not executable[\s\S]*Pax/);
+    await expect(designReviewedBook(triangle, llm, 1)).rejects.toThrow(/not executable[\s\S]*Miro/);
   });
 });
 

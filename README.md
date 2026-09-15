@@ -155,7 +155,7 @@ Set in the app before generation starts.
 - A model that ignores JSON Schema stalls the run, and a capped output budget fails a call
   outright rather than returning a short answer
 - Prose texture is measured only as repeated phrasing: the audit reports a beat the book
-  returns to at a rate ("breath hitched", seven times), not sentence rhythm or register
+  returns to at a rate — a two-word somatic beat, seven times — not sentence rhythm or register
 - The writer/editor split was only recently made explicit at the call site; the books
   measured above were written before that fix, with the editor model drafting every scene,
   so the pairing above is verified to finish a book but not yet as the roles now read

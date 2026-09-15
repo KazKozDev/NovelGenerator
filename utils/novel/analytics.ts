@@ -40,10 +40,10 @@ const NAME_SPAN = /[\p{Lu}][\p{L}\p{M}'-]*(?:\s+[\p{Lu}][\p{L}\p{M}'-]*)*/gu;
  * stopword — "Nothing", "Static", "Listen", "Us", "Ten", "Don't" — which then
  * reach the writer as names of the story that must be spelled exactly so.
  *
- * A proper name is a word capitalized where capitalization is not forced. Vera,
- * Crestline and Arthur all occur capitalized inside a sentence; Nothing, Static
- * and Us never do. That is the whole test, it needs no word list, and it is the
- * difference between a registry of the book's names and a registry of its
+ * A proper name is a word capitalized where capitalization is not forced. A
+ * character's name occurs capitalized inside a sentence; "Nothing", "Static"
+ * and "Us" never do. That is the whole test, it needs no word list, and it is
+ * the difference between a registry of the book's names and a registry of its
  * sentence beginnings.
  */
 export function extractPremiseNames(premise: string, requireFreeCapital = false): string[] {
@@ -196,7 +196,7 @@ export function wornPhrases(content: string, minUses = 4, minPer1000 = 0.5, maxP
     // Case is kept while tokenizing: a capitalized word is a name or the book's
     // own invented term, and a book repeating its subject is not a tic.
     // Possessives and contractions fold into the word rather than splitting
-    // into "harry s" and "didn t".
+    // into a bare letter and a stray fragment.
     const tokens = sentence
       .replace(/n['’]t\b/gi, ' not')
       .replace(/['’](s|re|ve|ll|d|m)\b/gi, '')
@@ -547,8 +547,8 @@ export interface RepeatedSpan {
  * repeating itself — share 140 runs of four words, 40 of five, 12 of six, 7 of
  * seven, 3 of eight and 2 of nine. The four-to-six band is idiom and chance.
  * At eight the hits stop being coincidence and become either the premise's own
- * nouns or the model's own habit ("a sound that might have been a laugh"),
- * which is exactly what this is for. Below eight the check would fire on
+ * nouns or the model's own habit — a whole descriptive clause reused in a
+ * second book by the same writer — which is exactly what this is for. Below eight the check would fire on
  * ordinary English; above nine it would miss a sentence carried over whole.
  */
 export function repeatedSpans(prose: string, earlier: { ref: string; text: string }[], minWords = 8, maxSpans = 6): RepeatedSpan[] {

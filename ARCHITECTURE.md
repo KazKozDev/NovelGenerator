@@ -203,7 +203,7 @@ are decided before the scene leans on it.
 **A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
 book.** The writer sees exactly what broke and rewrites against it; only a second
 consecutive break fails loudly. A name variant is the same path: the model, reading both
-the prose and the registry, judges whether "Zarka" beside "Zarko" is drift, and code only
+the prose and the registry, judges whether a near-identical spelling is drift, and code only
 carries the verdict. Code never decides by string similarity.
 
 **Open questions are settled from the text, not carried as silent gaps.** Uncertainties
@@ -264,7 +264,7 @@ its own intent, which is a different problem with a different fix. Alongside it,
 `signatureTics` reports what a reviewer reading for events structurally cannot see — the
 "it was not X, it was Y" construction at a rate, sentences that all open on one word,
 prose running at a single speed — and `numericContradictions` catches a town founded in
-1811 on page one and in 1841 on page thirty, which no state tracker sees because the
+one year on page one and another on page thirty, which no state tracker sees because the
 number was never an event.
 
 **The manuscript is written in English.** The system contract says so, no call carries a
@@ -330,7 +330,7 @@ The audit reads the whole manuscript against the contract, the dramatic core, th
 map and the ending, plus final state and threads. One finding is measured rather than
 asked: `wornPhrases` counts two- and three-word content phrases across the finished book
 and reports the ones that return at a rate. A reviewer reading for what happens cannot see
-a tic — "his breath hitched" seven times is not an event — and capitalized spans are
+a tic — one somatic beat seven times is not an event — and capitalized spans are
 skipped, because a book repeating its own device by name is repeating its subject. It never rewrites: the manuscript it
 checked is the manuscript that ships. `settleAuditStatus` computes the status in code —
 findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`.

@@ -226,8 +226,8 @@ export async function repairRepetition(
     }
     // A replacement that still carries the sentence it replaces is not a repair;
     // spliced in, it leaves the duplication standing beside its own rewrite, and
-    // the manuscript ships the pair. Seen in a finished book as: "…it takes what
-    // is not." "The fire shows what is wanted. It takes what is not."
+    // the manuscript ships the pair — a line of dialogue followed immediately by
+    // its own restatement, which is what this looked like when it shipped.
     if (to.includes(from)) {
       left.push(`"${from.slice(0, 60)}…" was kept: the replacement still contained it word for word`);
       continue;

@@ -54,7 +54,7 @@ export function premiseGivenGaps(design: BookDesign): string[] {
     .filter((given, index, all) => given && all.indexOf(given) === index)
     .filter(given => {
       // Anchors widen as they get weaker, never narrow. Long content words are
-      // the best evidence; when a given has none — "The year is 1961", where
+      // the best evidence; when a given has none — a stated year, say, where
       // every content word is four characters — the fallback is the short words
       // themselves, not the whole phrase. Demanding the literal phrase is the
       // strictest test of all, and a construction never contains one: the charge

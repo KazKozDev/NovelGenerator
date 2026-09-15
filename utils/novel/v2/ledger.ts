@@ -110,7 +110,7 @@ export function wornLedger(store: ProjectStore, profile: BookProfile, throughCha
  *
  * What is banned is the phrasing, never the thing. The detector counts word
  * runs and cannot tell a tic from an object the story owns — "left hand" and
- * "breath hitched" look identical to it — and forbidding the object outright
+ * a two-word somatic tic look identical to it — and forbidding the object
  * buys a worse sentence than the repetition did. So the instruction is exact
  * about the words and explicit about the escape: name the thing plainly.
  */

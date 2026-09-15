@@ -35,7 +35,7 @@ function scene(overrides: Partial<ScenePlan> = {}): ScenePlan {
     participant_intentions: [],
     pressure_or_uncertainty: 'storm',
     development: 'd',
-    required_outcome: 'Zor reaches the lamp room.',
+    required_outcome: 'Aren reaches the upper room.',
     flexible_elements: [],
     required_fact_refs: [],
     required_source_refs: [],
@@ -53,7 +53,7 @@ function plan(overrides: Partial<ChapterPlan> = {}): ChapterPlan {
     chapter: 2,
     function: 'f',
     starting_situation: 's',
-    ending_change: 'Zor opens the door.',
+    ending_change: 'Aren opens the door.',
     mechanism: 'open',
     cost: 'the light goes out',
     pressure_rung: 2,
@@ -70,7 +70,7 @@ function design(overrides: Partial<BookDesign> = {}): BookDesign {
     profile: profile(),
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
-    characters: [{ id: 'C01', name: 'Zor', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] }],
+    characters: [{ id: 'C01', name: 'Aren', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] }],
     world_rules: [],
     causal_map: [],
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
@@ -107,7 +107,7 @@ describe('book profile', () => {
   });
 
   it('never lets a declared refrain buy unlimited exemption', () => {
-    const read = readProfile({ declared_motifs: [{ motif: 'the second knock', allowed_uses: 9999, reason: 'the title' }] });
+    const read = readProfile({ declared_motifs: [{ motif: 'the closed door', allowed_uses: 9999, reason: 'the title' }] });
     expect(read.declared_motifs[0].allowed_uses).toBe(30);
   });
 
@@ -244,17 +244,17 @@ describe('plan gate', () => {
 
   it('raises the ending capacity while chapters remain to spend on it', () => {
     const findings = checkChapterPlan(gateInput({
-      endingRequirements: ['The keeper learns to swim.', 'The sea door is explained.', 'The lamp is relit by another hand.', 'The logbook is burned.'],
+      endingRequirements: ['The keeper learns to swim.', 'The outer door is explained.', 'The lamp is relit by another hand.', 'The logbook is burned.'],
       remainingChapters: 2,
     }));
     expect(findings.map(item => item.code)).toContain('ending-capacity');
   });
 
   it('stays quiet when the chapter is actually preparing the ending', () => {
-    const preparing = plan({ ending_change: 'Zor burns the logbook on the gallery.' });
+    const preparing = plan({ ending_change: 'Aren burns the logbook on the gallery.' });
     const findings = checkChapterPlan(gateInput({
       plan: preparing,
-      endingRequirements: ['The logbook is burned.', 'The sea door is explained.', 'The lamp is relit.'],
+      endingRequirements: ['The logbook is burned.', 'The outer door is explained.', 'The lamp is relit.'],
       remainingChapters: 2,
     }));
     expect(findings.map(item => item.code)).not.toContain('ending-capacity');
@@ -288,11 +288,11 @@ describe('prose tics and numeric drift', () => {
 
   it('catches a founding date that moved between chapters', () => {
     const clashes = numericContradictions([
-      { ref: 'Chapter 1', text: 'The sign read MILLBROOK, EST. 1811, and the gold leaf was new.' },
-      { ref: 'Chapter 2', text: 'A brass plaque read TOWN OF MILLBROOK, EST. 1841, above the door.' },
+      { ref: 'Chapter 1', text: 'The sign read ALDERBROOK, EST. 1207, and the gold leaf was new.' },
+      { ref: 'Chapter 2', text: 'A brass plaque read TOWN OF ALDERBROOK, EST. 1243, above the door.' },
     ]);
     expect(clashes.map(item => item.context)).toContain('est');
-    expect(clashes.find(item => item.context === 'est')?.values).toEqual(['1811', '1841']);
+    expect(clashes.find(item => item.context === 'est')?.values).toEqual(['1207', '1243']);
   });
 
   it('says nothing when a number stays the number it was', () => {
@@ -328,14 +328,14 @@ describe('the craft ledger', () => {
 
   // The worn-phrase detector reports a rate, so it needs a chapter's worth of
   // prose before it says anything — a short fixture would measure nothing.
-  const tic = 'She wrote it in block capitals. The block capitals held against the quiet. ';
+  const tic = 'She wrote it in flat capitals. The flat capitals held against the quiet. ';
   const padding = 'The keeper climbed the stair and counted the lamps and wrote the hour down in a book she kept for the purpose. ';
   const worn_text = tic.repeat(5) + padding.repeat(30);
 
   it('bans an undeclared phrase by its exact wording', () => {
     const store = storeWith([{ chapter: 1, text: worn_text }]);
     const worn = wornLedger(store, profile());
-    expect(worn.map(item => item.phrase)).toContain('block capitals');
+    expect(worn.map(item => item.phrase)).toContain('flat capitals');
     // The wording is banned; the thing it names is not.
     expect(describeWorn(worn)).toMatch(/Do not repeat this wording/);
     expect(describeWorn(worn)).toMatch(/name it plainly/);
@@ -343,11 +343,11 @@ describe('the craft ledger', () => {
 
   it('exempts a refrain the book declared, up to its budget', () => {
     const store = storeWith([{ chapter: 1, text: worn_text }]);
-    const declared = profile({ declared_motifs: [{ motif: 'block capitals', allowed_uses: 20, reason: 'a hand set against a record' }] });
-    expect(wornLedger(store, declared).map(item => item.phrase)).not.toContain('block capitals');
+    const declared = profile({ declared_motifs: [{ motif: 'flat capitals', allowed_uses: 20, reason: 'a hand set against a record' }] });
+    expect(wornLedger(store, declared).map(item => item.phrase)).not.toContain('flat capitals');
     // The declaration buys permission, not immunity: past the budget it counts again.
-    const stingy = profile({ declared_motifs: [{ motif: 'block capitals', allowed_uses: 2, reason: 'a hand set against a record' }] });
-    expect(wornLedger(store, stingy).map(item => item.phrase)).toContain('block capitals');
+    const stingy = profile({ declared_motifs: [{ motif: 'flat capitals', allowed_uses: 2, reason: 'a hand set against a record' }] });
+    expect(wornLedger(store, stingy).map(item => item.phrase)).toContain('flat capitals');
   });
 
   it('reports a book narrating what it said it would speak', () => {
@@ -364,13 +364,13 @@ describe('the craft ledger', () => {
 });
 
 describe('span repair', () => {
-  const earlier = [{ ref: 'Chapter 1', text: 'The lamp room smelled of hot glass and rain, and the stair behind her ticked as it cooled.' }];
-  const prose = 'Below the gallery the sea kept its counsel.\n\nThe lamp room smelled of hot glass and rain, and the stair behind her ticked as it cooled.';
+  const earlier = [{ ref: 'Chapter 1', text: 'The upper room smelled of hot glass and rain, and the stair behind her ticked as it cooled.' }];
+  const prose = 'Below the gallery the sea kept its counsel.\n\nThe upper room smelled of hot glass and rain, and the stair behind her ticked as it cooled.';
 
   it('finds the run of words a scene shares with prose already accepted', () => {
     const spans = repeatedSpans(prose, earlier);
     expect(spans).toHaveLength(1);
-    expect(spans[0].text).toContain('lamp room smelled of hot glass and rain');
+    expect(spans[0].text).toContain('upper room smelled of hot glass and rain');
     expect(spans[0].ref).toBe('Chapter 1');
   });
 
@@ -381,21 +381,21 @@ describe('span repair', () => {
   it('maps a span back to the sentence holding it', () => {
     const targets = duplicatedSentences(prose, repeatedSpans(prose, earlier));
     expect(targets).toHaveLength(1);
-    expect(targets[0].sentence).toMatch(/^The lamp room smelled/);
+    expect(targets[0].sentence).toMatch(/^The upper room smelled/);
   });
 
   it('replaces only the duplicated sentence and leaves the rest of the scene alone', async () => {
     const llm: NovelLLM = vi.fn(async () => JSON.stringify({
       replacements: [{
-        original: 'The lamp room smelled of hot glass and rain, and the stair behind her ticked as it cooled.',
-        replacement: 'Hot glass, rain: the lamp room had no other smell, and the cooling stair kept time behind her.',
+        original: 'The upper room smelled of hot glass and rain, and the stair behind her ticked as it cooled.',
+        replacement: 'Hot glass, rain: the upper room had no other smell, and the cooling stair kept time behind her.',
         refused_because: '',
       }],
     }));
     const outcome = await repairRepetition({ design: design(), scene: scene(), prose, earlier }, llm);
     expect(outcome.repaired).toHaveLength(1);
     expect(outcome.prose).toContain('Below the gallery the sea kept its counsel.');
-    expect(outcome.prose).toContain('Hot glass, rain: the lamp room');
+    expect(outcome.prose).toContain('Hot glass, rain: the upper room');
     expect(outcome.prose).not.toContain('smelled of hot glass and rain');
     expect(outcome.left).toEqual([]);
   });
@@ -412,7 +412,7 @@ describe('span repair', () => {
   it('carries an honest refusal through instead of editing the record', async () => {
     const llm: NovelLLM = vi.fn(async () => JSON.stringify({
       replacements: [{
-        original: 'The lamp room smelled of hot glass and rain, and the stair behind her ticked as it cooled.',
+        original: 'The upper room smelled of hot glass and rain, and the stair behind her ticked as it cooled.',
         replacement: '',
         refused_because: 'the repetition is the event',
       }],
@@ -439,7 +439,7 @@ describe('span repair', () => {
 });
 
 describe('the replan loop', () => {
-  const PROSE = 'Zor climbed the stair while the storm took the rail from her hands.\n\nBelow the gallery the sea door stood open on nothing at all.';
+  const PROSE = 'Aren climbed the stair while the storm took the rail from her hands.\n\nBelow the gallery the outer door stood open on nothing at all.';
 
   function replies(chapterPlans: ChapterPlan[]): { llm: NovelLLM; plansAsked: () => number } {
     let asked = 0;
@@ -459,7 +459,7 @@ describe('the replan loop', () => {
       if (prompt.includes('Extract the essential changes from the new scene')) {
         return JSON.stringify({
           proper_names: [], name_variants: [],
-          events: [{ description: 'Zor reaches the lamp room.', participants: ['C01'], evidence_refs: ['p1'] }],
+          events: [{ description: 'Aren reaches the upper room.', participants: ['C01'], evidence_refs: ['p1'] }],
           state_changes: [], knowledge_changes: [], belief_changes: [], intentions_and_commitments: [],
           reader_disclosures: [], threads_opened: [], threads_resolved: [], contradictions: [],
           uncertainties: [], plan_deviations: [],
@@ -555,7 +555,7 @@ describe('premise givens with no long word in them', () => {
       ...base,
       contract: {
         ...base.contract,
-        premise_givens: [{ given: 'The year is 1961', kind: 'fact' }],
+        premise_givens: [{ given: 'The year is 1207', kind: 'fact' }],
       },
       ...extra,
     } as BookDesign;
@@ -563,22 +563,22 @@ describe('premise givens with no long word in them', () => {
 
   it('accepts a short given the construction actually places', () => {
     const design_ = placed({
-      world_rules: [{ id: 'R01', rule: 'The exchange still runs on 1961 switchboards.', relevant_consequences: [] }],
+      world_rules: [{ id: 'R01', rule: 'The exchange still runs on panels fitted in 1207.', relevant_consequences: [] }],
     });
     expect(premiseGivenGaps(design_)).toEqual([]);
   });
 
   it('still reports a short given the construction never places', () => {
-    expect(premiseGivenGaps(placed())).toEqual(['The year is 1961']);
+    expect(premiseGivenGaps(placed())).toEqual(['The year is 1207']);
   });
 
   it('never falls back to demanding the whole phrase verbatim', () => {
     // Every content word here is under five characters, so the old fallback
-    // asked the design to contain "the year is 1961" as a literal string — a
+    // asked the design to contain "the year is 1207" as a literal string — a
     // test no construction passes, on a charge that is blocking and fatal.
     const design_ = placed({
       chapter_map: design().chapter_map.map((entry, index) => index === 0
-        ? { ...entry, main_change: 'The night of 12 March 1961 begins.' }
+        ? { ...entry, main_change: 'The night of 12 March 1207 begins.' }
         : entry),
     });
     expect(premiseGivenGaps(design_)).toEqual([]);
@@ -606,7 +606,7 @@ describe('drawing a mechanism from the ledger', () => {
     'Listening and recording the calls to extract information',
     'Attempting to trace or call back the disconnected numbers',
     'Confronting a caller with knowledge gained from a previous call',
-    'Physically manipulating the switchboard to disconnect or reroute',
+    'Physically manipulating the panel to disconnect or reroute',
   ];
 
   it('matches the entry the chapter actually draws on, not the exact string', () => {
@@ -666,7 +666,7 @@ describe('promises the book has made', () => {
   const thread = (id: string, description: string): ReaderThread =>
     ({ id, description, status: 'open', setup_refs: ['CH01_S01'], payoff_refs: [] });
 
-  const open = thread('CH01_S01-t1', 'Vera must close the door she opened during the North Ridge fire.');
+  const open = thread('CH01_S01-t1', 'Aren must close the door she opened during the the old station fire.');
 
   function resolve(cited: unknown[], threads = [open]) {
     const delta = { threads_opened: [], threads_resolved: cited } as never;
@@ -682,7 +682,7 @@ describe('promises the book has made', () => {
     // The description is a sentence written several scenes earlier. Requiring it
     // back character for character left every promise a book made standing open,
     // and an abandoned line then looked exactly like a kept one.
-    expect(resolve(['Vera closes the door she opened during the fire at North Ridge.'])[0].status).toBe('resolved');
+    expect(resolve(['Aren closes the door she opened during the fire at the old station.'])[0].status).toBe('resolved');
   });
 
   it('leaves a promise open when the citation names a different one', () => {
@@ -693,8 +693,8 @@ describe('promises the book has made', () => {
 
   it('judges each citation against the thread it names', () => {
     expect(citesThread('CH01_S01-t1', open)).toBe(true);
-    expect(citesThread('Vera shuts the North Ridge door she opened during the fire', open)).toBe(true);
-    expect(citesThread('Vera eats breakfast', open)).toBe(false);
+    expect(citesThread('Aren shuts the the old station door she opened during the fire', open)).toBe(true);
+    expect(citesThread('Aren eats breakfast', open)).toBe(false);
   });
 });
 
@@ -702,17 +702,17 @@ describe('the name registry reads prose, not sentence beginnings', () => {
   // Shaped like real prose: names recur, sentence openers do not become names.
   const prose = [
     'Nothing moved on the gravel path outside the exchange.',
-    'Vera crossed the room and set the receiver down beside the board.',
+    'Aren crossed the room and set the receiver down beside the board.',
     'Static filled the line, and then a voice came through it.',
-    'Listen to me, the voice said, and Vera listened.',
-    'Ten minutes later the board rang again in Crestline.',
+    'Listen to me, the voice said, and Aren listened.',
+    'Ten minutes later the board rang again in Alderbrook.',
     "Don't answer it, she told herself, and answered it anyway.",
-    'The fire at North Ridge had taken Arthur and it had taken Ruth.',
+    'The fire at the old station had taken Arthur and it had taken Ruth.',
   ].join('\n\n');
 
   it('keeps the names and drops the openers', () => {
     const found = extractPremiseNames(prose, true);
-    expect(found).toEqual(expect.arrayContaining(['Vera', 'Crestline', 'Arthur', 'Ruth']));
+    expect(found).toEqual(expect.arrayContaining(['Aren', 'Alderbrook', 'Arthur', 'Ruth']));
     for (const opener of ['Nothing', 'Static', 'Listen', 'Ten', 'Don', "Don't"]) {
       expect(found, `"${opener}" is a sentence opener, not a name`).not.toContain(opener);
     }
@@ -721,12 +721,12 @@ describe('the name registry reads prose, not sentence beginnings', () => {
   it('keeps the old behaviour for a premise, where openers are few', () => {
     // Two sentences give no evidence either way, so the stopword filter alone
     // decides — as it did before, and as a premise still needs.
-    expect(extractPremiseNames('Melony serves the temple. Xhira watches her.')).toEqual(['Melony', 'Xhira']);
+    expect(extractPremiseNames('Aren serves the temple. Miro watches her.')).toEqual(['Aren', 'Miro']);
   });
 
   it('reports which words earned their capital', () => {
     const free = capitalizedMidSentence(prose);
-    expect(free.has('Vera')).toBe(true);
+    expect(free.has('Aren')).toBe(true);
     expect(free.has('Nothing')).toBe(false);
   });
 });
@@ -825,14 +825,14 @@ describe('a promise nobody has to keep', () => {
     ({ id, description, status: 'open', setup_refs: [id.split('-')[0]], payoff_refs: [] });
 
   // The one the book made out loud and did not keep, three books running.
-  const valaeris = thread('CH02_S02-t4', 'Valaeris will return in three days with the terms in writing.');
+  const standing = thread('CH02_S02-t4', 'Corin will return in three days with the terms in writing.');
 
   function gate(overrides: Record<string, unknown> = {}) {
     return checkChapterPlan(gateInput({
       chapter: 4,
       plan: plan({ chapter: 4, pressure_rung: 4 }),
       priorRungs: [1, 2, 3],
-      openThreads: [{ thread: valaeris, madeInChapter: 2 }],
+      openThreads: [{ thread: standing, madeInChapter: 2 }],
       remainingChapters: 1,
       ...overrides,
     }));
@@ -841,7 +841,7 @@ describe('a promise nobody has to keep', () => {
   it('blocks when the promise is old and the book is nearly out of chapters', () => {
     const finding = gate().find(item => item.code === 'promise-ageing');
     expect(finding?.severity).toBe('blocking');
-    expect(finding?.detail).toMatch(/Valaeris will return/);
+    expect(finding?.detail).toMatch(/Corin will return/);
   });
 
   it('only advises while there are still chapters to keep it in', () => {
@@ -850,18 +850,18 @@ describe('a promise nobody has to keep', () => {
   });
 
   it('says nothing about a promise this chapter is keeping', () => {
-    const keeping = plan({ chapter: 4, pressure_rung: 4, ending_change: 'Valaeris returns with the written terms and is paid in a flame that is not one.' });
+    const keeping = plan({ chapter: 4, pressure_rung: 4, ending_change: 'Corin returns with the written terms and is paid in a flame that is not one.' });
     expect(gate({ plan: keeping }).map(item => item.code)).not.toContain('promise-ageing');
   });
 
   it('says nothing about a promise the book only just made', () => {
-    expect(gate({ openThreads: [{ thread: valaeris, madeInChapter: 3 }] }).map(item => item.code)).not.toContain('promise-ageing');
+    expect(gate({ openThreads: [{ thread: standing, madeInChapter: 3 }] }).map(item => item.code)).not.toContain('promise-ageing');
   });
 
   it('reads the chapter a promise was made in from the scene that made it', () => {
     const store = new MemoryProjectStore();
-    store.saveThreads([valaeris, { ...thread('CH01_S01-t1', 'kept'), status: 'resolved' }]);
-    expect(openThreadsWithAge(store)).toEqual([{ thread: valaeris, madeInChapter: 2 }]);
+    store.saveThreads([standing, { ...thread('CH01_S01-t1', 'kept'), status: 'resolved' }]);
+    expect(openThreadsWithAge(store)).toEqual([{ thread: standing, madeInChapter: 2 }]);
   });
 });
 
@@ -873,7 +873,7 @@ describe('what a call needs to know about the world', () => {
     knowledge: { C01: Array.from({ length: 30 }, (_, index) => `learned ${index}`) },
     beliefs: { C01: ['The fire shows what is wanted.'] },
     reader_disclosures: Array.from({ length: 60 }, (_, index) => `shown ${index}`),
-    names: [{ name: 'Melony', kind: 'person', refers_to: 'C01', aliases: [], first_seen: 'design' }],
+    names: [{ name: 'Aren', kind: 'person', refers_to: 'C01', aliases: [], first_seen: 'design' }],
   };
 
   it('keeps whole everything that answers a question', () => {

@@ -13,14 +13,14 @@ const stubScorers = (rerankScores: number[], nliContradiction: number): GateScor
 const scene = (overrides: Partial<ScenePlan> = {}): ScenePlan => ({
   id: 'CH02_S01',
   pov_id: 'C01',
-  location: 'Lamp room',
+  location: 'Upper room',
   story_time: 'Night',
   participants: ['C01'],
-  initial_conditions: ['Zor tends the lamp.'],
+  initial_conditions: ['Aren tends the lamp.'],
   function: 'An uneasy night together.',
   participant_intentions: [{ character_id: 'C01', intention: 'Stay awake until dawn.', reason_now: 'The storm.' }],
   pressure_or_uncertainty: 'Whether the light holds.',
-  development: 'The lamp room held its light while they waited.',
+  development: 'The upper room held its light while they waited.',
   required_outcome: 'They wait by the lamp.',
   flexible_elements: [],
   required_fact_refs: [],
@@ -46,7 +46,7 @@ const plan = (scenes: ScenePlan[]): ChapterPlan => ({
   replan_reason: null,
 });
 
-const prior = [{ ref: 'Chapter 1', text: 'The lamp room held its light over the stairs through the storm. Zor watched the long night.' }];
+const prior = [{ ref: 'Chapter 1', text: 'The upper room held its light over the stairs through the storm. Aren watched the long night.' }];
 
 describe('semantic pre-write gate', () => {
   it('flags a paraphrase-level retelling with its evidence', async () => {
@@ -66,7 +66,7 @@ describe('semantic pre-write gate', () => {
   it('flags a plan-vs-memory clash with both sides quoted', async () => {
     const scorers = stubScorers([0.5], 0.92);
     const state = { ...emptyState(), conditions: { 'C01.location': 'Harbor' } };
-    const scenes = [scene({ required_outcome: 'Zor stays at the lighthouse by the harbor.' })];
+    const scenes = [scene({ required_outcome: 'Aren stays at the lighthouse by the harbor.' })];
     const result = await runPrewriteGate(plan(scenes), prior, state, scorers, 'full');
     const problems = result.problems.get('CH02_S01') || [];
     expect(problems.some(p => p.code === 'clash-suspect')).toBe(true);
@@ -140,7 +140,7 @@ describe('semantic pre-write gate', () => {
 
 describe('nli pure helpers', () => {
   it('naturalizes telegraphic claims into propositions', () => {
-    expect(naturalizeClaim('Zor location: Harbor')).toBe('Zor is at Harbor.');
+    expect(naturalizeClaim('Aren location: Harbor')).toBe('Aren is at Harbor.');
     expect(naturalizeClaim('Already a sentence.')).toBe('Already a sentence.');
   });
 
