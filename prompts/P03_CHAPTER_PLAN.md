@@ -115,7 +115,14 @@ If findings from a previous attempt are listed above, every one of them is
 measured, not opinion — a mechanism really is spent, a rung really does break
 the declared curve, those scenes really do share a staging. Plan a different
 chapter, not the same chapter re-described: rewording the same scenes to dodge
-the wording of a finding leaves the defect and loses the evidence. If a finding
+the wording of a finding leaves the defect and loses the evidence.
+
+A finding about a promise left standing is answered by giving it a scene, and a
+scene is something a chapter gains, not something it swaps. Do not drop a scene
+that was working to make room: the chapter may be longer than you first planned
+it, and a chapter that keeps its promise and runs long is worth more than one
+that keeps its length and loses a scene that was doing work. Cut only what the
+findings say is not earning its place. If a finding
 is wrong because the chapter map itself no longer fits what has been written,
 say so with status = "needs_replan" instead of planning around it.
 
