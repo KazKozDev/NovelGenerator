@@ -42,6 +42,9 @@ Remaining length:
 What a previous attempt at this chapter got wrong:
 {{plan_findings}}
 
+Fresh material for this chapter (concrete cards, not advice):
+{{fresh_constraint}}
+
 REQUIREMENTS
 - Define what this chapter adds and what changes by its end.
 - State the chapter's mechanism, cost, and pressure_rung.
@@ -79,6 +82,11 @@ REQUIREMENTS
   knowledge, commitment, relation, exposure, loss. Scenes running one
   after another on the same class is what a book looks like from above
   when it is iterating instead of developing, and it is counted.
+- Give every scene a fresh_constraint: one card from the fresh material
+  above, copied by id with its text, as the concrete way this scene stays
+  new — a place, an object, a move, or a limitation. The constraint is
+  spent on the page through action or detail, never announced as novelty
+  and never explained to the reader.
 - Account for the actions of other parties even when they happen off POV.
 - Distinguish changes of situation, relationships, knowledge, and understanding.
 - Leave the writer freedom in lines, details, and the course of interaction.
@@ -163,7 +171,8 @@ JSON only:
       "setup_or_payoff": [],
       "transition_to_next": "",
       "target_words": 0,
-      "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss"
+      "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss",
+      "fresh_constraint": ""
     }
   ],
   "forward_dependencies": [],

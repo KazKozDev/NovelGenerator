@@ -14,6 +14,15 @@ CONTRACT AND VOICE
 SCENE TASK
 {{scene_plan}}
 
+VOICE (how this book sounds — hold it for the whole scene)
+{{voice_brief}}
+
+SCENE BRIEF (what this scene must do on the page)
+{{scene_brief}}
+
+FRESH CONSTRAINT (spend once, concretely, through action or detail — never announced, never explained)
+{{fresh_constraint}}
+
 STARTING STATE
 {{scene_start_state}}
 

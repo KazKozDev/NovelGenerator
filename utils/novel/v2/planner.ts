@@ -7,7 +7,8 @@ import { describeRelations, relationsFor } from './relationships';
 import { bandsFor, describeProfile, profileOf, readRung } from './profile';
 import { describeStateDigest } from './stateDigest';
 import { describeWorn, type WornEntry } from './ledger';
-import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState } from './types';
+import { describeFreshPalette, freshConstraint } from './fresh';
+import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState, StyleContract } from './types';
 
 /**
  * A required outcome that adds no content word to its own setup: the scene
@@ -102,6 +103,10 @@ export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan 
     scenes: plan.scenes.map(scene => ({
       ...scene,
       outcome_kind: typeof scene.outcome_kind === 'string' ? scene.outcome_kind : '',
+      // Optional: scenes planned before the fresh bank existed carry none.
+      ...(typeof (scene as ScenePlan).fresh_constraint === 'string'
+        ? { fresh_constraint: (scene as ScenePlan).fresh_constraint }
+        : {}),
     })),
   };
 }
@@ -128,11 +133,22 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     open_threads_and_ending_requirements: JSON.stringify({ open_threads: input.openThreads, ending_requirements: input.endingRequirements }),
     remaining_word_budget: String(input.remainingWords),
     plan_findings: input.findings || '(first attempt at this chapter)',
+    fresh_constraint: describeFreshPalette(input.chapter),
   });
   const raw = await structuredResponse(prompt, system, llm,
     ['status', 'chapter', 'function', 'starting_situation', 'ending_change', 'mechanism', 'cost', 'pressure_rung', 'scenes', 'forward_dependencies', 'replan_reason'],
     parsed => parsed, { temperature: 0.3, maxTokens: 8192, route: 'writer' });
-  return validateChapterPlan(raw, input.chapter);
+  const validated = validateChapterPlan(raw, input.chapter);
+  // Every scene leaves the planner with a constraint: one the model chose from
+  // the palette, or the deterministic card for the scene id when it chose none.
+  return {
+    ...validated,
+    scenes: validated.scenes.map(scene => (
+      typeof scene.fresh_constraint === 'string' && scene.fresh_constraint.trim()
+        ? scene
+        : { ...scene, fresh_constraint: freshConstraint(input.chapter, scene.id) }
+    )),
+  };
 }
 
 const SCENE_KEYS = ['id', 'pov_id', 'location', 'story_time', 'participants', 'initial_conditions',
@@ -170,6 +186,12 @@ export async function rebaseScenePlan(input: {
     return candidate;
   },
     { temperature: 0.2, maxTokens: 8192, route: 'writer' }) as ScenePlan;
+  // The rebase is a causal correction, not a new deal: the scene keeps its
+  // constraint unless the correction made it impossible to spend.
+  if ((typeof raw.fresh_constraint !== 'string' || !raw.fresh_constraint.trim())
+    && typeof input.scene.fresh_constraint === 'string' && input.scene.fresh_constraint.trim()) {
+    return { ...raw, fresh_constraint: input.scene.fresh_constraint };
+  }
   return raw;
 }
 
@@ -181,7 +203,7 @@ export interface SceneContext {
 }
 
 export interface ReadinessProblem {
-  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'repeated-staging' | 'restaging-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
+  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'repeated-staging' | 'restaging-suspect' | 'retelling-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
   detail: string;
 }
 
@@ -252,11 +274,79 @@ export function checkReadiness(design: BookDesign, state: StoryState, scene: Sce
       });
     }
   }
+  // Retelling sniff: the outcome restates what finished prose already proved.
+  // Short outcomes are not judged — only a substantive outcome whose content
+  // words almost all appear in the latest finished chapter, adding two words
+  // or fewer of its own. The model review disposes it; code only brings it.
+  const retelling = retellingSuspect(scene, priorChapters);
+  if (retelling) problems.push({ code: 'retelling-suspect', detail: retelling });
   return problems;
+}
+
+/**
+ * Does this scene's required outcome retell the latest finished prose rather
+ * than advance past it? Content-word overlap with almost nothing new: an
+ * outcome that says again what the reader already read is stalling, however
+ * different its setup sounds. Empty history and short outcomes never qualify.
+ */
+export function retellingSuspect(scene: ScenePlan, priorChapters: PriorChapter[]): string {
+  if (!priorChapters.length) return '';
+  const outcome = (scene.required_outcome || '').trim();
+  const words = contentWords(outcome);
+  if (words.length < 4) return '';
+  const last = priorChapters[priorChapters.length - 1];
+  if (!last.text.trim()) return '';
+  const prior = new Set(contentWords(last.text));
+  const novel = words.filter(word => !prior.has(word));
+  if (words.length - novel.length >= Math.ceil(words.length * 0.7) && novel.length <= 2) {
+    return `Scene ${scene.id} retells ${last.ref} instead of advancing past it: "${outcome}" adds nothing its reader has not already read — resolve it through action, discovery, loss, or commitment on the page, or replan the outcome.`;
+  }
+  return '';
 }
 
 function sceneContains(haystack: string, needle: string): boolean {
   return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+/** The chapter a scene id belongs to (CH02_S01 → 2); 1 when unparseable. */
+export function chapterOfScene(sceneId: string): number {
+  const chapter = Number(/CH(\d+)/i.exec(sceneId || '')?.[1]);
+  return Number.isFinite(chapter) && chapter > 0 ? chapter : 1;
+}
+
+/**
+ * The voice corridor: the book's own style contract compressed to one
+ * directive line. The writer already receives the full contract; this is the
+ * corridor it must not leave — short enough to hold for the whole scene.
+ */
+export function voiceBrief(style: StyleContract): string {
+  const parts = [
+    style?.narrative_distance?.trim() && `Distance: ${style.narrative_distance.trim()}`,
+    style?.attention?.trim() && `Attention: ${style.attention.trim()}`,
+    style?.register?.trim() && `Register: ${style.register.trim()}`,
+    style?.humor?.trim() && `Humor: ${style.humor.trim()}`,
+    style?.emotional_expression?.trim() && `Feeling: ${style.emotional_expression.trim()}`,
+  ].filter(Boolean);
+  if (!parts.length) return '(no style contract recorded — hold a steady close third)';
+  return `${parts.join('; ')}. Hold this voice for the whole scene: every line in its distance, its attention, its register.`;
+}
+
+/**
+ * The scene corridor: what this scene must do on the page, in five lines
+ * rather than a JSON dump. The full plan still travels as {{scene_plan}};
+ * this is the brief the writer checks each paragraph against.
+ */
+export function sceneBrief(scene: ScenePlan): string {
+  const lines = [
+    `Scene ${scene.id}${scene.location?.trim() ? ` — ${scene.location.trim()}` : ''}${scene.story_time?.trim() ? `, ${scene.story_time.trim()}` : ''}.`,
+    scene.function?.trim() ? `Function: ${scene.function.trim()}` : '',
+    scene.required_outcome?.trim() ? `Must end: ${scene.required_outcome.trim()}` : '',
+    (scene.participant_intentions || []).length
+      ? `Wants: ${scene.participant_intentions.map(item => `${item.character_id} — ${item.intention}${item.reason_now ? ` (${item.reason_now})` : ''}`).join('; ')}`
+      : '',
+    scene.pressure_or_uncertainty?.trim() ? `Pressure: ${scene.pressure_or_uncertainty.trim()}` : '',
+  ].filter(Boolean);
+  return lines.join('\n') || '(no scene brief recorded)';
 }
 
 /**
@@ -331,6 +421,11 @@ export function buildSceneContext(
     vars: {
       story_contract: JSON.stringify(design.contract),
       style_contract: JSON.stringify(design.style_contract),
+      voice_brief: voiceBrief(design.style_contract),
+      scene_brief: sceneBrief(scene),
+      fresh_constraint: (typeof scene.fresh_constraint === 'string' && scene.fresh_constraint.trim())
+        ? scene.fresh_constraint
+        : freshConstraint(chapterOfScene(scene.id), scene.id),
       scene_plan: JSON.stringify(scene),
       scene_start_state: JSON.stringify({
         location: scene.location,

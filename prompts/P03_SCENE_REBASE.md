@@ -41,6 +41,9 @@ REQUIREMENTS
 - Keep outcome_kind the class of change the new outcome actually produces. A
   rebase that moves the outcome usually moves its class too; carrying the old
   label forward would hide the move from every check downstream.
+- Preserve the scene's fresh_constraint unless the correction made it
+  impossible to spend; when it must change, replace it with an equally
+  concrete one, never with an empty string.
 - Return the complete scene plan in the original schema, with no wrapper.
 
 FORMAT
@@ -66,5 +69,6 @@ JSON only:
   "setup_or_payoff": [],
   "transition_to_next": "",
   "target_words": 0,
-  "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss"
+  "outcome_kind": "position | possession | knowledge | commitment | relation | exposure | loss",
+  "fresh_constraint": ""
 }

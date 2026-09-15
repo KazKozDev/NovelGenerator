@@ -212,6 +212,14 @@ export interface ScenePlan {
   transition_to_next: string;
   target_words: number;
   /**
+   * One concrete way this scene stays new — a place, an object, a move, or a
+   * limitation — drawn from the fresh bank and spent on the page through
+   * action or detail, never described as novelty. Optional: scenes planned
+   * before the bank existed carry none, and the writer package then falls back
+   * to the deterministic card for the scene id.
+   */
+  fresh_constraint?: string;
+  /**
    * The class of change this scene's outcome produces — position, possession,
    * knowledge, commitment, relation, exposure. Not the outcome itself: the
    * class, so code can see five scenes in a row producing the same kind of

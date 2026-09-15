@@ -28,6 +28,7 @@ CHECK
 - Whether the outcome follows from the described conditions.
 - Whether obvious alternative actions are accounted for.
 - Whether events change the situation.
+- Whether the outcome is resolved through action, discovery, loss, or commitment on the page — not by retelling what the handoff already established. A scene that explains again instead of changing something is stalling however well written.
 - Whether scenes duplicate each other in content and outcome.
 - Whether necessary future decisions are prepared.
 - Whether development fits the given length.

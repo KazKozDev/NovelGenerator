@@ -25,8 +25,24 @@ export interface PlanFinding {
   /** A blocking finding sends the plan back to the planner; an advisory rides along as a warning. */
   severity: 'blocking' | 'advisory';
   code: 'mechanism-unknown' | 'mechanism-exhausted' | 'no-cost' | 'no-rung' | 'curve-break'
-  | 'repeated-staging' | 'outcome-monotony' | 'ending-capacity' | 'no-outcome-kind' | 'promise-ageing';
+  | 'repeated-staging' | 'outcome-monotony' | 'ending-capacity' | 'no-outcome-kind' | 'promise-ageing' | 'thin-scene';
   detail: string;
+}
+
+/**
+ * A scene planned with almost nothing in it: fewer than five content words
+ * across function, development, outcome and pressure. Advisory only — a
+ * deliberately spare scene is a style, and the bar sits far below any
+ * normally planned scene, so clean plans never trip it. Code counts; P02
+ * judges whether the sparseness earns its place.
+ */
+export function thinScenePlan(scene: { id: string; function?: string; development?: string; required_outcome?: string; pressure_or_uncertainty?: string }): string {
+  const text = [scene.function, scene.development, scene.required_outcome, scene.pressure_or_uncertainty]
+    .filter(Boolean).join(' ');
+  if (contentWords(text).length < 5) {
+    return `Scene ${scene.id} is planned with almost nothing in it — barely a setup, an outcome, or a pressure to write from. Resolve its outcome through action, discovery, loss, or commitment on the page, or say what the sparseness is for.`;
+  }
+  return '';
 }
 
 export interface PlanGateInput {
@@ -223,6 +239,13 @@ export function checkChapterPlan(input: PlanGateInput): PlanFinding[] {
       code: 'outcome-monotony',
       detail: `${run} scenes in a row end on the same class of change ("${kind}"). Every one of them may be well made and the sequence still reads as one scene told repeatedly. Let this chapter end at least one scene on a different kind of change — something lost, a commitment made, a relation altered — or say why the sameness is the point.`,
     });
+  }
+
+  // — Thin scenes. Advisory: a plan with almost nothing in a scene still
+  //   reaches the writer, but the reader is told it travelled light.
+  for (const scene of plan.scenes) {
+    const thin = thinScenePlan(scene);
+    if (thin) findings.push({ severity: 'advisory', code: 'thin-scene', detail: thin });
   }
 
   // — Promises left standing too long. The thread ledger records what the book
