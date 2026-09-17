@@ -15,7 +15,7 @@ facts and open plot threads available as the novel grows.
 
 AI novel generator · Local LLM and Ollama · Long-form fiction · Persistent story memory · Continuity checking
 
----
+
 
 ## Run the AI novel generator locally
 
