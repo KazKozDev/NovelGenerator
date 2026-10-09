@@ -42,7 +42,28 @@ export function paragraphsWithIds(prose: string): { id: string; text: string }[]
 
 const DELTA_KEYS = ['proper_names', 'name_variants', 'events', 'state_changes', 'knowledge_changes', 'belief_changes',
   'intentions_and_commitments', 'reader_disclosures', 'threads_opened', 'threads_resolved',
-  'contradictions', 'uncertainties', 'plan_deviations'];
+  'contradictions', 'uncertainties', 'plan_deviations', 'restaged_beats'];
+
+/**
+ * The one list an extraction cannot leave out. A scene with no events on record
+ * is a claim about the scene, and it has to be made rather than inferred from a
+ * missing key.
+ *
+ * Every other list may be absent. The format asks for thirteen of them and most
+ * scenes fill four; a model that drops an empty one has said the same thing as a
+ * model that writes `[]`, and refusing the whole answer over it ended a book
+ * hours into a run for a list that held nothing. An absent list is read as
+ * empty and named in `omitted_lists`, so the run log can tell an editor that
+ * skips keys from one that had nothing to report.
+ */
+const REQUIRED_DELTA_KEYS = ['events'];
+
+const DELTA_SCHEMA = {
+  type: 'object',
+  required: DELTA_KEYS,
+  properties: Object.fromEntries(DELTA_KEYS.map(key => [key, { type: 'array' }])),
+  additionalProperties: true,
+};
 
 /**
  * Lowercased, possessives folded anywhere in the span, so a name and its
@@ -98,10 +119,18 @@ export function mergeProperNames(
 
 export function validateDelta(raw: unknown, paragraphIds: string[] = []): StateDelta {
   if (!raw || typeof raw !== 'object') throw new Error('State delta is not an object.');
-  const delta = raw as Record<string, unknown>;
+  const delta = { ...(raw as Record<string, unknown>) };
+  const omitted: string[] = [];
   for (const key of DELTA_KEYS) {
-    if (!Array.isArray(delta[key])) throw new Error(`State delta is missing "${key}".`);
+    if (Array.isArray(delta[key])) continue;
+    // Absent is empty; present and not a list is a malformed answer, and
+    // guessing what it meant would put a guess into memory.
+    if (delta[key] !== undefined && delta[key] !== null) throw new Error(`State delta carries "${key}" as something other than a list.`);
+    if (REQUIRED_DELTA_KEYS.includes(key)) throw new Error(`State delta is missing "${key}".`);
+    delta[key] = [];
+    omitted.push(key);
   }
+  if (omitted.length) delta.omitted_lists = omitted;
   for (const event of (delta.events as { evidence_refs?: unknown }[])) {
     if (!Array.isArray(event?.evidence_refs) || !event.evidence_refs.length) {
       throw new Error('An extracted event has no evidence.');
@@ -110,7 +139,7 @@ export function validateDelta(raw: unknown, paragraphIds: string[] = []): StateD
   if (paragraphIds.length) {
     const known = new Set(paragraphIds);
     const dangling: string[] = [];
-    for (const group of [delta.events, delta.state_changes, delta.knowledge_changes, delta.name_variants] as { evidence_refs?: unknown }[][]) {
+    for (const group of [delta.events, delta.state_changes, delta.knowledge_changes, delta.name_variants, delta.restaged_beats] as { evidence_refs?: unknown }[][]) {
       for (const record of group) {
         for (const ref of (Array.isArray(record?.evidence_refs) ? record.evidence_refs : []) as unknown[]) {
           if (typeof ref === 'string' && !known.has(ref)) dangling.push(ref);
@@ -121,7 +150,7 @@ export function validateDelta(raw: unknown, paragraphIds: string[] = []): StateD
       throw new Error(`Evidence points nowhere: ${[...new Set(dangling)].join(', ')}. Paragraphs are ${paragraphIds.join(', ')}.`);
     }
   }
-  return raw as StateDelta;
+  return delta as unknown as StateDelta;
 }
 
 export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<StateDelta> {
@@ -145,8 +174,10 @@ export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<Stat
     source_excerpts: JSON.stringify(input.sourceExcerpts),
   };
   const read = async (extra: string): Promise<StateDelta> => {
+    // The model is asked for every list; the answer is accepted with the one it
+    // cannot do without. validateDelta reads the rest as empty and says which.
     const raw = await structuredResponse(renderPrompt('P05_STATE_UPDATE', base) + extra, system, llm,
-      DELTA_KEYS, parsed => parsed, { temperature: 0.1, maxTokens: 8192, route: 'validator' });
+      REQUIRED_DELTA_KEYS, parsed => parsed, { temperature: 0.1, maxTokens: 8192, route: 'validator', schema: DELTA_SCHEMA });
     return backstopNames(validateDelta(raw, ids), input.sceneProse);
   };
   try {
@@ -333,6 +364,27 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
     if (used && recorded) {
       blockers.push(`Name variant in ${sceneRef}: "${used}" is used for recorded "${recorded}". Use the recorded spelling verbatim, or establish "${used}" in the scene as a different thing.`);
     }
+  }
+  // A beat staged twice. Every check before this one reads the plan, and a
+  // writer can be handed a sound plan and still write the scene the book already
+  // has — the confrontation again, the discovery again, in sentences that share
+  // no word run with the first. Only a reader of both can say so, and the
+  // tracker is the one call that reads the finished scene against the record.
+  // It travels the existing path: one rewrite, told exactly what it repeated.
+  //
+  // The charge has to name what is repeated. The ids are checked against the
+  // state the scene was written from, never the one being built here — a scene
+  // cannot be a repetition of itself.
+  const recordedIds = new Set([...state.events, ...state.facts].map(item => item.id.toLowerCase()));
+  for (const beat of delta.restaged_beats || []) {
+    const what = typeof beat?.beat === 'string' ? beat.beat.trim() : '';
+    const earlier = typeof beat?.earlier_ref === 'string' ? beat.earlier_ref.trim() : '';
+    if (!what) continue;
+    if (!recordedIds.has(earlier.toLowerCase())) {
+      refused.push(`${sceneRef}: the charge that "${what}" restages an earlier beat was not acted on because it names no recorded event or fact (${earlier || 'no reference given'}).`);
+      continue;
+    }
+    blockers.push(`Restaged beat in ${sceneRef}: "${what}" already happened (${earlier}) and the reader has it. Do not stage it again — open after it, let the scene lean on it in a line at most, and carry it to an outcome the book has not reached.`);
   }
   return { state: next, blockers, refused };
 }

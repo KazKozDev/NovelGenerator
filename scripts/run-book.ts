@@ -12,8 +12,8 @@
  */
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Orchestrator } from '../utils/novel/v2/orchestrator';
-import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
+import { budgetFor, Orchestrator } from '../utils/novel/v2/orchestrator';
+import { ChapterPipelineV2, readContinuityMode } from '../utils/novel/v2/pipeline';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { snapshotProject } from '../utils/novel/v2/export';
 import { setGateModeOverride } from '../utils/novel/v2/semanticGate';
@@ -43,10 +43,13 @@ const outDir = arg('out', 'runs/manual-test');
 // time, cached by the runtime after that. Not a flag — a script has nowhere to
 // record a choice, so it says so here once, and says it the same way every run.
 setGateModeOverride('full');
-// A longer book needs a longer leash than the in-app default: the budget is the
-// run's own, not a property of the pipeline.
-const maxCalls = Number(arg('max-calls', '200'));
-const maxMinutes = Number(arg('max-minutes', '60'));
+// The budget the application gives a book of this length, unless the run names
+// its own.
+// strict stops at a scene that fails its checks twice; warn (the default) keeps
+// it and reports; off rewrites nothing for a continuity objection.
+const continuity = readContinuityMode(arg('continuity', 'warn'));
+const maxCalls = Number(arg('max-calls', String(budgetFor(chapters).maxCalls)));
+const maxMinutes = Number(arg('max-minutes', String(budgetFor(chapters).maxTimeMs / 60000)));
 
 mkdirSync(outDir, { recursive: true });
 const logFile = join(outDir, 'run.log');
@@ -58,7 +61,7 @@ function log(line: string): void {
 
 async function main(): Promise<void> {
   log(`provider=${provider} writer=${writerModel} editor=${editorModel}${provider === 'ollama' ? ` endpoint=${endpoint}` : ''} gate=full`);
-  log(`budget calls=${maxCalls} minutes=${maxMinutes}`);
+  log(`budget calls=${maxCalls} minutes=${maxMinutes} continuity=${continuity}`);
   log(`book chapters=${chapters} genre=${genre} words=${totalWords} premise=${premise}`);
   const store = new MemoryProjectStore();
   let calls = 0;
@@ -112,7 +115,7 @@ async function main(): Promise<void> {
       }
     }
   };
-  const orchestrator = new Orchestrator(store, { maxCalls, maxTimeMs: maxMinutes * 60 * 1000 }, new ChapterPipelineV2(),
+  const orchestrator = new Orchestrator(store, { maxCalls, maxTimeMs: maxMinutes * 60 * 1000 }, new ChapterPipelineV2(continuity),
     (stage, chapter) => log(`STAGE ${stage}${chapter ? ` ch${chapter}` : ''} calls=${calls}`));
   const result = await orchestrator.runBook({
     premise,

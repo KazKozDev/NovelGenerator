@@ -7,7 +7,7 @@ import { writeSceneV2 } from './sceneWriter';
 import { emptyState, type ProjectStore } from './store';
 import { applyDelta, applyResolutions, applyThreads, paragraphsWithIds, resolveOpenQuestions, trackScene, type QuestionResolution } from './tracker';
 import { runPrewriteGate } from './semanticGate';
-import { applyForwardToHandoff, buildSceneHandoff } from './handoff';
+import { applyForwardToHandoff, buildSceneHandoff, compactHandoff } from './handoff';
 import { stringList } from './normalize';
 import { resolveSourceRefs } from './retrieval';
 import { recentShapes } from './shapes';
@@ -18,6 +18,9 @@ import { describeStateDigest } from './stateDigest';
 import { numericContradictions } from '../analytics';
 import { repairRepetition } from './repair';
 import type { BookDesign, ChapterPlan, StoryState } from './types';
+import type { ContinuityMode } from './continuity';
+
+export { CONTINUITY_MODES, readContinuityMode, type ContinuityMode } from './continuity';
 
 /**
  * The v2 chapter pipeline: plan one chapter from confirmed state, write each
@@ -26,6 +29,8 @@ import type { BookDesign, ChapterPlan, StoryState } from './types';
  * the remaining plan with what was actually written.
  */
 export class ChapterPipelineV2 implements ChapterPipeline {
+  constructor(private readonly continuity: ContinuityMode = 'warn') {}
+
   /** Move first-attempt failures into the run log with their reasons. */
   private flushRetries(store: ProjectStore): void {
     for (const notice of drainRetryNotices()) {
@@ -138,7 +143,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
     const entry = design.chapter_map.find(item => item.chapter === chapter);
     const threads = store.loadThreads();
     const previousRecord = store.chapterScenes(chapter - 1).at(-1);
-    let handoff = previousRecord?.handoff || (previousRecord?.delta && previousRecord.plan
+    let handoff = (previousRecord?.handoff && compactHandoff(previousRecord.handoff)) || (previousRecord?.delta && previousRecord.plan
       ? buildSceneHandoff({
           scene: previousRecord.plan,
           state: store.loadState(),
@@ -219,7 +224,7 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         store.saveState(settled);
         const replayedThreads = applyThreads(store.loadThreads(), stored.delta, scene.id);
         store.saveThreads(replayedThreads);
-        handoff = stored.handoff || buildSceneHandoff({
+        handoff = (stored.handoff && compactHandoff(stored.handoff)) || buildSceneHandoff({
           scene: stored.plan || scene,
           nextScene: plan.scenes[sceneIndex + 1],
           state: settled,
@@ -281,6 +286,9 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         // instructions stitched into the package — the transition gets shown
         // on the page instead of stopping the book. If the writer still breaks
         // continuity, the state tracker catches it with evidence after the fact.
+        // The review only ever advises, so losing it is not worth a book: outside
+        // strict the scene goes to the writer with its doubts unanswered and the
+        // reader is told which. The tracker still reads the result afterwards.
         const check = await reviewPlan(
           { story_contract: JSON.stringify(design.contract) },
           `Scene ${scene.id} readiness before prose. Cast roster (id — name — function):\n${design.characters.map(character => `${character.id} — ${character.name} — ${character.story_function}`).join('\n')}\nCode-level doubts:\n${problems.map(p => `- ${p.code}: ${p.detail}`).join('\n')}`,
@@ -288,7 +296,13 @@ export class ChapterPipelineV2 implements ChapterPipeline {
           describeStateDigest(store.loadState()),
           JSON.stringify(sceneSources),
           llm,
-        );
+        ).catch(error => {
+          if (this.continuity === 'strict') throw error;
+          const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+          warnings.push(`Scene ${scene.id} was written without its readiness review (${reason}). Unanswered doubts: ${problems.map(p => p.code).join(', ')}.`);
+          store.log('retry', `Scene ${scene.id} readiness review failed; writing with the doubts unanswered. ${reason}`);
+          return { ready: true, issues: [] };
+        });
         const hard = check.issues.filter(item => item.severity === 'blocking' || item.severity === 'major');
         if (hard.length) {
           const startState = JSON.parse(vars.scene_start_state) as Record<string, unknown>;
@@ -329,25 +343,48 @@ export class ChapterPipelineV2 implements ChapterPipeline {
         this.flushRetries(store);
         return repair.prose;
       };
-      let prose = await deduplicate(await writeSceneV2({ contextVars: vars }, llm));
+      const onApparatus = (removed: string[]): void => {
+        const cut = removed.map(line => `"${line.length > 80 ? `${line.slice(0, 80)}…` : line}"`).join(', ');
+        warnings.push(`Scene ${scene.id}: ${removed.length} line(s) the writer put around the scene, not in it, were cut from the manuscript: ${cut}.`);
+        store.log('apparatus', `Scene ${scene.id}: cut ${cut}.`);
+      };
+      const noteOmissions = (read: { omitted_lists?: string[] }): void => {
+        if (read.omitted_lists?.length) {
+          store.log('memory', `Scene ${scene.id}: the extraction left out ${read.omitted_lists.join(', ')}; read as empty.`);
+        }
+      };
+      let prose = await deduplicate(await writeSceneV2({ contextVars: vars, onApparatus }, llm));
       let delta = await track(prose);
+      noteOmissions(delta);
       const sceneRef = scene.id;
       let applied = applyDelta(store.loadState(), delta, sceneRef);
-      if (applied.blockers.length) {
+      if (applied.blockers.length && this.continuity === 'off') {
+        warnings.push(`Scene ${scene.id} stands as first written over an objection nothing was rewritten for (continuity checks are off): ${applied.blockers.join('; ')}.`);
+        store.log('continuity', `Scene ${scene.id} kept with ${applied.blockers.length} objection(s) unanswered (continuity off): ${applied.blockers.join('; ')}`);
+      } else if (applied.blockers.length) {
         // One correction pass, not a dead book: the writer sees exactly what
-        // broke continuity and rewrites the scene against it. Only a second
-        // consecutive break fails loudly.
+        // broke continuity and rewrites the scene against it. A second
+        // consecutive break ends a strict run and travels as a warning otherwise.
         store.log('retry', `Scene ${scene.id} contradicts confirmed state: ${applied.blockers.join('; ')}. One rewrite with corrections.`);
         warnings.push(`Scene ${scene.id} broke continuity on the first draft and was rewritten: ${applied.blockers.join('; ')}.`);
         const startState = JSON.parse(vars.scene_start_state) as Record<string, unknown>;
         const prior = Array.isArray(startState.continuity_requirements) ? startState.continuity_requirements as string[] : [];
         startState.continuity_requirements = [...prior, ...applied.blockers.map(blocker => `Do not contradict confirmed state: ${blocker}`)];
         vars.scene_start_state = JSON.stringify(startState);
-        prose = await deduplicate(await writeSceneV2({ contextVars: vars }, llm));
+        prose = await deduplicate(await writeSceneV2({ contextVars: vars, onApparatus }, llm));
         delta = await track(prose);
+        noteOmissions(delta);
         applied = applyDelta(store.loadState(), delta, sceneRef);
         if (applied.blockers.length) {
-          throw new Error(`Scene ${scene.id} contradicts confirmed state: ${applied.blockers.join('; ').replace(/\.$/, '')}.`);
+          const standing = applied.blockers.join('; ').replace(/\.$/, '');
+          if (this.continuity === 'strict') {
+            throw new Error(`Scene ${scene.id} contradicts confirmed state: ${standing}.`);
+          }
+          // The rewrite is the one that stands: it was written against the
+          // objection, and memory folds what it says. What it still breaks is
+          // on the record for whoever edits the book.
+          warnings.push(`Scene ${scene.id} still breaks continuity after its rewrite and was kept: ${standing}.`);
+          store.log('continuity', `Scene ${scene.id} kept over ${applied.blockers.length} standing objection(s): ${standing}`);
         }
       }
       // A bond that moved with nothing behind it stays where it was, and says so:
@@ -448,7 +485,21 @@ export class ChapterPipelineV2 implements ChapterPipeline {
       remainingWords: design.chapter_map.filter(item => item.chapter > chapter)
         .reduce((sum, item) => sum + (item.target_words || 0), 0),
     };
-    const forward = await updateForward(forwardInput, llm);
+    let forward;
+    try {
+      forward = await updateForward(forwardInput, llm);
+    } catch (error) {
+      if (this.continuity === 'strict') throw error;
+      // The chapter is written and saved by now. Losing the reconciliation
+      // loses an adjustment to the chapters ahead, not the one behind: the next
+      // chapter is planned from confirmed memory either way, against the map
+      // and the ending requirements as they last stood.
+      const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      this.flushRetries(store);
+      warnings.push(`The plan ahead was not reconciled with chapter ${chapter} (${reason}). The next chapter is planned from memory against the map as it stood.`);
+      store.log('retry', `Forward reconciliation after chapter ${chapter} failed; continuing on the standing map. ${reason}`);
+      return { warnings };
+    }
     this.flushRetries(store);
     const appliedPlan = applyPlanUpdates(design, forward);
     if (appliedPlan.skipped.length) warnings.push(`Plan updates skipped: ${appliedPlan.skipped.join('; ')}.`);

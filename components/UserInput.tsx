@@ -5,7 +5,8 @@ import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
-import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
+import { getStoredContinuityMode, getStoredProviderConfig, getStoredValidatorConfig, saveStoredContinuityMode, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
+import type { ContinuityMode } from '../utils/novel/v2/continuity';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
@@ -45,6 +46,7 @@ const UserInput: React.FC<UserInputProps> = ({
     setValidator(next);
     saveStoredValidatorConfig(next.enabled ? next : undefined);
   };
+  const [continuity, setContinuity] = useState<ContinuityMode>(() => getStoredContinuityMode());
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -421,6 +423,32 @@ const UserInput: React.FC<UserInputProps> = ({
               )}
             </div>
           )}
+        </div>
+
+        {/* What a run does with a scene that fails its checks twice. A long run
+            left alone wants the book finished and the problems listed. */}
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2">
+          <label htmlFor="continuityMode" className="block text-sm font-medium text-zinc-300">
+            When a scene fails its continuity check
+          </label>
+          <Select
+            id="continuityMode"
+            value={continuity}
+            onChange={(e) => {
+              const mode = e.target.value as ContinuityMode;
+              setContinuity(mode);
+              saveStoredContinuityMode(mode);
+            }}
+            className="text-xs py-1.5"
+          >
+            <option value="warn">Warn — rewrite once, record what remains, keep writing</option>
+            <option value="strict">Strict — rewrite once, stop the book if it remains</option>
+            <option value="off">Off — record it, rewrite nothing</option>
+          </Select>
+          <p className="text-xs text-zinc-500">
+            Warn finishes the manuscript and lists every unresolved objection in the report. Use Strict
+            when you are watching the run and would rather stop at the first scene that will not hold.
+          </p>
         </div>
 
       </div>

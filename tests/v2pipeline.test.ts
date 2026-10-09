@@ -187,10 +187,10 @@ describe('v2 chapter pipeline end to end', () => {
       && prompt.includes('Aren reaches the upper room.'))).toBe(true);
   });
 
-  it('stops the book on a blocking contradiction instead of writing past it', async () => {
+  it('stops a strict book on a blocking contradiction instead of writing past it', async () => {
     const store = new MemoryProjectStore();
     const blocked = { ...delta(), contradictions: [{ description: 'Aren is in two places.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
-    const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2())
+    const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2('strict'))
       .runBook(input, fullLlm(() => blocked));
     expect(result.status).toBe('FAILED');
     expect(result.stoppedReason).toMatch(/contradicts confirmed state/);
@@ -840,11 +840,95 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.loadState().events).toHaveLength(1);
   });
 
-  it('fails loudly when the rewrite breaks continuity again', async () => {
+  it('fails loudly in a strict run when the rewrite breaks continuity again', async () => {
     const store = new MemoryProjectStore();
     const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
-    await expect(new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(() => blocked)))
+    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, store, fullLlm(() => blocked)))
       .rejects.toThrow(/contradicts confirmed state/);
+  });
+
+  it('keeps the rewritten scene and reports it when an unattended run cannot clear the objection', async () => {
+    const store = new MemoryProjectStore();
+    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
+    const llm = fullLlm(() => blocked);
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    expect(store.manuscript()).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/still breaks continuity after its rewrite and was kept: Aren was elsewhere/);
+    expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(2);
+    expect(store.runLog().some(entry => entry.stage === 'continuity')).toBe(true);
+  });
+
+  it('rewrites nothing for a continuity objection when the checks are off, and still says so', async () => {
+    const store = new MemoryProjectStore();
+    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
+    const llm = fullLlm(() => blocked);
+    const outcome = await new ChapterPipelineV2('off').writeChapter(design(), 1, store, llm);
+    expect(store.manuscript()).toHaveLength(1);
+    expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/continuity checks are off\): Aren was elsewhere/);
+  });
+
+  it('sends a scene back once when it stages a beat the book already has', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    let extractions = 0;
+    const restaged = { ...delta(), restaged_beats: [{ beat: 'Aren reaches the upper room for the first time', earlier_ref: 'CH01_S01-e1', evidence_refs: ['p1'] }] };
+    const base = fullLlm(() => (extractions++ === 0 ? restaged : delta()));
+    const rewrites: string[] = [];
+    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+      if (prompt.includes('Write a full literary scene') && extractions > 0) rewrites.push(prompt);
+      return (base as NovelLLM)(prompt, system, options);
+    });
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    expect(rewrites).toHaveLength(1);
+    expect(rewrites[0]).toMatch(/Restaged beat in CH02_S01/);
+    expect(rewrites[0]).toMatch(/already happened \(CH01_S01-e1\)/);
+    expect(outcome.warnings.join(' ')).toMatch(/rewritten/);
+    expect(store.manuscript()).toHaveLength(2);
+  });
+
+  it('does not rewrite a scene over a repetition charge that names nothing on record', async () => {
+    const store = new MemoryProjectStore();
+    const vague = { ...delta(), restaged_beats: [{ beat: 'They argue again', earlier_ref: 'somewhere earlier', evidence_refs: ['p1'] }] };
+    const llm = fullLlm(() => vague);
+    const outcome = await new ChapterPipelineV2('strict').writeChapter(design(), 1, store, llm);
+    expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/names no recorded event or fact \(somewhere earlier\)/);
+  });
+
+  it('reads a list the extraction left out as empty instead of ending the book over it', async () => {
+    const store = new MemoryProjectStore();
+    const { knowledge_changes: _dropped, plan_deviations: _alsoDropped, ...partial } = delta();
+    const outcome = await new ChapterPipelineV2('strict').writeChapter(design(), 1, store, fullLlm(() => partial));
+    expect(store.manuscript()).toHaveLength(1);
+    expect(store.loadState().events).toHaveLength(1);
+    expect(outcome.warnings).toEqual([]);
+    expect(store.runLog().some(entry => entry.stage === 'memory' && /left out knowledge_changes, plan_deviations, restaged_beats; read as empty/.test(entry.detail))).toBe(true);
+  });
+
+  it('still refuses an extraction with no events list, or with a list that is not one', async () => {
+    const { events: _events, ...eventless } = delta();
+    await expect(new ChapterPipelineV2().writeChapter(design(), 1, new MemoryProjectStore(), fullLlm(() => eventless)))
+      .rejects.toThrow(/validator call failed twice/);
+    const malformed = { ...delta(), knowledge_changes: 'none' };
+    await expect(new ChapterPipelineV2().writeChapter(design(), 1, new MemoryProjectStore(), fullLlm(() => malformed)))
+      .rejects.toThrow(/"knowledge_changes" as something other than a list/);
+  });
+
+  it('finishes the chapter when the reconciliation fails after it, unless the run is strict', async () => {
+    const failing = (): NovelLLM => {
+      const base = fullLlm();
+      return vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Refine the forward plan')) return 'not json';
+        return (base as NovelLLM)(prompt, system, options);
+      });
+    };
+    const store = new MemoryProjectStore();
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, failing());
+    expect(store.manuscript()).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/plan ahead was not reconciled with chapter 1/);
+    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, new MemoryProjectStore(), failing()))
+      .rejects.toThrow();
   });
 
   it('diverts a restaged scene to review before any prose exists', async () => {
@@ -891,6 +975,27 @@ describe('v2 chapter pipeline end to end', () => {
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm, stubGate);
     expect(outcome.warnings.join(' ')).toMatch(/Show the lamp dark/);
     expect(store.manuscript()).toHaveLength(1);
+  });
+
+  it('writes the scene when its readiness review cannot be had, unless the run is strict', async () => {
+    const stubGate = async () => ({
+      problems: new Map([['CH01_S01', [{ code: 'clash-suspect' as const, detail: 'Plan states the lamp is lit but confirmed state holds it is dark.' }]]]),
+      warnings: [] as string[],
+      mode: 'full' as const,
+    });
+    const unreviewed = (): NovelLLM => {
+      const base = fullLlm();
+      return vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('lamp is lit')) return 'not json';
+        return (base as NovelLLM)(prompt, system, options);
+      });
+    };
+    const store = new MemoryProjectStore();
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, unreviewed(), stubGate);
+    expect(store.manuscript()).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/written without its readiness review .*Unanswered doubts: clash-suspect/);
+    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, new MemoryProjectStore(), unreviewed(), stubGate))
+      .rejects.toThrow();
   });
 
   it('refuses a chapter the plan itself declares unplannable', async () => {

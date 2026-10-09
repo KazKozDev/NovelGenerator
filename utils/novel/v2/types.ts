@@ -261,6 +261,8 @@ export interface SceneHandoff {
   previous_outcome: string;
   required_new_outcome: string;
   forbidden_restatements: string[];
+  /** Present when the lists above are a recent stretch of a longer record, saying how much was left out. */
+  history_note?: string;
 }
 
 /** One memory delta from P05: only text-confirmed changes, every record quoted. */
@@ -303,6 +305,15 @@ export interface StateDelta {
   contradictions: { description: string; prior_refs: string[]; scene_refs: string[]; blocks_continuation: boolean }[];
   uncertainties: { question: string; evidence_refs: string[]; relevant_to_next_scene: boolean }[];
   plan_deviations: { planned: string; actual: string; future_dependency_affected: string }[];
+  /**
+   * Beats this scene stages again although memory already holds them as having
+   * happened: the same confrontation, discovery or disclosure, in new words.
+   * Each one names the recorded event or fact it repeats — a charge of
+   * repetition that cannot say what it repeats is not folded as one.
+   */
+  restaged_beats?: { beat: string; earlier_ref: string; evidence_refs: string[] }[];
+  /** Lists the extraction left out entirely and code read as empty. Reported, never silent. */
+  omitted_lists?: string[];
 }
 
 export interface WorldFact {

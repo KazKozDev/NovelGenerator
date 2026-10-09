@@ -44,7 +44,7 @@ export interface BookResult {
 }
 
 /**
- * A wall-clock hour and two hundred calls, for any book of any length.
+ * It was a wall-clock hour and two hundred calls, for any book of any length.
  *
  * The hour was set when a chapter was a plan, a scene, and an extraction. A
  * chapter now also carries a cross-encoder over its plan and its prose, an NLI
@@ -53,16 +53,30 @@ export interface BookResult {
  * Four chapters no longer fit in an hour, and the run died at the wall with
  * three of them written.
  *
- * So the budget is what a book of this length costs, not a constant: twenty
- * minutes a chapter, never less than an hour, capped at four so a runaway still
- * stops. Calls scale the same way — a chapter is a plan, a scene package and a
- * tracking pass per scene, a repair where one is needed, and a reconciliation.
+ * So the budget is what a book of this length costs, not a constant. Calls
+ * scale with the chapters — a chapter is a plan, a rebase, a scene package and a
+ * tracking pass per scene, a repair where one is needed, and a reconciliation,
+ * which a live run shows at twenty to twenty-five and forty leaves room for.
+ *
+ * Both used to be capped, at six hundred calls and four hours, so that a
+ * runaway would stop. The caps stopped books instead. Twenty chapters at forty
+ * calls is eight hundred, and four hours across twenty chapters is twelve
+ * minutes each — a pace a cloud model keeps and a model on the author's own
+ * machine does not come near, so every long local run ended at the wall however
+ * well it was going, with nobody there to press Continue.
+ *
+ * What stops a runaway is the count, and the count is proportional: a book
+ * cannot spend more than forty calls a chapter whatever it does. The clock
+ * measures the hardware rather than the book, so it is set to what a slow
+ * machine needs — an hour a chapter — and exists to end a run that has stopped
+ * making progress, not to pace one that has not. Each call still has its own
+ * deadline in the transport.
  */
 export function budgetFor(chapters: number): CallBudget {
   const perChapter = Math.max(1, chapters);
   return {
-    maxCalls: Math.min(600, Math.max(200, perChapter * 40)),
-    maxTimeMs: Math.min(4 * 60, Math.max(60, perChapter * 20)) * 60 * 1000,
+    maxCalls: Math.max(200, perChapter * 40),
+    maxTimeMs: Math.max(60, perChapter * 60) * 60 * 1000,
   };
 }
 

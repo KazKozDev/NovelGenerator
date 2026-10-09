@@ -7,6 +7,7 @@ import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
 import { logToTerminal } from '../utils/terminalLogger';
+import { readContinuityMode, type ContinuityMode } from '../utils/novel/v2/continuity';
 
 const LLM_STORAGE_KEY = 'novelGenerator_llm_config';
 
@@ -66,6 +67,27 @@ export function saveStoredValidatorConfig(config: (LLMProviderConfig & { enabled
     else localStorage.setItem(VALIDATOR_STORAGE_KEY, JSON.stringify(config));
   } catch (err) {
     console.error('Failed to save editor model config to localStorage:', err);
+  }
+}
+
+const CONTINUITY_STORAGE_KEY = 'novelGenerator_continuity_mode';
+
+/** What a run does when a scene fails its checks twice. Unset means `warn`: finish the book and report. */
+export function getStoredContinuityMode(): ContinuityMode {
+  if (typeof window === 'undefined') return readContinuityMode(undefined);
+  try {
+    return readContinuityMode(localStorage.getItem(CONTINUITY_STORAGE_KEY));
+  } catch {
+    return readContinuityMode(undefined);
+  }
+}
+
+export function saveStoredContinuityMode(mode: ContinuityMode): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(CONTINUITY_STORAGE_KEY, mode);
+  } catch (err) {
+    console.error('Failed to save continuity mode to localStorage:', err);
   }
 }
 

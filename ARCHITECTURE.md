@@ -15,6 +15,14 @@ Thinking never reaches the manuscript. `stripThinking` removes a `<think>` block
 refuses a response that ended inside one; a response with no complete JSON object is an
 error, never an empty success.
 
+Neither does what a writer says around a scene. `stripApparatus` cuts the lines that stand
+alone above or below the prose and speak about the task — "I'll write the opening scene…",
+a heading, "Word count: 500", a closing note on what the scene establishes, an offer of
+changes — and reports each cut as a chapter warning. It is cut rather than sent back: a
+rewrite to remove a sentence outside the scene costs a writing call and returns a different
+scene. Only the edges are read. Commentary inside the prose is narration to code and stays
+the editor's to judge.
+
 ## Prompts are files
 
 The pipeline prompts and the shared system contract live under `prompts/`, one per
@@ -164,7 +172,9 @@ the scene with numbered paragraph ids and returns proper names, events, state ch
 knowledge, beliefs, disclosures, threads, contradictions and uncertainties. Each record
 cites paragraph ids, and `validateDelta` rejects a citation that points nowhere — with
 one correction pass that names the dangling refs, so the retry answers a concrete
-question. P05 states what a ref is; code enforcing a rule the prompt never stated is how
+question. Only `events` is a list the answer cannot leave out: any other list that is
+absent is read as empty and named in the run log, because a model that drops an empty key
+has said what a model writing `[]` says, and refusing the whole answer over it ended books. P05 states what a ref is; code enforcing a rule the prompt never stated is how
 a run dies citing a scene id it had every reason to think was valid.
 
 **Every accepted scene also emits a persisted semantic handoff.** It names what the
@@ -173,6 +183,20 @@ active intentions, the previous outcome, the next required outcome, and meanings
 must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
 scene's causal plan against this handoff; P04 receives the same object when writing.
 The last scene's handoff is enriched by P06 and becomes the next chapter's input.
+
+**The handoff carries the recent stretch, not the book.** It is a writing contract, and
+it was built like the ledger: every event and disclosure since page one, twice — once as
+what the reader knows and once, accumulated, as what must not be restated. Measured on a
+finished four-chapter book it grew about 4KB a scene, to 70KB and 237 prohibitions by the
+sixteenth, in front of the chapter plan, the rebase and the scene itself. A local model's
+window fills long before a long book ends, and Ollama drops the *start* of a prompt that
+does not fit — the task and the scene plan — leaving the writer the tail of the previous
+scene and nothing to do but write it again. Facts travel whole; events and disclosures are
+the same recent stretch `stateDigest` gives every other call; restatements and open
+questions keep their newest twenty-four (`HANDOFF_LIMITS`, judgements, not measurements);
+and a trimmed handoff says so in `history_note`. The full record stays in the store, where
+retrieval and the cross-encoder read it. `compactHandoff` brings a handoff stored before
+the limits inside them when a book resumes.
 
 **A relationship is current state, not a fixed card.** Character cards hold who two
 people were to each other when the book was designed; what they are to each other now
@@ -200,9 +224,26 @@ reference no stored paragraph answers becomes a `missing-source` doubt for the r
 review: either the callback rests on nothing written, or the reference is wrong, and both
 are decided before the scene leans on it.
 
+**A finished scene is read against what already happened, not only against its plan.**
+Every check before prose reads the plan, and a writer handed a sound plan can still write
+the scene the book already has — the same confrontation, the same discovery, in sentences
+that share no word run with the first. P05 is the one call that reads the finished scene
+against the record, so it also reports `restaged_beats`: a beat staged again, with the id
+of the recorded event or fact it repeats. A charge that names nothing on record is not
+acted on and comes back as a `refused` note; one that does travels the contradiction path
+below, with the writer told exactly what it repeated.
+
 **A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
-book.** The writer sees exactly what broke and rewrites against it; only a second
-consecutive break fails loudly. A name variant is the same path: the model, reading both
+book.** The writer sees exactly what broke and rewrites against it. What a second
+consecutive break does is the run's continuity mode (`continuity.ts`): `strict` ends the
+book there, `warn` — the default — keeps the rewritten scene and records the objection,
+`off` rewrites nothing for it. The same mode decides two failures that used to be final
+although nothing depended on them: a readiness review that could not be had (the scene is
+written with its doubts unanswered) and a forward reconciliation that failed after its
+chapter was already saved (the next chapter is planned against the map as it stood). An
+editor's verdict is a judgement, and a finished manuscript with a list of what it got
+wrong can be fixed where a run that stopped overnight cannot. A planner that refuses the
+chapter map and a scene nothing could be extracted from still stop the run in every mode. A name variant is the same path: the model, reading both
 the prose and the registry, judges whether a near-identical spelling is drift, and code only
 carries the verdict. Code never decides by string similarity.
 
@@ -338,8 +379,12 @@ findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`.
 ## Budgets, retries, failure
 
 Every model call passes through `counted`: calls, elapsed time and estimated tokens
-(characters/4, since providers report no usage) against `DEFAULT_BUDGET` — 200 calls, one
-hour. Exhaustion throws, and the run ends `FAILED` with the reason in the log.
+(characters/4, since providers report no usage) against `budgetFor(chapters)` — forty calls
+and an hour for every chapter, never less than two hundred calls and one hour. Neither is
+capped: the count is what stops a runaway, and it is proportional to the book, while the
+clock measures the hardware rather than the book and is sized for a model on the author's
+own machine. Exhaustion throws, the run ends `FAILED` with the reason in the log, and
+Continue keeps the chapters written and starts both again.
 
 `structuredResponse` retries once on a malformed answer and tells the model what failed.
 It does not retry what a retry cannot answer — an exhausted quota, a rejected key, a

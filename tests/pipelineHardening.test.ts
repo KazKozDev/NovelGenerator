@@ -923,8 +923,15 @@ describe('a budget the length of the book', () => {
     expect(budgetFor(3).maxCalls).toBe(200);
   });
 
-  it('still stops a runaway', () => {
-    expect(budgetFor(100).maxTimeMs).toBe(4 * 60 * 60 * 1000);
-    expect(budgetFor(100).maxCalls).toBe(600);
+  it('does not end a long book at a wall a short one would never reach', () => {
+    // Capped at 600 calls and four hours, a twenty-chapter book had twelve
+    // minutes a chapter and fewer calls than its own chapters could spend.
+    expect(budgetFor(20).maxCalls).toBe(800);
+    expect(budgetFor(20).maxTimeMs).toBe(20 * 60 * 60 * 1000);
+  });
+
+  it('still stops a runaway, by the count: no book may spend more than forty calls a chapter', () => {
+    expect(budgetFor(100).maxCalls).toBe(4000);
+    expect(budgetFor(100).maxCalls / 100).toBe(budgetFor(20).maxCalls / 20);
   });
 });

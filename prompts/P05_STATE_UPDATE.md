@@ -85,6 +85,28 @@ Give concrete incompatible statements and their sources.
 No stylistic review.
 Do not rewrite the scene.
 
+RESTAGED BEATS
+The previous state lists what has already happened, each event under its id.
+Compare the scene with it for one thing only: does the scene stage, as if for
+the first time, something that list already holds?
+- A restaged beat is the same thing happening again: the same confrontation
+  between the same people over the same matter, the same discovery made a
+  second time, the same secret disclosed to a reader who already has it, the
+  same decision reached again. Different sentences do not make it a different
+  beat.
+- It is NOT a restaged beat when the scene moves past the earlier one: a
+  consequence of it, a second attempt that ends differently, a character
+  learning what another already knew, a brief reference back, a refrain the
+  book means. If anyone's position, possession, knowledge or commitment ends
+  the scene held differently because of it, the beat is new.
+- Report each one in restaged_beats: beat says what is staged again,
+  earlier_ref is the id of the recorded event or fact it repeats, copied
+  exactly from the previous state, and evidence_refs cite the paragraphs of
+  this scene that stage it. A charge with no earlier_ref is ignored: say what
+  it repeats or do not raise it.
+- Raise nothing you would not show a reader side by side. A restaged beat
+  sends the scene back to be written again.
+
 PROMISES
 - threads_resolved lists the ids of promises above that THIS scene paid off.
   Cite the id, exactly as it is given. A promise is paid when the text answers
@@ -171,6 +193,13 @@ JSON only:
       "planned": "",
       "actual": "",
       "future_dependency_affected": ""
+    }
+  ],
+  "restaged_beats": [
+    {
+      "beat": "",
+      "earlier_ref": "",
+      "evidence_refs": []
     }
   ]
 }
