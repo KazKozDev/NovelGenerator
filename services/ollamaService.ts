@@ -17,7 +17,31 @@ export interface OllamaGeneratePayload {
     top_p?: number;
     top_k?: number;
     num_predict?: number;
+    num_ctx?: number;
   };
+}
+
+/**
+ * Ollama gives a model a default context window unless the request names one, and a prompt longer
+ * than that window is not refused: its beginning is dropped and the model answers what is left. For a
+ * book that beginning is the plan and the scenes already written, so the writer writes them again.
+ *
+ * The window asked for is the prompt plus the room to answer it, rounded up to a power of two. It only
+ * ever grows for a model, because Ollama reloads a model whose window changes and a book that
+ * alternates short and long prompts would otherwise reload on every call.
+ */
+const MIN_OLLAMA_CONTEXT = 8192;
+const DEFAULT_ANSWER_TOKENS = 4096;
+const CHARS_PER_TOKEN = 3; // Deliberately low: an overestimate costs memory, an underestimate costs the plan.
+const contextHeld = new Map<string, number>();
+
+export function ollamaContextWindow(model: string, text: string, maxTokens?: number): number {
+  const needed = Math.ceil(text.length / CHARS_PER_TOKEN) + (maxTokens ?? DEFAULT_ANSWER_TOKENS);
+  let size = MIN_OLLAMA_CONTEXT;
+  while (size < needed) size *= 2;
+  const held = Math.max(size, contextHeld.get(model) ?? 0);
+  contextHeld.set(model, held);
+  return held;
 }
 
 export function parseOllamaTagsResponse(data: any): string[] {
@@ -49,6 +73,7 @@ export function buildOllamaGeneratePayload(params: {
   maxTokens?: number;
   topP?: number;
   topK?: number;
+  numCtx?: number;
 }): OllamaGeneratePayload {
   const payload: OllamaGeneratePayload = {
     model: params.model || DEFAULT_OLLAMA_MODEL,
@@ -58,6 +83,7 @@ export function buildOllamaGeneratePayload(params: {
     options: {
       temperature: params.temperature ?? 0.7,
       ...(params.maxTokens !== undefined ? { num_predict: params.maxTokens } : {}),
+      ...(params.numCtx !== undefined ? { num_ctx: params.numCtx } : {}),
       ...(params.topP !== undefined ? { top_p: params.topP } : {}),
       ...(params.topK !== undefined ? { top_k: params.topK } : {})
     }
@@ -165,6 +191,7 @@ export async function generateOllamaText(
   // Thinking is off unless the caller's provider role enables it; only message.content is ever read.
   // Suppressing reasoning in the prompt would defeat a role that deliberately enables thinking.
   const system = `${systemInstruction || ''}${think ? '' : '\nDo not output reasoning or thinking; return only the requested final answer.'}${schema ? `\nReturn one JSON object matching this schema: ${JSON.stringify(schema)}` : ''}`;
+  const numCtx = ollamaContextWindow(model, system + prompt, maxTokens);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error('Ollama request exceeded the 15 minute deadline.')), 900000);
   try {
@@ -172,14 +199,14 @@ export async function generateOllamaText(
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
         stream: true, think, ...(schema ? { format: schema } : {}),
-        options: { temperature, ...(maxTokens !== undefined ? { num_predict: maxTokens } : {}),
+        options: { temperature, num_ctx: numCtx, ...(maxTokens !== undefined ? { num_predict: maxTokens } : {}),
           ...(topP !== undefined ? { top_p: topP } : {}), ...(topK !== undefined ? { top_k: topK } : {}) } }),
     });
     if (response.status === 404 || response.status === 405) {
       await response.body?.cancel();
       response = await fetch(`${base}/api/generate`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify(buildOllamaGeneratePayload({ model, prompt, system, temperature, schema, isJson: Boolean(schema), stream: true, think, maxTokens, topP, topK })),
+        body: JSON.stringify(buildOllamaGeneratePayload({ model, prompt, system, temperature, schema, isJson: Boolean(schema), stream: true, think, maxTokens, topP, topK, numCtx })),
       });
     }
     return await readOllamaCompletion(response, onChunk);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchOllamaModels, parseOllamaTagsResponse, buildOllamaGeneratePayload } from '../services/ollamaService';
+import { fetchOllamaModels, parseOllamaTagsResponse, buildOllamaGeneratePayload, ollamaContextWindow } from '../services/ollamaService';
 
 describe('ollamaService', () => {
   beforeEach(() => {
@@ -122,5 +122,22 @@ describe('ollamaService', () => {
     expect(body.messages[0].content).not.toContain('Do not output reasoning');
     expect(result).toBe('{"issues":[]}');
     expect(result).not.toContain('step by step');
+  });
+
+  it('asks for a context window the prompt fits in, and never a smaller one for the same model afterwards', () => {
+    expect(ollamaContextWindow('window-a', 'short prompt')).toBe(8192);
+    expect(ollamaContextWindow('window-a', 'x'.repeat(60000), 2000)).toBe(32768);
+    expect(ollamaContextWindow('window-a', 'short prompt')).toBe(32768);
+    expect(ollamaContextWindow('window-b', 'short prompt')).toBe(8192);
+  });
+
+  it('generateOllamaText names the context window in the request instead of leaving it to the Ollama default', async () => {
+    const { generateOllamaText } = await import('../services/ollamaService');
+    const fakeFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: { content: 'Prose.' }, done: true }) });
+    globalThis.fetch = fakeFetch as any;
+
+    await generateOllamaText('x'.repeat(60000), 'System', undefined, 0.7, 'window-c', '/api/ollama', 2000);
+
+    expect(JSON.parse(fakeFetch.mock.calls[0][1].body).options.num_ctx).toBe(32768);
   });
 });
