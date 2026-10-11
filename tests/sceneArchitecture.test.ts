@@ -60,7 +60,7 @@ import {Orchestrator} from '../utils/novel/v2/orchestrator';
 import {MemoryProjectStore} from '../utils/novel/v2/store';
 import {QUALITY_KEYS} from '../utils/novel/v2/storyQuality';
 import type {NovelLLM} from '../utils/novel/v2/llm';
-it('refines the same original defects, then commits canonical plan and prose together',async()=>{
+it('repairs a finding in the text of its scene and never reopens the plan once the book is being written',async()=>{
  const store=new MemoryProjectStore();
  const request={...input,planning_version:2 as const,chapter_count:1,target_total_words:8};
  const outline=plan();outline.theses=[{...outline.theses[0],target_words:8}];
@@ -96,14 +96,43 @@ it('refines the same original defects, then commits canonical plan and prose tog
  };
  const result=await new Orchestrator(store).runBook(request,llm);
  expect(result.status,result.stoppedReason).toBe('COMPLETE');
- expect(proposals).toBe(3);expect(reviews).toBe(2);
+ expect(proposals).toBe(0);expect(approvals).toBe(0);expect(reviews).toBe(2);
  expect(store.loadTheses()!.blocks[0].text).toBe(fixed);
- expect(store.loadTheses()!.plan!.theses[0].action).toContain('proposal 3');
+ expect(store.loadTheses()!.plan!.theses[0].action).toBe(outline.theses[0].action);
  expect(store.loadTheses()!.repair_reports!.at(-1)!.status).toBe('committed');
- expect(store.loadTheses()!.repair_reports!.at(-1)!.resolved).toHaveLength(2);
- expect(store.runLog().some(log=>log.stage==='repair_progress')).toBe(true);
+ expect(store.runLog().some(entry=>entry.detail.includes('Repairing the text of S1; the plan stays as it is.'))).toBe(true);
+ expect(()=>validateThesisDraft(store.loadTheses(),{...request,generation_mode:'progressive'})).not.toThrow();
 });
-
+it('reports a finding about the plan itself instead of reopening the plan, and does not let a later reading reopen text it had passed',async()=>{
+ const store=new MemoryProjectStore();
+ const request={...input,planning_version:2 as const,chapter_count:1,target_total_words:8};
+ const outline=plan();outline.theses=[{...outline.theses[0],target_words:8}];
+ const text='Jo chooses reconciliation without reading the crucial letter.';
+ const finding=(fix:string,problem:string)=>({severity:'major',kind:'contradiction',thesis_ids:['S1'],evidence:'@P0001',consequence:'The choice has no cause',problem,required_change:'Decide',fix});
+ let reviews=0,touched=0;
+ const llm:NovelLLM=async(prompt,_system,options)=>{
+  const stage=options?.stage;
+  {const premise=premiseReply(options);if(premise)return premise;}
+  if(stage==='thesis-chapter-development')return developmentResponse(prompt);
+  if(stage==='thesis-synopsis')return 'A letter changes a choice.';
+  if(stage==='thesis-plan')return JSON.stringify(outline);
+  // First reading: one finding about the plan. Second reading: a new finding on the same, unchanged paragraph.
+  if(stage==='thesis-rough-review')return JSON.stringify(++reviews===1?{ready:false,issues:[finding('plan','The plan gives the letter no sender')]}:{ready:false,issues:[finding('text','Jo should hesitate longer')]});
+  if(stage==='thesis-rough-reconcile'||stage==='thesis-causal-review'||stage==='thesis-rough-repair'||stage==='thesis-rough-verify'){touched++;throw new Error(`The plan and the text must be left alone: ${stage}`);}
+  if(stage==='thesis-block-write')return JSON.stringify({tool:'finish',text});
+  if(stage==='thesis-expand'||stage==='thesis-polish')return JSON.stringify({tool:'finish'});
+  if(stage?.endsWith('review'))return (options?.schema as any)?.properties?.state_trace ? transitionReply():JSON.stringify({ready:true,issues:[]});
+  if(stage==='thesis-final-audit')return JSON.stringify({summary:'A letter and a choice',supported:true,findings:[],checks:Object.fromEntries([...QUALITY_KEYS,'transitions','causality','repeated_events'].map(key=>[key,{passed:true,evidence:'Jo and the letter'}]))});
+  throw new Error(`Unexpected stage ${stage}`);
+ };
+ const result=await new Orchestrator(store).runBook(request,llm);
+ expect(result.status,result.stoppedReason).toBe('COMPLETE_WITH_WARNINGS');
+ expect(touched).toBe(0);expect(reviews).toBe(2);
+ const carried=store.loadTheses()!.carried_findings!.map(issue=>issue.problem);
+ expect(carried.some(problem=>problem.startsWith('In the plan, which is frozen once writing has begun: The plan gives the letter no sender'))).toBe(true);
+ expect(carried.some(problem=>problem.startsWith('Raised on a later reading of text already reviewed: Jo should hesitate longer'))).toBe(true);
+ expect(store.loadTheses()!.plan!.theses[0].action).toBe(outline.theses[0].action);
+});
 import {inputKey} from '../utils/novel/v2/progressive';
 it('upgrades an existing coarse book to multiple scenes and reaches the user chapter targets without rewriting its rough draft',async()=>{
  const store=new MemoryProjectStore();const request={...input,planning_version:2 as const,target_total_words:2400};
@@ -154,3 +183,49 @@ it('upgrades an existing coarse book to multiple scenes and reaches the user cha
  expect(()=>validateCanon(raw)).not.toThrow();
  expect(canonContext(raw,'S1')!.available_knowledge[0].facts).toEqual(['F1']);
  });
+
+it('keeps the writer sealed through expansion and polish: no premise, no later scene, no plan tools, no later text',async()=>{
+ const store=new MemoryProjectStore();
+ const request={...input,premise:'PREMISE-TEXT the twist in so many words',planning_version:2 as const,chapter_count:1,target_total_words:16};
+ const outline=plan();
+ outline.theses=[0,1].map(i=>({...outline.theses[i],target_words:8,action:i?'LATER-ACTION Jo burns the letter':'Jo opens the letter',beneath:i?'Nothing hidden':'BENEATH-TRUTH the letter is forged',
+  participants:outline.theses[i].participants.map((p:any)=>({...p,believes:['The letter is real']}))}));
+ const prompts:Record<string,string[]>={};
+ const short='Jo opens it.';
+ const llm:NovelLLM=async(prompt,_system,options)=>{
+  const stage=options?.stage||'';(prompts[stage]||=[]).push(prompt);
+  {const premise=premiseReply(options);if(premise)return premise;}
+  if(stage==='thesis-choice')return JSON.stringify({would_do:'Opens it',otherwise:'Leaves it',because:'She wants to know'});
+  if(stage==='thesis-state')return JSON.stringify({states:[],minds:[]});
+  if(stage==='thesis-choice-compare')return JSON.stringify({ready:true,issues:[]});
+  if(stage==='thesis-chapter-development')return developmentResponse(prompt);
+  if(stage==='thesis-synopsis')return 'A letter changes a choice.';
+  if(stage==='thesis-plan')return JSON.stringify(outline);
+  if(stage==='thesis-block-write')return JSON.stringify({tool:'finish',text:short});
+  if(stage==='thesis-expand'){const id=JSON.parse(prompt.match(/Writable blocks: (\[[^\n]+?\])/)![1])[0];return JSON.stringify({tool:'replace',finish:true,edits:[{block_id:id,before:short,after:`Jo opens the letter slowly and reads every line of it ${id}.`}]});}
+  if(stage==='thesis-polish')return JSON.stringify({tool:'finish'});
+  if(stage?.endsWith('review'))return (options?.schema as any)?.properties?.state_trace ? transitionReply():JSON.stringify({ready:true,issues:[]});
+  if(stage==='thesis-final-audit')return JSON.stringify({summary:'The letter earns the choice',supported:true,findings:[],checks:Object.fromEntries([...QUALITY_KEYS,'transitions','causality','repeated_events'].map(key=>[key,{passed:true,evidence:'Jo reads the letter before choosing'}]))});
+  throw new Error(`Unexpected stage ${stage}`);
+ };
+ const result=await new Orchestrator(store).runBook(request,llm);
+ expect(result.status,result.stoppedReason).toContain('COMPLETE');
+ expect(store.loadTheses()!.blocks.map(block=>block.text.split(' ').length)).toEqual([12,12]);
+ const firstScene=[prompts['thesis-block-write'][0],prompts['thesis-expand'][0],prompts['thesis-polish'][0]];
+ expect(firstScene.every(Boolean)).toBe(true);
+ for(const prompt of firstScene) {
+  for(const hidden of ['PREMISE-TEXT','BENEATH-TRUTH','LATER-ACTION','read_plan','revise_thesis'])expect(prompt).not.toContain(hidden);
+  expect(prompt).toContain('The letter is real');
+ }
+ // By expansion the second scene exists; the writer of the first is not shown it.
+ expect(prompts['thesis-expand'][0]).toContain('Writable blocks: ["S1"]');
+ expect(prompts['thesis-expand'][0]).not.toContain('"id":"S2"');
+ expect(prompts['thesis-polish'][0]).not.toContain('"id":"S2"');
+ // The editor still reads everything.
+ expect(prompts['thesis-block-review'][0]).toContain('BENEATH-TRUTH');
+ // A crossing is reviewed on what a crossing needs: the two scenes in brief and the boundary text.
+ const seam=prompts['thesis-seam-review'][0];
+ expect(seam).toContain('THE SCENE THAT ENDS');expect(seam).toContain('END OF S1');expect(seam).toContain('START OF S2');
+ expect(seam).not.toContain('COMPLETE THESIS OUTLINE');expect(seam).not.toContain('STATE TRANSITION REVIEW');
+ expect(seam.length).toBeLessThan(6000);
+});

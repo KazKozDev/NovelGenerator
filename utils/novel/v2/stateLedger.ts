@@ -2,6 +2,7 @@ import { fillTemplate } from '../prompts';
 import stateRaw from '../../../prompts/THESIS_STATE.md?raw';
 import { structuredResponse, type NovelLLM } from './llm';
 import type { ThesisPlan, ThesisReview } from './theses';
+import { readMinds, type MindAnswer, type MindRow } from './minds';
 
 /**
  * Where the things the plot turns on actually are, scene by scene. The planner names the
@@ -10,7 +11,7 @@ import type { ThesisPlan, ThesisReview } from './theses';
  */
 export interface Tracked { id: string; name: string; start: string }
 export interface StateAnswer { id: string; status: 'unchanged' | 'changed' | 'conflict'; state: string; quote: string }
-export type StateLedger = Record<string, { revision: string; states: StateAnswer[] }>;
+export type StateLedger = Record<string, { revision: string; states: StateAnswer[]; minds?: MindAnswer[] }>;
 export interface StateBefore { id: string; name: string; state: string; since: string }
 
 const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
@@ -69,9 +70,12 @@ export function stateBrief(before: StateBefore[]): string {
     + placed.map(item => `- ${item.name}: ${item.state} (${item.since})`).join('\n') : '';
 }
 
-export async function askStates(scene: string, id: string, before: StateBefore[], system: string, llm: NovelLLM): Promise<StateAnswer[]> {
-  return structuredResponse(fillTemplate('THESIS_STATE', stateRaw, { id, scene, items: JSON.stringify(before.map(item => ({ id: item.id, name: item.name, before: item.state }))) }),
-    system, llm, ['states'], raw => readStates(raw, before, scene), { stage: 'thesis-state', route: 'validator', maxTokens: 2048, maxAttempts: 3,
+/** One call answers both tables: where the things are, and who has come to know what. */
+export async function askStates(scene: string, id: string, before: StateBefore[], system: string, llm: NovelLLM, minds: MindRow[] = []): Promise<{ states: StateAnswer[]; minds: MindAnswer[] }> {
+  return structuredResponse(fillTemplate('THESIS_STATE', stateRaw, { id, scene, items: JSON.stringify(before.map(item => ({ id: item.id, name: item.name, before: item.state }))),
+    minds: JSON.stringify(minds.map(row => ({ key: row.key, who: row.who, does_not_yet_have: row.fact }))) }),
+    system, llm, ['states'], raw => ({ states: readStates(raw, before, scene), minds: readMinds(raw, minds, scene) }), { stage: 'thesis-state', route: 'validator', maxTokens: 4096, maxAttempts: 3,
       schema: { type: 'object', required: ['states'], additionalProperties: false, properties: { states: { type: 'array', items: { type: 'object', required: ['id', 'status', 'state', 'quote'], additionalProperties: false,
-        properties: { id: { type: 'string', enum: before.map(item => item.id) }, status: { type: 'string', enum: ['unchanged', 'changed', 'conflict'] }, state: { type: 'string' }, quote: { type: 'string' } } } } } } });
+        properties: { id: { type: 'string', enum: before.map(item => item.id) }, status: { type: 'string', enum: ['unchanged', 'changed', 'conflict'] }, state: { type: 'string' }, quote: { type: 'string' } } } },
+        minds: { type: 'array', items: { type: 'object', required: ['key', 'status', 'quote'], additionalProperties: false, properties: { key: { type: 'string' }, status: { type: 'string', enum: ['no', 'learns', 'already_knows'] }, quote: { type: 'string' } } } } } } });
 }

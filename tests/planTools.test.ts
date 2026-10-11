@@ -48,3 +48,34 @@ it('yields to independent review rather than stopping the book at the local tool
   const result=await planAgent(async()=>'{"tool":"read_plan","section":"thesis","id":"T1"}',plan,'Repair','',{stage:'repair',key:'test',validate,maxSteps:1});
   expect(result).toEqual(plan);
 });
+
+it('returns the current value with a stale anchor, and names an uneditable field', async () => {
+  const { patchPlan } = await import('../utils/novel/v2/planTools');
+  const plan = { title: 'T', premise_givens: [], ending: 'End', characters: [], theses: [{ id: 'T1', action: 'Jo hides the letter', outcome: 'Hidden' }] } as any;
+  const attempt = (edit: object) => { try { patchPlan(plan, [edit as any], raw => raw as any); return ''; } catch (error) { return (error as Error).message; } };
+  expect(attempt({ section: 'thesis', id: 'T1', field: 'action', before: 'Jo hides a letter', after: 'Jo burns it' })).toContain('Current value, to use as before exactly: "Jo hides the letter"');
+  expect(attempt({ section: 'thesis', id: 'T1', field: 'chapter', before: 1, after: 2 })).toContain('thesis has no editable field "chapter"');
+  expect(attempt({ section: 'scene', id: 'T1', field: 'action', before: '', after: 'x' })).toContain('section must be one of');
+});
+it('repairs a plan in one answer: everything is shown, no anchor is demanded, and the batch finishes the task',async()=>{
+  const prompts:string[]=[];
+  const result=await planAgent(async prompt=>{
+    prompts.push(prompt);
+    return JSON.stringify({tool:'patch_plan',finish:true,edits:[{section:'thesis',id:'T1',field:'action',after:'Opens the envelope'},{section:'thesis',id:'T2',field:'state_before',after:'The envelope lies open'}]});
+  },plan,'Repair the cause','',{stage:'repair',key:'one-answer',validate,focus:['T1']});
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain('Repair the plan in ONE answer');
+  expect(prompts[0]).toContain('CURRENT VALUES of the scenes the findings cite');
+  expect(prompts[0]).toContain('EVERY SCENE IN BRIEF');
+  expect(prompts[0]).toContain('EVERY FACT');
+  expect(result.theses[0].action).toBe('Opens the envelope');
+  expect(result.theses[1].state_before).toBe('The envelope lies open');
+  expect(()=>patchPlan(plan,[{section:'thesis',id:'T1',field:'action',after:plan.theses[0].action}],validate)).toThrow('nothing changes');
+  // An edit that restates a field is left out; the real edit beside it is applied.
+  expect(patchPlan(plan,[{section:'thesis',id:'T1',field:'where',after:plan.theses[0].where},{section:'thesis',id:'T1',field:'action',after:'Burns it'}],validate).theses[0].action).toBe('Burns it');
+  let turns=0;
+  const untouched=await planAgent(async()=>{turns++;return '{"tool":"patch_plan","edits":[],"finish":true}';},plan,'Repair','',{stage:'repair',key:'empty-finish',validate});
+  expect(turns).toBe(1);expect(untouched.theses[0].action).toBe(plan.theses[0].action);
+  const joined=await planAgent(async()=>'{"tool":"patch_plan","edits":[{"section":"thesis","id":"T1","field":"action","after":"Opens it"}]} {"tool":"patch_plan","edits":[{"section":"thesis","id":"T2","field":"state_before","after":"It lies open"}],"finish":true}',plan,'Repair','',{stage:'repair',key:'joined',validate});
+  expect(joined.theses[0].action).toBe('Opens it');expect(joined.theses[1].state_before).toBe('It lies open');
+});

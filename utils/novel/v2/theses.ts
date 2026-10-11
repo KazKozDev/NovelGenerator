@@ -1,5 +1,5 @@
-import {repairReport, repairRevision, commitRepairPackage, packageDiff, issueIdentity, type RepairReport} from './repairPackage';
-import { planEvidenceSource, scenePlanContext, sceneContractContext, findingsContext } from './context';
+import {repairReport, repairRevision, commitRepairPackage, packageDiff, type RepairReport} from './repairPackage';
+import { planEvidenceSource, scenePlanContext, sceneContractContext, findingsContext, wholeBookPlan } from './context';
 import { manuscriptAgent as runManuscriptAgent, searchManuscript, type TextEdit, type ManuscriptSession } from './manuscriptTools';
 import { fillTemplate } from '../prompts';
 import systemRaw from '../../../prompts/THESIS_SYSTEM.md?raw';
@@ -7,6 +7,8 @@ import planRaw from '../../../prompts/THESIS_PLAN.md?raw';
 import reviewRaw from '../../../prompts/THESIS_REVIEW.md?raw';
 import repairRaw from '../../../prompts/THESIS_REPAIR.md?raw';
 import writeRaw from '../../../prompts/THESIS_WRITE.md?raw';
+import writeSealedRaw from '../../../prompts/THESIS_WRITE_SEALED.md?raw';
+import seamRaw from '../../../prompts/THESIS_SEAM.md?raw';
 import auditRaw from '../../../prompts/DEVELOP_AUDIT.md?raw';
 import { TRANSITION_INSTRUCTIONS, transitionReviewSchema, readStateTrace, sceneRevision, type StateTrace } from './stateTransitions';
 import { planAgent, readPlan, searchPlan, linkedPlan, factDependencies, planDirectory, type PlanSession } from './planTools';
@@ -29,12 +31,21 @@ import {validateCanon,canonContext,type StoryCanon} from './storyCanon';
 import { QUALITY_KEYS, qualityInstructions, duplicateParagraphs, textFindings, validateQualityChecks } from './storyQuality';
 import { premiseChecks, deedGaps } from './premiseChecks';
 import { trackedItems, statesBefore, stateIssues, stateBrief, askStates, type StateLedger } from './stateLedger';
+import { hasMinds, mindRows, mindIssues, writerRequest, writerScene, writerOutline, writerContract, choiceChecks, WRITER_NOTE } from './minds';
 import { nameHabits, mergeHabits, habitBrief, confirmedHabits, type Habit, type HabitMemory } from './habits';
+import { contenders, sceneKind, measure, chooseDraft, emptyRecord, type Author, type DuelRecord, type SecondWriter, type Measured } from './duel';
 import {developChapters,developmentContext,readChapterDevelopment,type ChapterDevelopmentState} from './chapterDevelopment';
 
 export interface Thesis {
   id: string; chapter: number; pov_id: string; fact_ids?: string[];
-  participants: { character_id: string; intention: string; knows: string[]; does?: string }[];
+  participants: { character_id: string; intention: string; knows: string[]; believes?: string[]; does?: string }[];
+  /** What is really going on that the point-of-view character does not perceive. The writer is never shown it. */
+  beneath?: string;
+  /** The chain, in IDs, that code can play forward: where the scene is, what must already be so, what it changes. */
+  place?: string;
+  needs_things?: { thing: string; at: string }[];
+  needs_knowledge?: { who: string; fact: string }[];
+  moves?: { thing: string; to: string }[];
   when: string; where: string; state_before: string; action: string; why: string;
   resistance: string; outcome: string; establishes: string[]; reader_learns: string[];
   requires: string[]; writer_task: string; target_words: number;
@@ -42,7 +53,10 @@ export interface Thesis {
 export interface ThesisPlan {
   title: string; premise_givens: string[]; canon?:StoryCanon;
   /** The few things the plot turns on, whose whereabouts are accounted for scene by scene. */
-  tracked?: { id: string; name: string; start: string }[];
+  tracked?: { id: string; name: string; start: string; at?: string }[];
+  places?: { id: string; name: string }[];
+  /** The facts the resolution stands on; each must be in place, and known, by the last scene. */
+  ending_rests_on?: string[];
   characters: { id: string; name: string; goal: string; initial_knowledge: string[]; capabilities: string[]; limitations: string[] }[];
   theses: Thesis[]; ending: string;
 }
@@ -51,7 +65,9 @@ export interface ThesisReview {
   state_trace?:StateTrace;
   status?: 'unavailable';
   error?: string;
-  issues: { severity: 'major' | 'minor'; thesis_ids: string[]; problem: string; required_change: string; kind?: string; evidence?: string; consequence?: string }[];
+  issues: { severity: 'major' | 'minor'; thesis_ids: string[]; problem: string; required_change: string; kind?: string; evidence?: string; consequence?: string;
+    /** Where the repair belongs: in the prose of the cited scenes, or in the plan itself. */
+    fix?: 'text' | 'plan' }[];
 }
 export interface ThesisDraft {
   version: 1; input_key: string; budget_replan?:boolean; plan: ThesisPlan | null; plan_ready: boolean;
@@ -64,6 +80,16 @@ export interface ThesisDraft {
   synopsis?: string;
   habits?: Habit[];
   state_ledger?: StateLedger;
+  /** The premise checks have been run a second time, on the plan as repaired. */
+  premise_rechecked?: boolean;
+  /** How many whole-book repairs this book has been given. */
+  whole_repairs?: number;
+  /** Which writer wrote each scene; a scene's repairs and expansion go back to its own writer. */
+  authors?: Record<string, Author>;
+  duel_record?: DuelRecord;
+  duels?: { thesis_id: string; kind: string; winner: Author; by: string; because: string; measured: Record<string, Measured> }[];
+  /** The paragraphs the last whole-book review read, by revision: what a later review may not raise anew. */
+  whole_review_seen?: string[];
   /** Whole-book findings whose repair did not converge; reported with the finished book. */
   carried_findings?: ThesisReview['issues'];
   chapter_development?:ChapterDevelopmentState;
@@ -80,7 +106,7 @@ export interface ThesisDraft {
   tool_session?: { scope: string; state: ManuscriptSession };
   affected_blocks?: string[];
   revision_before?: Record<string, string>;
-  rough_gate?: { causal_candidate?: {plan:ThesisPlan;account:Record<string,string>}; reconciliation_feedback?: ThesisReview['issues']; attempts: number; review: ThesisReview | null; last_candidate?: { blocks: {id: string; text: string}[]; edits: TextEdit[]; verification?: RepairVerification }; progress?: { best: number; stalled: number; counts: number[]; last_revision?: string }; repair?: { issues: ThesisReview['issues']; next: number; plan_progress?: {resolved:number[];stalled:number;revision?:string}; prepared?: { base_revision?:string; verified_revision?:string; next: number; account: Record<string, string>; plan?: ThesisPlan; planReview?: ThesisReview; candidate?: { blocks: {id: string; text: string}[]; edits: TextEdit[] }; verification?: RepairVerification; order?: {ids:string[];next:number;stalled?:number}; progress?: {best:number;stalled:number;counts:number[];last_revision?:string;resolved?:number[]} } } };
+  rough_gate?: { causal_candidate?: {plan:ThesisPlan;account:Record<string,string>}; reconciliation_feedback?: ThesisReview['issues']; attempts: number; review: ThesisReview | null; last_candidate?: { blocks: {id: string; text: string}[]; edits: TextEdit[]; verification?: RepairVerification }; progress?: { best: number; stalled: number; counts: number[]; last_revision?: string }; repair?: { issues: ThesisReview['issues']; next: number; plan_progress?: {resolved:number[];stalled:number;revision?:string}; prepared?: { text_only?:boolean; base_revision?:string; verified_revision?:string; next: number; account: Record<string, string>; plan?: ThesisPlan; planReview?: ThesisReview; candidate?: { blocks: {id: string; text: string}[]; edits: TextEdit[] }; verification?: RepairVerification; order?: {ids:string[];next:number;stalled?:number}; progress?: {best:number;stalled:number;counts:number[];last_revision?:string;resolved?:number[]} } } };
   final_repair?: { attempts: number; phase: 'write' | 'recheck' | 'idle'; findings: { severity: string; description: string }[]; changed: string[]; stalled?:number; previous_count?:number; previous_revision?:string };
 }
 export interface RepairVerification {
@@ -91,9 +117,12 @@ export interface RepairVerification {
 export function readRepairVerification(raw: any, plan: ThesisPlan, prose: string, count: number): RepairVerification {
   if (!Array.isArray(raw?.checks) || raw.checks.length !== count) throw new Error('Repair verification must cover every original defect exactly once');
   const seen = new Set<number>();
-  const checks = raw.checks.map((check: any) => {
-    if (!check || !Number.isInteger(check.issue) || check.issue < 0 || check.issue >= count || seen.has(check.issue)
-      || !['repaired', 'not_a_defect', 'unresolved'].includes(check.status) || !text(check.explanation)) throw new Error('Invalid repair verification item');
+  const checks = raw.checks.map((check: any, position: number) => {
+    const at = `Repair verdict ${position + 1}`;
+    if (!check || !Number.isInteger(check.issue) || check.issue < 0 || check.issue >= count) throw new Error(`${at}: issue must be the zero-based index of an original defect, 0 to ${count - 1}; got ${JSON.stringify(check?.issue)}.`);
+    if (seen.has(check.issue)) throw new Error(`${at}: defect ${check.issue} already has a verdict. Give each of the ${count} original defects exactly one; missing so far: ${Array.from({ length: count }, (_, i) => i).filter(i => !seen.has(i) && i !== check.issue).join(', ') || 'none'}.`);
+    if (!['repaired', 'not_a_defect', 'unresolved'].includes(check.status)) throw new Error(`${at} (defect ${check.issue}): status must be repaired, not_a_defect or unresolved; got ${JSON.stringify(check.status)}.`);
+    if (!text(check.explanation)) throw new Error(`${at} (defect ${check.issue}): explanation is empty.`);
     seen.add(check.issue);
     const evidence = resolveProseEvidence(check.evidence, prose);
     if (!evidence || !prose.includes(evidence)) throw new Error(`Repair verdict ${check.issue}: needs exact evidence; invalid source citation ${JSON.stringify(check.evidence)}. Return ONE current source address: ${[...proseEvidence(prose).references.keys()].join(', ')}. Do not reconstruct a quotation.`);
@@ -151,8 +180,12 @@ export function readThesisPlan(raw: any, input: ProjectInput): ThesisPlan {
   }
   const characters = new Set<string>();
   for (const c of raw.characters) {
-    if (!c || !text(c.id) || characters.has(c.id) || !text(c.name) || !text(c.goal)
-      || !strings(c.initial_knowledge) || !strings(c.capabilities) || !strings(c.limitations)) throw new Error('Invalid or duplicate thesis-plan character.');
+    const position = `Character ${text(c?.id) ? c.id : `number ${raw.characters.indexOf(c) + 1}`}`;
+    if (!c || !text(c.id)) throw new Error(`${position}: id must be nonempty text.`);
+    if (characters.has(c.id)) throw new Error(`${position}: this id is used by two characters; give each its own.`);
+    const lacking = [...['name', 'goal'].filter(key => !text(c[key])).map(key => `${key} must be nonempty text`),
+      ...['initial_knowledge', 'capabilities', 'limitations'].filter(key => !strings(c[key])).map(key => `${key} must be an array of nonempty strings (an empty array is allowed, an empty string is not)`)];
+    if (lacking.length) throw new Error(`${position}: ${lacking.join('; ')}.`);
     characters.add(c.id);
   }
   const seen = new Set<string>();
@@ -377,7 +410,7 @@ export function renderThesisBook(draft: ThesisDraft, chapter?: number, includePr
 }
 
 export async function writeThesisBook(input: ProjectInput, store: ProjectStore, llm: NovelLLM,
-  progress: (stage: 'design' | 'chapter' | 'audit' | 'done', chapter?: number) => void, habitMemory?: HabitMemory): Promise<void> {
+  progress: (stage: 'design' | 'chapter' | 'audit' | 'done', chapter?: number) => void, habitMemory?: HabitMemory, secondWriter?: SecondWriter): Promise<void> {
   let draft = store.loadTheses() || { version: 1 as const, input_key: inputKey(input), plan: null, plan_ready: false, rounds: [], blocks: [], pending: null, completed: false };
   validateThesisDraft(draft, input);
   if (!store.loadTheses() && input.generation_mode === 'progressive') draft.manifestation = { phase: 'rough', next: 0, versions: [] };
@@ -425,7 +458,13 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     const scope = options.stage + ':' + (options.sessionKey || '') + ':' + (options.writable?.join(',') || 'write-' + draft.blocks.length);
     const previous = draft.tool_session?.scope === scope ? draft.tool_session.state : undefined;
     if (previous) store.log('thesis', `Resuming ${options.stage} with saved tool history (${previous.history.length} entries).`);
-    const result = await runManuscriptAgent(model, blocks, task, instructions, { onRepairRead:command=>{
+    const sealed = mindful() && options.stage !== 'thesis-audit-repair';
+    const frozenPlan = input.planning_version === 2;
+    const reach = sealed && options.writable?.length ? Math.max(...options.writable.map(id => blocks.findIndex(block => block.id === id))) : -1;
+    const visible = reach >= 0 ? blocks.slice(0, reach + 1) : blocks;
+    const whole = (subset: typeof blocks) => blocks.map(block => subset.find(item => item.id === block.id) ?? block);
+    const own = options.route ?? (options.stage !== 'thesis-polish' && options.writable?.length === 1 ? draft.authors?.[options.writable[0]] : undefined) ?? 'writer';
+    const result = await runManuscriptAgent(model, visible, task, instructions, { onRepairRead:command=>{
       const staged=draft.rough_gate?.repair?.prepared;
       if(command.tool==='repair_status')return {report:draft.repair_reports?.at(-1)||null,staged:!!staged,verification_pending:!!staged&&!staged.verified_revision};
       if(!draft.plan || !staged?.candidate) return {staged:false};
@@ -433,7 +472,8 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     }, onPlanRead:(command,current)=>{
       if(!draft.plan)throw new Error('No plan available yet');
       return command.tool==='read_plan'?readPlan(draft.plan,command.section,command.id,command.field):command.tool==='search_plan'?searchPlan(draft.plan,command.query,command.limit):command.tool==='fact_dependencies'?factDependencies(draft.plan,command.id,current,command.query):linkedPlan(draft.plan,command.id);
-    }, ...options, session: previous,
+    }, ...options, ...(sealed ? { onPlanRead: undefined, onRepairRead: undefined } : {}), ...(frozenPlan ? { onThesis: undefined, onPlan: undefined } : {}), route: own,
+      ...(options.onEdit ? { onEdit: (subset, edits) => options.onEdit!(whole(subset), edits) } : {}), session: previous,
       onCheckpoint: state => { draft.tool_session = { scope, state }; save(); options.onCheckpoint?.(state); },
       onTool: (command, result) => {
         if ((command as { tool?: string })?.tool === 'yield') store.log('thesis', `${options.stage}: tool budget reached; saved changes sent to independent review.`);
@@ -444,6 +484,15 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     return result;
   };
   const request = JSON.stringify(input);
+  // A plan that says what lies beneath its scenes is written with the minds kept apart: the
+  // writer is given the head of the point-of-view character and what can be seen, never the
+  // premise, the ending, a later scene or another person's intention. The editor keeps it all.
+  const mindful = (): boolean => input.planning_version === 2 && hasMinds(draft.plan);
+  const forWriter = {
+    ask: (): string => mindful() ? writerRequest(input) : request,
+    scene: (plan: ThesisPlan, thesis: Thesis): unknown => mindful() ? writerScene(plan, thesis.id, draft.state_ledger || {}) : thesis,
+    note: (): string => mindful() ? WRITER_NOTE : '',
+  };
   // The writer is told what it has already done before it writes, in this book and in
   // earlier ones by the same model: a move repaired afterwards comes back as its neighbour.
   const tracksHabits = input.planning_version === 2;
@@ -452,24 +501,28 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
   const standsAt = (id: string): string => trackedItems(draft.plan).length ? stateBrief(statesBefore(draft.plan!, draft.state_ledger || {}, id)) : '';
   // One short closed question per scene, asked again only when its text has changed.
   const withStates = async (thesis: Thesis, prose: string, review: ThesisReview): Promise<ThesisReview> => {
-    if (!trackedItems(draft.plan).length) return review;
+    if (!trackedItems(draft.plan).length && !mindful()) return review;
     const before = statesBefore(draft.plan!, draft.state_ledger || {}, thesis.id);
+    const rows = mindful() ? mindRows(draft.plan!, draft.state_ledger || {}, thesis.id) : [];
     const revision = sceneRevision(prose);
-    let states = draft.state_ledger?.[thesis.id]?.revision === revision ? draft.state_ledger[thesis.id].states : undefined;
-    if (!states) {
-      try { states = await askStates(prose, thesis.id, before, system, llm); }
+    let entry = draft.state_ledger?.[thesis.id]?.revision === revision ? draft.state_ledger[thesis.id] : undefined;
+    if (!entry) {
+      try { entry = { revision, ...await askStates(prose, thesis.id, before, system, llm, rows) }; }
       catch (error) { if (!isResponseContractError(error)) throw error; store.log('thesis', `States not read for ${thesis.id}: ${error.message}`); return review; }
-      draft.state_ledger = { ...(draft.state_ledger || {}), [thesis.id]: { revision, states } }; save();
+      draft.state_ledger = { ...(draft.state_ledger || {}), [thesis.id]: entry }; save();
     }
-    const issues = stateIssues(before, states, thesis.id);
+    const issues = [...stateIssues(before, entry.states, thesis.id), ...mindIssues(rows, entry.minds || [], thesis.id)];
     return issues.length ? { ready: false, issues: [...review.issues, ...issues] } : review;
   };
   const noteHabits = async (scene: string): Promise<void> => {
     if (!tracksHabits) return;
     try { draft.habits = mergeHabits(draft.habits || [], await nameHabits(scene, draft.habits || [], system, llm)); }
     catch (error) { if (!isResponseContractError(error)) throw error; store.log('thesis', `Habits not named for this scene: ${error.message}`); }
-    const confirmed = confirmedHabits(draft.blocks, draft.habits || []);
-    if (habitMemory && confirmed.length) habitMemory.save(mergeHabits(habitMemory.load(), confirmed).slice(-40));
+    for (const [author, memory] of [['writer', habitMemory], ['writer2', secondWriter?.habits]] as const) {
+      if (!memory) continue;
+      const confirmed = confirmedHabits(draft.blocks.filter(block => (draft.authors?.[block.thesis_id] || 'writer') === author), draft.habits || []);
+      if (confirmed.length) memory.save(mergeHabits(memory.load(), confirmed).slice(-40));
+    }
     save();
   };
   const checkProse = async (thesis: Thesis, prose: string, previous: string, phase: string): Promise<ThesisReview> => {
@@ -534,7 +587,25 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     const boundary = `END OF ${left.thesis_id}:\n${left.text.slice(-4000)}\nSTART OF ${right.thesis_id}:\n${right.text.slice(0, 4000)}`;
     const earlier = searchManuscript(draft.blocks.slice(0, index + 1).map(b => ({ id: b.thesis_id, text: b.text })), draft.plan!.theses[index + 1].action + ' ' + draft.plan!.theses[index + 1].reader_learns.join(' '), 3);
     const context = earlier.map(r => r.block_id + ':\n' + r.text).join('\n\n');
-    return checkProse(draft.plan!.theses[index + 1], boundary, context, phase);
+    // A crossing is eight thousand characters of text. It was reviewed with the request of a
+    // whole scene — its outline, contract, quality criteria and state trace — forty thousand
+    // for every pair of scenes. It is asked what a crossing can be asked, of what it needs.
+    const source = boundary + (context ? '\n\n' + context : '');
+    const brief = (t: Thesis) => ({ id: t.id, chapter: t.chapter, when: t.when, where: t.where, state_before: t.state_before, action: t.action, outcome: t.outcome });
+    const next = draft.plan!.theses[index + 1];
+    try {
+      return await structuredResponse(fillTemplate('THESIS_SEAM', seamRaw, { left: JSON.stringify(brief(draft.plan!.theses[index])), right: JSON.stringify(brief(next)),
+        prose: proseEvidence(source).annotated, boundary: [...proseEvidence(boundary).references.keys()].join(', ') }) + EVIDENCE_INSTRUCTIONS, system, llm, ['ready', 'issues'],
+        async raw => readProseReview(await repairReviewEvidence(raw, source, llm, system, `thesis-${phase}-review`), draft.plan!, source),
+        { stage: `thesis-${phase}-review`, maxAttempts: 4, maxTokens: 4096, schema: proseReviewSchema });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isResponseContractError(error) && !/blocking prose issue|A thesis review must|Expected a complete JSON object|Ambiguous response: multiple JSON|cut off before its JSON|Unverified review evidence/.test(message)) throw error;
+      draft.review_failures = [...(draft.review_failures || []), { thesis_id: next.id, phase, error: message }];
+      store.log('thesis', `Boundary review unavailable for ${left.thesis_id} → ${right.thesis_id}: ${message}`);
+      save();
+      return { ready: false, status: 'unavailable', error: message, issues: [] };
+    }
   };
   const reviewSeams = async (): Promise<void> => {
     draft.seams ||= { next: 0, reviews: [] }; save();
@@ -545,7 +616,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
       let review = await checkSeam(index);
       for (let repair = 0; !review.ready && review.status !== 'unavailable' && repair < 2; repair++) {
         await manuscriptAgent(llm, draft.blocks.map(b => ({ id: b.thesis_id, text: b.text })),
-          `Author request: ${request}\nRepair the boundary between ${left} and ${right}. Adjacent theses: ${JSON.stringify(draft.plan!.theses.slice(index, index + 2))}\nEvent contracts: ${JSON.stringify(draft.plan!.theses.slice(index, index + 2).map(t => sceneContractContext(draft.plan!, t.id, draft.blocks)))}\nVerified boundary defects: ${findingsContext(review.issues)}\nRead the end of the left scene and beginning of the right scene. Use search to verify prior events and disclosures. Patch only the paragraphs needed to connect location, elapsed time, physical state, actions and already-disclosed information. Do not regenerate scenes, add new plot or restyle good prose. At most three patch batches, then finish.`, system,
+          `Author request: ${forWriter.ask()}\nRepair the boundary between ${left} and ${right}. Adjacent theses: ${JSON.stringify(draft.plan!.theses.slice(index, index + 2).map(t => forWriter.scene(draft.plan!, t)))}\nEvent contracts: ${JSON.stringify(draft.plan!.theses.slice(index, index + 2).map(t => mindful() ? writerContract(draft.plan!, t.id, draft.blocks) : sceneContractContext(draft.plan!, t.id, draft.blocks)))}${forWriter.note()}\nVerified boundary defects: ${findingsContext(review.issues)}\nBoth scenes are shown whole below; the locally retrieved earlier disclosures are in the event contracts. Patch only the paragraphs needed to connect location, elapsed time, physical state, actions and already-disclosed information. Do not regenerate scenes, add new plot or restyle good prose. One batch with every edit, and finish.`, system,
           { stage: 'thesis-seam-repair', maxSteps: 12, writable: [left, right], onEdit: async (blocks, edits) => {
             draft.blocks = draft.blocks.map(b => ({ ...b, text: blocks.find(t => t.id === b.thesis_id)!.text }));
             draft.edits = [...(draft.edits || []), { at: new Date().toISOString(), phase: 'seam', edits }]; save();
@@ -561,7 +632,8 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
   // each finding it raises is then verified defect by defect like any other.
   const withPremiseChecks = async (plan: ThesisPlan, review: ThesisReview, first: boolean): Promise<ThesisReview> => {
     if (input.planning_version !== 2 || !first) return review;
-    const issues = [...review.issues, ...deedGaps(plan), ...await premiseChecks(plan, request, system, llm)];
+    const issues = [...review.issues, ...deedGaps(plan), ...await premiseChecks(plan, request, system, llm),
+      ...(hasMinds(plan) ? await choiceChecks(plan, system, llm, line => store.log('thesis', line)) : [])];
     store.log('thesis', `Premise checks: ${issues.length - review.issues.length} finding(s) on mechanism and premise coverage.`);
     return { ...review, ready: !issues.some(issue => issue.severity === 'major'), issues };
   };
@@ -693,6 +765,20 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
       }
       draft = { ...draft, rounds: [...draft.rounds.slice(0, -1), { plan: draft.plan!, review, ...(repairCheck?{repair_check:repairCheck}:{}) }], plan_ready: review.ready }; save();
     }
+    // The premise checks ran on the first plan. The plan that goes to prose is the repaired
+    // one, and a repair can break what it did not look at. It is checked once more — once,
+    // because a reviewer told to break a plan always finds something — and what that finds
+    // gets the same repair and the same end as any other finding.
+    if (review.ready && input.planning_version === 2 && draft.rounds.length > 1 && !draft.premise_rechecked) {
+      draft.premise_rechecked = true;
+      const again = [...deedGaps(draft.plan!), ...await premiseChecks(draft.plan!, request, system, llm)].filter(issue => issue.severity === 'major');
+      store.log('thesis', `Premise checks on the repaired plan: ${again.length} blocking finding(s).`);
+      if (again.length) {
+        review = { ready: false, issues: [...review.issues, ...again] };
+        draft = { ...draft, rounds: [...draft.rounds.slice(0, -1), { ...draft.rounds.at(-1)!, review }], plan_ready: false };
+      }
+      save();
+    }
     if (review.ready) { draft = { ...draft, plan_ready: true }; delete draft.budget_replan;delete draft.planning_progress;save();break; }
     const checked=draft.rounds.at(-1)!;
     if(previous?.review && draft.planning_progress?.last_round!==draft.rounds.length) {
@@ -716,6 +802,9 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     draft = { ...draft, plan, rounds: [...draft.rounds, { plan, review: null }] }; delete draft.plan_tools;save();
   }
   store.log('thesis', `Whole thesis plan accepted: ${draft.plan!.theses.length} blocks. Writing begins beneath the theses.`);
+  // The new fields are asked for, not demanded, so which of them a plan came back with
+  // decides how the book is written. That used to be silent.
+  if (input.planning_version === 2) store.log('thesis', `How this book is written: ${mindful() ? 'writer sealed (sees the point-of-view character\'s head, not the story)' : 'WRITER NOT SEALED — the plan has no "beneath", so the writer sees the premise and the whole plan'}; ${trackedItems(draft.plan).length ? `${trackedItems(draft.plan).length} things and people followed scene by scene` : 'NOTHING FOLLOWED — the plan has no "tracked"'}; ${draft.plan!.theses.flatMap(t => t.participants).filter(p => p.does?.trim()).length}/${draft.plan!.theses.flatMap(t => t.participants).length} participants have a deed.`);
   while (draft.blocks.length < draft.plan!.theses.length) {
     const index = draft.blocks.length;
     const thesis = draft.plan!.theses[index];
@@ -724,19 +813,43 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     const previous = [draft.blocks.at(-1)?.text || '',...searchManuscript(directory, `${thesis.action} ${thesis.requires.join(' ')} ${thesis.participants.map(p => draft.plan!.characters.find(c => c.id === p.character_id)!.name).join(' ')}`).map(r=>`${r.block_id}:\n${r.text}`)].filter(Boolean).join('\n\n');
     if (!draft.pending || draft.pending.review && !draft.pending.review.ready && draft.pending.review.status !== 'unavailable' && draft.pending.attempt < 2) {
       const pending = draft.pending;
-      const context = fillTemplate('THESIS_WRITE', writeRaw, { input: request,
+      const context = mindful() ? fillTemplate('THESIS_WRITE_SEALED', writeSealedRaw, { input: forWriter.ask(),
+        plan: JSON.stringify(writerOutline(draft.plan!, thesis.id)),
+        thesis: JSON.stringify({ ...writerScene(draft.plan!, thesis.id, draft.state_ledger || {}), event_contract: writerContract(draft.plan!, thesis.id, draft.blocks) }), previous,
+        repair: pending ? JSON.stringify(pending.review!.issues) : 'First attempt.' }) + spentMoves() + standsAt(thesis.id) : fillTemplate('THESIS_WRITE', writeRaw, { input: request,
         plan: JSON.stringify(scenePlanContext(draft.plan!,thesis.id)),
         thesis: JSON.stringify({ ...thesis, event_contract: sceneContractContext(draft.plan!, thesis.id, draft.blocks, true) }), neighbors: 'In the outline above: ' + draft.plan!.theses.slice(Math.max(0, index - 1), index + 2).filter(t => t.id !== thesis.id).map(t => t.id).join(', '), previous,
         repair: pending ? JSON.stringify(pending.review!.issues) : 'First attempt.' }) + spentMoves() + standsAt(thesis.id);
       let prose: string;
       if (pending) {
-        await manuscriptAgent(llm, [...directory, { id: thesis.id, text: pending.text }], context + '\nRepair the current block using replace; finish with a brief completion note.', system,
+        await manuscriptAgent(llm, [...directory, { id: thesis.id, text: pending.text }], context + '\nRepair the current block in one answer: every replacement the corrections need, and finish.', system,
           { stage: 'thesis-block-repair', writable: [thesis.id], onEdit: async (blocks, edits) => {
             draft = { ...draft, pending: { ...draft.pending!, text: blocks.find(b => b.id === thesis.id)!.text }, edits: [...(draft.edits || []), { at: new Date().toISOString(), phase: 'repair', edits }] }; save();
           } });
         prose = draft.pending!.text;
       } else if (draft.manifestation) {
-        prose = await manuscriptAgent(llm, directory, context + (input.planning_version === 2 ? '\nWrite the scene in full, about ' + thesis.target_words + ' words: its action, resistance and outcome played out in the room, not summarized.' : '\nFirst manifestation: write a short scene of about ' + Math.max(60, Math.round(thesis.target_words * 0.25)) + ' words, covering the action and outcome.') + ' Return the scene in finish.text. Search or read earlier blocks when needed.', system, { stage: 'thesis-block-write' });
+        const ask = context + (input.planning_version === 2 ? '\nWrite the scene in full, about ' + thesis.target_words + ' words: its action, resistance and outcome played out in the room, not summarized.' : '\nFirst manifestation: write a short scene of about ' + Math.max(60, Math.round(thesis.target_words * 0.25)) + ' words, covering the action and outcome.') + ' Return the scene in finish.text. What the scene needs from earlier ones is in this request.';
+        const kind = sceneKind(thesis.participants);
+        if (secondWriter && input.planning_version === 2 && !draft.duel_record) { draft.duel_record = secondWriter.record?.load() || emptyRecord(); save(); }
+        const writers: Author[] = secondWriter && input.planning_version === 2 ? contenders(draft.duel_record!, kind, index + 1) : ['writer'];
+        if (writers.length === 1 && writers[0] === 'writer') prose = await manuscriptAgent(llm, directory, ask, system, { stage: 'thesis-block-write' });
+        else {
+          // Each writer is told what it has spent itself: the book's moves, and its own habits from earlier books.
+          const briefFor = (author: Author) => author === 'writer' ? ask : ask.replace(spentMoves(), habitBrief(draft.blocks, [...(draft.habits || []).filter(habit => !habit.known), ...(secondWriter!.habits?.load() || []).map(habit => ({ ...habit, known: true }))]));
+          const texts = await Promise.all(writers.map(author => runManuscriptAgent(llm, directory, briefFor(author), system, { stage: 'thesis-block-write', route: author })));
+          const drafts = writers.map((author, at) => ({ author, text: texts[at], measured: measure(texts[at], thesis.target_words, thesis.id, draft.blocks, draft.habits || []) }));
+          const verdict = await chooseDraft(drafts, { id: thesis.id, when: thesis.when, where: thesis.where, action: thesis.action, outcome: thesis.outcome, target_words: thesis.target_words },
+            (draft.blocks.at(-1)?.text || '').slice(-1500), index % 2 === 1, system, llm, line => store.log('thesis', line));
+          prose = drafts.find(item => item.author === verdict.winner)!.text;
+          draft.authors = { ...(draft.authors || {}), [thesis.id]: verdict.winner };
+          if (drafts.length === 2) {
+            draft.duel_record = { ...draft.duel_record!, [kind]: { ...draft.duel_record![kind], [verdict.winner]: draft.duel_record![kind][verdict.winner] + 1 } };
+            secondWriter!.record?.save(draft.duel_record);
+            draft.duels = [...(draft.duels || []), { thesis_id: thesis.id, kind, winner: verdict.winner, by: verdict.by, because: verdict.because, measured: Object.fromEntries(drafts.map(item => [item.author, item.measured])) }];
+          }
+          store.log('thesis', `${thesis.id} (${kind}): ${drafts.length === 2 ? `two drafts, ${verdict.winner === 'writer' ? 'first' : 'second'} writer's goes in — ${verdict.by}${verdict.because ? `: ${verdict.because}` : ''}` : `written by the ${writers[0] === 'writer' ? 'first' : 'second'} writer alone, who leads on ${kind} scenes`}. Score on ${kind} scenes: first ${draft.duel_record![kind].writer}, second ${draft.duel_record![kind].writer2}.`);
+          save();
+        }
       } else {
         prose = stripThinking(await llm(context, system, { stage: 'thesis-block-write', route: 'writer', temperature: 0.8, maxTokens: Math.max(8192, Math.ceil(thesis.target_words * 2.8)) }));
       }
@@ -758,6 +871,32 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     store.checkpoint(`thesis-${thesis.id}`);
     store.log('thesis', `Accepted ${thesis.id}, chapter ${thesis.chapter}: ${draft.blocks.at(-1)!.text.split(/\s+/).length} words.`);
   }
+  // A reviewer rereading a book finds something else every time, and each find used to start
+  // a repair. The first whole-book reading may raise anything. A later one may raise as
+  // blocking only what stands in text that has changed since: a paragraph the previous
+  // reading saw and let pass is not reopened. What it says about such a paragraph is kept,
+  // handed to the scene as a correction for its next pass, and listed in the report.
+  const settleWholeReview = (review: ThesisReview, prose: string): ThesisReview => {
+    const mark = (paragraph: string) => sceneRevision(paragraph.trim().replace(/\s+/g, ' '));
+    const paragraphs = (value: string) => value.split(/\n\s*\n/).filter(item => item.trim());
+    // Books planned without a canon repair their plan between readings, so an unchanged
+    // paragraph can rightly be raised again there; the rule is for books whose plan is frozen.
+    if (!draft.plan!.canon) return review;
+    const seen = draft.whole_review_seen ? new Set(draft.whole_review_seen) : undefined;
+    const late: ThesisReview['issues'] = [];
+    const issues = review.issues.filter(issue => {
+      if (!seen || issue.severity !== 'major' || !issue.evidence || !paragraphs(issue.evidence).every(paragraph => seen.has(mark(paragraph)))) return true;
+      late.push({ ...issue, problem: `Raised on a later reading of text already reviewed: ${issue.problem}` });
+      return false;
+    });
+    draft.whole_review_seen = paragraphs(prose).map(mark);
+    if (late.length) {
+      draft.carried_findings = [...(draft.carried_findings || []), ...late];
+      store.log('thesis', `Whole-book review: ${late.length} finding(s) on text an earlier reading had passed; carried to their scenes, no whole-book repair.`);
+    }
+    save();
+    return { ...review, ready: !issues.some(issue => issue.severity === 'major'), issues };
+  };
   const approveRoughPlan = async (raw: unknown, reason: string, commit = true, defects:ThesisReview['issues']=[]) => {
     const plan = allocateThesisWords(raw, input);
     if (JSON.stringify(plan.theses.map(t => [t.id, t.chapter])) !== JSON.stringify(draft.plan!.theses.map(t => [t.id, t.chapter]))) throw new Error('Plan correction must retain ordered thesis IDs and chapters');
@@ -788,6 +927,11 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
         const queue = draft.rough_gate!.repair;
         if (!queue) return;
         while (queue.next < queue.issues.length) {
+          // Each stage counts its own rounds without progress, so a book could be sent to
+          // whole-book repair again and again by one stage after another: seventeen times in
+          // one measured run. A book gets eight; after that its findings travel with it.
+          if ((draft.whole_repairs || 0) >= 8) throw new RepairStalled(`This book has had its ${draft.whole_repairs} whole-book repairs.`);
+          draft.whole_repairs = (draft.whole_repairs || 0) + 1; save();
           const focus = queue.issues[queue.next];
           const related = queue.issues.slice(queue.next).filter(issue => issue.thesis_ids.some(id => focus.thesis_ids.includes(id)));
           // Repair the connected component together, including transitive links.
@@ -800,7 +944,27 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
               connected.add(issue); changed = true;
             }
           }
-          const group = [...connected];
+          // The plan is made and repaired before the first scene, and not after. Once the book
+          // is being written the plan is frozen: a finding is repaired in the prose of the
+          // scenes it cites, and nothing else moves. A finding that says the plan itself is
+          // wrong cannot be repaired that way and is not allowed to reopen the plan; it is
+          // carried to the report. Reopening the plan for every finding was most of what a
+          // measured book cost: plan edits, a plan review and visits to every dependant scene,
+          // fourteen times over.
+          const frozen = !!draft.plan!.canon;
+          const everything = [...connected];
+          const group = frozen ? everything.filter(issue => issue.fix !== 'plan') : everything;
+          if (frozen && queue.prepared?.next !== queue.next) {
+            const planOnly = everything.filter(issue => issue.fix === 'plan');
+            if (planOnly.length) {
+              draft.carried_findings = [...(draft.carried_findings || []), ...planOnly.map(issue => ({ ...issue, problem: `In the plan, which is frozen once writing has begun: ${issue.problem}` }))];
+              store.log('thesis', `${planOnly.length} finding(s) concern the plan itself. The plan is not reopened after writing has begun; they go to the report.`);
+            }
+            if (!group.length) { queue.issues = [...queue.issues.slice(0, queue.next), ...queue.issues.slice(queue.next).filter(issue => !connected.has(issue))]; save(); continue; }
+            store.log('thesis', `Repairing the text of ${[...new Set(group.flatMap(issue => issue.thesis_ids))].join(', ')}; the plan stays as it is.`);
+            queue.prepared = { text_only: true, next: queue.next, account: accountFromPlan(draft.plan!), plan: draft.plan!, base_revision: repairRevision(draft.plan!, draft.blocks.map(block => ({ id: block.thesis_id, text: block.text }))),
+              candidate: { blocks: draft.blocks.map(block => ({ id: block.thesis_id, text: block.text })), edits: [] } }; save();
+          }
           if (queue.prepared?.next !== queue.next) {
             store.log('thesis', 'Reconciling the causal account before editing connected scenes.');
             const proposal = draft.plan!.canon ? await (async()=>{
@@ -839,9 +1003,12 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
           }
 
           const verifyRepair = async (blocks: {id: string; text: string}[]) => {
-            const prose = blocks.map(block => `${block.id}:\n${block.text}`).join('\n\n');
+            // A correction inside its scenes is checked against those scenes and their
+            // neighbours, not against the whole manuscript.
+            const near = queue.prepared!.text_only ? new Set(blocks.flatMap((block, at) => group.some(issue => issue.thesis_ids.includes(block.id)) ? [blocks[at - 1]?.id, block.id, blocks[at + 1]?.id] : [])) : undefined;
+            const prose = blocks.filter(block => !near || near.has(block.id)).map(block => `${block.id}:\n${block.text}`).join('\n\n');
             const verification = await structuredResponse(
-              `Approved plan: ${JSON.stringify(queue.prepared!.plan || draft.plan)}\nOriginal defects (zero-based issue indices): ${findingsContext(group)}\nCURRENT MANUSCRIPT:\n${proseEvidence(prose).annotated}\nVerify implementation, not the writer's completion claim. Search the supplied whole manuscript for ALL related assertions and contradictions, including other scenes. Return {ready, checks:[{issue,status,evidence,explanation}], issues:[standard prose review issues]}. Cover every original defect exactly once; status is repaired, not_a_defect or unresolved. Each verdict needs a paragraph reference and a concrete explanation of setup, consequence and why contradictory passages are gone or remain. not_a_defect requires demonstrated support, not dismissal. A character may deliberately lie as a trap: distinguish their claim from established scene facts and check whether the correction proves otherwise unavailable knowledge. Police help is allowed if the protagonist's choice materially changes the outcome. Do not impose stylistic or length preferences. List remaining/new concrete logical defects with exact evidence and consequence. ready is true only when no unresolved verdict or major defect remains.` + EVIDENCE_INSTRUCTIONS,
+              `Approved plan: ${JSON.stringify(wholeBookPlan(queue.prepared!.plan || draft.plan!))}\nOriginal defects (zero-based issue indices): ${findingsContext(group)}\nCURRENT MANUSCRIPT:\n${proseEvidence(prose).annotated}\nVerify implementation, not the writer's completion claim. Search the supplied whole manuscript for ALL related assertions and contradictions, including other scenes. Return {ready, checks:[{issue,status,evidence,explanation}], issues:[standard prose review issues]}. Cover every original defect exactly once; status is repaired, not_a_defect or unresolved. Each verdict needs a paragraph reference and a concrete explanation of setup, consequence and why contradictory passages are gone or remain. not_a_defect requires demonstrated support, not dismissal. A character may deliberately lie as a trap: distinguish their claim from established scene facts and check whether the correction proves otherwise unavailable knowledge. Police help is allowed if the protagonist's choice materially changes the outcome. Do not impose stylistic or length preferences. List remaining/new concrete logical defects with exact evidence and consequence. ready is true only when no unresolved verdict or major defect remains.` + EVIDENCE_INSTRUCTIONS,
               system, llm, ['ready','checks','issues'], async raw => readRepairVerification(await repairReviewEvidence(raw,prose,llm,system,'thesis-rough-verify'), queue.prepared!.plan || draft.plan!, prose, group.length),
               {stage:'thesis-rough-verify', maxTokens:8192, deliberate:true, schema:repairVerificationSchema(group.length,[...proseEvidence(prose).references.keys()])});
             // A package is judged on two things: the defects it was sent to repair, and hard
@@ -858,21 +1025,13 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
               verification.accepted = verification.checks.every(check => check.status !== 'unresolved') && !verification.issues.some(issue => issue.severity === 'major');
               store.log('thesis', `Package review: ${aside.length} finding(s) older than this repair or not a contradiction; left for the next whole-book review.`);
             }
+            // The verification above read the whole candidate and listed what remains or is
+            // new; the gate reads the whole book again after the commit. A third whole-book
+            // review between the two repeated both.
             if (verification.accepted) {
-              const candidatePlan = queue.prepared!.plan || draft.plan!;
-              const wholeReview = await structuredResponse(fillTemplate('THESIS_REVIEW', reviewRaw, {
-                input:request,mode:'WHOLE_ROUGH',plan:JSON.stringify(candidatePlan),material:proseEvidence(prose).annotated,
-              }) + '\nJudge the actual candidate book independently of the repair completion claim. Verify the true timeline, resource and access provenance, source of private knowledge, grounds for consequential character claims, timing of disclosures and the required ending. For a closed mystery, establish who performed the killing and how the evidence proves it. A deliberate false claim in a trap is not itself a contradiction: test whether the response demonstrates guilty knowledge rather than information available to an innocent person. Do not require final length or elaborate exposition. Require a concrete causal basis for consequential outcomes. Assistance from other characters is allowed when appropriate to this story.\n' + qualityInstructions() + EVIDENCE_INSTRUCTIONS,
-                system,llm,['ready','issues'],raw=>readProseReview(raw,candidatePlan,prose),
-                {stage:'thesis-rough-candidate-review',maxTokens:8192,deliberate:true,schema:proseReviewSchema});
               const affected = new Set(queue.prepared!.order?.ids || group.flatMap(issue=>issue.thesis_ids));
-              const known=new Set(queue.issues.filter(issue=>issue.severity==='major').map(issueIdentity));
-              const unresolved = wholeReview.issues.filter(issue=>broughtIn(issue) && (issue.thesis_ids.some(id=>affected.has(id)) || !known.has(issueIdentity(issue))));
               const duplicateIssues = duplicateParagraphs(blocks.map(block=>({thesis_id:block.id,text:block.text}))).map(duplicate=>({severity:'major' as const,thesis_ids:[...affected],problem:duplicate.description,required_change:'Remove repeated prose without replaying the event.'}));
-              if (unresolved.length || duplicateIssues.length) {
-                verification.accepted = false;
-                verification.issues.push(...unresolved,...duplicateIssues);
-              }
+              if (duplicateIssues.length) { verification.accepted = false; verification.issues.push(...duplicateIssues); }
             }
             queue.prepared!.verification = verification;
             const candidatePlan=queue.prepared!.plan||draft.plan!;
@@ -887,7 +1046,8 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
           prepared.base_revision ||= repairRevision(draft.plan!,draft.blocks.map(block=>({id:block.thesis_id,text:block.text})));
           const plan = prepared.plan || draft.plan!;
           prepared.candidate ||= {blocks:draft.blocks.map(block=>({id:block.thesis_id,text:block.text})),edits:[]};
-          prepared.order ||= {ids:causalRepairOrder(draft.plan!,plan,group,draft.blocks),next:0}; save();
+          const cited = new Set(group.flatMap(issue => issue.thesis_ids));
+          prepared.order ||= {ids:prepared.text_only ? draft.blocks.map(block => block.thesis_id).filter(id => cited.has(id)) : causalRepairOrder(draft.plan!,plan,group,draft.blocks),next:0}; save();
           while(prepared.order.next < prepared.order.ids.length) {
             const currentId = prepared.order.ids[prepared.order.next];
             const thesis = plan.theses.find(thesis=>thesis.id===currentId)!;
@@ -896,7 +1056,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
             let finished=false;
             const beforeStep=JSON.stringify(prepared.candidate?.blocks);
             await manuscriptAgent(llm, prepared.candidate!.blocks,
-              `Author request: ${request}\nApproved local plan and canon: ${JSON.stringify(scenePlanContext(plan,currentId))}\nConnected defects: ${findingsContext(group)}\nLatest package verification: ${findingsContext(prepared.verification || null)}\nRepair sequence (setup before actions, revelations and consequences): ${JSON.stringify(prepared.order.ids)}\nCURRENT SCENE ONLY: ${JSON.stringify(thesis)}\nEarlier repaired scenes: ${JSON.stringify(prepared.order.ids.slice(0,prepared.order.next))}\nRemaining scenes: ${JSON.stringify(prepared.order.ids.slice(prepared.order.next+1))}\nSearch and read the staged manuscript. Repair this scene to implement the approved causal account and thesis, using exact replacements only in ${currentId}. The plan canon is authoritative; the reconciliation account is explanatory notes, never a competing truth. Establish this scene's sources of knowledge, available objects, timing, motives and outcomes. Do not execute events owned by later scenes. Later steps will repair their consequences; do not force this scene to solve the whole book. Preserve unrelated good prose. Do not invent a new causal explanation, regenerate a chapter, expand for length or polish. Finish after this scene matches its revised thesis. Completion here only advances the patch cursor: the entire package is independently reviewed before any plan or prose is committed.`, system,
+              `Author request: ${forWriter.ask()}\nApproved local plan and canon: ${JSON.stringify(mindful() ? writerOutline(plan, currentId) : scenePlanContext(plan,currentId))}${forWriter.note()}\nConnected defects: ${findingsContext(group)}\nLatest package verification: ${findingsContext(prepared.verification || null)}\nRepair sequence (setup before actions, revelations and consequences): ${JSON.stringify(prepared.order.ids)}\nCURRENT SCENE ONLY: ${JSON.stringify(forWriter.scene(plan, thesis))}\nEarlier repaired scenes: ${JSON.stringify(prepared.order.ids.slice(0,prepared.order.next))}\nRemaining scenes: ${JSON.stringify(prepared.order.ids.slice(prepared.order.next+1))}\nThe scene is shown whole below. Repair this scene to implement the approved causal account and thesis, using exact replacements only in ${currentId}. The plan canon is authoritative; the reconciliation account is explanatory notes, never a competing truth. Establish this scene's sources of knowledge, available objects, timing, motives and outcomes. Do not execute events owned by later scenes. Later steps will repair their consequences; do not force this scene to solve the whole book. Preserve unrelated good prose. Do not invent a new causal explanation, regenerate a chapter, expand for length or polish. Finish after this scene matches its revised thesis. Completion here only advances the patch cursor: the entire package is independently reviewed before any plan or prose is committed.`, system,
               {stage:'thesis-rough-repair',onPlanRead:command=>command.tool==='read_plan'?readPlan(plan,command.section,command.id,command.field):command.tool==='search_plan'?searchPlan(plan,command.query,command.limit):command.tool==='fact_dependencies'?factDependencies(plan,command.id,prepared.candidate!.blocks,command.query):linkedPlan(plan,command.id),sessionKey:`rough-${draft.rough_gate!.attempts}-${queue.next}-${currentId}`,maxSteps:12,writable:[currentId],
                 onFinish:async()=>{finished=true;return {accepted:true};},
                 onEdit:async(blocks,edits)=>{prepared.candidate!.blocks=blocks;prepared.candidate!.edits.push(...edits);delete prepared.verification;delete prepared.verified_revision;save();}});
@@ -935,7 +1095,8 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
             queue.prepared!.base_revision!,queue.prepared!.verified_revision!,raw=>allocateThesisWords(raw,input));
           // Keep the active queue reference: it owns the cursor advanced below.
           committed.rough_gate!.repair=queue;
-          committed.rounds.push({plan:committed.plan!,review:queue.prepared!.planReview||null});
+          // A repair that left the plan alone adds no plan round.
+          if(queue.prepared!.planReview) committed.rounds.push({plan:committed.plan!,review:queue.prepared!.planReview});
           // The package was just verified against the whole manuscript. Only the scenes it
           // edited carry a review of text that no longer exists.
           committed.affected_blocks=[...new Set(candidate.edits.map(edit=>edit.block_id))].filter(id=>committed.blocks.some(block=>block.thesis_id===id));
@@ -970,9 +1131,9 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
         await recheckAffected();
         const prose = draft.blocks.map(b => `${b.thesis_id}:\n${b.text}`).join('\n\n');
         const review = await structuredResponse(fillTemplate('THESIS_REVIEW', reviewRaw, {
-          input: request, mode: 'WHOLE_ROUGH', plan: JSON.stringify(draft.plan), material: proseEvidence(prose).annotated,
+          input: request, mode: 'WHOLE_ROUGH', plan: JSON.stringify(wholeBookPlan(draft.plan!)), material: proseEvidence(prose).annotated,
         }) + '\nFor each consequential transition compare the actual before state, action, after state and downstream consequence. Identify who learned what from which scene before acting. Compare concrete times and locations; an intended plan outcome is not evidence it happened. Inspect the complete short book: evidence chain and actual resolution, protagonist choices, setup/payoff, character consistency, consequences and scene continuity. Terseness is expected: do not require final length, polished dialogue or descriptions. Each major issue needs an exact prose quote and consequence.\n' + qualityInstructions() + EVIDENCE_INSTRUCTIONS, system, llm,
-          ['ready', 'issues'], raw => readProseReview(raw, draft.plan!, prose), { stage: 'thesis-rough-review', maxTokens: 8192, deliberate: true, schema: proseReviewSchema });
+          ['ready', 'issues'], raw => readProseReview(raw, draft.plan!, prose), { stage: 'thesis-rough-review', maxTokens: 8192, deliberate: true, schema: proseReviewSchema }).then(result => settleWholeReview(result, prose));
         const duplicates = duplicateParagraphs(draft.blocks);
         if (duplicates.length) {
           review.ready = false;
@@ -1013,8 +1174,12 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
       const phase = draft.manifestation.phase;
       for (let i = draft.manifestation.next; i < draft.blocks.length; i++) {
         let thesis = draft.plan!.theses[i]; progress('chapter', thesis.chapter);
-        // The same finding is deferred again by each later review of the scene; it is one correction.
-        let review: ThesisReview = { ready: false, issues: [...new Map((draft.deferred?.filter(d => d.thesis_id === thesis.id).flatMap(d => d.review.issues) || []).map(issue => [issue.problem, issue])).values()] };
+        // What a scene still owes is what its current review says, and what a whole-book
+        // repair carried to it. The deferred list is a history: it kept every finding a scene
+        // ever had, repaired or not, and handed them all back as corrections on each pass.
+        const owed = [...(draft.blocks[i].review.status === 'unavailable' ? [] : draft.blocks[i].review.issues.filter(issue => issue.severity === 'major')),
+          ...(draft.carried_findings || []).filter(issue => issue.thesis_ids.includes(thesis.id))];
+        let review: ThesisReview = { ready: false, issues: [...new Map(owed.map(issue => [issue.problem, issue])).values()] };
         let stalled=0;
         // A scene already written to length with nothing to correct is not expanded: the
         // first writing is the full scene, and a second pass over it is a second payment.
@@ -1024,7 +1189,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
         for (let repair = 0; ; repair++) {
         const beforeWords=wordBudget(draft.blocks[i].text,thesis.target_words).words;
         await manuscriptAgent(llm, draft.blocks.map(b => ({ id: b.thesis_id, text: b.text })),
-          `Author request: ${request}\nPhase: ${phase}. Current thesis: ${JSON.stringify(thesis)}\nEvent ownership and handoff: ${JSON.stringify(sceneContractContext(draft.plan!, thesis.id, draft.blocks))}\nCharacters: ${JSON.stringify(scenePlanContext(draft.plan!,thesis.id).characters)}\nNeighboring theses: ${JSON.stringify(draft.plan!.theses.slice(Math.max(0, i - 1), i + 2))}\n${phase === 'expand' ? 'Expand this short scene with concrete action, dialogue and necessary description toward its target_words.' : 'Repair verifiable contradictions, missing essential causal steps and repetitive imagery or repeated explanations of feelings. Before editing, use search for distinctive phrases and images from the current scene across the whole manuscript; read the matches. Keep the strongest purposeful occurrence; shorten or remove redundant instances in the current block. Do not remove deliberate motifs, necessary reminders or a new emotional development. Do not add atmosphere or restyle sound sentences. At most three patch batches, then finish.' + measuredText(thesis.id)}\nRequired corrections from the previous check: ${findingsContext(review.issues)}. Use search and read to inspect related text. Make exact replacements only in the current block. If a causal defect is in the thesis itself, propose a complete corrected thesis with revise_thesis before editing the prose; otherwise respect the required outcome. Measured length: ${JSON.stringify(wordBudget(draft.blocks[i].text, thesis.target_words))}. Aim for target_words; completion requires at least 90% of that target, measured by code. Expand through substantive action and dialogue, never filler. Finish when the task and word budget are satisfied.${spentMoves()}${standsAt(thesis.id)}`, system,
+          `Author request: ${forWriter.ask()}\nPhase: ${phase}. Current thesis: ${JSON.stringify(forWriter.scene(draft.plan!, thesis))}\nEvent ownership and handoff: ${JSON.stringify(mindful() ? writerContract(draft.plan!, thesis.id, draft.blocks) : sceneContractContext(draft.plan!, thesis.id, draft.blocks))}\nCharacters: ${mindful() ? '"In the scene above."' : JSON.stringify(scenePlanContext(draft.plan!,thesis.id).characters)}\nNeighboring theses: ${mindful() ? '"Not shown."' : JSON.stringify(draft.plan!.theses.slice(Math.max(0, i - 1), i + 2))}${forWriter.note()}\n${phase === 'expand' ? 'Expand this short scene with concrete action, dialogue and necessary description toward its target_words.' : 'Repair verifiable contradictions, missing essential causal steps and repetitive imagery or repeated explanations of feelings. What this scene repeats from the rest of the manuscript has been counted by code and is listed below with the sentences. Keep the strongest purposeful occurrence; shorten or remove redundant instances in the current block. Do not remove deliberate motifs, necessary reminders or a new emotional development. Do not add atmosphere or restyle sound sentences. If the measured length below is more than 120% of target_words, cut the scene back toward its target: remove what repeats, explains or decorates, never an event, a decision or a line the next scene depends on. One batch with every edit, and finish.' + measuredText(thesis.id)}\nRequired corrections from the previous check: ${findingsContext(review.issues)}. Make exact replacements only in the current block. ${input.planning_version === 2 ? 'Respect the required outcome; the plan is not changed at this stage.' : 'If a causal defect is in the thesis itself, propose a complete corrected thesis with revise_thesis before editing the prose; otherwise respect the required outcome.'} Measured length: ${JSON.stringify(wordBudget(draft.blocks[i].text, thesis.target_words))}. Aim for target_words; completion requires at least 90% of that target, measured by code. Expand through substantive action and dialogue, never filler. Finish when the task and word budget are satisfied.${spentMoves()}${standsAt(thesis.id)}`, system,
           { stage: `thesis-${phase}`, maxSteps: phase === 'polish' ? 12 : 24, requireSearch: phase === 'polish', writable: [thesis.id], onFinish: async blocks => {
             const budget = wordBudget(blocks.find(block => block.id === thesis.id)!.text, thesis.target_words);
             return { accepted: budget.ready, feedback: { ...budget, instruction: 'The scene is below its word budget. Add substantive action, investigation steps, dialogue and consequences belonging to this thesis through exact insertions. Preserve later events; do not add repetitive padding. Do not finish yet.' } };
@@ -1057,10 +1222,9 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
         if(stalled>=2) break;
         }
         const actual = wordBudget(draft.blocks[i].text, thesis.target_words);
-        if (!actual.ready) {
-          save();
-          throw new Error(`Chapter ${thesis.chapter}, ${thesis.id}: ${actual.words}/${actual.target} words; minimum ${actual.minimum}. Automatic expansion did not reach the requested length after two consecutive passes without measured length progress. Saved edits are retained.`);
-        }
+        // A scene that stays short does not end the book; the chapter's length is measured
+        // again at the end and reported with it.
+        if (!actual.ready) store.log('thesis', `${thesis.id} stayed short after expansion: ${actual.words}/${actual.target} words (minimum ${actual.minimum}). Continuing.`);
         if (!review.ready) {
           draft.deferred = [...(draft.deferred || []), { thesis_id: thesis.id, phase, review }];
           store.log('thesis', `Deferred unresolved ${phase} logic in ${thesis.id} for whole-book causal repair; continuing other blocks.`);
@@ -1078,7 +1242,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
       if (phase === 'expand') await reviewSeams();
       if(draft.plan!.canon) {
         const prose=draft.blocks.map(block=>`${block.thesis_id}:\n${block.text}`).join('\n\n');
-        const review=await structuredResponse(fillTemplate('THESIS_REVIEW',reviewRaw,{input:request,mode:'WHOLE_ROUGH',plan:JSON.stringify(draft.plan),material:proseEvidence(prose).annotated})+EVIDENCE_INSTRUCTIONS,system,llm,['ready','issues'],raw=>readProseReview(raw,draft.plan!,prose),{stage:'thesis-expanded-causal-review',schema:proseReviewSchema,maxTokens:8192,deliberate:true});
+        const review=await structuredResponse(fillTemplate('THESIS_REVIEW',reviewRaw,{input:request,mode:'WHOLE_ROUGH',plan:JSON.stringify(wholeBookPlan(draft.plan!)),material:proseEvidence(prose).annotated})+EVIDENCE_INSTRUCTIONS,system,llm,['ready','issues'],raw=>readProseReview(raw,draft.plan!,prose),{stage:'thesis-expanded-causal-review',schema:proseReviewSchema,maxTokens:8192,deliberate:true}).then(result=>settleWholeReview(result,prose));
         const defects=review.issues.filter(issue=>issue.severity==='major');
         if(defects.length) {
           draft.rough_gate={attempts:0,review,repair:{issues:defects,next:0}};save();
@@ -1096,7 +1260,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     await recheckAffected();
     if (draft.final_repair?.phase === 'write' && draft.plan!.canon) {
       const prose=draft.blocks.map(block=>`${block.thesis_id}:\n${block.text}`).join('\n\n');
-      const review=await structuredResponse(fillTemplate('THESIS_REVIEW',reviewRaw,{input:request,mode:'WHOLE_ROUGH',plan:JSON.stringify(draft.plan),material:proseEvidence(prose).annotated})+'\nLocate the logical defects raised by the audit: '+JSON.stringify(draft.final_repair.findings)+EVIDENCE_INSTRUCTIONS,system,llm,['ready','issues'],raw=>readProseReview(raw,draft.plan!,prose),{stage:'thesis-audit-causal-review',schema:proseReviewSchema,maxTokens:8192,deliberate:true});
+      const review=await structuredResponse(fillTemplate('THESIS_REVIEW',reviewRaw,{input:request,mode:'WHOLE_ROUGH',plan:JSON.stringify(wholeBookPlan(draft.plan!)),material:proseEvidence(prose).annotated})+'\nLocate the logical defects raised by the audit: '+JSON.stringify(draft.final_repair.findings)+EVIDENCE_INSTRUCTIONS,system,llm,['ready','issues'],raw=>readProseReview(raw,draft.plan!,prose),{stage:'thesis-audit-causal-review',schema:proseReviewSchema,maxTokens:8192,deliberate:true});
       const defects=review.issues.filter(issue=>issue.severity==='major');
       if(defects.length) {
         draft.rough_gate={attempts:0,review,repair:{issues:defects,next:0}};save();
@@ -1107,7 +1271,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     }
     if (draft.final_repair?.phase === 'write') {
       await manuscriptAgent(llm, draft.blocks.map(b => ({ id: b.thesis_id, text: b.text })),
-        `Author request: ${request}\nCanonical plan directory (read_plan retrieves the sole truth; do not invent new mechanisms): ${JSON.stringify(planDirectory(draft.plan!))}\nFinal audit corrections: ${JSON.stringify(draft.final_repair.findings)}\nEvent ownership directory: ${JSON.stringify(draft.plan!.theses.map(t => { const c = blockContract(draft.plan!, t.id, draft.blocks); return { owner: c.owner, happens_here_first: c.happens_here_first, continuing_disclosures: c.continuing_disclosures, handoff: c.handoff }; }))}\nFind the affected passages with search and read, then make exact local replacements. Resolve every evidenced major defect identified in the audit, including missing investigation steps, unsupported resolution, character drift, passive choices and unearned reversals. Use the affected theses as the intended events; introduce only actions needed to make those events convincing. Repair local language and exposition by replacement or deletion. Preserve an honest moral conflict and the consequences of injuries. Preserve the intended events and good prose; do not regenerate scenes or add padding. A checker failure is not a manuscript defect: do not invent edits just to eliminate an unavailable-review warning. At most three patch batches, then finish.`, system,
+        `Author request: ${request}\nCanonical plan directory (read_plan retrieves the sole truth; do not invent new mechanisms): ${JSON.stringify(planDirectory(draft.plan!))}\nFinal audit corrections: ${JSON.stringify(draft.final_repair.findings)}\nEvent ownership directory: ${JSON.stringify(draft.plan!.theses.map(t => { const c = blockContract(draft.plan!, t.id, draft.blocks); return { owner: c.owner, happens_here_first: c.happens_here_first, continuing_disclosures: c.continuing_disclosures, handoff: c.handoff }; }))}\nThe whole manuscript is shown below when it fits; find the affected passages in it and make exact local replacements. Resolve every evidenced major defect identified in the audit, including missing investigation steps, unsupported resolution, character drift, passive choices and unearned reversals. Use the affected theses as the intended events; introduce only actions needed to make those events convincing. Repair local language and exposition by replacement or deletion. Preserve an honest moral conflict and the consequences of injuries. Preserve the intended events and good prose; do not regenerate scenes or add padding. A checker failure is not a manuscript defect: do not invent edits just to eliminate an unavailable-review warning. One batch with every edit, and finish.`, system,
         { stage: 'thesis-audit-repair', requireSearch: true, maxSteps: 24, writable: draft.blocks.map(b => b.thesis_id), onEdit: async (blocks, edits) => {
           draft.blocks = draft.blocks.map(b => ({ ...b, text: blocks.find(t => t.id === b.thesis_id)!.text }));
           draft.final_repair!.changed = [...new Set([...draft.final_repair!.changed, ...edits.map(e => e.block_id)])];
@@ -1155,7 +1319,7 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
     const deterministic = [...duplicateParagraphs(draft.blocks), ...measured.filter(finding => finding.severity === 'major').map(finding => ({ severity: 'major' as const, description: finding.description }))];
     const carried = (draft.carried_findings || []).map(issue => ({ severity: 'minor', description: `Repair did not converge earlier (${issue.thesis_ids.join(', ')}); check against the final text: ${issue.problem}` }));
     const unresolved = [...deterministic, ...carried, ...unavailable, ...seamFindings.filter(f => f.severity === 'major'), ...draft.blocks.flatMap(b => b.review.issues.filter(i => i.severity === 'major').map(i => ({ severity: i.severity, description: `${b.thesis_id}: ${i.problem}` })))];
-    const audit = await structuredResponse(fillTemplate('DEVELOP_AUDIT', auditRaw, { author_request: request, final_book: manuscript + '\n\nUnresolved local logic findings (assess against final prose):\n' + JSON.stringify(unresolved) }) + '\nPlan to compare against the actual prose: ' + JSON.stringify(draft.plan) + '\nRequested total words: ' + input.target_total_words + '\nActual chapter word counts: ' + JSON.stringify(thesisManuscript(draft).map(c => ({ chapter: c.chapter, words: c.text.trim().split(/\s+/).length }))) + '\nEvaluate every quality criterion separately:\n' + qualityInstructions() + '\nReturn a checks entry {passed:boolean,evidence:string} for EVERY key: ' + QUALITY_KEYS.join(', ') + '. Failed criteria require matching findings. Evidence must identify actual passages; plan intentions are not proof of execution.\nAdditionally return checks: {"transitions":{"passed":true,"evidence":"Specific chapter transitions inspected"},"causality":{"passed":true,"evidence":"Specific causal chain inspected"},"repeated_events":{"passed":true,"evidence":"Specific disclosures and actions compared across chapters"}}. Inspect the actual complete prose independently. Transitions include location, time, objects and ongoing actions. Causality includes earned choices and consequences. Repeated events include revelations reset as new and duplicate entrances or exits, not merely repeated words. Each evidence field must name concrete passages or events; do not assert success without inspection. Set passed false when unresolved; include a matching finding.', system, llm, ['summary', 'supported', 'findings', 'checks'], raw => {
+    const audit = await structuredResponse(fillTemplate('DEVELOP_AUDIT', auditRaw, { author_request: request, final_book: manuscript + '\n\nUnresolved local logic findings (assess against final prose):\n' + JSON.stringify(unresolved) }) + '\nPlan to compare against the actual prose: ' + JSON.stringify(wholeBookPlan(draft.plan!)) + '\nRequested total words: ' + input.target_total_words + '\nActual chapter word counts: ' + JSON.stringify(thesisManuscript(draft).map(c => ({ chapter: c.chapter, words: c.text.trim().split(/\s+/).length }))) + '\nEvaluate every quality criterion separately:\n' + qualityInstructions() + '\nReturn a checks entry {passed:boolean,evidence:string} for EVERY key: ' + QUALITY_KEYS.join(', ') + '. Failed criteria require matching findings. Evidence must identify actual passages; plan intentions are not proof of execution.\nAdditionally return checks: {"transitions":{"passed":true,"evidence":"Specific chapter transitions inspected"},"causality":{"passed":true,"evidence":"Specific causal chain inspected"},"repeated_events":{"passed":true,"evidence":"Specific disclosures and actions compared across chapters"}}. Inspect the actual complete prose independently. Transitions include location, time, objects and ongoing actions. Causality includes earned choices and consequences. Repeated events include revelations reset as new and duplicate entrances or exits, not merely repeated words. Each evidence field must name concrete passages or events; do not assert success without inspection. Set passed false when unresolved; include a matching finding.', system, llm, ['summary', 'supported', 'findings', 'checks'], raw => {
       if (!text(raw.summary) || typeof raw.supported !== 'boolean' || !Array.isArray(raw.findings)
         || raw.findings.some((f: any) => !f || !['major', 'minor'].includes(f.severity) || !text(f.description))) throw new Error('Invalid final thesis-book audit.');
       validateQualityChecks(raw.checks);
@@ -1177,10 +1341,12 @@ export async function writeThesisBook(input: ProjectInput, store: ProjectStore, 
       draft.final_repair = { attempts: (previous?.attempts || 0) + 1, stalled, previous_count:count, previous_revision:revision, phase: 'write',
         findings: findings.filter(f => f.severity === 'major').length ? findings.filter(f => f.severity === 'major') : [{ severity: 'major', description: audit.summary }], changed: [] };
       store.log('thesis', `Final audit returned automatically to writer: correction ${draft.final_repair.attempts}; ${stalled} rounds without reviewed progress.`); save();
-      if(stalled>=2) { draft.final_repair.phase='idle';save();throw new Error('Automatic final repair stopped: two consecutive rounds made no reviewed progress. Saved manuscript and findings are retained; the book is not marked complete. '+draft.final_repair.findings.map(f=>f.description).join('; ')); }
-      continue;
+      if(stalled<2) continue;
+      // The book exists. A final repair that has stopped converging does not withhold it:
+      // it is delivered with every open finding in its report, never as a clean book.
+      draft.final_repair.phase='idle';save();
+      store.log('thesis', `Final repair stopped making progress; the book is delivered with ${count} open finding(s) in its report.`);
     }
-    if (shortChapters.length) throw new Error('Requested chapter length not reached: ' + shortChapters.map(chapter => `chapter ${chapter.chapter}: ${chapter.words}/${chapter.target} words (minimum ${chapter.minimum})`).join('; ') + '. Saved manuscript retained.');
     store.saveReport({ coverage: { material_examined: 'Complete prose assembled from accepted thesis blocks', limitations: ['Model assessment; no external fact verification.'] },
       findings: findings.map(f => ({ ...f, category: 'thesis-book', evidence_refs: [], reader_impact: f.description, certainty: 'model assessment' })),
       central_resolution: { supported: audit.supported && !unresolved.length && !failedChecks.length, evidence_refs: [], comment: audit.summary }, unresolved_major_promises: [], need_more_evidence: [], summary: audit.summary,

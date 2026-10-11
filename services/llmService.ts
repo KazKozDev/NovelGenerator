@@ -72,6 +72,41 @@ export function saveStoredValidatorConfig(config: (LLMProviderConfig & { enabled
   }
 }
 
+const SECOND_WRITER_STORAGE_KEY = 'novelGenerator_second_writer_config';
+
+/**
+ * A second writer, when the author wants scenes drafted by two models and the better draft
+ * kept. Undefined means one writer, as before.
+ */
+export function getStoredSecondWriterConfig(): LLMProviderConfig | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = localStorage.getItem(SECOND_WRITER_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.enabled === false) return undefined;
+    return {
+      provider: parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
+      ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
+      ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveStoredSecondWriterConfig(config: (LLMProviderConfig & { enabled: boolean }) | undefined): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!config) localStorage.removeItem(SECOND_WRITER_STORAGE_KEY);
+    else localStorage.setItem(SECOND_WRITER_STORAGE_KEY, JSON.stringify(config));
+  } catch (err) {
+    console.error('Failed to save second writer config to localStorage:', err);
+  }
+}
+
 export function saveStoredProviderConfig(config: LLMProviderConfig): void {
   if (typeof window === 'undefined') return;
   try {

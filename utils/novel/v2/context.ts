@@ -79,3 +79,17 @@ export function findingsContext(value:unknown):string {
   return JSON.stringify(value,(key,item)=>key==='evidence' && typeof item==='string' && item.length>1600
     ? item.slice(0,1600)+'\n[Evidence excerpt only; use search/read for the complete current source. This excerpt is not a verification citation.]' : item);
 }
+
+/**
+ * The plan as a whole-book call needs it: what each scene is and leaves, the canon, the
+ * people. A reviewer of the finished text compares it with events and facts, not with who
+ * was to want what or how each scene was to be staged; those fields are two thirds of a
+ * plan, and a whole-book call was sending all of it beside the whole manuscript.
+ */
+export function wholeBookPlan(plan: ThesisPlan) {
+  return { title: plan.title, premise_givens: plan.premise_givens, ending: plan.ending,
+    characters: plan.characters.map(c => ({ id: c.id, name: c.name, goal: c.goal })), canon: plan.canon ? { facts: plan.canon.facts } : undefined,
+    theses: plan.theses.map(t => ({ id: t.id, chapter: t.chapter, pov_id: t.pov_id, present: t.participants.map(p => p.character_id), when: t.when, where: t.where,
+      state_before: t.state_before, action: t.action, outcome: t.outcome, requires: t.requires, fact_ids: t.fact_ids, ...(t.beneath ? { beneath: t.beneath } : {}), target_words: t.target_words })),
+    scope: 'Events, facts and people. Intentions, staging notes and disclosure lists are in the full plan and are not needed to judge the written book.' };
+}

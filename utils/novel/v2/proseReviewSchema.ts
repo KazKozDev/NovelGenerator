@@ -26,6 +26,7 @@ export const proseReviewSchema = {
         evidence: { type: 'string', description: 'One supplied review-local paragraph address such as @P0001. Code resolves the exact quote.' }, consequence: { type: 'string' },
         thesis_ids: { type: 'array', minItems: 1, items: { type: 'string' } },
         problem: { type: 'string', minLength: 1 }, required_change: { type: 'string', minLength: 1 },
+        fix: { type: 'string', enum: ['text', 'plan'], description: 'Whole-book reviews: where the repair belongs.' },
       },
     } },
   },

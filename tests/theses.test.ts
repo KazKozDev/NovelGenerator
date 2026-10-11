@@ -233,3 +233,10 @@ it('does not stop prose generation when a reviewer exhausts malformed field-edit
  expect(store.loadTheses()!.review_failures!.at(-1)!.error).toContain('Response repair allowance exhausted');
  expect(store.manuscript()[0].text).toContain('PROSE:T01');
 });
+
+it('names the character and the field when a plan character is refused', () => {
+  const broken = outline(); (broken.characters[0] as any).goal = ''; (broken.characters[0] as any).capabilities = [''];
+  expect(() => readThesisPlan(broken, input)).toThrow(`Character ${broken.characters[0].id}: goal must be nonempty text; capabilities must be an array of nonempty strings`);
+  const twice = outline(); twice.characters.push({ ...twice.characters[0] });
+  expect(() => readThesisPlan(twice, input)).toThrow('this id is used by two characters');
+});

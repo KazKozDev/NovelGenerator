@@ -1,7 +1,7 @@
 import type {ThesisPlan} from './theses';
 export interface StoryCanon {
   resolution:string;
-  facts:{id:string;truth:string;established_in:string;knowledge:{character_id:string;learned_in:string}[]}[];
+  facts:{id:string;truth:string;established_in:string;reader_learns_in?:string;knowledge:{character_id:string;learned_in:string}[]}[];
 }
 export function validateCanon(plan:ThesisPlan):void {
   const canon=plan.canon;
@@ -17,6 +17,7 @@ export function validateCanon(plan:ThesisPlan):void {
     if(!fact||!nonempty(fact.id)||ids.has(fact.id)||!nonempty(fact.truth)||!Array.isArray(fact.knowledge)) throw new Error(`Invalid canonical fact ${fact?.id||'(missing id)'}: require unique string id, nonempty truth and a knowledge array.`);
     const scene=plan.theses.findIndex(t=>t.id===fact.established_in);
     if(scene<0&&fact.established_in!=='INITIAL') defects.push(`Canonical fact ${fact.id} has unknown source ${fact.established_in}. Use INITIAL or an existing scene ID: ${plan.theses.map(t=>t.id).join(', ')}.`);
+    if(fact.reader_learns_in!==undefined&&!['INITIAL','NEVER'].includes(fact.reader_learns_in)&&!plan.theses.some(t=>t.id===fact.reader_learns_in)) defects.push(`Canonical fact ${fact.id}: reader_learns_in ${JSON.stringify(fact.reader_learns_in)} is not INITIAL, NEVER or an existing scene ID.`);
     ids.add(fact.id);
     const unplaced=scene<0&&fact.established_in!=='INITIAL';
     for(const [knowledgeIndex,knowledge] of fact.knowledge.entries()) {

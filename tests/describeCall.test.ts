@@ -13,7 +13,7 @@ describe('what the inspector says a call is doing', () => {
     expect(describeCall('thesis-block-write', request + 'CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n{"id":"T05","chapter":2}').title).toBe('Scene T05 · writing');
     expect(describeCall('thesis-block-review', request + 'MATERIAL TO CHECK:\n{"thesis":"T07 (whole in the outline above)"}').title).toBe('Scene T07 · review');
     expect(describeCall('thesis-expand', request + 'Phase: expand. Current thesis: {"id":"T02","chapter":1}').title).toBe('Scene T02 · expanding to length');
-    expect(describeCall('thesis-state', 'SCENE T03:\nNora left.').title).toBe('Scene T03 · where things are at the end of it');
+    expect(describeCall('thesis-state', 'SCENE T03:\nNora left.').title).toBe('Scene T03 · where things are, and who has learned what');
     expect(describeCall('thesis-rough-repair', request + 'Writable blocks: ["T09"]').title).toBe('Scene T09 · Whole-book repair · patching');
     expect(describeCall('thesis-block-review-evidence', 'Repair only invalid evidence citations').title).toBe('Scene ? · review · locating the cited passages');
   });

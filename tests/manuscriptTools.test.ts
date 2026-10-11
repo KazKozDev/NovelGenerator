@@ -9,11 +9,30 @@ import type { NovelLLM } from '../utils/novel/v2/llm';
 import { allocateThesisWords, readProseReview, readRepairVerification, readCausalPlanReview, validateThesisDraft } from '../utils/novel/v2/theses';
 const blocks = [{ id: 'T01', text: 'Марта спрятала письмо.\n\nЕй двадцать лет.' }, { id: 'T02', text: 'Прошло тридцать лет. Марте пятьдесят.' }];
 describe('manuscript search and exact editing', () => {
-  it('requires a real search before polishing can mutate text or finish', async () => {
+  it('requires a search before editing only when the text to edit is too long to be shown', async () => {
+    const long = [{ id: 'T01', text: 'Марта спрятала письмо. ' + 'слово '.repeat(16000) }, blocks[1]];
     const commands = [{ tool: 'finish', text: 'Premature' }, { tool: 'replace', edits: [{ block_id: 'T01', before: 'Марта', after: 'Анна' }] }, { tool: 'search', query: 'письмо' }, { tool: 'finish', text: 'Checked' }];
-    let step = 0; let mutations = 0;
-    const note = await manuscriptAgent(async () => JSON.stringify(commands[step++]), blocks, 'Polish', 'System', { stage: 'polish', requireSearch: true, writable: ['T01'], onEdit: () => { mutations++; } });
+    let step = 0; let mutations = 0; const prompts: string[] = [];
+    const note = await manuscriptAgent(async prompt => { prompts.push(prompt); return JSON.stringify(commands[step++]); }, long, 'Polish', 'System', { stage: 'polish', requireSearch: true, writable: ['T01'], onEdit: () => { mutations++; } });
     expect(note).toBe('Checked'); expect(mutations).toBe(0); expect(step).toBe(4);
+    expect(prompts[0]).toContain('Read a writable block before editing it.');
+    expect(prompts[0]).not.toContain('CURRENT TEXT OF T01');
+  });
+  it('does an edit in one answer when the text is shown: no read, no search, patch and finish together', async () => {
+    const prompts: string[] = []; let edited = '';
+    const note = await manuscriptAgent(async prompt => { prompts.push(prompt); return JSON.stringify({ tool: 'replace', finish: true, edits: [{ block_id: 'T01', before: 'Марта', after: 'Анна' }, { block_id: 'T02', before: 'Марте', after: 'Анне' }] }); },
+      blocks, 'Repair the seam', 'System', { stage: 'seam', requireSearch: true, writable: ['T01', 'T02'], onEdit: next => { edited = next.map(block => block.text).join('|'); } });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('Do this task in ONE answer');
+    expect(prompts[0]).toContain('CURRENT TEXT OF T01'); expect(prompts[0]).toContain('CURRENT TEXT OF T02');
+    expect(prompts[0]).not.toContain('Required first: search');
+    expect(edited).toContain('Анна спрятала письмо'); expect(edited).toContain('Анне пятьдесят');
+    expect(note).toContain('Editing finished');
+  });
+  it('asks a writing task for its prose in one answer', async () => {
+    const prompts: string[] = [];
+    expect(await manuscriptAgent(async prompt => { prompts.push(prompt); return JSON.stringify({ tool: 'finish', text: 'The scene.' }); }, blocks, 'Write', 'System', { stage: 'write' })).toBe('The scene.');
+    expect(prompts[0]).toContain('Return what the task asks for in ONE answer');
   });
   it('finds Russian phrases and returns bounded references without sending unrelated blocks', () => {
     expect(searchManuscript(blocks, 'двадцать лет')[0].block_id).toBe('T01');
@@ -23,21 +42,22 @@ describe('manuscript search and exact editing', () => {
   it('applies atomic insertion, replacement and deletion without touching other text', () => {
     const changed = patchManuscript(blocks, [{ block_id: 'T01', before: 'письмо.', after: 'письмо. Она боялась за брата.' }, { block_id: 'T01', before: 'двадцать', after: 'тридцать' }], ['T01']);
     expect(changed[1]).toEqual(blocks[1]); expect(blocks[0].text).not.toContain('боялась');
-    expect(() => patchManuscript(blocks, [{ block_id: 'T01', before: 'Марта', after: 'Анна' }, { block_id: 'T02', before: 'Прошло', after: '' }], ['T01'])).toThrow('scope');
+    expect(() => patchManuscript(blocks, [{ block_id: 'T01', before: 'Марта', after: 'Анна' }, { block_id: 'T02', before: 'Прошло', after: '' }], ['T01'])).toThrow('block T02 is not writable in this task. Writable: T01');
     expect(() => patchManuscript([{ id: 'T', text: 'a a' }], [{ block_id: 'T', before: 'a', after: 'b' }], ['T'])).toThrow('ambiguous');
     expect(() => patchManuscript(blocks, [{ block_id: 'T01', before: 'stale', after: 'new' }], ['T01'])).toThrow('missing');
   });
   it('rejects empty edits instead of reporting progress', () => {
     expect(() => patchManuscript(blocks, [{ block_id: 'T01', before: 'Марта', after: 'Марта' }], ['T01'])).toThrow('No-op');
   });
-  it('rejects multiple commands without mutation and lets the agent correct its response', async () => {
+  it('reads several commands sent in one answer as one answer, instead of refusing them and paying for another turn', async () => {
     let step = 0; let changed = false;
-    const output = await manuscriptAgent(async prompt => {
-      if (++step === 1) return '{"tool":"replace","edits":[]} {"tool":"finish","text":"Done"}';
-      expect(prompt).toContain('No changes were applied');
-      return '{"tool":"finish","text":"Corrected envelope"}';
-    }, blocks, 'Edit', '', { stage: 'edit', onEdit: () => { changed = true; } });
-    expect(output).toBe('Corrected envelope'); expect(changed).toBe(false);
+    const nothing = await manuscriptAgent(async () => { step++; return '{"tool":"replace","edits":[]} {"tool":"finish","text":"Done"}'; },
+      blocks, 'Edit', '', { stage: 'edit', onEdit: () => { changed = true; } });
+    expect(nothing).toBe('Done'); expect(changed).toBe(false); expect(step).toBe(1);
+    let text = '';
+    await manuscriptAgent(async () => { step++; return '{"tool":"replace","edits":[{"block_id":"T01","before":"Марта","after":"Анна"}]}\n{"tool":"replace","edits":[{"block_id":"T01","before":"двадцать","after":"тридцать"}]}\n{"tool":"finish"}'; },
+      blocks, 'Edit', '', { stage: 'edit', writable: ['T01'], onEdit: next => { text = next[0].text; } });
+    expect(text).toContain('Анна спрятала'); expect(text).toContain('тридцать лет'); expect(step).toBe(2);
   });
   it('explicitly ends open-ended editing before the step budget expires', async () => {
     let turns = 0;
@@ -99,31 +119,15 @@ function progressiveModel(seen: string[], interrupt = false): NovelLLM {
   };
 }
 describe('progressive manifestation through exact patches', () => {
-  it('rejects premature finish and a clean review on a short scene, then resumes expansion in place', async () => {
+  it('delivers a book whose scene stayed short with the shortfall in its report, never as a clean book', async () => {
     const store = new MemoryProjectStore(); const target = {...input,target_total_words:200};
     const base = progressiveModel([]);
     const premature: NovelLLM = async (...args) => args[2]?.stage === 'thesis-expand'
       ? JSON.stringify({tool:'finish',text:'Done'}) : base(...args);
     const first = await new Orchestrator(store).runBook(target,premature);
-    expect(first.status).toBe('FAILED');
-    expect(first.stoppedReason).toContain('4/200 words');
-    expect(store.loadTheses()!.manifestation!.next).toBe(0);
-    expect(store.loadTheses()!.manifestation!.phase).toBe('expand');
-    expect(store.loadReport()).toBeNull();
-    let patched=false;
-    const resumed = await new Orchestrator(store).runBook(target, async (...args)=>{
-      if(args[2]?.stage==='thesis-block-write') throw new Error('Must not regenerate the rough scene');
-      if(args[2]?.stage==='thesis-expand') {
-        if(!patched) {
-          patched=true;
-          return JSON.stringify({tool:'replace',edits:[{block_id:'T01',before:'Marta revealed the letter.',after:Array(180).fill('action').join(' ')}]});
-        }
-        return JSON.stringify({tool:'finish',text:'Expanded'});
-      }
-      return base(...args);
-    });
-    expect(resumed.status,resumed.stoppedReason).toBe('COMPLETE');
-    expect(store.loadTheses()!.blocks[0].text.split(/\s+/)).toHaveLength(180);
+    expect(first.status).toBe('COMPLETE_WITH_WARNINGS');
+    expect(store.runLog().some(entry => entry.detail.includes('T01 stayed short after expansion: 4/200 words'))).toBe(true);
+    expect(store.loadReport()!.findings.some(finding => finding.severity === 'major' && finding.reader_impact.includes('has 4 words; target 200'))).toBe(true);
   });
   it('returns final defects to the writer, persists local patches on interruption and re-audits on resume', async () => {
     const store = new MemoryProjectStore(); const seen: string[] = []; const base = progressiveModel(seen);
@@ -183,7 +187,7 @@ describe('progressive manifestation through exact patches', () => {
         return JSON.stringify({ tool: 'replace', edits: [{ block_id: 'T01', before: 'Marta was in the street.', after: 'Marta was in the street. She entered the stairwell.' }, { block_id: 'T02', before: 'She was on the roof.', after: 'She climbed the stairs and reached the roof.' }] });
       }
       if (stage === 'thesis-polish') {
-        expect(prompt).toContain('use search for distinctive phrases and images');
+        expect(prompt).toContain('has been counted by code and is listed below');
         return base(prompt, system, options);
       }
       return base(prompt, system, options);
@@ -215,9 +219,10 @@ describe('progressive manifestation through exact patches', () => {
       const audit = JSON.parse(raw); audit.checks.transitions = { passed: false, evidence: 'Unexplained jump to roof' };
       return JSON.stringify(audit);
     });
-    expect(result.status).toBe('FAILED');
-    expect(result.stoppedReason).toContain('no reviewed progress');
-    expect(store.loadReport()).toBeNull();
+    expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
+    expect(store.runLog().some(entry => entry.detail.includes('Final repair stopped making progress'))).toBe(true);
+    expect(store.loadReport()!.findings.some(finding => finding.reader_impact.includes('transitions: Unexplained jump to roof'))).toBe(true);
+    expect(store.loadReport()!.central_resolution.supported).toBe(false);
     expect(store.loadTheses()!.final_checks!.transitions.passed).toBe(false);
   });
   it('records malformed reviews, continues prose and retries failed checks before delivery', async () => {
@@ -239,10 +244,9 @@ describe('progressive manifestation through exact patches', () => {
       if (/thesis-(expand|polish|final-recheck)-review/.test(options?.stage || '')) return 'not JSON';
       return base(prompt, system, options);
     });
-    expect(result.status).toBe('FAILED');
-    expect(result.stoppedReason).toContain('no reviewed progress');
+    expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
     expect(store.loadTheses()!.blocks[0].review.status).toBe('unavailable');
-    expect(store.loadReport()).toBeNull();
+    expect(store.loadReport()!.findings.some(finding => finding.severity === 'major' && finding.reader_impact.includes('Review not completed'))).toBe(true);
     expect(store.loadTheses()!.final_repair!.findings.some(f=>f.description.includes('Review not completed'))).toBe(true);
     expect(() => validateThesisDraft(store.loadTheses(), input)).not.toThrow();
   });
@@ -263,11 +267,10 @@ describe('progressive manifestation through exact patches', () => {
       return base(prompt, system, options);
     };
     const result = await new Orchestrator(store).runBook(input, llm);
-    expect(result.status).toBe('FAILED');
-    expect(result.stoppedReason).toContain('no reviewed progress');
+    expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
     expect(seen).toContain('thesis-polish');
     expect(store.loadTheses()!.deferred).toHaveLength(2);
-    expect(store.loadReport()).toBeNull();
+    expect(store.loadReport()!.findings.some(finding => finding.severity === 'major')).toBe(true);
     expect(store.loadTheses()!.final_repair!.findings.some(f=>f.severity==='major')).toBe(true);
     expect(() => validateThesisDraft(store.loadTheses(), input)).not.toThrow();
   });
@@ -574,7 +577,7 @@ it('requires exact proof and complete distinct coverage for repair acceptance', 
   const check = {issue:0,status:'repaired',evidence:'@P0001',explanation:'The clue is now shown'};
   expect(readRepairVerification({ready:true,checks:[check],issues:[]},plan,'Marta read the letter.',1).accepted).toBe(true);
   expect(()=>readRepairVerification({ready:true,checks:[],issues:[]},plan,'Marta read the letter.',1)).toThrow('every original');
-  expect(()=>readRepairVerification({ready:true,checks:[check,check],issues:[]},plan,'Marta read the letter.',2)).toThrow('Invalid');
+  expect(()=>readRepairVerification({ready:true,checks:[check,check],issues:[]},plan,'Marta read the letter.',2)).toThrow('Repair verdict 2: defect 0 already has a verdict');
   expect(()=>readRepairVerification({ready:true,checks:[{...check,evidence:'Imaginary evidence'}],issues:[]},plan,'Marta read the letter.',1)).toThrow('exact evidence');
   expect(readRepairVerification({ready:true,checks:[{...check,status:'unresolved'}],issues:[]},plan,'Marta read the letter.',1).accepted).toBe(false);
 });
@@ -600,11 +603,12 @@ it('checks connected repairs before accepting finish and feeds unresolved eviden
   expect(verifications).toBe(2);
   expect(store.loadTheses()!.manifestation!.versions[0].blocks[0].text).toContain('Marta read the letter.');
 });
-it('keeps rejected candidate edits out of the main manuscript even when the per-defect check approves', async () => {
+it('keeps a package out of the main manuscript when its verification finds a contradiction in the text it wrote', async () => {
   const store = new MemoryProjectStore(); const base=progressiveModel([]); let turn=0;
   const defect={severity:'major',kind:'contradiction',thesis_ids:['T01'],evidence:'@P0001',consequence:'No grounded clue',problem:'Unsupported letter',required_change:'Show the clue'};
   const result=await new Orchestrator(store).runBook(input, async(prompt,system,options)=>{
-    if(options?.stage==='thesis-rough-review'||options?.stage==='thesis-rough-candidate-review') return JSON.stringify({ready:false,issues:[defect]});
+    if(options?.stage==='thesis-rough-review') return JSON.stringify({ready:false,issues:[defect]});
+    if(options?.stage==='thesis-rough-verify') return JSON.stringify({ready:false,checks:[{issue:0,status:'repaired',evidence:'@P0001',explanation:'The clue is now on the page'}],issues:[defect]});
     if(options?.stage==='thesis-rough-repair') {
       // The staged plan must not be committed during patching.
       expect(store.loadTheses()!.blocks[0].text).toBe('Marta revealed the letter.');

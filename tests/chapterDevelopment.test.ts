@@ -69,3 +69,28 @@ it('rewrites only the chapter a finding names and keeps the others as written', 
   expect(state.chapters[1].goal).toBe('Search the house');
   expect(state.review!.ready).toBe(true);
 });
+
+it('repairs a refused answer without paying for the whole task again, until that fails twice', async () => {
+  const { structuredResponse } = await import('../utils/novel/v2/llm');
+  const material = 'supplied plan text '.repeat(1000) + 'MATERIAL-MIDDLE ' + 'supplied plan text '.repeat(1000);
+  const task = `TASK-HEAD write the plan.\n${material}\nTASK-TAIL return {"answer": number}.`;
+  const prompts: string[] = []; let n = 0;
+  await structuredResponse(task, '', async prompt => { prompts.push(prompt); return n++ ? JSON.stringify({ edits: [{ path: '/answer', before: n - 2, after: n - 1 }] }) : JSON.stringify({ answer: 0 }); },
+    ['answer'], raw => { if (raw.answer < 3) throw new Error(`Invalid thesis T12: requires names T14 (${raw.answer})`); return raw.answer; });
+  expect(prompts[0]).toContain('MATERIAL-MIDDLE');
+  for (const repair of prompts.slice(1, 3)) {
+    expect(repair.length).toBeLessThan(12000);
+    expect(repair).toContain('TASK-HEAD'); expect(repair).toContain('TASK-TAIL');
+    expect(repair).toContain('requires names T14');
+    expect(repair).not.toContain('MATERIAL-MIDDLE');
+  }
+  expect(prompts[3]).toContain('MATERIAL-MIDDLE');
+});
+it('keeps the material when the refusal is about a citation into it', async () => {
+  const { structuredResponse } = await import('../utils/novel/v2/llm');
+  const task = `Review.\nMATERIAL-MIDDLE ${'prose paragraph '.repeat(2000)}\nReturn {"answer": number}.`;
+  const prompts: string[] = []; let n = 0;
+  await structuredResponse(task, '', async prompt => { prompts.push(prompt); return n++ ? JSON.stringify({ edits: [{ path: '/answer', before: 0, after: 1 }] }) : JSON.stringify({ answer: 0 }); },
+    ['answer'], raw => { if (!raw.answer) throw new Error('evidence is not a verbatim substring of supplied prose'); return raw.answer; });
+  expect(prompts[1]).toContain('MATERIAL-MIDDLE');
+});

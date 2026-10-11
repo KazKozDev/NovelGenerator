@@ -1,6 +1,7 @@
 import { SCENE_WORD_CAP } from './sceneBudget';
 import { writeThesisBook } from './theses';
 import type { HabitMemory } from './habits';
+import type { SecondWriter } from './duel';
 import { developBook, inputKey } from './progressive';
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { auditBook } from './auditor';
@@ -127,6 +128,7 @@ export class Orchestrator {
     private readonly pipeline: ChapterPipeline | null = null,
     private readonly onProgress: (stage: ProgressStage, chapter?: number) => void = () => {},
     private readonly habitMemory?: HabitMemory,
+    private readonly secondWriter?: SecondWriter,
   ) {}
 
   /** First-attempt failures go to the run log with their reasons. */
@@ -199,7 +201,7 @@ export class Orchestrator {
         if (progressive || this.store.loadDesign() && this.store.manuscript().length && !theses) throw new Error('Start a fresh project to use thesis writing for an existing book.');
         const thesisInput = { ...input, generation_mode: (freshThesisBook || input.generation_mode === 'progressive' || theses?.manifestation ? 'progressive' : 'theses') as ProjectInput['generation_mode'] };
         this.store.saveInput(thesisInput);
-        await writeThesisBook(thesisInput, this.store, call, this.onProgress, this.habitMemory);
+        await writeThesisBook(thesisInput, this.store, call, this.onProgress, this.habitMemory, this.secondWriter);
         this.flushRetries();
         const report = this.store.loadReport()!;
         this.store.log('audit', report.summary);

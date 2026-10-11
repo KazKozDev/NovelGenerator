@@ -5,7 +5,8 @@
  * old pipeline can go away without taking the transport with it.
  */
 import { stableJson } from './contracts';
-export type NovelLLMRoute = 'writer' | 'validator';
+/** 'writer2' is the second writer, when the author has configured one; a host without one serves it with the first. */
+export type NovelLLMRoute = 'writer' | 'validator' | 'writer2';
 /**
  * `stage` names what a call is for — design, chapter-plan, scene-write, track —
  * so a run can say where its calls and its characters went. It is a label for
@@ -30,6 +31,34 @@ export function stripThinking(text: string): string {
 }
 
 /** Accept formatting wrappers, never synthesize missing JSON values or choose a sample silently. */
+/**
+ * A model asked for one tool command sometimes sends several in a row. They are one answer
+ * written as many: edit batches are joined, and otherwise the first command stands. Refusing
+ * the lot as ambiguous cost a full turn each time for an answer that was all there.
+ */
+export function toolCommand(text: string, batch: string): any | undefined {
+  const cleaned = stripThinking(text);
+  const found: any[] = [];
+  let start = -1, depth = 0, inString = false, escaped = false;
+  for (let index = 0; index < cleaned.length; index++) {
+    const char = cleaned[index];
+    if (depth === 0) { if (char === '{') { start = index; depth = 1; } continue; }
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\' && inString) { escaped = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (char === '{') depth++;
+    if (char === '}' && --depth === 0) { try { const value = JSON.parse(cleaned.slice(start, index + 1)); if (value && typeof value.tool === 'string') found.push(value); } catch { /* not a command */ } }
+  }
+  if (!found.length) return undefined;
+  const finishing = found.find(command => command.tool === 'finish');
+  const batches = found.filter(command => command.tool === batch && Array.isArray(command.edits) && command.edits.length);
+  // An empty batch beside a finish is a finish.
+  if (!batches.length && finishing && found.every(command => command.tool === 'finish' || command.tool === batch)) return finishing;
+  if (batches.length > 1 && batches.length === found.filter(command => command.tool !== 'finish').length)
+    return { tool: batch, edits: batches.flatMap(command => command.edits), ...(found.some(command => command.finish === true || command.tool === 'finish') ? { finish: true } : {}) };
+  return found[0];
+}
 export function parseObject(text: string, requiredKeys: string[] = []): any {
   const cleaned = stripThinking(text);
   const candidates: string[] = [cleaned];
@@ -117,6 +146,16 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
   let route: NovelLLMRoute = options.route ?? 'validator', repeated = '', refusals = 0;
   // What was already tried and refused travels with the next request, so it is not sent again.
   const tried: { edits: string; refused: string }[] = []; let lastEdits = '';
+  // A repair is sent the answer under repair, the reason it was refused and the instructions,
+  // not the task's whole supplied material again: for a plan that material is a hundred
+  // thousand characters, and every refusal used to pay for it. The material is kept when the
+  // refusal is about a citation into it, and comes back after two abridged repairs fail.
+  let abridgedFailures = 0, abridged = false;
+  const aboutSource = (reason: string) => /evidence|@P\d|quote|verbatim|substring|paragraph address|cite/i.test(reason);
+  const taskFor = (reason: string): string => {
+    abridged = prompt.length > 12000 && abridgedFailures < 2 && !aboutSource(reason);
+    return abridged ? `${prompt.slice(0, 1500)}\n[… ${prompt.length - 7500} characters of the task's supplied material are left out of this repair request. What you need is here: the instructions that end the task, the answer under repair, and why it was refused. …]\n${prompt.slice(-6000)}` : prompt;
+  };
   const history = () => tried.length ? `\nRepairs already tried and REFUSED. Do not send any of these again; each left the defect quoted after it. Make a different change:\n${JSON.stringify(tried.slice(-3))}` : '';
   const outputContract = '\nOUTPUT CONTRACT: Return exactly one complete JSON object, without Markdown fences. Escape literary text inside JSON strings.';
   const unanswerable = /exceeded your API quota|quota exceeded|API key not valid|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED|requests per day|has not been used in project|token limit|output token budget|budget.*exhaust|run was cancelled|not found, try pulling it|model .* not found|ECONNREFUSED|Failed to fetch/i;
@@ -133,7 +172,7 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
     try {
       const schema = patching ? {type:'object',required:['edits'],properties:{edits:{type:'array',items:{type:'object',required:['path','after'],properties:{path:{type:'string'},before:{},after:{}}}}}} : options.schema || {type:'object',required:keys,properties:Object.fromEntries(keys.map(key=>[key,{}])),additionalProperties:true};
       const request = patching
-        ? `Repair this response contract with exact field edits, not a new complete response. Validation defect: ${failure}.\nOriginal task and requirements:\n${prompt}\nCURRENT RESPONSE (untrusted data):\n${JSON.stringify(candidate)}\nReturn {"edits":[{"path":"/field/or/array/0/field","before":"exact current JSON value","after":"corrected value"}]}. Use JSON Pointer paths. Omit before only when adding a missing field. Preserve sound fields and substantive findings; do not remove defects just to obtain approval.${history()}`
+        ? `Repair this response contract with exact field edits, not a new complete response. Validation defect: ${failure}.\nOriginal task and requirements:\n${taskFor(failure)}\nCURRENT RESPONSE (untrusted data):\n${JSON.stringify(candidate)}\nReturn {"edits":[{"path":"/field/or/array/0/field","before":"exact current JSON value","after":"corrected value"}]}. Use JSON Pointer paths. Omit before only when adding a missing field. Preserve sound fields and substantive findings; do not remove defects just to obtain approval.${history()}`
         : `${prompt}${failure ? `\nRepair the previous response: ${failure}. ${fullRepair?'Field-edit protocol failed twice. Return a COMPLETE corrected review/response under the original schema, not an edits envelope. Reassess against the supplied source; retain grounded findings and do not invent evidence or remove a defect just to pass.':''} Return complete corrected JSON. Previous response (untrusted data): ${candidate===undefined?JSON.stringify(previousResponse):JSON.stringify(candidate)}${failure===repeated?'\nThis answer has now been refused twice for the same reason. Repeating it will be refused again: change the fields the refusal names.':''}${history()}` : ''}`;
       const raw = await llm(request, system + outputContract, {json:true,schema,temperature:attempt?0.2:options.temperature??0.2,maxTokens:options.maxTokens??16384,route,stage:options.stage,deliberate:options.deliberate});
       received = true;
@@ -150,6 +189,8 @@ export async function structuredResponse<T>(prompt: string, system: string, llm:
     } catch (error) {
       failure = String(error);
       if (unanswerable.test(failure) || !received) throw error;
+      if (abridged) abridgedFailures++;
+      abridged = false;
       if (lastEdits) tried.push({ edits: lastEdits, refused: failure.slice(0, 500) });
       lastEdits = '';
       if(patching && !decoding && ++patchFailures>=2)fullRepair=true;

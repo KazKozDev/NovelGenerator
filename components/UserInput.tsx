@@ -5,7 +5,7 @@ import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
-import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
+import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
@@ -40,6 +40,15 @@ const UserInput: React.FC<UserInputProps> = ({
     return { ...(stored || getStoredProviderConfig()), enabled: Boolean(stored) };
   });
 
+  const [secondWriter, setSecondWriter] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
+    const stored = getStoredSecondWriterConfig();
+    return { ...(stored || getStoredProviderConfig()), enabled: Boolean(stored) };
+  });
+  const updateSecondWriter = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
+    const next = { ...secondWriter, ...change };
+    setSecondWriter(next);
+    saveStoredSecondWriterConfig(next.enabled ? next : undefined);
+  };
   const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
     const next = { ...validator, ...change };
     setValidator(next);
@@ -406,6 +415,46 @@ const UserInput: React.FC<UserInputProps> = ({
                   </p>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* A second writer: each scene is drafted by both, measured by code, and the editor,
+            not told whose is whose, keeps one. Off means one writer, as before. */}
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
+          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={secondWriter.enabled}
+              onChange={(e) => updateSecondWriter(e.target.checked ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint } : { enabled: false })}
+              className="accent-zinc-200"
+            />
+            <span className="font-medium">Second writer model</span>
+          </label>
+          <p className="text-xs text-zinc-500">
+            Both writers draft each scene and the editor keeps the better draft without knowing whose it is.
+            Once one writer plainly leads a kind of scene, it writes those alone. Pick a model different from the first writer.
+          </p>
+          {secondWriter.enabled && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
+                {(['gemini', 'ollama', 'qwen'] as const).map(provider => (
+                  <button key={provider} type="button" onClick={() => updateSecondWriter({ provider })}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${secondWriter.provider === provider ? 'bg-zinc-200 text-zinc-900 shadow-sm' : 'text-zinc-400 hover:text-zinc-300'}`}>
+                    {provider === 'gemini' ? 'Gemini' : provider === 'ollama' ? 'Ollama' : 'Qwen'}
+                  </button>
+                ))}
+              </div>
+              <label className="block text-sm text-zinc-400">
+                {secondWriter.provider === 'qwen' ? 'Second writer Qwen model' : secondWriter.provider === 'ollama' ? 'Second writer Ollama model' : 'Second writer Gemini model'}
+                <Input
+                  type="text"
+                  value={(secondWriter.provider === 'qwen' ? secondWriter.qwenModel : secondWriter.provider === 'ollama' ? secondWriter.ollamaModel : secondWriter.geminiModel) || ''}
+                  onChange={(e) => updateSecondWriter(secondWriter.provider === 'qwen' ? { qwenModel: e.target.value } : secondWriter.provider === 'ollama' ? { ollamaModel: e.target.value } : { geminiModel: e.target.value.trim() || undefined })}
+                  placeholder={secondWriter.provider === 'qwen' ? 'qwen3.8-flash' : secondWriter.provider === 'ollama' ? 'llama3.1' : GEMINI_MODEL_NAME}
+                  className="text-xs py-1.5 font-mono mt-1.5"
+                />
+              </label>
             </div>
           )}
         </div>

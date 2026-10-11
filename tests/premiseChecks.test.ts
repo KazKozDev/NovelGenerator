@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readCoverage, premiseChecks, deedGaps } from '../utils/novel/v2/premiseChecks';
+import { readCoverage, premiseChecks, deedGaps, canonGaps, chainGaps } from '../utils/novel/v2/premiseChecks';
 import { readHabits, habitUses, habitBrief, confirmedHabits, mergeHabits, somaticBeats } from '../utils/novel/v2/habits';
 import { repairReviewEvidence } from '../utils/novel/v2/reviewEvidenceRepair';
 import { readStateTrace, TRANSITION_CHECKS } from '../utils/novel/v2/stateTransitions';
@@ -28,10 +28,11 @@ describe('premise coverage', () => {
     const issues = await premiseChecks(plan, '{}', '', async (prompt, _system, options) => {
       stages.push(options!.stage!);
       if (options!.stage === 'thesis-plan-stress') { expect(prompt).toContain('neutral observer'); return JSON.stringify({ ready: false, issues: [{ severity: 'major', thesis_ids: ['T1'], problem: 'The note points at its writer, not at Jo', required_change: 'Decide what the note shows' }] }); }
+      if (options!.stage === 'thesis-plan-dryrun') { expect(prompt).toContain('about to be frozen'); return JSON.stringify({ ready: false, issues: [{ severity: 'major', thesis_ids: ['T2', 'T1'], problem: 'T2 needs the letter open; no scene opens it', required_change: 'Open it in T1' }] }); }
       return JSON.stringify({ coverage: [entry(0, 'action'), entry(1, 'none'), entry(2, 'none', 'requirement')] });
     });
-    expect(stages).toEqual(['thesis-premise-coverage', 'thesis-plan-stress']);
-    expect(issues.map(issue => issue.thesis_ids[0])).toEqual(['T2', 'T1']);
+    expect(stages).toEqual(['thesis-premise-coverage', 'thesis-plan-stress', 'thesis-plan-dryrun']);
+    expect(issues.map(issue => issue.problem.slice(0, 20))).toEqual(['Premise given not on', 'T2 needs the letter ', 'The note points at i']);
     expect(premiseReply({ stage: 'thesis-block-write' })).toBeUndefined();
   });
 });
@@ -121,5 +122,51 @@ describe('state trace failures', () => {
     await expect(repairReviewEvidence(raw, scene, locator, '', 'review', scene)).rejects.toThrow('Unverified review evidence at state_trace.events.1');
     const kept = await repairReviewEvidence(raw, scene, locator, '', 'review', scene, true);
     expect(kept.state_trace.events).toHaveLength(1);
+  });
+});
+
+describe('what code can see is missing from a plan', () => {
+  const fact = (id: string, established_in: string, knowledge: object[] = []) => ({ id, truth: `Truth ${id}`, established_in, knowledge });
+  const scene = (id: string, fact_ids: string[], action = 'Jo opens the letter') => ({ ...thesis(id), fact_ids, action });
+  it('reports a fact used before the scene that makes it so, and a tracked thing no scene handles', () => {
+    const gappy = { ...plan, tracked: [{ id: 'K1', name: 'The forged passport', start: 'In a safe' }, { id: 'K2', name: 'The letter', start: 'Sealed' }],
+      canon: { resolution: 'Jo leaves.', facts: [fact('F1', 'T2'), fact('F2', 'INITIAL', [{ character_id: 'C', learned_in: 'INITIAL' }])] }, theses: [scene('T1', ['F1', 'F2']), scene('T2', ['F1'])] } as unknown as ThesisPlan;
+    const problems = canonGaps(gappy).filter(issue => issue.severity === 'major').map(issue => issue.problem);
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain('Fact F1 ("Truth F1") is used in T1 before the scene that makes it so (T2)');
+    expect(problems[1]).toContain('"The forged passport" is named as a thing the plot turns on, but no scene mentions it');
+  });
+  it('finds nothing in a plan whose facts and things are in place', () => {
+    const sound = { ...plan, tracked: [{ id: 'K2', name: 'The letter', start: 'Sealed' }], canon: { resolution: 'Jo leaves.', facts: [fact('F1', 'T1', [{ character_id: 'C', learned_in: 'T1' }])] }, theses: [scene('T1', ['F1']), scene('T2', ['F1'])] } as unknown as ThesisPlan;
+    expect(canonGaps(sound)).toEqual([]);
+  });
+});
+
+describe('the plan played forward by code', () => {
+  const people = [{ id: 'C1', name: 'Nora', goal: 'g', initial_knowledge: [], capabilities: [], limitations: [] }, { id: 'C2', name: 'Claire', goal: 'g', initial_knowledge: [], capabilities: [], limitations: [] }];
+  const scene = (id: string, present: string[], place: string, extra: object = {}) => ({ ...thesis(id), pov_id: 'C1', place, participants: present.map(c => ({ character_id: c, intention: 'i', knows: [], does: 'd' })), needs_things: [], needs_knowledge: [], moves: [], ...extra });
+  const chain = (theses: object[], more: object = {}) => ({ ...plan, characters: people, places: [{ id: 'L1', name: 'the office' }, { id: 'L2', name: 'the car' }], tracked: [{ id: 'K1', name: 'the notebook', start: 'In her desk', at: 'L1' }],
+    canon: { resolution: 'Jo leaves.', facts: [{ id: 'F1', truth: 'Claire knew of the affair.', established_in: 'INITIAL', reader_learns_in: 'T3', knowledge: [{ character_id: 'C2', learned_in: 'INITIAL' }, { character_id: 'C1', learned_in: 'T3' }] }] }, theses, ...more }) as unknown as ThesisPlan;
+  it('passes a chain in which every need was met by an earlier scene', () => {
+    expect(chainGaps(chain([scene('T1', ['C1'], 'L1', { moves: [{ thing: 'K1', to: 'C1' }] }), scene('T2', ['C1'], 'L2', { needs_things: [{ thing: 'K1', at: 'C1' }], moves: [{ thing: 'K1', to: 'L2' }] }),
+      scene('T3', ['C1', 'C2'], 'L1'), scene('T4', ['C1'], 'L2', { needs_things: [{ thing: 'K1', at: 'L2' }], needs_knowledge: [{ who: 'C1', fact: 'F1' }] })], { ending_rests_on: ['F1'] }))).toEqual([]);
+  });
+  it('names the scene that needs a thing and the scene that left it somewhere else', () => {
+    const gaps = chainGaps(chain([scene('T1', ['C1'], 'L2', { moves: [{ thing: 'K1', to: 'L2' }] }), scene('T2', ['C1'], 'L1', { needs_things: [{ thing: 'K1', at: 'C1' }] })]));
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toMatchObject({ severity: 'major', thesis_ids: ['T2', 'T1'] });
+    expect(gaps[0].problem).toBe('T2 needs "the notebook" with Nora, but it is in the car — left there by T1 — and no scene between moves it.');
+  });
+  it('reports knowledge used before it is learned, a thing needed after it is gone, and an ending that rests on what its heroine never learns', () => {
+    const problems = chainGaps(chain([scene('T1', ['C1'], 'L1', { needs_knowledge: [{ who: 'C1', fact: 'F1' }], moves: [{ thing: 'K1', to: 'GONE' }] }), scene('T2', ['C1'], 'L1', { needs_things: [{ thing: 'K1', at: 'L1' }] })],
+      { ending_rests_on: ['F1'], canon: { resolution: 'Jo leaves.', facts: [{ id: 'F1', truth: 'Claire knew of the affair.', established_in: 'INITIAL', reader_learns_in: 'NEVER', knowledge: [{ character_id: 'C2', learned_in: 'INITIAL' }] }] } })).map(issue => issue.problem);
+    expect(problems.some(problem => problem.startsWith('T1 has Nora act on "Claire knew of the affair.", but no scene ever gives it to them'))).toBe(true);
+    expect(problems.some(problem => problem.includes('but it is gone (destroyed, surrendered or out of reach) — left there by T1'))).toBe(true);
+    expect(problems.some(problem => problem.includes('and Nora never learns it'))).toBe(true);
+    expect(problems.some(problem => problem.includes('the reader is never given it'))).toBe(true);
+  });
+  it('refuses a need that the scene could not use, and says nothing about a plan with no chain', () => {
+    expect(chainGaps(chain([scene('T1', ['C1'], 'L1', { needs_things: [{ thing: 'K1', at: 'C2' }] })]))[0].problem).toContain('that person is not in the scene');
+    expect(chainGaps(plan)).toEqual([]);
   });
 });

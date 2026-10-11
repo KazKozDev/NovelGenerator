@@ -4,7 +4,8 @@ import { allocateThesisWords, renderThesisBook, previousThesisChapter } from '..
 import { inputKey } from '../utils/novel/v2/progressive';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
-import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
+import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
@@ -57,15 +58,19 @@ const STAGES: Record<string, string> = {
   'thesis-plan-review': 'Scene plan · review',
   'thesis-premise-coverage': 'Scene plan · is every premise given played in a scene?',
   'thesis-plan-stress': 'Scene plan · stress test of the mechanism',
+  'thesis-plan-dryrun': 'Scene plan · dry run: is everything in place before the scene that needs it?',
   'thesis-plan-repair': 'Scene plan · repair by field edits',
+  'thesis-choice': 'Scene plan · asking one person alone what they would do',
+  'thesis-choice-compare': 'Scene plan · does the outline make people act against themselves?',
   'thesis-scene-design': 'Scene plan · redesign',
   'thesis-scene-coverage': 'Scene plan · adding scenes to a short chapter',
   'thesis-scene-review': 'Scene plan · review of the redesign',
   'thesis-block-write': 'writing',
+  'thesis-draft-choice': 'choosing between two drafts, blind',
   'thesis-block-review': 'review',
   'thesis-block-repair': 'repair',
   'thesis-habits': 'Naming writing habits in the new scene',
-  'thesis-state': 'where things are at the end of it',
+  'thesis-state': 'where things are, and who has learned what',
   'thesis-impact-review': 're-review after an edit',
   'thesis-expand': 'expanding to length',
   'thesis-expand-review': 'review after expanding',
@@ -86,8 +91,8 @@ const STAGES: Record<string, string> = {
   'thesis-audit-repair': 'Final audit · repair',
   'thesis-final-audit': 'Final audit',
 };
-const SCENE_STAGES = new Set(['thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
-const SCENE_PATTERNS = [/CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n\{"id":"([^"]+)"/, /"thesis":"(\S+) \(whole in the outline/, /Current thesis: \{"id":"([^"]+)"/, /CURRENT SCENE ONLY: \{"id":"([^"]+)"/, /\nSCENE (\S+):\n/, /^SCENE (\S+):\n/, /Writable blocks: \["([^"]+)"\]/];
+const SCENE_STAGES = new Set(['thesis-draft-choice', 'thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
+const SCENE_PATTERNS = [/THE SCENE BOTH DRAFTS WERE ASKED TO WRITE:\n\{"id":"([^"]+)"/, /THE SCENE TO WRITE, AS ITS POINT-OF-VIEW CHARACTER HAS IT:\n\{"id":"([^"]+)"/, /CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n\{"id":"([^"]+)"/, /"thesis":"(\S+) \(whole in the outline/, /Current thesis: \{"id":"([^"]+)"/, /CURRENT SCENE ONLY: \{"id":"([^"]+)"/, /\nSCENE (\S+):\n/, /^SCENE (\S+):\n/, /Writable blocks: \["([^"]+)"\]/];
 
 /**
  * What a call is doing, in words a reader of the run can follow: the step, the scene it
@@ -265,6 +270,8 @@ export default function useBookGenerator() {
     const store = getStore();
     const writer = getStoredProviderConfig();
     const validator = getStoredValidatorConfig();
+    const second = getStoredSecondWriterConfig();
+    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       const start = Date.now();
@@ -273,10 +280,10 @@ export default function useBookGenerator() {
       // The head of a prompt is the author's request, the same on every call; what this
       // call was asked is at its end, and what it was refused for is named separately.
       const call = describeCall(options.stage, prompt);
-      const details = [`stage: ${options.stage || 'unlabelled'} · role: ${options.route || 'writer'} · sent ${size(prompt.length + system.length)} characters`,
+      const details = [`stage: ${options.stage || 'unlabelled'} · role: ${options.route === 'writer2' ? 'second writer' : options.route || 'writer'} · sent ${size(prompt.length + system.length)} characters`,
         call.reason ? `refused for: ${call.reason}` : '', `the request ends:\n…${prompt.slice(-700)}`].filter(Boolean).join('\n\n');
       const finish = (type: 'success' | 'warning', outcome: string) => setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.type === 'execution' && entry.details === details ? { ...entry, type: type === 'warning' ? type : entry.type, finished: true, outcome } : entry));
-      const role = options.route === 'validator' && validator ? validator : writer;
+      const role = options.route === 'validator' && validator ? validator : options.route === 'writer2' && second ? second : writer;
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
@@ -316,7 +323,8 @@ export default function useBookGenerator() {
       const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count,input), new ChapterPipelineV2(), (stage, chapter) => {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
-      }, browserHabitMemory(`${writer.provider}:${writer.provider === 'qwen' ? writer.qwenModel || 'qwen3.8-flash' : writer.provider === 'ollama' ? writer.ollamaModel || '?' : writer.geminiModel || 'default'}`));
+      }, browserHabitMemory(modelOf(writer)),
+        second ? { name: modelOf(second), habits: browserHabitMemory(modelOf(second)), record: browserDuelMemory(`${modelOf(writer)}|${modelOf(second)}`) } : undefined);
       const result = await orchestrator.runBook(input, llm);
       if (epoch.current !== token) return;
       refreshFromStore();

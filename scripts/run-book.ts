@@ -40,6 +40,9 @@ const editorProvider = arg('editor-provider', 'qwen');
 const endpoint = arg('endpoint', 'http://127.0.0.1:11434');
 const writerModel = arg('writer', writerProvider === 'gemini' ? 'gemini-3.6-flash' : 'deepseek-v4.1-flash:cloud');
 const editorModel = arg('editor', editorProvider === 'qwen' ? 'qwen3.8-flash' : editorProvider === 'anthropic' ? 'claude-haiku-5-5' : editorProvider === 'gemini' ? 'gemini-3.6-flash' : 'nemotron-3-ultra:cloud');
+// A second writer is optional: --writer2 <model> [--writer2-provider <provider>] drafts every scene twice.
+const writer2Model = arg('writer2', '');
+const writer2Provider = arg('writer2-provider', writerProvider);
 const chapters = Number(arg('chapters', '4'));
 const premise = arg('premise', '');
 if (!premise.trim()) {
@@ -163,8 +166,9 @@ async function main(): Promise<void> {
       writeFileSync(join(callsDir, `${String(calls).padStart(3, '0')}-response.txt`), replay);
       return replay;
     }
-    const model = options?.route === 'writer' ? writerModel : editorModel;
-    const via = options?.route === 'writer' ? writerProvider : editorProvider;
+    const second = options?.route === 'writer2' && !!writer2Model;
+    const model = second ? writer2Model : options?.route === 'writer' || options?.route === 'writer2' ? writerModel : editorModel;
+    const via = second ? writer2Provider : options?.route === 'writer' || options?.route === 'writer2' ? writerProvider : editorProvider;
     log(`CALL#${calls} stage=${options?.stage || 'unlabelled'} route=${options?.route || 'validator'} model=${model}${options?.deliberate ? ' deliberate' : ''} prompt=${prompt.length}ch`);
     const callId = String(calls).padStart(3, '0');
     writeFileSync(join(callsDir, `${callId}-prompt.txt`), prompt);
@@ -228,13 +232,16 @@ async function main(): Promise<void> {
     }
   };
   // What this writer model repeated in earlier books, kept beside the runs.
-  const habitFile = join('habits', `${writerProvider}-${writerModel}`.replace(/[^\w.-]+/g, '_') + '.json');
-  const habitMemory = {
-    load: () => { try { return JSON.parse(readFileSync(habitFile, 'utf8')); } catch { return []; } },
-    save: (habits: unknown[]) => { mkdirSync('habits', { recursive: true }); writeFileSync(habitFile, JSON.stringify(habits, null, 2)); },
+  const memoryFile = (name: string, empty: unknown = []) => {
+    const file = join('habits', name.replace(/[^\w.-]+/g, '_') + '.json');
+    return {
+      load: () => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return empty; } },
+      save: (value: unknown) => { mkdirSync('habits', { recursive: true }); writeFileSync(file, JSON.stringify(value, null, 2)); },
+    };
   };
+  const habitMemory = memoryFile(`${writerProvider}-${writerModel}`);
   const orchestrator = new Orchestrator(store, { maxCalls, maxTimeMs: maxMinutes * 60 * 1000 }, new ChapterPipelineV2(),
-    (stage, chapter) => log(`STAGE ${stage}${chapter ? ` ch${chapter}` : ''} calls=${calls}`), habitMemory);
+    (stage, chapter) => log(`STAGE ${stage}${chapter ? ` ch${chapter}` : ''} calls=${calls}`), habitMemory, writer2Model ? { name: `${writer2Provider}:${writer2Model}`, habits: memoryFile(`${writer2Provider}-${writer2Model}`), record: memoryFile(`duel-${writerProvider}-${writerModel}--${writer2Provider}-${writer2Model}`, undefined) as any } : undefined);
   const result = await orchestrator.runBook({
     ...(store.loadInput()?{planning_version:store.loadInput()!.planning_version}:{planning_version:2 as const}),
     premise,
