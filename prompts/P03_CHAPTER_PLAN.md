@@ -39,6 +39,12 @@ Stagings of the recently accepted scenes (who was present, where, through whose 
 Remaining length:
 {{remaining_word_budget}}
 
+How many scenes this chapter holds:
+{{scene_room}}
+
+What the premise gave and the book has not yet put on the page:
+{{premise_owed}}
+
 What a previous attempt at this chapter got wrong:
 {{plan_findings}}
 
@@ -46,6 +52,11 @@ Fresh material for this chapter (concrete cards, not advice):
 {{fresh_constraint}}
 
 REQUIREMENTS
+- When intention_collisions are supplied in the construction, turn their
+  action-response chain into decisions on the page. Each person pursues their own
+  goal using only knowledge available to them. Show the mechanism and cost that
+  make the result possible; a threatened person need not cooperate for the plot.
+  These planning experiments are not events already established in story memory.
 - Define what this chapter adds and what changes by its end.
 - State the chapter's mechanism, cost, and pressure_rung.
   The mechanism is how the obstacle is met here, drawn from the book's
@@ -69,6 +80,37 @@ REQUIREMENTS
   hold a single room.
 - For each scene set participant intentions, starting conditions,
   and a substantive outcome.
+- Plan no more scenes than the chapter holds, as stated above. Do not set
+  target_words: the chapter's length is shared among its scenes in code.
+- Give each scene state_at_start and state_at_end: where things stand when
+  it opens and when it closes — who is where, who holds what, the state of
+  any object that matters (open or shut, hidden or in view, whole or
+  broken). A few entries, keyed by the character id or the thing's plain
+  name; use the same key for the same thing in every scene. A scene opens
+  exactly where the one before it closed: its state_at_start repeats, key for
+  key, the state_at_end before it, and where something changed between the
+  scenes the entry says what and how, as a movement or a lapse of time
+  ("has walked from the office to the quay", "an hour later, back at the
+  desk"). This is compared in code — a book shut
+  at the end of one scene and lying open at the start of the next is
+  returned to you before it is written.
+- Events in the causal map marked before_story are what happened before
+  the book opens, and they are settled. A scene that uncovers the past
+  uncovers a part of those events, as they are stated, and says in
+  establishes which part; it never supplies a different account, and what
+  a character says of the past is either true to them or a lie the plan
+  names as one.
+- Give each scene establishes: the particulars it fixes for the rest of the
+  book, one plain sentence each — a number, a date, a time, a room, a name
+  given to a thing, who did what. Decide them here; the writer is told to
+  use them as they stand and to fix no others. Each must agree with the
+  facts in the current state, and they are checked against it in code. An
+  empty list is right for a scene that fixes nothing.
+- For each premise given listed above as owed, decide which scene puts it on
+  the page, and say so in that scene's pays_premise: the id as listed, and
+  action — what is done or said, by whom, that pays it, as the premise gave
+  it. If the premise says someone asks for something, the plan has them ask.
+  A given that belongs to a later chapter is left unassigned here.
 - Participants are character ids exactly as cast — never roles,
   names, or descriptions. A role where an id should be is not resolved
   by guessing: it becomes an unknown-participant problem for the review,
@@ -97,7 +139,7 @@ REQUIREMENTS
   well each is written. Change who is present, where it happens, or through
   whose eyes — or give the repetition a reason the chapter needs. This is about
   the shape of scenes, not about forbidding a location the story lives in.
-- Treat handoff.known_to_reader and handoff.forbidden_restatements as already
+- Treat the events and disclosures in the current state, and the handoff's forbidden_restatements, as already
   established. Each scene must transform or exploit them, not explain them again.
 - Keep handoff.open_questions open until a planned action can answer them from
   evidence. Make the first scene's result distinct from handoff.previous_outcome.
@@ -164,6 +206,10 @@ JSON only:
       ],
       "pressure_or_uncertainty": "",
       "development": "",
+      "state_at_start": {"C01": "", "thing": ""},
+      "state_at_end": {"C01": "", "thing": ""},
+      "establishes": [],
+      "pays_premise": [{"id": "", "action": ""}],
       "required_outcome": "",
       "flexible_elements": [],
       "required_fact_refs": [],

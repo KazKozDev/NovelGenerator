@@ -21,10 +21,12 @@ export function elapsedLabel(ms: number): string {
  * The run's own clock. The first logged call is when work began, and one log
  * entry is written per model call, so the count is calls, not activity.
  */
-export const RunClock: React.FC<{ agentLogs: AgentLogEntry[]; isLoading: boolean; className?: string }> = ({
+export const RunClock: React.FC<{ agentLogs: AgentLogEntry[]; isLoading: boolean; className?: string; callCount?: number; endedAt?: number }> = ({
   agentLogs,
   isLoading,
   className = '',
+  callCount,
+  endedAt,
 }) => {
   const startedAt = agentLogs[0]?.timestamp;
   const [now, setNow] = useState<number>(() => Date.now());
@@ -37,7 +39,7 @@ export const RunClock: React.FC<{ agentLogs: AgentLogEntry[]; isLoading: boolean
   if (!startedAt) return null;
   return (
     <span className={`font-mono text-zinc-500 ${className}`}>
-      {elapsedLabel(now - startedAt)} · {agentLogs.length} call{agentLogs.length === 1 ? '' : 's'}
+      {elapsedLabel((endedAt || now) - startedAt)} · {callCount ?? agentLogs.length} call{(callCount ?? agentLogs.length) === 1 ? '' : 's'}
     </span>
   );
 };

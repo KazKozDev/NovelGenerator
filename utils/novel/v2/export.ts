@@ -1,3 +1,5 @@
+import { validateThesisDraft } from './theses';
+import { validateProgressive } from './progressive';
 import { validateBookDesign } from './designer';
 import type { ProjectStore } from './store';
 
@@ -11,6 +13,8 @@ export interface ProjectSnapshot {
   version: 1;
   exportedAt: string;
   files: {
+    thesis_draft?: unknown;
+    progressive_draft?: unknown;
     input: unknown;
     book_design: unknown;
     chapter_map: unknown;
@@ -33,6 +37,8 @@ export function snapshotProject(store: ProjectStore): ProjectSnapshot {
     version: 1,
     exportedAt: new Date().toISOString(),
     files: {
+      thesis_draft: store.loadTheses(),
+      progressive_draft: store.loadProgressive(),
       input: store.loadInput(),
       book_design: design,
       chapter_map: store.loadChapterMap(),
@@ -94,8 +100,13 @@ export function restoreSnapshot(store: ProjectStore, snap: unknown): void {
     throw new Error('Snapshot input is malformed.');
   }
   if (files.book_design) validateBookDesign(files.book_design, input.chapter_count);
+  if (files.progressive_draft) validateProgressive(files.progressive_draft, files.input as Parameters<ProjectStore['saveInput']>[0]);
+  if (files.thesis_draft) validateThesisDraft(files.thesis_draft, files.input as Parameters<ProjectStore['saveInput']>[0]);
+  if (files.thesis_draft && files.progressive_draft) throw new Error('Snapshot contains incompatible generation drafts.');
   store.clearAll();
   store.saveInput(files.input as Parameters<ProjectStore['saveInput']>[0]);
+  if (files.thesis_draft) store.saveTheses(files.thesis_draft as Parameters<ProjectStore['saveTheses']>[0]);
+  if (files.progressive_draft) store.saveProgressive(files.progressive_draft as Parameters<ProjectStore['saveProgressive']>[0]);
   if (files.book_design) store.saveDesign(files.book_design as Parameters<ProjectStore['saveDesign']>[0]);
   if (files.style_contract && typeof files.style_contract === 'object') {
     store.saveStyleContract(files.style_contract as Parameters<ProjectStore['saveStyleContract']>[0]);

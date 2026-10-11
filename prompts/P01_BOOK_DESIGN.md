@@ -1,6 +1,7 @@
 # P01_BOOK_DESIGN — book construction
 
-When: once, before writing.
+When: successive reviewed levels, before writing.
+Only requirements owned by the CURRENT LEVEL below are due in this call.
 
 TASK
 Prepare a compact book construction suitable for subsequent writing. The main goal is a story that develops through the actions of its participants and the consequences of those actions.
@@ -51,6 +52,12 @@ WORK ORDER
    pressure curve.
 
 CONSTRUCTION REQUIREMENTS
+- Events develop through choices made from each participant's own goals and
+  available knowledge. Do not make a threatened person passively cooperate for
+  the protagonist's convenience. Silence, withdrawal and cooperation are valid
+  choices when justified. No conventional villain is required.
+- The proposed ending is an outcome to earn. The later intention experiments
+  can request its explicit reopening if plausible choices make it unreachable.
 - Cast every person the premise names, under that premise-given name;
   a diminutive may appear only beside the full form, never replacing it.
   A premise-given "someone" is the only open casting slot — everything
@@ -69,7 +76,43 @@ CONSTRUCTION REQUIREMENTS
   Its shape is checked against pressure_curve in code, so a rising curve whose
   rungs never rise is rejected before any chapter is planned.
 - Do not explain every act with trauma or a hidden past.
+- If the story uncovers something that happened before its first page — a
+  disappearance, a forgery, a death, a bargain — decide here what happened,
+  whole: who did what, to whom, where, when, why, and how it was hidden.
+  Before settling on it, consider at least three different answers, one of
+  which goes against the reading of the premise a reader would reach first,
+  and keep the one that explains the most while being the least expected.
+  Put it at the head of causal_map as events marked "before_story": true,
+  in order. Write them as facts, never as placeholders: "concealed a
+  specific event", "someone", "a secret" decide nothing, and every chapter
+  that reveals a piece will then invent its own. Every chapter that
+  uncovers the past uncovers a part of these events and nothing else.
+- The past must account for every oddity the premise or this design
+  plants: each strange thing a character will find has, in the
+  before_story events, the act that left it there. An oddity nothing
+  explains is not planted.
+- world_rules also fix the particulars the story will stand on, one rule
+  each, with subject and attribute: the layout of the place (which floors,
+  what is on each, how rooms are numbered), the period and what follows
+  from it (the money, how records are kept, how people travel and send
+  word), what each important person does for a living, for how long, and
+  where they sleep, the season and how many days the story takes; and for
+  every document, record, letter or object the story turns on, what it
+  actually says or holds — the names written in it, the dates, the sums,
+  whose hand, where it is kept — both the false version and the true one
+  where there are two. A short book needs at least eight such rules; fix
+  everything two different scenes will have to agree about. The rule itself is
+  the plain statement. These are on record before the first scene and no
+  scene may state them otherwise, so decide them once here rather than
+  leaving each scene to decide them again.
 - Prepare the means of resolving the conflict before their decisive use.
+- ending.required_setup lists everything the ending stands on, and that
+  includes why: the reason this person makes the decisive choice, shown
+  before they make it, is a requirement like any object or fact. Each entry
+  is placed in a chapter before the last — name it in that chapter's
+  function, main_change or setup_or_payoff. An entry no earlier chapter
+  prepares is reported in code, because the last chapter cannot set up the
+  ending and deliver it in the same pages.
 - Preserve the features of the original premise.
 - Choose the narrative scheme to fit the story.
 - Do not detail future scenes and do not write prose.
@@ -121,102 +164,20 @@ register, attitude to humor, and emotional restraint.
 Do not set quotas on sentence length, dialogue, or metaphors.
 
 FORMAT
-Return only JSON with the following structure.
-Fill lists as needed; chapter_map contains exactly
-{{chapter_count}} entries.
+Return only the sections owned by the current level, using this JSON shape:
+{{output_schema}}
 
-{
-  "contract": {
-    "working_title": "",
-    "explicit_requirements": [],
-    "premise_givens": [
-      {"given": "", "kind": "person | thing | situation | fact"}
-    ],
-    "premise_names": [],
-    "inferred_decisions": [
-      {"decision": "", "reason": ""}
-    ],
-    "tense": "",
-    "narrative_perspective": "",
-    "genre_expectations_selected": []
-  },
-  "profile": {
-    "pressure_curve": "rising | oscillating | investigative | flat | descending",
-    "curve_reason": "",
-    "declared_motifs": [
-      {"motif": "", "allowed_uses": 0, "reason": ""}
-    ],
-    "cost_kinds": [],
-    "dialogue_weight": "low | medium | high",
-    "staging_variety": "low | medium | high",
-    "mechanism_reuse": "low | medium | high",
-    "open_ending": false,
-    "mechanism_ledger": [],
-    "ending_invariants": []
-  },
-  "dramatic_core": {
-    "distinctive_situation": "",
-    "central_conflict": "",
-    "stakes": "",
-    "why_now": "",
-    "sources_of_development": []
-  },
-  "style_contract": {
-    "narrative_distance": "",
-    "attention": "",
-    "register": "",
-    "humor": "",
-    "emotional_expression": ""
-  },
-  "characters": [
-    {
-      "id": "C01",
-      "name": "",
-      "story_function": "",
-      "goal": "",
-      "motives": [],
-      "capabilities": [],
-      "limitations": [],
-      "relationships": [],
-      "behavior": "",
-      "voice_and_perception": "",
-      "initial_knowledge": [],
-      "initial_beliefs": []
-    }
-  ],
-  "world_rules": [
-    {"id": "R01", "rule": "", "relevant_consequences": []}
-  ],
-  "causal_map": [
-    {
-      "id": "E01",
-      "cause": "",
-      "actor_id": "",
-      "action_or_event": "",
-      "consequence": "",
-      "requires": [],
-      "enables": []
-    }
-  ],
-  "ending": {
-    "central_resolution": "",
-    "decisive_action_or_choice": "",
-    "required_setup": [],
-    "intentionally_open_questions": []
-  },
-  "chapter_map": [
-    {
-      "chapter": 1,
-      "function": "",
-      "main_change": "",
-      "event_ids": [],
-      "dependencies": [],
-      "setup_or_payoff": [],
-      "pov_id": null,
-      "target_words": 0,
-      "mechanism": "",
-      "cost": "",
-      "pressure_rung": 1
-    }
-  ]
-}
+CURRENT LEVEL
+{{level_task}}
+
+APPROVED UPPER LEVELS (read-only; code preserves them)
+{{approved_plan}}
+
+PREVIOUS VERSION OF THIS LEVEL
+{{previous_layer}}
+
+FINDINGS TO REPAIR
+{{review_issues}}
+
+Only requirements applicable to this level are due now. Missing sections owned
+by a later level are intentional. Never repeat or revise approved upper sections.

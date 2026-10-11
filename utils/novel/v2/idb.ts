@@ -26,14 +26,15 @@ function openDb(): Promise<IDBDatabase | null> {
 function run<T>(mode: IDBTransactionMode, task: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
   return openDb().then(db => {
     if (!db) return null;
-    return new Promise<T | null>(resolve => {
+    return new Promise<T | null>((resolve, reject) => {
       try {
         const tx = db.transaction(STORE_NAME, mode);
         const request = task(tx.objectStore(STORE_NAME));
-        request.onsuccess = () => resolve(request.result ?? null);
-        request.onerror = () => resolve(null);
-        tx.oncomplete = () => db.close();
-        tx.onerror = () => resolve(null);
+        let result: T | null = null;
+        request.onsuccess = () => { result = request.result ?? null; };
+        request.onerror = () => { if (mode === 'readwrite') reject(request.error || Error('IndexedDB write failed')); else resolve(null); };
+        tx.oncomplete = () => { db.close(); resolve(result); };
+        tx.onabort = tx.onerror = () => { db.close(); if (mode === 'readwrite') reject(tx.error || Error('IndexedDB transaction failed')); else resolve(null); };
       } catch {
         resolve(null);
       }

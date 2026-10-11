@@ -1,14 +1,16 @@
-# P08_SPAN_REPAIR — replace duplicated sentences in place
+# P08_SPAN_REPAIR — rewrite marked sentences in place
 
-When: after a scene is written, for the sentences that repeat earlier prose verbatim.
+When: after a scene is written, for the sentences that repeat earlier prose, and for the sentences that carry an image the book has used up.
 
 TASK
 Rewrite the listed sentences so they stop duplicating text the book already
-wrote, and change nothing else about them.
+wrote, or stop using the worn image they are marked with, and change nothing
+else about them.
 
 CONTRACT AND VOICE
 {{story_contract}}
 {{style_contract}}
+{{narration}}
 
 WHAT THIS SCENE IS DOING
 {{scene_summary}}
@@ -19,7 +21,23 @@ THE EARLIER TEXT THESE SENTENCES REPEAT
 THE SENTENCES TO REPLACE
 {{sentences}}
 
-WHAT A REPLACEMENT MUST DO
+Each sentence is marked with why it is listed. One marked "repeats" says again
+what the book already said, in the same or nearly the same words. One marked
+"WORN IMAGE" uses a picture the book has already used too often.
+
+FOR A SENTENCE MARKED WORN IMAGE
+- Drop the image entirely: not the same picture in other words, not a
+  neighbouring one from the same source, and no other recurring image in its
+  place. If the sentence existed only to carry it, replace it with what the
+  point-of-view character does or notices next that is plainly there — one
+  short, concrete sentence.
+- Keep everything else the sentence carried: any action, any speech, any
+  fact, who is present and where.
+- If the image is itself what happens in the sentence — the thing is used,
+  moved, or acted on, not merely described — return it with an empty
+  replacement and say why.
+
+FOR A SENTENCE MARKED REPEATS — WHAT A REPLACEMENT MUST DO
 - Carry exactly the same information as the original sentence. Same fact, same
   action, same perception, same person doing it. Nothing happens in the
   replacement that did not happen in the original, and nothing stops happening.

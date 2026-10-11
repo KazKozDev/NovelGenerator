@@ -61,6 +61,41 @@ export function priorOutcomeKinds(store: ProjectStore, throughChapter: number, l
   return kinds.slice(-limit);
 }
 
+/**
+ * How long a scene runs in this book, and how many of them a chapter holds.
+ *
+ * A planner asked to divide a chapter's words among its scenes divides them
+ * and then plans as many scenes as the chapter's purpose suggests; the writer
+ * writes each at the length it naturally writes. Across thirty measured scenes
+ * that length barely moved — eleven to fifteen hundred words whatever the plan
+ * said, 800 or 1200 — so every book came out 40% to 90% longer than asked,
+ * by exactly its surplus of scenes. Length is decided by how many scenes there
+ * are, and counting is code's work.
+ *
+ * The rate is the book's own once it has three scenes to measure, the median
+ * of what was written; before that a starting value taken from those thirty.
+ */
+export const DEFAULT_WORDS_PER_SCENE = 1250;
+
+export function wordsPerScene(store: ProjectStore, throughChapter: number, minScenes = 3): number {
+  const lengths: number[] = [];
+  for (let chapter = 1; chapter <= throughChapter; chapter++) {
+    for (const record of store.chapterScenes(chapter)) {
+      const words = record.prose.split(/\s+/).filter(Boolean).length;
+      if (record.delta && words > 0) lengths.push(words);
+    }
+  }
+  if (lengths.length < minScenes) return DEFAULT_WORDS_PER_SCENE;
+  lengths.sort((first, second) => first - second);
+  const middle = Math.floor(lengths.length / 2);
+  return Math.round(lengths.length % 2 ? lengths[middle] : (lengths[middle - 1] + lengths[middle]) / 2);
+}
+
+/** The number of scenes whose natural length comes nearest the chapter's: never fewer than one. */
+export function scenesFor(chapterWords: number, rate: number): number {
+  return chapterWords > 0 ? Math.max(1, Math.round(chapterWords / rate)) : 0;
+}
+
 /** Every word of prose the book has accepted so far, newest chapters last. */
 export function acceptedProse(store: ProjectStore, throughChapter?: number): { ref: string; text: string }[] {
   return store.manuscript()
@@ -116,7 +151,7 @@ export function wornLedger(store: ProjectStore, profile: BookProfile, throughCha
  */
 export function describeWorn(worn: WornEntry[]): string {
   if (!worn.length) return '(nothing worn out yet)';
-  return worn.map(item => `- "${item.phrase}" — written ${item.uses} times already. Do not repeat this wording or build another image on it. If the thing itself must appear again, name it plainly and move on.`).join('\n');
+  return worn.map(item => `- "${item.phrase}" — written ${item.uses} times already. Do not repeat this wording or build another image on it. If the thing itself has to appear again, it appears under its ordinary name, once.`).join('\n');
 }
 
 export interface DriftReport {

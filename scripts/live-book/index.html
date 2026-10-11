@@ -1,0 +1,51 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Книга в процессе</title>
+<style>
+body{margin:0;background:#f6f3ed;color:#292820;font:16px system-ui}header{padding:20px 28px;border-bottom:1px solid #d7d2c6;position:sticky;top:0;background:#f6f3ed;z-index:1}h1{font-size:22px;margin:0 0 8px}#status{color:#676456;font-size:14px}main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:30px;max-width:1400px;margin:auto;padding:28px}article{max-width:780px;margin:auto}section{padding:8px 0 24px;scroll-margin-top:130px}.thesis{border-left:3px solid #bcb28c;padding:10px 14px;margin-bottom:18px;font:14px/1.5 system-ui;color:#69634e}.inline-change{scroll-margin-top:150px}ins{text-decoration:none}header button{margin-left:8px}.change button{float:none;display:block;margin-top:12px}h2{font-size:15px;color:#77725e}.prose{font:19px/1.75 Georgia,serif;white-space:pre-wrap}aside{position:sticky;top:105px;align-self:start;max-height:calc(100vh - 140px);overflow:auto}.change{background:white;border:1px solid #ded8cb;border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;font:14px/1.5 system-ui}.before{background:#ffe4df;color:#873d32;text-decoration:line-through}.after{background:#e4efdf;color:#355a2e}.label{font-size:12px;color:#777;margin:8px 0}.flash{animation:flash 3s}@keyframes flash{from{background:#e2edb8}to{background:transparent}}details{font-size:12px;color:#777}pre{white-space:pre-wrap}button{float:right;padding:7px 12px;cursor:pointer}@media(max-width:850px){main{grid-template-columns:1fr}aside{position:static;max-height:none}}
+</style>
+<header><button id="mode" aria-pressed="false">Показать изменения</button><button id="pause">Пауза просмотра</button><h1 id="title">Книга проявляется</h1><div id="status">Подключаемся…</div></header>
+<main><article><div id="outline"></div><div id="book"></div></article><aside><h2>Точечные правки · новые сверху</h2><div id="changes"></div><details><summary>Последние события</summary><pre id="activity"></pre></details></aside></main>
+<script>
+let paused=false, previous=new Map(), editSignature='', latest=null, selected=null, showDiff=false;
+const phases={plan:'Создаётся план', 'plan-review':'Проверяется план',rough:'Короткий черновик',expand:'Расширение',polish:'Полировка',seam:'Стык сцен','audit-repair':'Исправление по аудиту',repair:'Исправление'};
+const el=(tag,text,cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n};
+function renderBlock(id){
+ const block=latest?.blocks.find(b=>b.thesis_id===id), node=document.getElementById('block-'+id);if(!block||!node)return;
+ const prose=node.querySelector('.prose');prose.replaceChildren();
+ const edit=selected?.block_id===id?selected:[...latest.edits].reverse().flatMap(b=>[...b.edits].reverse()).find(e=>e.block_id===id);
+ if(!showDiff||!edit){prose.textContent=block.text;return}
+ const at=edit.after?block.text.indexOf(edit.after):-1;
+ if(at<0||block.text.indexOf(edit.after,at+1)>=0){prose.textContent=block.text;prose.prepend(el('div','Эта историческая правка уже изменена дальше или удалена. Сравнение доступно справа.','label'));return}
+ let prefix=0,suffix=0;const a=edit.before,b=edit.after;
+ while(prefix<a.length&&prefix<b.length&&a[prefix]===b[prefix])prefix++;
+ while(suffix<a.length-prefix&&suffix<b.length-prefix&&a[a.length-1-suffix]===b[b.length-1-suffix])suffix++;
+ prose.append(document.createTextNode(block.text.slice(0,at)+b.slice(0,prefix)));
+ const mark=el('span','','inline-change');mark.id='selected-change';
+ if(a.length-prefix-suffix)mark.append(el('del',a.slice(prefix,a.length-suffix),'before'));
+ if(b.length-prefix-suffix)mark.append(el('ins',b.slice(prefix,b.length-suffix),'after'));
+ prose.append(mark,document.createTextNode(b.slice(b.length-suffix)+block.text.slice(at+b.length)));
+}
+function renderAll(){if(latest)for(const b of latest.blocks)renderBlock(b.thesis_id)}
+function mode(){document.querySelector('#mode').textContent=showDiff?'Показать чистый текст':'Показать изменения';document.querySelector('#mode').setAttribute('aria-pressed',String(showDiff));renderAll()}
+function jump(edit){selected=edit;showDiff=true;mode();const node=document.getElementById('block-'+edit.block_id);const target=node?.querySelector('.inline-change')||node;target?.scrollIntoView({behavior:'smooth',block:'center'});target?.classList.remove('flash');if(target){void target.offsetWidth;target.classList.add('flash')}}
+document.querySelector('#mode').onclick=()=>{showDiff=!showDiff;mode()};
+document.querySelector('#pause').onclick=()=>{paused=!paused;document.querySelector('#pause').textContent=paused?'Продолжить просмотр':'Пауза просмотра';if(!paused)update()};
+async function update(){if(paused)return;try{
+ const response=await fetch('/state');if(!response.ok)throw Error('Снимок обновляется…');const s=await response.json();latest=s;
+ const outline=document.querySelector('#outline');const outlineKey=JSON.stringify([s.synopsis,s.plan,s.planReady,s.blocks.length]);if(outline.dataset.signature!==outlineKey){outline.dataset.signature=outlineKey;outline.replaceChildren();if(!s.blocks.length){outline.append(el('h2',s.planReady?'План проверен. Писатель начинает сцены.':'Сначала проявляется план — затем текст сцен.'));if(s.synopsis){const synopsis=el('details','');synopsis.open=true;synopsis.append(el('summary','Синопсис · содержит разгадку'),el('div',s.synopsis,'prose'));outline.append(synopsis)}for(const t of s.plan){const card=el('section','');card.append(el('h2','Глава '+t.chapter+' · '+t.id),el('div',t.action,'thesis'),el('p','Зачем: '+t.why),el('p','Результат: '+t.outcome));outline.append(card)}}}
+ document.querySelector('#title').textContent=s.title||'Книга проявляется';
+
+ const words=s.blocks.reduce((n,b)=>n+(b.text.trim()?b.text.trim().split(/\s+/).length:0),0);
+ document.querySelector('#status').textContent=(s.status||phases[s.phase]||s.phase)+' · '+words+' слов · '+s.blocks.length+' из '+s.plan.length+' блоков · обновление раз в секунду';
+ const book=document.querySelector('#book');
+ for(const b of s.blocks){let node=document.getElementById('block-'+b.thesis_id);if(!node){node=el('section','');node.id='block-'+b.thesis_id;const thesis=s.plan.find(t=>t.id===b.thesis_id);node.append(el('h2','Глава '+(thesis?.chapter||'')+' · '+b.thesis_id),el('div',thesis?.action||'','thesis'),el('div','','prose'));book.append(node)}
+  if(previous.get(b.thesis_id)!==b.text){renderBlock(b.thesis_id);if(previous.has(b.thesis_id)){node.classList.remove('flash');void node.offsetWidth;node.classList.add('flash')}previous.set(b.thesis_id,b.text)}
+ }
+ const signature=JSON.stringify(s.edits);if(signature!==editSignature){editSignature=signature;const changes=document.querySelector('#changes');changes.replaceChildren();
+  for(const batch of [...s.edits].reverse()){for(const e of [...batch.edits].reverse()){const c=el('div','','change');c.append(el('div',e.block_id+' · '+(phases[batch.phase]||batch.phase)+' · '+new Date(batch.at).toLocaleTimeString(),'label'));if(e.before)c.append(el('div',e.before,'before'));if(e.after)c.append(el('div',e.after,'after'));const go=el('button','Перейти к абзацу');go.onclick=()=>jump(e);c.append(go);changes.append(c)}}
+  if(!s.edits.length)changes.append(el('p','Пока создаётся черновик. Здесь появятся применённые изменения.'));
+ }
+ document.querySelector('#activity').textContent=s.activity.join('\n');
+ }catch(e){document.querySelector('#status').textContent=e.message+' Повторяем подключение.'}}
+update();setInterval(update,1000);
+</script></html>

@@ -33,6 +33,17 @@ CHECK
 - Whether necessary future decisions are prepared.
 - Whether development fits the given length.
 - Whether author requirements and premise features are preserved.
+- When a book design is under review and the story uncovers a past:
+  whether the design says, as fact, what happened — who, to whom, where,
+  when, why, how hidden — or leaves it as "something" for later chapters
+  to invent; whether that past accounts for every oddity the premise and
+  the design plant; whether a reader could work it out from what the
+  chapters are set to uncover; and whether it is more than the first
+  reading of the premise. Each failure is blocking.
+- When a book design is under review: whether the particulars the story
+  will stand on — the layout of the place, the period and its money and
+  records, each person's trade — are fixed as world rules, and whether any
+  two of them, or any of them and the past, cannot both be true.
 
 REVIEW BOUNDARIES
 - Do not demand an external conflict, twist, or cliffhanger in every scene.
@@ -53,9 +64,11 @@ PLAN VS PROSE (one-line test)
 - blocking on motivation is reserved for load-bearing events where no such
   line exists: the resolution hinges on the act and the character as written
   would not plausibly do it under any in-scene framing.
-- On re-review, previously settled points stay settled: judge only whether
-  the fixes resolved the raised issues and whether the fixes themselves broke
-  coherence. Do not open new fronts on decisions that already passed review.
+- On re-review, check the fixes and any newly visible substantial defect.
+  Never downgrade a real contradiction just because it appeared on a later round.
+- For crystallization, only sections due at the current level are required.
+  Missing later sections are not defects. If the cause of a defect is frozen
+  above the current level, target that upper section explicitly for reopening.
 
 STATIC OUTCOME (kinetic test)
 - Compare the starting situation with the required outcome: has anyone's

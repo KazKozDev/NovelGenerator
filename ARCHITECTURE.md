@@ -3,7 +3,63 @@
 The production path is `App → useBookGenerator → utils/novel/v2/orchestrator.ts`.
 React renders committed snapshots; it does not calculate memory or sequence model calls.
 
-## Model roles
+## Active generation: progressive manifestation beneath theses
+
+Fresh app and CLI books use `generation_mode: 'progressive'` and `v2/theses.ts`.
+A coarse synopsis including the ending and chapter skeleton precedes the complete
+thesis outline and its whole-plan review. Theses record participants, intentions,
+knowledge, time/place, cause, action, resistance, outcome and dependencies. Code
+validates IDs, chapter coverage and dependencies, and assigns exact total word budgets from model-proposed relative weights. No scene is written
+until the outline passes review. Plan repair continues automatically while independent checks verify resolution of the previous blocking defects; two consecutive rounds without verified progress stop with saved findings. The overall run budget bounds every call.
+
+Each block receives a code-derived event contract without additional model calls:
+its first event/disclosures, earlier written events with prose references and review
+status, the actual ending of the preceding block, and the next block's reserved
+action/outcome. Matching disclosure labels retain their earliest thesis owner.
+Plans are not treated as proof that an event occurred. Writers and reviewers use
+the contract during writing, expansion, polish, seam repairs and final repairs;
+outline review distinguishes first occurrences from responses and consequences.
+The paired thesis export shows these ownership boundaries. Existing snapshots
+need no new generated fields or migration.
+
+The first manifestation writes short scenes beneath every thesis before expansion
+starts. `ROUGH` review checks facts and causality while allowing terse prose. Then
+`expand` and `polish` visit blocks with the same thesis and neighboring context.
+`manuscriptTools.ts` exposes model-driven JSON tools: `search` (ranked lexical/phrase
+paragraph excerpts), `read` (bounded character ranges), `replace` (atomic exact-anchor
+replacements), and `finish`. During manifestation `revise_thesis` proposes a causal correction to the current thesis; the editor checks it against the whole outline before saving it. Linked earlier blocks are revisited during polish, within the overall run budget. No embeddings, provider function-calling dependency or
+external search service is required. The tool directory contains IDs and sizes;
+search/read return only requested excerpts. The writer does not receive all preceding
+prose. The final audit still receives the whole manuscript.
+
+Only the active block is writable. Replacements may insert, delete or change text;
+missing, ambiguous and stale anchors fail without a partial batch. Patches are saved
+immediately in `thesis_draft.edits`, even if the next model call is interrupted.
+Expansion repeats while measured scene length increases toward the input budget; two consecutive passes without length progress stop with saved text. Local semantic defects are retained in `deferred` for whole-book causal reconciliation while other blocks advance. Prose reviews check semantic events and causality, not exact wording or illustrative staging. Blocking claims require an actual prose quote and a concrete consequence; style is advisory. Malformed checker assessments are stored as unavailable reviews with `review_failures` history, not treated as successful checks or defects in the manuscript. Unavailable current checks are retried before the final audit; remaining failures and major findings prevent a clean report. Transport failures still propagate. Rough, expanded and polished block snapshots live in
+`manifestation.versions`; phase and position support portable resume. All blocks being
+present is not completion: manifestation must finish and a final report must exist.
+
+After expansion and before polish, adjacent scene endings and beginnings receive
+a dedicated seam review, including across chapter boundaries. The editor receives
+bounded boundary prose, adjacent theses and locally retrieved earlier disclosures.
+At most two repairs may patch either adjacent block; edits and the seam cursor are
+saved immediately for resume. Unresolved or unavailable seam checks are retained
+and rechecked before final assessment. Polishing searches the manuscript for
+repeated imagery and explanations of feelings, preserving useful motifs and new
+emotional developments. The final audit separately records transitions, causality
+and repeated-event checks; failed checks cannot produce a clean report.
+Major final findings automatically return to the writer for exact local patches while independently reviewed blocking counts decrease after manuscript changes. `final_repair` persists the attempt, pending findings and changed block
+IDs. Changed blocks and their neighboring seams are checked again before a new
+whole-book audit. Interrupted repairs resume with their saved text; unresolved
+blocking findings after two consecutive rounds without reviewed progress stop the run with saved findings; they cannot produce a completed report. Minor advice remains warnings.
+
+The CLI exports paired `thesis-book.md` and prose-only `manuscript.md`; the app shows
+theses paired with prose and the current manifestation phase. Explicit `'theses'`
+retains one-pass block writing with patch-based repairs. Existing `progressive_draft`
+snapshots resume through the old `DEVELOP_*` engine; old designs use `'chapters'`.
+Existing projects are not silently migrated. Model acceptance does not prove quality.
+
+## Legacy chapter pipeline: model roles
 
 Two roles, configured independently: the **writer** produces prose, the **editor** plans,
 reviews, extracts memory and audits the book. `NovelLLM` carries
@@ -33,20 +89,74 @@ prompt to the same contract — `tests/prompts.test.ts`.
 
 | Prompt | Stage |
 | --- | --- |
-| `P01_BOOK_DESIGN` | one compact construction: contract, cast, rules, causal map, ending, chapter map |
+| `P01_BOOK_DESIGN` | three short candidate plans, then expansion of each owned level |
+| `P01_CONCEPT_SELECT` | explicit comparison of all candidates and selection rationale |
+| `P01_INTENTION_SITUATIONS` | three decisive situations and private observation packets |
+| `P01_INTENTION_CHOICE` | one person's independent choice from their goals and evidence |
+| `P01_INTENTION_RESOLVE` | consequences of the choices meeting and required plan repairs |
 | `P02_PLAN_REVIEW` | construction review, and later each scene's readiness |
 | `P03_CHAPTER_PLAN` | one chapter, from confirmed memory |
-| `P03_SCENE_REBASE` | rebase the next scene on the accepted scene handoff |
+| `P03_SCENE_REBASE` | replan a scene, only when the scene before it left its plan |
 | `P04_SCENE_WRITE` | one scene, from a verified package |
 | `P05_STATE_UPDATE` | what the written scene changed, against paragraph evidence |
-| `P06_FORWARD_UPDATE` | reconcile the remaining plan with what was written |
+| `P06_FORWARD_UPDATE` | close a chapter: what to correct in it, and what the plan ahead must now be |
 | `P07_FINAL_AUDIT` | check the finished book and report |
+| `P08_SPAN_REPAIR` | rewrite marked sentences in place: a repeat, or a worn image |
+| `P09_BEAT_CONDENSE` | cut down in place the paragraphs that stage a beat again |
+| `P10_SPAN_CORRECT` | correct a stated particular in place |
+| `P11_BEAT_INSERT` | one short beat between two paragraphs |
 
 ## The order of work
 
-The orchestrator owns the order, the budgets and the record. One design call, one
-construction review with bounded fixes, then chapters in order through the injected
-chapter pipeline, then the audit. Nothing else decides what runs next.
+The orchestrator owns the order, budgets and record. Planning now crystallizes before
+any prose exists:
+
+1. P01 produces three short plans for the whole book. P01_CONCEPT_SELECT compares
+   their causal invention, fidelity and reader interest, and selects one.
+2. The concept level owns contract, dramatic_core, style_contract and ending.
+3. The structure level adds characters, world_rules and causal_map.
+4. Before freezing the structure, test three turning points through independent intentions.
+   Each involved character receives only their own goals, capabilities, limits, initial
+   knowledge and sourced observations. They choose an action and a credible alternative
+   without the intended ending, other people's private goals or previous actors' answers.
+   A separate resolution call evaluates the action-response chain against the actual world,
+   states the cost and changed situation, and identifies unsupported planned outcomes.
+   Every decisive voluntary step references an independent choice from that situation.
+   Missing choices (including officials absent from the cast) produce repair issues; the
+   resolver cannot supply convenient consent or a new institutional remedy.
+   Its major findings enter the same bounded repair/escalation cycle; a repaired structure
+   is tested again. Missing knowledge sources, hidden-past references, future observations,
+   unknown actors and incomplete consequences fail validation. Perceptibility and causal
+   implications still require model judgement.
+5. The chapter level adds profile and chapter_map using the accepted collision consequences.
+   P03 receives the relevant consequences through the chapter's event_ids. Experiments never
+   become confirmed facts in story memory.
+
+Every level is reviewed before expansion, for coherence and reader interest and for
+whether the distinctive invention survives expansion. Missing future sections are
+intentional. Code merges only the current level's sections; a returned copy of an upper
+section cannot overwrite it. Each level allows two ordinary repairs. A substantial issue
+explicitly targeting an upper section reopens that level once and discards its descendants,
+which are regenerated and reviewed. A second reopening of that level fails. New major
+findings retain their severity. Remaining major or blocking findings stop planning before
+prose; they never become writing requirements. Alternatives, selection rationale and all
+review rounds are persisted in design.planning_history. Complete rejected chapter-level
+drafts are also saved for diagnosis; an unwritten draft with a failed review cannot
+resume directly into prose. P03 still plans the nearest chapter
+from confirmed written memory, and P06 still updates the future chapter map.
+
+A clean initial design takes seven basic calls plus a situation call, one isolated choice
+call per participant per tested situation, and one consequence-resolution call. Repairs
+and reopening add calls within explicit limits. The accepted experiments persist as
+intention_collisions; every failed or accepted experiment also stays with its review round
+in planning_history. Existing written
+books can still resume from their stored state. These checks assess relative novelty and
+reader interest; they cannot prove originality across published literature.
+
+Reader-understanding experiments were removed from automatic generation after the
+live run. The standalone scripts/check-reader.ts diagnostic and historical metadata
+remain for inspection; their findings do not reopen planning layers or feed P03.
+A new unwritten plan no longer needs reader_understanding to resume.
 
 **A design is not trusted because it is coherent.** `settleReview` computes `ready` in
 code — only an empty blocking/major list passes, never the model's own verdict. Two
@@ -81,10 +191,81 @@ distinct ways this book meets its central obstacle, and each chapter draws one a
 it. Every chapter also states what it takes from someone and which rung it occupies.
 `designBudgetGaps` checks the allocation before a chapter is planned — a ledger too short
 for the chapter count, chapters that cost nothing, rungs that do not trace the declared
-curve — and the findings go back through the design review as `major` charges. A
-repetition you have to detect in prose is a repetition you already paid to write.
+curve, and an ending requirement no chapter before the last prepares — and the findings go
+back through the design review as `major` charges. The structural checks run before the
+structure is frozen; chapter allocations are checked before that level passes. Every
+ending prerequisite must be placed by the planner in a chapter before the last. The
+production path no longer silently distributes missing prerequisites after review.
+`placeEndingRequirements` remains a standalone helper for older callers.
 
 ## Inside a chapter
+
+**A scene is replanned only when the scene before it left its plan.** A chapter's scenes
+are planned together, before any exists, and a scene sometimes does other than its plan:
+reaches further, stops short, settles something another way. The tracker has always
+recorded that as `plan_deviations`. It used to be read by nothing, while every scene was
+replanned before it was written — a prompt the size of a chapter for the whole plan back
+again, most of the time with nothing to correct. Nor is any recorded departure a reason:
+of thirty recorded over two books most were a writer supplying a date or a detail the plan
+had left open, and five said the scene matched its plan. So P05 answers one question per
+departure, `next_scene_must_change` — would the next scene, written as planned, now repeat
+this one or contradict where it left things — and a scene is replanned on a yes, or when
+the scene before it has just reached the outcome this one was planned to reach
+(`retellingSuspect`). The replan is told which. Otherwise the scene is written as planned,
+and every departure still reaches P06, which brings the plan ahead up to date.
+
+**The chapter is planned by the editor's model.** Everything that went wrong in a chapter
+read side by side with its plan was already wrong in the plan — a book closed at the end of
+one scene and lying open at the start of the next, a particular left for each scene to
+invent — and the writer had carried the plan out step for step. A plan is a few percent of
+a chapter's tokens and decides the rest of them, so P03 and the scene replan run on the
+`validator` route: it is the one place the stronger model's time is cheapest and worth
+most. The book design stays with the writer's model.
+
+**A plan says where each scene starts and stops, and code compares them.** Every scene
+carries `state_at_start` and `state_at_end`: who is where, who holds what, the state of an
+object that matters, keyed by the person or thing. `seamProblems` compares each scene's
+opening with the end of the one before it — the first scene of a chapter with where the
+last chapter left things. Whether two entries contradict is asked of the local NLI model
+(`readSeams`), each entry put to it as "key: value": shared words say only that two
+entries concern the same things, and "shut" and "lying open" concern the same book. On
+the seams of three measured runs the model scored every real break 0.98 or more and
+every agreeing pair 0.03 or less. A contradiction that says nothing of a change returns
+the plan as `scene-seam`. One whose opening says what changed — a movement, a lapse of
+time (`statesChange`) — answered the planner's rule, and whether that could have happened
+between the scenes is a reading: it goes, as a `seam-change` doubt, into the one review
+the editor already gives the chapter. With the model off, seams are judged by word stems
+in common (`statesAgree`) and a stated change passes unread. The writer is given both:
+what the scene opens with, and what it must close with for the next to open from.
+
+**A point repair is told who narrates.** The four repair prompts (P08–P11) carry the
+book's person and tense as a sentence of their own (`narrationRule`), not only inside the
+contract's JSON: a sentence rewritten out of its paragraph was coming back in the third
+person in a book told in the first. In a first-person book code also keeps the original
+sentence when the narrator's "I" is gone from the rewrite's narration.
+
+**Particulars are decided in the plan.** Numbers, dates, rooms and names used to be
+supplied by the writer in the moment, scene by scene, which is how a count stated in
+chapter one was resolved differently in chapter three. Each scene now lists what it
+`establishes`; `factClashes` holds those against the facts on record and against what the
+plan's own earlier scenes fix, and returns the plan as `fact-clash` when the same statement
+about the same thing carries other numbers. The check is deliberately narrow — two
+statements must share most of their words, numbers aside, before their numbers are
+compared, so one guest's room is never held against another's. The writer is told to use
+the listed particulars as they stand and to fix no others.
+
+**A premise given is assigned to a scene.** The planner is shown what the premise gave and
+the book has not yet put on the page, by id, and names in `pays_premise` the scene that
+pays each and the action that pays it. The writer is given that action; the tracker says
+whether it was done; one that was planned and not done goes to the chapter's closing call,
+which can still add a beat for it.
+
+**How many scenes a chapter has is counted, not left to the plan.** Across thirty measured
+scenes the writer wrote eleven to fifteen hundred words whatever length was asked, so every
+book ran 40% to 90% over by exactly its surplus of scenes. `scenesFor` gives the number of
+scenes whose natural length (`wordsPerScene`: the book's own median once it has three, 1250
+before) comes nearest the chapter's; a plan with more is returned as `too-many-scenes`, and
+the chapter's length is shared among its scenes in code rather than set by the planner.
 
 **The plan is checked before it is written, and rejected cheaply.** `checkChapterPlan`
 reads the plan against the design's allocation and the craft ledger, with no model call:
@@ -101,13 +282,10 @@ displayed, ignored, and recorded again as still open for the whole length of a b
 books running. A thread standing through two further chapters untouched is now raised, and
 blocked once the chapters left to keep it in have run out.
 
-A blocking finding sends the plan back to the planner with the evidence attached, up to twice. A chapter plan costs one
-or two percent of the tokens of the chapter it describes, so three attempts here are
-cheaper than one prose rewrite — and a prose rewrite cannot fix what is wrong at this
-altitude anyway: no amount of re-writing scene four turns four identical chapters into a
-rising book. When the attempts run out the findings become warnings and travel into the
-writer's package as requirements, the same way an unresolved design objection already
-does. A book that says what is wrong with it beats a book that refuses to exist.
+A blocking finding sends the plan back with evidence. If a repair returns the same concrete blocking findings without reducing their count,
+or the bounded attempts run out, the chapter stops before prose. Sharing a finding
+category while fixing other findings is progress and can use the remaining repair attempt.
+Advisories can travel as warnings, but a failed chapter plan is never passed to the writer.
 
 **`needs_replan` is not argued with.** The gate refusing a plan and the planner refusing
 the chapter map are different failures. The first is answered with a better plan; the
@@ -125,14 +303,51 @@ which still stand, and whether the chapters left can carry them. That reading is
 (`ending_readiness`) and the next chapter is planned against what remains, not against the
 full list; a capacity problem — three preparations, two chapters — is raised as a warning
 while there is still budget to spend on it, instead of surfacing in the final audit.
+The requirements are shown to P06 under ids (E1, E2, …) and retired by id, or by a
+wording that keeps most of the requirement's own words: compared as exact strings, a
+reading that found all seven established retired none, and the last chapter was planned
+against an ending already paid for. What one chapter's reading retired stays retired.
 
-**Code brings doubts; the model disposes them.** Before prose exists,
+**The design decides what the chapters would otherwise invent.** Two things were being
+made up scene by scene and came out different each time. The past the story uncovers:
+it stands at the head of `causal_map` as events marked `before_story`, stated as fact,
+and a design that leaves it as "someone" or "a specific event" is returned in code
+(`past-undecided`). The planner reveals parts of those events and supplies no other
+account. And the world's particulars — the layout of the place, the period and its
+money, each person's trade: they are `world_rules` with a `subject` and an `attribute`,
+a design with fewer than eight is returned (`particulars-unfixed`), and they include what
+each document or object the story turns on says or holds, and they are on the
+facts shelf before the first scene (`seedParticulars`).
+
+**A fact answers a question, and only facts answering the same one are compared.** Every
+fact carries what it is about and which property of it it fixes. The tracker is told to
+record what is so — a floor, a material, a trade, a town, an hour — rather than what
+happened, up to ten a scene, under the subject and attribute the record already uses.
+The writer is given every fact about anything its scene plan names. When a scene states
+a fact under a key the shelf already holds, the pair is read by the local NLI model, both
+ways round (`readFactClashes`); a contradiction is the paragraphs that state it, and they
+are corrected in place to what the book holds (P10) while the scene's version stays off
+the shelf. Facts are not compared as bare sentences: the model called 47 of 66 unrelated
+pairs of a measured book's facts contradictory.
+
+**Planning calls are given time to think.** Candidate generation, selection, level
+expansion and reviews, the close of each chapter and the final audit carry `deliberate`;
+planning runs on the editor's model. Everything else runs with thinking off. A promise is
+closed only with the answer the text gave (`payoff`): a citation that cannot state one is
+a mention, and the promise stays open.
+
+**Code brings doubts, and settles the ones it can.** Before prose exists,
 `buildSceneContext` raises structural problems by name — `pov-absent`, `empty-task`,
-`location-mismatch`, `missing-fact`, `missing-source`, `repeated-staging`, `static-outcome`, `unknown-participant`,
-`restaging-suspect` — and an optional local semantic gate adds two more kinds of
-evidence. Nothing there blocks on its own: the doubts go to a P02 readiness review, and a
-blocking verdict becomes a `continuity_requirements` instruction inside the writer's
-package. The transition gets shown on the page instead of stopping the book.
+`location-mismatch`, `missing-fact`, `missing-source`, `repeated-staging`, `static-outcome`,
+`unknown-participant`, `restaging-suspect` — and the local semantic gate adds two more
+kinds of evidence. Every one of them used to go to a P02 review, a scene at a time: meant
+to be rare, it ran before eight scenes of nine and was the most expensive stage of a
+measured run. Most doubts have one right answer whoever reads them. A character recorded
+in the corridor in a scene set in the lobby is an instruction to show the walk, so
+`writerRequirement` puts it in the writer's package as it stands. Two are about meaning
+and still go to the editor — a participant who is no cast member, a scene with no task —
+and those are asked about once for the whole chapter (`readPlanDoubts`), before its first
+scene; a scene replanned afterwards is read again on its own.
 
 **Weights are served, not downloaded.** A browser cannot read `node_modules` — it has no
 filesystem, only a sandbox keyed to the page's origin — so transformers.js there fetches
@@ -180,9 +395,13 @@ a run dies citing a scene id it had every reason to think was valid.
 **Every accepted scene also emits a persisted semantic handoff.** It names what the
 reader already knows, what just changed, current conditions, still-open questions,
 active intentions, the previous outcome, the next required outcome, and meanings that
-must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
-scene's causal plan against this handoff; P04 receives the same object when writing.
-The last scene's handoff is enriched by P06 and becomes the next chapter's input.
+must not be explained again. It is stored whole and read in views: `plannerHandoff` for a
+call that also receives the state digest carries only what the digest does not, and
+`writerHandoff` carries where the last scene left things, what is open, the newest dozen
+things not to explain again, and the conditions of the people in the scene — not the
+forty-five things the reader knows and the ninety changes the last scene made, which were
+the largest single part of a writer's prompt. The last scene's handoff is enriched by P06
+and becomes the next chapter's input.
 
 **The handoff carries the recent stretch, not the book.** It is a writing contract, and
 it was built like the ledger: every event and disclosure since page one, twice — once as
@@ -230,27 +449,84 @@ the scene the book already has — the same confrontation, the same discovery, i
 that share no word run with the first. P05 is the one call that reads the finished scene
 against the record, so it also reports `restaged_beats`: a beat staged again, with the id
 of the recorded event or fact it repeats. A charge that names nothing on record is not
-acted on and comes back as a `refused` note; one that does travels the contradiction path
-below, with the writer told exactly what it repeated.
+acted on and comes back as a `refused` note. One that does is repaired at its own size: the
+paragraphs it cites are rewritten by `condenseRestaged` (P09) to at most a sentence that
+leans on the earlier event and keeps whatever else they carried, and put back by paragraph
+id — one for one, so every other record of the scene still points where it pointed. A
+rewrite that is not clearly shorter, or leaves a quotation open, is not applied. Memory is
+corrected by the same subtraction: an event whose only evidence was a condensed paragraph
+is dropped from the delta, and the scene is neither written nor read again.
 
 **A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
-book.** The writer sees exactly what broke and rewrites against it. What a second
-consecutive break does is the run's continuity mode (`continuity.ts`): `strict` ends the
-book there, `warn` — the default — keeps the rewritten scene and records the objection,
-`off` rewrites nothing for it. The same mode decides two failures that used to be final
-although nothing depended on them: a readiness review that could not be had (the scene is
-written with its doubts unanswered) and a forward reconciliation that failed after its
-chapter was already saved (the next chapter is planned against the map as it stood). An
-editor's verdict is a judgement, and a finished manuscript with a list of what it got
-wrong can be fixed where a run that stopped overnight cannot. A planner that refuses the
-chapter map and a scene nothing could be extracted from still stop the run in every mode. A name variant is the same path: the model, reading both
-the prose and the registry, judges whether a near-identical spelling is drift, and code only
-carries the verdict. Code never decides by string similarity.
+book.** The writer sees exactly what broke and rewrites against it. A second consecutive
+break does not end the book either: the rewritten scene is kept and the objection travels
+as a warning. This prose repair policy is separate from planning: unresolved blocking
+plan defects now stop before writing.
+The verdict is an editor model's judgement, and on two live runs every objection that
+survived its rewrite was the same false one — an abbreviation read as a misspelt name. The
+same holds for two calls nothing depends on: a readiness review that could not be had (the
+scene is written with its doubts unanswered) and a forward reconciliation that failed after
+its chapter was saved (the next chapter is planned against the map as it stood). A planner
+that refuses the chapter map and a scene nothing could be extracted from still stop the
+run.
 
-**Open questions are settled from the text, not carried as silent gaps.** Uncertainties
-relevant to the next scene and non-blocking contradictions go to one bounded call. If that
-call dies, memory keeps what the delta proved and the questions travel on as an explicit
-warning and remain in the persisted handoff — never as answers.
+**A misspelt name is a spelling.** The model, reading both the prose and the registry,
+judges whether a near-identical spelling is drift; code never decides by string similarity.
+What code does with the verdict used to be a full rewrite of the scene and a second
+extraction, and on two measured books every one of those was for an abbreviation or a
+plural. `alignSpellings` now replaces the used spelling with the recorded one, whole words
+only, and P05 is told that an abbreviation, a plural and a form of address are the name
+itself.
+
+**Open questions travel in the handoff.** P05 is asked to answer from the scene what the
+scene answers and to list as an uncertainty only what the next scene needs and the text
+does not give. Those go into the handoff as questions. There was a second call after every
+scene to settle them; with an editor that left four to seven a scene it ran every time, and
+what it settled is what the facts shelf now records in the first place.
+
+**Particulars go on a shelf that travels whole.** Memory shows a call the recent stretch
+of events and disclosures, and with an editor that records two dozen events a scene that
+stretch is shorter than one scene: a count stated in chapter one was out of every call's
+sight by chapter three, and the book resolved it differently. P05 therefore also returns
+`established_facts` — a number, a date, who did what, where a thing is kept — at most four
+a scene, folded onto `facts`, which every digest carries entire. The writer's handoff
+carries only the newest twenty-four: it is not checking anything against the shelf, and
+gets the facts its scene cites separately. P05 is told as well how much
+to record: an event is something after which the story stands differently, a disclosure is
+one sentence and not a passage copied out, because every record that did not need making
+pushes one that did out of view.
+
+**What the premise gave is a promise from page one.** Every premise given that is not a
+person is entered in the thread ledger before the first scene (`PREMISE-tN`). The design
+was always checked for giving each one a home in the construction; nothing checked that it
+reached the page. As threads they are shown to the planner, aged by the plan gate, and
+marked paid by the tracker when a scene puts them in front of the reader.
+
+**A chapter is corrected while nothing after it exists.** The final audit reports and has
+never rewritten, because a scene changed after the scenes that follow it were written
+leaves them standing on something that is gone. The end of a chapter is the one moment
+that is not true: the next chapter is planned from memory, and memory can be rebuilt first.
+The call that closes the chapter (P06) reads its text once — against the facts shelf, the
+causal map, the ending and the scenes' own `plan_deviations` — and answers both things
+that reading can answer: what in the chapter can still be corrected, and what the plan
+ahead must now be. They were two calls over the same text. `repairChapter` makes the two
+kinds of repair it proposes, both splices. `align` replaces sentences that state a
+particular the book does not hold (P10); `insert` adds one beat of at most 150 words
+between two paragraphs (P11). Every charge has
+to point: a quotation the scene does not contain is discarded, a paragraph that is not
+there is refused, three repairs a chapter at most. A corrected scene is read by the tracker
+again, against the state it was written from, when the correction touched a paragraph some
+record of the scene cites or added a beat (`touchesMemory`); a correction memory then
+refuses is taken back out. When no record cited what changed, memory held nothing drawn
+from it, and the scene is not read again. Kept corrections rebuild the chapter's memory and handoffs from its
+starting state, and the scene as first accepted stays on the record as `original_prose`.
+A check that fails is a warning and the chapter stands. Of three measured books, the one
+written with this was the only one whose audit found no contradiction of fact.
+
+**The plan ahead is reconciled with what the chapter recorded.** P06 used to judge a
+chapter from the recent stretch of the whole book's events. It now receives the chapter's
+own events and facts and every departure its scenes made from their plans — extracted by
+P05 since the beginning and, until now, read by nothing.
 
 **Scenes are joined in code**, separated by `***`. No model stitches a chapter together.
 
@@ -267,20 +543,28 @@ the pipeline reaches a model without one of the two roles named at the call site
 
 | Call | Route | When | Per chapter |
 | --- | --- | --- | --- |
-| Chapter plan (P03) | writer | Once, unless a saved plan is reused on resume; up to twice more if the plan gate rejects it before prose | 1–3 |
-| Scene readiness (P02) | validator | Only when code raised a structural doubt (`pov-absent`, `location-mismatch`, a restaging match, …) | 0–1 per scene |
+| Chapter plan (P03) | validator | Once, unless a saved plan is reused on resume; up to twice more if the plan gate rejects it before prose | 1–3 |
+| Scene replan (P03_SCENE_REBASE) | validator | Only when the scene before it departed from its plan or reached this scene's outcome | 0–1 per scene |
+| Scene readiness (P02) | validator | Only for a participant outside the cast or a scene with no task; one review for the chapter | 0–1 |
 | Write the scene (P04) | writer | Every scene; one retry only if the answer is empty or came back as JSON instead of prose | 1 per scene |
 | Track the scene (P05) | validator | Every scene, against the prose just written; one correction pass if a citation points nowhere | 1 per scene |
-| Span repair (P08) | writer | Only when the scene repeats earlier prose verbatim; carries the duplicated sentences, not the scene | 0–1 per scene |
-| Rewrite on contradiction | writer + validator | Only when the tracked delta blocks continuation — one full redraft, not a repair | 0–1 pair per scene |
-| Resolve open questions | validator | Only when the scene left an uncertainty or a non-blocking contradiction for the next scene | 0–1 per scene |
-| Forward reconciliation (P06) | validator | Once, after the last scene | 1 |
+| Sentence rewrite (P08) | writer | Only when the scene repeats earlier prose or carries a spent image; carries those sentences, not the scene | 0–1 per scene |
+| Beat condense (P09) | writer | Only when the tracker cites paragraphs that stage a recorded event again | 0–1 per scene |
+| Speech rewrite (P04) | writer | Only when a peopled scene comes back under its floor | 0–1 per scene |
+| Rewrite on contradiction | writer + validator | Only when the tracked delta contradicts confirmed state — one full redraft, not a repair | 0–1 pair per scene |
+| Correct, insert (P10, P11) | writer + validator | Only for what the closing call proposed; a scene is tracked again only when memory cited what changed | 0–3 |
+| Chapter close (P06) | validator | Once, after the last scene: corrections for the chapter and the plan ahead | 1 |
 
-A chapter of four scenes with no contradictions and half its scenes flagged for readiness
-lands at 1 + 4×(0.5 + 1 + 1 + 1) + 1 ≈ 16 calls — the range a live run actually shows. The
-writer only ever sees P03 and P04: the plan and the prose. Every other call is the editor
-reading what already exists and reporting on it in a few hundred tokens, never generating
-the manuscript itself — a large model earns its cost by judging, not by drafting.
+A chapter of four scenes with no contradictions, nothing to correct and a repeat to reword
+in half its scenes lands at 1 + 4×(1 + 1 + 0.5) + 1 = 12 calls. The writer sees P03, P04 and
+the small repairs; every other call is the editor reading what already exists and reporting
+on it, never generating the manuscript itself — a large model earns its cost by judging,
+not by drafting.
+
+**A run says where its calls went.** Every call carries a `stage` label, the orchestrator
+tallies calls and characters sent and received by stage, and the run log ends with the
+table and the totals beside the size of the manuscript. Two measured books sent forty-five
+and sixty-seven times the text they wrote, and nothing could say which stage sent it.
 
 ## The craft ledger
 
@@ -307,6 +591,27 @@ its own intent, which is a different problem with a different fix. Alongside it,
 prose running at a single speed — and `numericContradictions` catches a town founded in
 one year on page one and another on page thirty, which no state tracker sees because the
 number was never an event.
+
+**Speech is decided when a scene is cast, and measured when it is written.** On a measured
+book the scenes holding one person ran at 0% speech each and the ones holding two from 14%
+to 43%: a scene with nobody to speak to is narrated whatever the writer is asked for. So
+the plan gate counts peopled scenes against the declared weight (`solitary-chapter`,
+blocking: half the scenes of a medium book, two thirds of a high one, none of a low one; a
+single-scene chapter is left alone), and a written scene with two people in it that comes
+back under the floor of its band is written once more with the measured number in the
+request and measured again. The draft with more said in it is kept. These bands are
+judgements, like the rest of `profile.ts`.
+
+**An image is named by the editor and counted by code.** The phrase ledger counts word
+runs, and a writer returning to one picture never uses the same run twice. The chapter
+check names such an image and the plain words that mark it; `images.ts` counts the
+sentences carrying at least two of them across the whole accepted text. Past its allowance
+— a declared refrain's own budget, the phrase tolerance otherwise — the image joins the
+writer's ban list with its number, every later draft is searched for it before tracking,
+and the sentences that carry it are rewritten without it and counted again. That rewrite
+travels in the same call as the scene's duplicated sentences (P08) — one small rewrite a
+scene, whatever it is for — and a chapter's overuse is trimmed in one call for the
+chapter. A rewrite that still carries the image is not spliced.
 
 **The manuscript is written in English.** The system contract says so, no call carries a
 language parameter, and the prose checks are built for one typography: English stop words,
@@ -374,7 +679,9 @@ and reports the ones that return at a rate. A reviewer reading for what happens 
 a tic — one somatic beat seven times is not an event — and capitalized spans are
 skipped, because a book repeating its own device by name is repeating its subject. It never rewrites: the manuscript it
 checked is the manuscript that ships. `settleAuditStatus` computes the status in code —
-findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`.
+findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`. An audit that
+fails does not fail the book: the chapters are written, the run ends with a warning that
+the manuscript was not checked as a whole.
 
 ## Budgets, retries, failure
 
@@ -408,9 +715,9 @@ and a fresh plan would orphan every stored scene.
 
 ## Transport
 
-Ollama uses streaming NDJSON, and thinking is off unless the provider role turns it on —
-`think: params.think ?? false`, with the anti-reasoning line dropped from the system prompt
-when a role does enable it, since suppressing it in words would defeat the setting.
+Ollama uses streaming NDJSON, and thinking is off for every model and every role: a
+reasoning trace is paid for out of the output budget before the answer starts, on calls
+whose answers were already being cut off at that budget, and nothing here reads it.
 `/api/generate` is reserved for an unsupported `/api/chat`, not as a retry after a timeout. Successful completion requires the terminal `done` record: broken streams, reported errors and
 token-limit endings are rejected rather than accepted as short answers. Structured output
 and editorial validation stay mandatory regardless, because a model with thinking disabled
@@ -428,14 +735,136 @@ transport records; `tests/vexport.test.ts` covers snapshot and restore. These te
 control flow and contracts, not model literary performance.
 
 For a live run outside the browser, `scripts/run-book.ts` drives the same pipeline from a
-terminal against real Ollama models and logs every call:
+terminal against real models — the writer on Ollama, the editor on Gemini — and logs every call:
 
 ```bash
 npx vite-node scripts/run-book.ts --writer deepseek-v4.1-flash:cloud \
-  --editor mistral-large-3:675b-cloud --chapters 3 \
+  --editor gemini-3.6-flash --chapters 3 \
   --premise "..." --out runs/manual-test
 ```
 
 It writes `manuscript.md`, `snapshot.json` and `run.log` under `--out`. Record the
 provider and models, the snapshot, the audit report and any unresolved warnings. Do not
 infer ongoing generation from an old log line or a saved stage alone.
+
+Connected causal repairs are staged transactions. The writer first reconciles the
+affected theses and a genre-neutral account of chronology, observable facts,
+knowledge, character interpretations and consequential choices. The candidate
+plan is reviewed independently of obsolete prose.
+The causal reviewer must substantiate blocking findings with an exact quote or
+paragraph address from the supplied candidate plan/account; old manuscript
+citations are rejected as invalid reviewer output. Account decisions must be
+implemented in executable thesis fields, including earlier prerequisites and
+later outcomes. Only explicit author requirements bind the repair; unsupported
+mechanisms or outcomes invented by an earlier outline may be replaced.
+Repair scope comes from changed theses, the book's dependencies and related manuscript mentions. Scenes are patched
+in outline order, with only the current scene writable. The saved scene cursor and
+candidate survive interruption. After every scene in the package has been visited,
+an independent whole-manuscript check verifies setup and consequences together.
+Only an accepted package commits both plan and prose. Unverified edits remain in
+the candidate; visible changes and the Checks review status are separate signals.
+
+
+New main-page and CLI jobs use `planning_version: 2`. `plan.canon` is their sole
+story truth: facts have stable IDs, a source thesis and character-knowledge source
+theses. Each scene supplies `fact_ids`. Code rejects missing sources, unknown
+references and knowledge before its source; the editor checks semantic execution.
+The model specifies the ending once; code derives the persisted canonical resolution.
+Source-scene fact references are mirrored from explicit ledger links, never invented.
+For canonical repairs code derives explanatory accounts from the plan instead of asking
+the model to maintain another causal account. Writers and verification receive that plan.
+Readiness is derived from verified issues and per-defect verdicts; an inconsistent model
+ready flag cannot approve defects or trigger a format retry. Snapshot comparisons ignore
+JSON object-key ordering while preserving values and scene-array ordering. Invalid canon
+references name the exact fact, source or character for the model to repair.
+
+Word budgets are allocated separately for each chapter from the main-page target.
+The sum is exact, including integer remainders. A scene planning cap of 1,100 words
+sets minimum event counts and bounds allocations when there are enough scenes;
+it is not a hardcoded chapter target. Underplanned long chapters receive a reviewed
+scene redesign before expansion. Existing prose is divided at paragraph boundaries,
+retained with its original plan in an archival version, and rechecked under the new
+scene contracts. Division itself never counts as fulfillment of those contracts.
+Failure preserves the original plan and manuscript. Checks shows actual/target words.
+
+Canonical causal proposals are judged against each original defect before prose
+editing. A refusal refines the same proposal and the same defect set, without
+rejudging unchanged prose. Verified per-defect resolution drives progress; differing
+counts from successive judges do not prove progress. Expanded and final-audit
+logical defects use the same ordered plan-and-prose repair transaction.
+
+Structured-response validation repairs continue while diagnostics change, bounded by the run budget. Repetition of the same validation failure twice stops with its exact cause. Provider quota, credentials and exhausted budgets propagate rather than being disguised as malformed reviews.
+
+Repair-verification schemas constrain both verdict and issue evidence to the current source paragraph addresses. A malformed citation invokes a separate `*-evidence` source-location call which changes only citation fields. Unsupported repair verdicts remain unresolved; blocking findings cannot be deleted by the citation locator. Async structured-response validation is awaited so its failures participate in automatic correction. This applies to initial plan repair, causal candidate review and manuscript repair verification.
+
+Canonical plan repairs use `planTools.ts`: `read_plan`, `search_plan`, `linked_plan`, `patch_plan`, `validate_plan`, and `finish`. Tool inputs identify a section, stable entity ID and field. A patch batch compares each `before` value exactly and validates the whole candidate with the user's scene budgets and frozen scene/character identities before applying anything. Unrelated fields are preserved. Structural validation is not causal approval: independent plan and per-defect reviews still gate writing and staged prose repair. Initial plan repair and whole-book causal reconciliation both use these tools. Candidate, tool history and edits are checkpointed in `plan_tools`; transport interruption retains them. Local tool exhaustion yields to review, not a human-operated continuation. Existing complete proposals remain accepted as unapproved candidates for compatibility.
+
+Dependency invalidation skips manuscript search when repairing the first pending block before any accepted prose exists. This prevents a zero-limit search from interrupting the first scene's repair.
+
+For instrumented progressive/thesis runs, `budgetFor(chapters,input)` uses the author's requested word count to estimate scene volume. It allows 40 calls per planned scene, 20 per chapter and 80 for book-level planning/audits, with a 600-call floor (800 for four chapters at 3400 words each). The browser passes its actual ProjectInput; CLI defaults use its supplied words, and explicit --max-calls still overrides the default. Legacy chapter runs retain their old budget. Time ceilings and verified no-progress guards remain active; an exhausted call allowance is not a provider-account quota.
+
+Canonical scene prose reviews now return an evidence-backed `state_trace` alongside findings. It records ordered character posture, location, knowledge, object and activity transitions, plus concrete checks for state chains, knowledge sources, time, choices/consequences and actual outcomes. `stateTransitions.ts` resolves current paragraph addresses and replays states; conflicting entry states and repeated posture actions create blocking, addressed findings even if the model declares readiness. Semantic failed checks enter the existing writer/whole-book repair cycle. Extractor completeness and semantic judgement still require the reviewer; code does not infer literary truth from arbitrary strings. Current-scene events and outcomes cannot cite earlier context. Retrieval evidence contains actual prose, not plan summaries or old review claims. Invalid trace citations use the existing source locator; unsupported extracted actions request re-extraction instead of inventing events. Actual traces are passed forward in block contracts only while their scene revision matches; edited scenes lose that authority until rechecked. Older snapshots without traces remain loadable.
+
+The in-app question-mark guide describes the thesis-based progressive workflow in six English sections: setup, workspace, writing, checks/repair, model/data routing, and saving/recovery. It distinguishes heuristic metrics from causal approval, unfinished exports from project checkpoints, cloud routes from browser-local storage, and legacy local-ML checks from the current workflow.
+
+Citation location repair accepts exact current quotations as addresses and handles partial, duplicate or malformed locator entries conservatively. Missing/ambiguous/invalid references leave checks unresolved; they cannot approve a claim. Unsupported extracted transition events request re-extraction. An auxiliary locator formatting defect no longer stops the parent review merely for missing support/explanation fields.
+
+Agent Inspector displays cumulative input/output tokens beneath the call clock. Provider usage is propagated through Gemini, Ollama and the Qwen server proxy, including reported rejected/truncated answers and retries. The browser persists cumulative `token_totals` checkpoints in the project log; resume/import restores the latest checkpoint instead of recounting it. Older completed-run character summaries are recovered as explicitly estimated counts. Missing provider usage falls back to character estimates on successful responses. Historical calls without a retained summary or reported usage cannot be reconstructed; the tooltip explains this coverage limit. Gemini output includes reported reasoning tokens; cached input is not added twice.
+
+
+### Repository autosave
+The local Vite dev/preview server exposes same-origin `/api/project-autosave`. Every project mutation schedules a serialized, atomic replacement of `autosaves/latest.project.json`; replacing or resetting input retains the preceding project in a timestamped recovery file. The directory is Git-ignored. Browser IndexedDB remains a secondary copy. Opening the application restores the newest saved snapshot; the header reflects a confirmed disk write, reports failures, and retries after five seconds. Generation does not resume automatically after reopening. Static hosting without this local backend cannot provide repository autosave.
+
+
+### Response recovery and grounded checks
+Structured replies with valid JSON but rejected fields enter exact JSON Pointer patch repair rather than full regeneration. A bounded response allowance (eight calls) and the shared run budget still prevent endless retries. Initial thesis-plan candidates checkpoint raw JSON and rejection text before acceptance and resume from those candidates. Citation locators cannot substitute arbitrary source passages for unsupported blocking claims: the review must be reassessed; unresolved repair verdicts cannot grant approval. Deterministic state replay compares enum posture states, while free-text state mismatches remain recorded diagnostics assessed by semantic checks. Repository recovery tries saved copies in timestamp order, including IndexedDB and the newest five project archives; invalid copies never count as an intentional reset and failed opening is shown in the UI.
+
+
+### Context for local editing
+Scene writing and local reviews receive the current scene, neighbors, explicit prerequisites and relevant canonical facts rather than the full book plan. Read-only plan lookup tools and manuscript search/read retain access to omitted sources. Whole-plan, whole-story and final audits still receive complete material. Plan evidence uses field-level paragraphs, preventing one citation from expanding to the complete outline. Tool prompts compact successful edit history and retain recent exact reads; durable checkpoints retain the full saved history. Oversized legacy evidence is excerpted only in tool prompts and never changes the saved verdict. Impact checks run after the local editing batch, not between its linked replacements. The target word budget remains user-supplied and measured independently.
+
+
+### Repair dependency tools and package acceptance
+Plan and manuscript agents can inspect `fact_dependencies`, tracing a canonical fact to its source, learning scenes, explicit uses and transitive downstream dependencies; manuscript hits are bounded retrieval leads, never proof of knowledge. `repair_status` and `package_diff` expose independent verdicts and staged changes without granting approval. Connected causal repairs stage plan and prose together. Acceptance checks the accepted base revision, the independently verified candidate revision, complete block identity/order, nonempty prose, canonical normalization and unresolved verdicts before replacing the draft snapshot. Rejected packages retain their candidate and leave accepted plan/prose unchanged. Whole-package review rejects newly detected major defects outside the initial repair scope as well. Persisted repair reports distinguish resolved originals, remaining findings and new findings; Agent Inspector displays the latest report. Repair progress uses net remaining defects on changed revisions rather than counting edits or repeatedly resolving the same issue. Word budgets remain enforced by the existing user-derived plan allocation.
+
+
+### Reviewer response failures
+Response contract exhaustion has a typed error distinct from provider, cancellation and shared-budget failures. After two malformed JSON Pointer repair commands, the decoder requests a complete response under the original schema within the same attempt allowance. Local prose reviewers use a four-attempt allowance and checkpoint candidates against the exact source/plan revision. Exhausted local review formatting is recorded as unavailable and queued for later recheck; it is neither a manuscript defect nor literary approval. Provider and budget errors still propagate. Saved candidates are reused only for the same scene, phase and source revision.
+
+
+### Premise checks, measured text and trace failures
+A `planning_version: 2` outline receives two further checks with its first whole-plan review (`premiseChecks.ts`). `THESIS_COVERAGE` asks where each premise given happens; code returns the plan for a story given that is no scene's own `action` or `outcome`. `THESIS_STRESS` plays the outline from inside its people — the observer of each decisive object, each character whose action the plot needs, the sceptic, the literal reader, the protagonist, the reader who has seen it before — and reports where the mechanism fails. Both are asked once per outline: their findings join the review's and are then verified defect by defect by the existing repair loop. A repaired plan is not stress-tested again.
+
+`textFindings` counts what a reviewer reading for events does not report: a narrated sentence of eight words or more written twice (major, sent to final repair with the exact string), a named habit made three times, bodily reactions past a scene's allowance, and scenes opening on one word (all advisory). The polisher receives the findings for its block; the final report carries them all.
+
+**A habit is named by the editor and counted by code, and the writer is told before it writes** (`habits.ts`). After each accepted scene, and again after its expansion, `THESIS_HABITS` names the stock moves in it — a body reacting in place of a feeling, a ready-made comparison — each with two or three marker words. Code keeps a habit only when its markers find it in the scene, and afterwards finds the move by those markers in any order and form, so the name of a thing in the story is never counted and a move rewritten around the same words still is. The next scene's writer receives the devices already spent, with their counts, and one rule counted by code from a lexicon that is a judgement: a bodily reaction in place of a feeling at most once a scene. A repair is told to cut first, replace with a deed second, and never rephrase, because a rephrased move is the same move.
+
+A move made three times in one book, or made again after an earlier one, is the writer model's: it is saved under the model's name (`habits/<provider>-<model>.json` from the CLI, browser storage in the app) and is in front of the writer of the next book from its first scene.
+
+**The plan gives each participant a deed.** `participants[].does` is what the person visibly does under the pressure of the scene. `deedGaps` returns a `planning_version: 2` outline in which it is missing or is a feeling or sensation: a writer given nothing to do with a frightened character writes her heart.
+
+A state trace that cannot be read no longer makes its review unavailable. A trace event the citation locator cannot ground is left out; a posture outside the five is read as `unknown`; a trace still unreadable is recorded in `review_failures` under `<phase>-trace` and the reviewer's findings are kept without it.
+
+
+### A repair that does not converge
+The whole-book repairs (the short-book gate, the review after expansion, the causal part of the final repair) used to end the run when two rounds made no verified progress. They now throw `RepairStalled`, and `carryForward` catches it: the uncommitted candidate is dropped, so the accepted plan and prose stand exactly as they were; the unresolved findings are attached to their scenes as `deferred`, where the next pass receives them as required corrections; and they are kept in `carried_findings`, which the final audit is shown and the final report lists, so such a book ends `COMPLETE_WITH_WARNINGS` and never `COMPLETE`. Earlier paragraphs of this document that say these repairs stop the run describe the previous behaviour. Planning before prose still stops on unresolved blocking defects, and so does the final repair's own no-progress guard.
+
+
+### What a call carries, and how many calls a repair takes
+Measured on a ten-scene book: scene repair took 141 calls at 83K characters each and scene review 81 at 79K, for scenes of about 4K. Two causes, both removed. A scene call carried the same material several times — the adjacent theses three times, the previous scene's ending twice, its state trace twice, the canon facts and the ending twice. `sceneContractContext(…, beside_outline)` now leaves out what `scenePlanContext` in the same call already holds, source and neighbour theses travel as what happened and what it left (`brief`), and the writer's `neighbors` slot names IDs. And a one-scene repair spent turns reading the scene it was repairing and then saying it was done: the tool loop now shows a single writable block whole, and `{"tool":"replace",…,"finish":true}` applies the edits and ends the turn sequence in one call.
+
+A refused structured answer is no longer sent back unchanged. Validation reports every defect at once and names the failed condition with its values (`storyCanon.ts`, `readThesisPlan`); the edits already tried and refused travel with the next repair request; and a refusal that comes back twice in the same words is put to the other role's model. Planning that does not converge — chapter development, scene redesign, plan repair — proceeds with its open findings carried by name (`settlePlan`, `carried_findings`).
+
+
+### The first writing is the full scene
+A `planning_version: 2` book no longer writes a quarter-length draft first. The short draft was meant to find plot defects cheaply, but the writer returned about two thirds of full length whatever was asked, the plan is now stress-tested before prose, and the short book's repair loop was where a measured run spent 470 calls. Each scene is written once at its `target_words`; the expansion pass visits only a scene that came back under its budget or carries findings, and costs nothing for the rest. The whole-book review, the seam review and the polish pass are unchanged. Plan repair shows the cited scenes whole on every turn (`planAgent` `focus`) instead of spending a call to read each.
+
+
+### What a repair package answers for
+A whole-book repair was returned whenever its review found any blocking issue anywhere, and a reviewer rereading a book finds something else each time: a package that resolved its defect came back with "new defects" that stood in the text before it, or that doubted how the demanded change read. A package is now judged on the defects it was sent to repair and on hard contradictions (`contradiction`, `impossible_action`, `continuity`, `unsupported_knowledge`, `premature_disclosure`, `author_requirement`) quoted from text it wrote. A finding quoted from text that stood before the repair is left for the next whole-book review. The gate counts progress as fewer blocking findings on changed text for canonical books too; changed text alone no longer counts. Repair visits the cited and changed scenes and their direct prerequisites, re-reviews only edited scenes, and spends no locator call on a state trace.
+
+
+### The state ledger
+A plan names in `tracked` the three to ten things its plot cannot lose track of — objects, documents, evidence, with where each is before the first scene — and code adds every character's whereabouts (`stateLedger.ts`). After a scene is written, and again when its text has changed, one short call (`THESIS_STATE`, the scene and the list, a few thousand characters) asks how each thing stands at the end of it: `unchanged`, `changed` or `conflict`, with the sentence that shows it. Code believes an answer only as far as its quote is in the scene, keeps the table in `state_ledger` by scene and text revision, hands the next scene's writer the last recorded row as where things stand, and turns a verified `conflict` into a `continuity` finding that names both states and the scene that left the first; the finding joins the scene's review and its ordinary repair.
+
+A book with `tracked` does not ask its reviewer for a state trace: the open-ended extraction of fifteen cited events inside the review call could not be read for most scenes. A plan without `tracked` — every project saved before it — keeps the trace, which now drops an entry it cannot read instead of the whole trace. What the planner does not name is not followed.

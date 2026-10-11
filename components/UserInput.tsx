@@ -5,8 +5,7 @@ import { Input } from './common/Input';
 import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CONFIGS } from '../utils/genrePrompts';
-import { getStoredContinuityMode, getStoredProviderConfig, getStoredValidatorConfig, saveStoredContinuityMode, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
-import type { ContinuityMode } from '../utils/novel/v2/continuity';
+import { getStoredProviderConfig, getStoredValidatorConfig, saveStoredProviderConfig, saveStoredValidatorConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
@@ -38,7 +37,7 @@ const UserInput: React.FC<UserInputProps> = ({
   const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
   const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
     const stored = getStoredValidatorConfig();
-    return { ...(stored || getStoredProviderConfig()), think: stored?.think ?? false, enabled: Boolean(stored) };
+    return { ...(stored || getStoredProviderConfig()), enabled: Boolean(stored) };
   });
 
   const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
@@ -46,7 +45,6 @@ const UserInput: React.FC<UserInputProps> = ({
     setValidator(next);
     saveStoredValidatorConfig(next.enabled ? next : undefined);
   };
-  const [continuity, setContinuity] = useState<ContinuityMode>(() => getStoredContinuityMode());
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -126,10 +124,10 @@ const UserInput: React.FC<UserInputProps> = ({
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
               <span>AI provider</span>
             </h3>
-            <p className="text-xs text-zinc-500">Choose inference provider: Gemini or Ollama</p>
+            <p className="text-xs text-zinc-500">Choose inference provider: Gemini, Ollama or Qwen</p>
           </div>
           
-          <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
+          <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
             <button
               type="button"
               onClick={() => {
@@ -160,9 +158,11 @@ const UserInput: React.FC<UserInputProps> = ({
             >
               Ollama
             </button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
           </div>
         </div>
 
+        {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3"><label className="block text-sm text-zinc-400">Qwen Model<Input value={providerConfig.qwenModel||'qwen3.8-flash'} onChange={e=>{const updated={...providerConfig,qwenModel:e.target.value};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className="text-xs font-mono mt-1.5"/></label><p className="text-xs text-zinc-500">Uses the server API key and endpoint from .env.local. Thinking is off.</p></div>}
         {/* Gemini Details */}
         {providerConfig.provider === 'gemini' && (
           <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
@@ -219,7 +219,7 @@ const UserInput: React.FC<UserInputProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap gap-2 items-center justify-between mb-1">
                   <label className="block text-sm font-medium text-zinc-400">
                     Ollama Model
                   </label>
@@ -243,7 +243,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     }}
                     className="text-xs py-1.5"
                   >
-                    {ollamaModels.map((m) => (
+                    {[...new Set([providerConfig.ollamaModel, ...ollamaModels])].map((m) => (
                       <option key={m} value={m}>
                         {m}
                       </option>
@@ -269,24 +269,6 @@ const UserInput: React.FC<UserInputProps> = ({
                 </p>
               </div>
             </div>
-
-            <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={providerConfig.think ?? false}
-                onChange={(e) => {
-                  const updated = { ...providerConfig, think: e.target.checked };
-                  setProviderConfig(updated);
-                  saveStoredProviderConfig(updated);
-                }}
-                className="accent-zinc-200"
-              />
-              <span className="font-medium">Reasoning (think)</span>
-            </label>
-            <p className="text-xs text-zinc-500">
-              Reasoning models spend the output budget on thinking before answering — on capped
-              calls the answer gets cut off. Keep off unless the prose clearly needs it.
-            </p>
 
             <p className="text-xs text-zinc-500">
               A cross-encoder reads each chapter plan against finished prose, and an NLI head
@@ -333,7 +315,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
           {validator.enabled && (
             <div className="space-y-3 animate-fade-in">
-              <div className="inline-flex rounded bg-zinc-900 p-1 border border-zinc-800">
+              <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
                 <button
                   type="button"
                   onClick={() => updateValidator({ provider: 'gemini' })}
@@ -356,9 +338,10 @@ const UserInput: React.FC<UserInputProps> = ({
                 >
                   Ollama
                 </button>
+                <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
               </div>
 
-              {validator.provider === 'gemini' ? (
+              {validator.provider === 'qwen' ? <label className="block text-sm text-zinc-400">Editor Qwen Model<Input value={validator.qwenModel||'qwen3.8-flash'} onChange={e=>updateValidator({qwenModel:e.target.value})} className="text-xs font-mono mt-1.5"/></label> : validator.provider === 'gemini' ? (
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">
                     Editor Gemini Model
@@ -382,7 +365,7 @@ const UserInput: React.FC<UserInputProps> = ({
                 </div>
               ) : (
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex flex-wrap gap-2 items-center justify-between mb-1">
                     <label className="block text-sm font-medium text-zinc-400">
                       Editor Ollama Model
                     </label>
@@ -401,7 +384,9 @@ const UserInput: React.FC<UserInputProps> = ({
                       onChange={(e) => updateValidator({ ollamaModel: e.target.value })}
                       className="text-xs py-1.5"
                     >
-                      {ollamaModels.map((m) => (
+                      {/* The saved model is always an option: without it the list would show its
+                          first entry while calls go to the saved one. */}
+                      {[...new Set([validator.ollamaModel, ...ollamaModels])].map((m) => (
                         <option key={m} value={m}>
                           {m}
                         </option>
@@ -423,32 +408,6 @@ const UserInput: React.FC<UserInputProps> = ({
               )}
             </div>
           )}
-        </div>
-
-        {/* What a run does with a scene that fails its checks twice. A long run
-            left alone wants the book finished and the problems listed. */}
-        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2">
-          <label htmlFor="continuityMode" className="block text-sm font-medium text-zinc-300">
-            When a scene fails its continuity check
-          </label>
-          <Select
-            id="continuityMode"
-            value={continuity}
-            onChange={(e) => {
-              const mode = e.target.value as ContinuityMode;
-              setContinuity(mode);
-              saveStoredContinuityMode(mode);
-            }}
-            className="text-xs py-1.5"
-          >
-            <option value="warn">Warn — rewrite once, record what remains, keep writing</option>
-            <option value="strict">Strict — rewrite once, stop the book if it remains</option>
-            <option value="off">Off — record it, rewrite nothing</option>
-          </Select>
-          <p className="text-xs text-zinc-500">
-            Warn finishes the manuscript and lists every unresolved objection in the report. Use Strict
-            when you are watching the run and would rather stop at the first scene that will not hold.
-          </p>
         </div>
 
       </div>

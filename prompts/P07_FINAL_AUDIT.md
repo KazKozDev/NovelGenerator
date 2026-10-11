@@ -48,6 +48,9 @@ BOUNDARIES
 - Do not declare the book fully checked when only summaries are available.
 - For suspicion without sufficient text, cite need_more_evidence.
 - Do not rewrite the manuscript and do not give generic style advice.
+- At most twelve findings, the most serious first, each description in three
+  sentences or fewer. A report too long to finish is a report nobody gets:
+  leave the thirteenth problem out rather than the summary.
 
 FORMAT
 JSON only:

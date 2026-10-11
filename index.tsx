@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import LiveRunStudio from './components/LiveRunStudio';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -10,6 +11,6 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    {new URLSearchParams(window.location.search).has('live') ? <LiveRunStudio /> : <App />}
   </React.StrictMode>
 );

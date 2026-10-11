@@ -6,8 +6,10 @@ import { describeShapes, repeatedStaging, sceneShape, type SceneShape, type Stag
 import { describeRelations, relationsFor } from './relationships';
 import { bandsFor, describeProfile, profileOf, readRung } from './profile';
 import { describeStateDigest } from './stateDigest';
-import { describeWorn, type WornEntry } from './ledger';
+import { DEFAULT_WORDS_PER_SCENE, describeWorn, scenesFor, type WornEntry } from './ledger';
+import { stringList } from './normalize';
 import { describeFreshPalette, freshConstraint } from './fresh';
+import { plannerHandoff, writerHandoff } from './handoff';
 import type { BookDesign, ChapterPlan, SceneHandoff, ScenePlan, StoryState, StyleContract } from './types';
 
 /**
@@ -48,6 +50,37 @@ export interface ChapterPlannerInput {
   spentMechanisms?: { mechanism: string; chapters: number[] }[];
   /** What the plan gate found wrong with the previous attempt at this chapter. */
   findings?: string;
+  /** How long a scene runs in this book; the measured median once there is one. */
+  wordsPerScene?: number;
+  /** Premise givens still owed to the reader, as "id — what was given". */
+  premiseOwed?: string[];
+}
+
+/** A map of short strings, whatever shape the model gave it. */
+function stateMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .map(([key, entry]) => [key.trim(), typeof entry === 'string' ? entry.trim() : entry == null ? '' : String(entry)] as [string, string])
+    .filter(([key, entry]) => key && entry));
+}
+
+/** What a scene plan commits to beyond its prose brief, read into shapes code can compare. */
+export function sceneCommitments(scene: ScenePlan): Pick<ScenePlan, 'state_at_start' | 'state_at_end' | 'establishes' | 'pays_premise'> {
+  return {
+    state_at_start: stateMap(scene.state_at_start),
+    state_at_end: stateMap(scene.state_at_end),
+    establishes: stringList(scene.establishes),
+    pays_premise: (Array.isArray(scene.pays_premise) ? scene.pays_premise : [])
+      .filter(item => item && typeof item.id === 'string' && item.id.trim())
+      .map(item => ({ id: item.id.trim(), action: typeof item.action === 'string' ? item.action.trim() : '' })),
+  };
+}
+
+/** How many scenes this chapter holds, as the planner is told it. */
+export function describeSceneRoom(chapterWords: number, rate: number): string {
+  const scenes = scenesFor(chapterWords, rate);
+  if (!scenes) return `No length is set for this chapter. A scene in this book runs to about ${rate} words.`;
+  return `This chapter has about ${chapterWords} words, and a scene in this book runs to about ${rate} words whatever is asked of it: that is room for ${scenes} scene${scenes === 1 ? '' : 's'}. A plan with more is returned before any prose is written.`;
 }
 
 /**
@@ -103,6 +136,7 @@ export function validateChapterPlan(raw: unknown, chapter: number): ChapterPlan 
     scenes: plan.scenes.map(scene => ({
       ...scene,
       outcome_kind: typeof scene.outcome_kind === 'string' ? scene.outcome_kind : '',
+      ...sceneCommitments(scene as ScenePlan),
       // Optional: scenes planned before the fresh bank existed carry none.
       ...(typeof (scene as ScenePlan).fresh_constraint === 'string'
         ? { fresh_constraint: (scene as ScenePlan).fresh_constraint }
@@ -119,6 +153,8 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
       dramatic_core: input.design.dramatic_core,
       causal_map: input.design.causal_map,
       ending: input.design.ending,
+      intention_collisions: input.design.intention_collisions?.collisions.filter(collision =>
+        entry?.event_ids?.includes(collision.event_id)),
       characters: input.design.characters.map(c => c.id),
     }),
     chapter_number: String(input.chapter),
@@ -129,16 +165,30 @@ export async function planChapter(input: ChapterPlannerInput, llm: NovelLLM): Pr
     current_state: describeStateDigest(input.currentState),
     previous_chapter_outcome: input.previousOutcome || '(opening chapter)',
     recent_scene_shapes: describeShapes(input.recentShapes || []),
-    state_handoff: input.previousHandoff ? JSON.stringify(input.previousHandoff) : '(no earlier accepted scene)',
+    state_handoff: input.previousHandoff ? JSON.stringify(plannerHandoff(input.previousHandoff)) : '(no earlier accepted scene)',
     open_threads_and_ending_requirements: JSON.stringify({ open_threads: input.openThreads, ending_requirements: input.endingRequirements }),
     remaining_word_budget: String(input.remainingWords),
     plan_findings: input.findings || '(first attempt at this chapter)',
     fresh_constraint: describeFreshPalette(input.chapter),
+    scene_room: describeSceneRoom(Number(entry?.target_words) || 0, input.wordsPerScene || DEFAULT_WORDS_PER_SCENE),
+    premise_owed: (input.premiseOwed || []).length ? input.premiseOwed!.join('\n') : '(every premise given has been put on the page)',
   });
+  // The chapter is planned by the editor's model, not the writer's. Everything
+  // that went wrong in a measured chapter was already wrong in its plan — a
+  // book closed in one scene and open in the next, a particular left for each
+  // scene to invent — and the writer carried the plan out faithfully. A plan is
+  // a few percent of a chapter's tokens and decides the rest of them; it is the
+  // one place the stronger model's time is cheapest and worth most.
   const raw = await structuredResponse(prompt, system, llm,
     ['status', 'chapter', 'function', 'starting_situation', 'ending_change', 'mechanism', 'cost', 'pressure_rung', 'scenes', 'forward_dependencies', 'replan_reason'],
-    parsed => parsed, { temperature: 0.3, maxTokens: 8192, route: 'writer' });
-  const validated = validateChapterPlan(raw, input.chapter);
+    parsed => parsed, { temperature: 0.3, maxTokens: 16384, route: 'validator', stage: 'chapter-plan' });
+  const planned = validateChapterPlan(raw, input.chapter);
+  // Length is the chapter's, shared among the scenes there are: the planner
+  // does not set it.
+  const share = Number(entry?.target_words) > 0 && planned.status === 'ready' && planned.scenes.length
+    ? Math.max(300, Math.round(Number(entry!.target_words) / planned.scenes.length / 50) * 50)
+    : 0;
+  const validated = share ? { ...planned, scenes: planned.scenes.map(scene => ({ ...scene, target_words: share })) } : planned;
   // Every scene leaves the planner with a constraint: one the model chose from
   // the palette, or the deterministic card for the scene id when it chose none.
   return {
@@ -160,15 +210,16 @@ export async function rebaseScenePlan(input: {
   design: BookDesign;
   scene: ScenePlan;
   handoff: SceneHandoff;
-  state: StoryState;
   openThreads: string[];
+  /** Why the scene is being replanned: what was struck from it, or what it repeats. */
+  reason?: string;
 }, llm: NovelLLM): Promise<ScenePlan> {
   const system = systemContract();
   const prompt = renderPrompt('P03_SCENE_REBASE', {
     story_contract: JSON.stringify(input.design.contract),
     scene_plan: JSON.stringify(input.scene),
     state_handoff: JSON.stringify({ ...input.handoff, required_new_outcome: input.scene.required_outcome }),
-    confirmed_state: describeStateDigest(input.state),
+    replan_reason: input.reason || '(the scene before it changed what this scene starts from)',
     open_threads: JSON.stringify(input.openThreads),
   });
   const raw = await structuredResponse(prompt, system, llm, SCENE_KEYS, parsed => {
@@ -185,14 +236,16 @@ export async function rebaseScenePlan(input: {
     }
     return candidate;
   },
-    { temperature: 0.2, maxTokens: 8192, route: 'writer' }) as ScenePlan;
+    { temperature: 0.2, maxTokens: 8192, route: 'validator', stage: 'scene-rebase' }) as ScenePlan;
+  // The length was the chapter's to share and is not the replan's to change.
+  const settled = { ...raw, ...sceneCommitments(raw), target_words: input.scene.target_words };
   // The rebase is a causal correction, not a new deal: the scene keeps its
   // constraint unless the correction made it impossible to spend.
   if ((typeof raw.fresh_constraint !== 'string' || !raw.fresh_constraint.trim())
     && typeof input.scene.fresh_constraint === 'string' && input.scene.fresh_constraint.trim()) {
-    return { ...raw, fresh_constraint: input.scene.fresh_constraint };
+    return { ...settled, fresh_constraint: input.scene.fresh_constraint };
   }
-  return raw;
+  return settled;
 }
 
 export interface SceneContext {
@@ -203,8 +256,88 @@ export interface SceneContext {
 }
 
 export interface ReadinessProblem {
-  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'repeated-staging' | 'restaging-suspect' | 'retelling-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant';
+  code: 'pov-absent' | 'empty-task' | 'location-mismatch' | 'missing-fact' | 'missing-source' | 'repeated-staging' | 'restaging-suspect' | 'retelling-suspect' | 'clash-suspect' | 'static-outcome' | 'unknown-participant' | 'seam-change';
   detail: string;
+}
+
+/**
+ * Which doubts need a reader, and what the rest say to the writer directly.
+ *
+ * Every doubt code raised used to go to the editor: one review per scene, the
+ * scene plan and the whole state digest in, a page of verdicts out. It was
+ * meant to be rare and ran before eight scenes of nine, the most expensive
+ * stage of a measured run — and nearly every doubt it was asked about was one
+ * with a single right answer that needed no reading. A character recorded in
+ * the corridor in a scene set in the lobby is not a question; it is an
+ * instruction to show the walk.
+ *
+ * So a doubt whose answer is the same whoever reads it becomes the writer's
+ * requirement as it stands. Three are left for the editor, because they are
+ * about meaning: a participant who is no cast member has to be mapped to one
+ * or refused, a scene with no task has to be given one, and a clash the NLI
+ * head reports between the plan and memory has to be read before it is
+ * believed; and a scene that opens somewhere other than where the last one
+ * closed, saying what changed, has to be read for whether that could have
+ * happened in between. The clash was learned the hard way: handed straight to the
+ * writer, the head's suspicions arrived thirty-six and forty-four to a scene,
+ * nearly all of them a plan sentence and a fact that merely share a subject.
+ */
+export function needsReading(problem: ReadinessProblem): boolean {
+  return problem.code === 'unknown-participant' || problem.code === 'empty-task' || problem.code === 'clash-suspect' || problem.code === 'seam-change';
+}
+
+/** How many of a scene's NLI clashes are worth a reader's time: the strongest few. A judgement. */
+export const MAX_CLASHES_READ = 4;
+
+/**
+ * The doubts worth reading out of everything raised: all that concern the cast
+ * or the task, and of the clashes only the ones the head was surest of.
+ */
+export function doubtsToRead(problems: ReadinessProblem[]): ReadinessProblem[] {
+  const score = (problem: ReadinessProblem): number => Number(/\(contradiction ([\d.]+)\)/.exec(problem.detail)?.[1]) || 0;
+  const clashes = problems.filter(problem => problem.code === 'clash-suspect')
+    .sort((first, second) => score(second) - score(first)).slice(0, MAX_CLASHES_READ);
+  return [...problems.filter(problem => needsReading(problem) && problem.code !== 'clash-suspect'), ...clashes];
+}
+
+const WRITER_NOTES: Partial<Record<ReadinessProblem['code'], string>> = {
+  'pov-absent': 'Write the scene with the point-of-view character present in it, or keep strictly to what that character could know of it.',
+  'location-mismatch': 'Open by showing how they came to be here — a line or two is enough — or begin with them arriving.',
+  'missing-fact': 'Do not write these as already established. If the scene needs one, it is established here, on the page.',
+  'missing-source': 'Write the scene without leaning on that earlier passage; do not quote or reconstruct it from memory.',
+  'repeated-staging': 'Who is here and where cannot change now: give this turn a pressure, an object or an outcome the scenes before it did not have.',
+  'restaging-suspect': 'Do not stage that passage again. If this scene comes near it, it goes somewhere that one did not.',
+  'retelling-suspect': 'Carry the outcome through something done, found, lost or decided in this scene, not by saying again what is known.',
+  'static-outcome': 'End with someone\'s position, possession, knowledge or commitment held differently than at the start.',
+};
+
+/** A doubt code can settle, as the instruction the writer is given. */
+export function writerRequirement(problem: ReadinessProblem): string {
+  return `${problem.detail} ${WRITER_NOTES[problem.code] || ''}`.trim();
+}
+
+/**
+ * The doubts about a scene plan that need a reader, found from the plan alone
+ * so a whole chapter's can be asked about at once, before its first scene.
+ */
+export function planReadingProblems(design: BookDesign, scene: ScenePlan): ReadinessProblem[] {
+  const problems: ReadinessProblem[] = [];
+  if (!scene.required_outcome?.trim() && !scene.function?.trim()) {
+    problems.push({ code: 'empty-task', detail: 'The scene states neither a required outcome nor a function.' });
+  }
+  const known = new Set(design.characters.map(character => character.id));
+  for (const entry of scene.participants || []) {
+    const token = entry.trim().toLowerCase().replace(/['’]s\b/g, '').replace(/['’]$/, '');
+    const exact = known.has(entry)
+      || design.characters.some(character => character.name.trim().toLowerCase().replace(/['’]s\b/g, '').replace(/['’]$/, '') === token);
+    if (!exact) {
+      problems.push({
+        code: 'unknown-participant',
+        detail: `Scene ${scene.id} lists "${entry}", which is no character id. Map it to the cast roster in the review ("${entry}" is which cast member, by id), or return major with how the scene carries the beat without inventing a person.`,
+      });
+    }
+  }
+  return problems;
 }
 
 export interface PriorChapter {
@@ -314,6 +447,12 @@ export function chapterOfScene(sceneId: string): number {
   return Number.isFinite(chapter) && chapter > 0 ? chapter : 1;
 }
 
+/** Whether a scene plan names what a fact is about: the subject's own words, all of them, in the plan. */
+export function namesSubject(planText: string, subject: string): boolean {
+  const words = subject.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length >= 3 && !['the', 'and'].includes(word));
+  return words.length > 0 && words.every(word => planText.includes(word));
+}
+
 /**
  * The voice corridor: the book's own style contract compressed to one
  * directive line. The writer already receives the full contract; this is the
@@ -340,7 +479,19 @@ export function sceneBrief(scene: ScenePlan): string {
   const lines = [
     `Scene ${scene.id}${scene.location?.trim() ? ` — ${scene.location.trim()}` : ''}${scene.story_time?.trim() ? `, ${scene.story_time.trim()}` : ''}.`,
     scene.function?.trim() ? `Function: ${scene.function.trim()}` : '',
+    Object.keys(scene.state_at_start || {}).length
+      ? `Opens with: ${Object.entries(scene.state_at_start!).map(([key, value]) => `${key} — ${value}`).join('; ')}`
+      : '',
     scene.required_outcome?.trim() ? `Must end: ${scene.required_outcome.trim()}` : '',
+    Object.keys(scene.state_at_end || {}).length
+      ? `Closes with: ${Object.entries(scene.state_at_end!).map(([key, value]) => `${key} — ${value}`).join('; ')}. The next scene opens from exactly this.`
+      : '',
+    (scene.establishes || []).length
+      ? `Fixes these particulars, as given — and fixes no other number, date, name or place the story would later lean on:\n${scene.establishes!.map(item => `  - ${item}`).join('\n')}`
+      : '',
+    (scene.pays_premise || []).length
+      ? `Owed from the premise, to be put on the page here: ${scene.pays_premise!.map(item => item.action || item.id).join('; ')}`
+      : '',
     (scene.participant_intentions || []).length
       ? `Wants: ${scene.participant_intentions.map(item => `${item.character_id} — ${item.intention}${item.reason_now ? ` (${item.reason_now})` : ''}`).join('; ')}`
       : '',
@@ -404,7 +555,13 @@ export function buildSceneContext(
   for (const id of scene.participants) {
     knowledge[id] = { knows: (state.knowledge[id] || []).slice(-8), believes: state.beliefs[id] || [] };
   }
-  const relevantFacts = state.facts.filter(f => (scene.required_fact_refs || []).includes(f.id));
+  // The facts the plan cites, and every fact about something the plan names:
+  // a scene set in a room is given what the book has fixed about that room,
+  // whether or not the planner thought to cite it. The writer cannot keep to
+  // a floor, a colour or a trade it was never shown.
+  const sceneText = `${JSON.stringify(scene)} ${(scene.participants || []).map(id => known.get(id)?.name || '').join(' ')}`.toLowerCase();
+  const relevantFacts = state.facts.filter(f => (scene.required_fact_refs || []).includes(f.id)
+    || (f.subject && namesSubject(sceneText, f.subject)));
   // Names on record travel into the writer's package verbatim, before a prose
   // token exists: the writer sees the exact spellings memory holds, so drift
   // is prevented rather than repaired.
@@ -433,7 +590,9 @@ export function buildSceneContext(
         participants: scene.participants,
         initial_conditions: scene.initial_conditions,
       }),
-      state_handoff: handoff ? JSON.stringify({ ...handoff, required_new_outcome: scene.required_outcome }) : '(no earlier accepted scene)',
+      state_handoff: handoff
+        ? JSON.stringify(writerHandoff({ ...handoff, required_new_outcome: scene.required_outcome }, scene.participants || [], design.characters.map(character => character.id)))
+        : '(no earlier accepted scene)',
       character_cards: JSON.stringify(cards),
       cast_roster: design.characters.map(character =>
         `${character.id} — ${character.name} — ${character.story_function}`).join('\n') || '(cast empty)',

@@ -1,14 +1,21 @@
 # NovelGenerator — local AI novel generator for Gemini and Ollama
 
 NovelGenerator is a source-available AI novel writer that turns a one-paragraph premise
-into a full manuscript, chapter by chapter. Run it with Gemini or use Ollama as a local AI
+into a full manuscript through successive drafts of the whole book. Run it with Gemini or use Ollama as a local AI
 writer with your own model.
 
-It is built for long-form story generation rather than isolated prompts: causal planning,
-persistent story memory, explicit scene handoffs and continuity checks keep characters,
-facts and open plot threads available as the novel grows.
+New books use progressive manifestation: a short synopsis and chapter skeleton,
+then a checked thesis outline, then short scenes covering the entire story. Those
+scenes are expanded and edited in place. Every thesis records who acts, why, what
+resists them, and what changes. The rough, expanded and polished versions are saved.
 
-
+The writing agent can search the manuscript by words or phrases, read bounded
+excerpts and replace exact words, sentences or paragraphs. Insertions and deletions
+use the same replacement tool. Unrelated text is preserved, ambiguous anchors are
+rejected, and edits are persisted immediately with their history. Writers receive
+local context and request earlier passages when needed; the final audit still reads
+the whole manuscript. Search is local lexical retrieval, not embedding similarity.
+New books keep one canonical fact ledger in the plan, with scene sources and character knowledge. Causal repairs update that plan first, then patch related scenes in order and verify the package before committing. Chapter word targets come from the main form and are distributed across enough distinct scenes; underplanned older drafts are preserved while their scene outline is upgraded. Checks displays actual / target words.
 
 <!-- TODO(user): screenshot predates the current engine — re-capture the generation view -->
 ![The generation view while chapters are written and reviewed](https://github.com/user-attachments/assets/e04135c1-9196-467c-a0d2-71628c28ab27)
@@ -77,7 +84,7 @@ contradiction named.
 
 ```bash
 npx vite-node scripts/run-book.ts --writer deepseek-v4.1-flash:cloud \
-  --editor mistral-large-3:675b-cloud --chapters 3 --premise "..." --out runs/demo
+  --editor gemini-3.6-flash --chapters 3 --premise "..." --out runs/demo
 ```
 
 ```
@@ -92,6 +99,10 @@ DONE status=COMPLETE_WITH_WARNINGS calls=47 tokens~362683
 Every call is logged with its route, model, prompt size and duration. `--out` holds
 `manuscript.md`, `snapshot.json` and `run.log`. `--provider gemini` runs the same pipeline
 against the Gemini transport instead, with `--writer`/`--editor` as model names.
+
+To continue an interrupted run, add `--resume runs/demo/snapshot.json` with the
+same premise, chapter count, genre and word target. Finished chapters are preserved;
+the runner validates the snapshot against those arguments before resuming.
 
 ## How it works
 
@@ -143,7 +154,7 @@ Set in the app before generation starts.
 - A browser with IndexedDB — the manuscript, its memory and the audit are stored there
 - A Gemini API key, or Ollama running locally or in Ollama Cloud
 - A model that honours JSON Schema output and returns long English prose
-- Known to complete a book: `deepseek-v4.1-flash:cloud` and `mistral-large-3:675b-cloud`
+- Known to complete a book: `deepseek-v4.1-flash:cloud` as the writer with `gemini-3.6-flash` as the editor
 
 ## Limitations
 

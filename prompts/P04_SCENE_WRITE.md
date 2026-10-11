@@ -11,11 +11,20 @@ CONTRACT AND VOICE
 {{story_contract}}
 {{style_contract}}
 
-SCENE TASK
-{{scene_plan}}
-
 VOICE (how this book sounds — hold it for the whole scene)
 {{voice_brief}}
+
+FULL CAST ROSTER (id — name — function)
+{{cast_roster}}
+
+A participant may be named by role rather than id. Match it against this
+roster and the review's mapping in the requirements: write the mapped cast
+member, with their card's voice and history. If the review declares no match,
+carry the beat without inventing a person — keep the figure offstage or
+unnamed exactly as instructed, never promote a role into a new character.
+
+SCENE TASK
+{{scene_plan}}
 
 SCENE BRIEF (what this scene must do on the page)
 {{scene_brief}}
@@ -32,15 +41,6 @@ STATE HANDOFF FROM ACCEPTED PROSE
 PARTICIPANTS
 {{character_cards}}
 
-FULL CAST ROSTER (id — name — function)
-{{cast_roster}}
-
-A participant may be named by role rather than id. Match it against this
-roster and the review's mapping in the requirements: write the mapped cast
-member, with their card's voice and history. If the review declares no match,
-carry the beat without inventing a person — keep the figure offstage or
-unnamed exactly as instructed, never promote a role into a new character.
-
 NAMES ON RECORD
 {{named_entities}}
 
@@ -50,6 +50,12 @@ only if the scene itself makes clear whom it refers to.
 
 PHRASES THIS BOOK HAS USED UP
 {{tired_phrases}}
+
+This list is for you. Nobody in the story knows it exists: the narrator
+does not avoid a phrase, catch or correct themselves, "name it plainly",
+or remark that a word belongs to another night. A sentence that shows a
+phrase being steered around is worse than the phrase. Write the scene as
+if these strings had never been available.
 
 Each line is an exact string the manuscript has already written, with how many
 times. Do not write it again in this scene — not a near variant of it either,
@@ -89,9 +95,9 @@ Complete the scene's substantive movement without padding for word count.
 
 WRITING
 - Start in a concrete situation, honoring the previous transition.
-- Treat everything in known_to_reader as already understood by the reader.
-  Do not explain forbidden_restatements again; mention one only when the current
-  action changes its consequence or meaning.
+- The reader has read every scene before this one. Do not explain again
+  anything under already_told_do_not_explain_again; mention one only when
+  the current action changes its consequence or meaning.
 - Resolve only open_questions that this scene can answer on the page.
 - Make the ending materially different from previous_outcome and satisfy
   required_new_outcome through action, discovery, loss, or commitment.

@@ -17,7 +17,7 @@ export function describeUnknown(value: unknown): string {
       : typeof item.reason === 'string' ? item.reason : '';
     return `${item.character_id}: ${item.intention}${reason ? ` (${reason})` : ''}`;
   }
-  for (const key of ['description', 'consequence', 'commitment', 'intention', 'decision', 'action', 'question', 'content', 'outcome', 'requirement', 'problem']) {
+  for (const key of ['description', 'disclosure', 'consequence', 'commitment', 'intention', 'decision', 'action', 'question', 'content', 'outcome', 'requirement', 'problem']) {
     if (typeof item[key] === 'string') return (item[key] as string).trim();
   }
   try { return JSON.stringify(value); } catch { return ''; }

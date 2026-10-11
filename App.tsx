@@ -3,14 +3,12 @@
 
 import React, { useEffect } from 'react';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
-import { RunClock } from './components/RunClock';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import SystemManualToggle from './components/SystemManualModal';
 import BookDisplay from './components/BookDisplay';
 import SaveBook from './components/SaveBook';
-import { LoadingSpinner } from './components/common/LoadingSpinner';
 
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
@@ -38,9 +36,11 @@ const App: React.FC = () => {
     editSettings,
     currentStoryOutline,
     currentChapterPlan,
+    developmentLabel,
     isResumable,
     agentLogs,
-    lastSavedAt,
+    tokenTotals, repairProgress,
+    lastSavedAt, autosaveStatus,
     exportProject,
     importProject,
     storeReady,
@@ -82,12 +82,7 @@ const App: React.FC = () => {
     resetGenerator();
   };
 
-  const showProgress = (isLoading || isResumable) && 
-                       currentStep !== GenerationStep.Idle && 
-                       currentStep !== GenerationStep.Done &&
-                       currentStep !== GenerationStep.Error &&
-                       currentStep !== GenerationStep.WaitingForOutlineApproval &&
-                       currentStep !== GenerationStep.GeneratingOutline;
+  const showProgress = isLoading || (isResumable && currentStep !== GenerationStep.Done);
 
   const isStudioLayout = showProgress;
 
@@ -103,20 +98,63 @@ const App: React.FC = () => {
     <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
   ) : null;
 
+  const errorPanel = error ? (
+          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
+            <p className="font-semibold mb-1">Error:</p>
+            <p className="whitespace-pre-wrap">{splitError(error).headline}</p>
+            {splitError(error).detail && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-red-300/80 hover:text-red-200">What the review said</summary>
+                <p className="mt-2 whitespace-pre-wrap text-xs text-red-300/90 max-h-64 overflow-y-auto">{splitError(error).detail}</p>
+              </details>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {(!isStudioLayout || !isResumable) && (
+                <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
+              )}
+              {/* A refused design is usually fixed by changing the premise or the
+                  editor model. Without this, reaching the form again costs the
+                  author everything they typed. */}
+              <button
+                onClick={editSettings}
+                disabled={isLoading}
+                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+              >
+                Change the premise or models
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+              >
+                Start a new book
+              </button>
+            </div>
+          </div>
+        ) : null;
+
   return (
-    <div className={`w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
+    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+        <div className="flex items-start gap-3 mb-1.5">
+          <div className="flex flex-1 min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="flex items-baseline gap-2">
             <h1 className="text-2xl font-semibold wordmark">
               NovelGenerator
             </h1>
             <span className="font-mono text-xs text-zinc-500">v4.2</span>
           </div>
-          <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <SystemManualToggle />
+          <div className="app-toolbar flex flex-wrap items-center gap-2">
+          <a href="/?live" className="h-7 text-xs px-3 py-1 border border-zinc-800 rounded">Live run</a>
+          <button type="button" disabled={isLoading || !storeReady} className="h-7 text-xs px-3 py-1 border border-zinc-800 rounded disabled:opacity-50" onClick={async () => {
+            try {
+              const response = await fetch('/api/live-book/project');
+              if (!response.ok) throw new Error('No saved CLI run is available');
+              const file = new File([await response.blob()], 'active-run.project.json', { type: 'application/json' });
+              await importProject(file);
+
+            } catch (error) { alert(`Load failed: ${error instanceof Error ? error.message : error}`); }
+          }}>Load active run</button>
           {saveControl}
           <button
             type="button"
@@ -146,50 +184,28 @@ const App: React.FC = () => {
             Clean Slate
           </button>
           </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
+            <ThemeToggle />
+            <SystemManualToggle />
+          </div>
         </div>
         <p className="text-zinc-500 text-xs  text-left">
-          A finished story before your coffee gets cold.
+          Write a novel before your coffee gets cold
         </p>
       </header>
       )}
 
-      <main className={`w-full ${isStudioLayout ? 'max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
-        {error && (
-          <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
-            <p className="font-semibold mb-1">Error:</p>
-            <p className="whitespace-pre-wrap">{splitError(error).headline}</p>
-            {splitError(error).detail && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-red-300/80 hover:text-red-200">What the review said</summary>
-                <p className="mt-2 whitespace-pre-wrap text-xs text-red-300/90 max-h-64 overflow-y-auto">{splitError(error).detail}</p>
-              </details>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
-              {/* A refused design is usually fixed by changing the premise or the
-                  editor model. Without this, reaching the form again costs the
-                  author everything they typed. */}
-              <button
-                onClick={editSettings}
-                disabled={isLoading}
-                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
-              >
-                Change the premise or models
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded text-xs transition-colors"
-              >
-                Start a new book
-              </button>
-            </div>
-          </div>
-        )}
+      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
+        {!showProgress && errorPanel}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && (
+        {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && !showProgress && (
           <div className="border border-zinc-800 rounded p-4 md:p-5 text-sm text-zinc-300">
             <p className="font-medium">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
             <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
+            <label className="block text-xs text-zinc-400 mt-3">Target words per chapter
+              <input type="number" min="1" step="1" value={storySettings.targetWordsPerChapter||4000} onChange={event=>{const value=Number(event.target.value);if(Number.isSafeInteger(value)&&value>0)setStorySettings({...storySettings,targetWordsPerChapter:value})}} className="block mt-1 px-3 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-200" />
+            </label>
             <div className="mt-3 flex gap-3">
               <button onClick={handleContinue} disabled={isLoading} className="px-3 py-1 bg-zinc-200 text-zinc-900 rounded text-xs font-medium">Continue writing</button>
               <button onClick={handleReset} className="px-3 py-1 border border-zinc-700 rounded text-xs">Discard and start new</button>
@@ -219,31 +235,26 @@ const App: React.FC = () => {
           </>
         )}
         
-        {currentStep === GenerationStep.GeneratingOutline && (
-          <div className="text-center py-12">
-            <LoadingSpinner />
-            <p className="mt-4 text-zinc-300 text-sm font-medium">Designing the book...</p>
-            <p className="mt-1 text-zinc-500 text-xs">Causal map, characters, chapter plan and construction review</p>
-            {/* The longest single wait in a run, and the one with no chapter
-                view to show progress in. Without a clock it reads as hung. */}
-            <p className="mt-3 text-xs"><RunClock agentLogs={agentLogs} isLoading={isLoading} /></p>
-          </div>
-        )}
 
 
         {showProgress && (
           <ThreeZoneGenerationView
+            targetWordsPerChapter={storySettings.targetWordsPerChapter}
+            inspectorContent={errorPanel}
             currentStep={currentStep}
             currentChapterProcessing={currentChapterProcessing}
             totalChaptersToProcess={totalChaptersToProcess}
             currentStoryOutline={currentStoryOutline}
             currentChapterPlan={currentChapterPlan}
+            developmentLabel={developmentLabel}
             generatedChapters={generatedChapters}
             agentLogs={agentLogs}
-            lastSavedAt={lastSavedAt}
+            tokenTotals={tokenTotals}
+            repairProgress={repairProgress}
+            lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus}
             isResumable={isResumable}
             isLoading={isLoading}
-            onResumeGeneration={handleStartGeneration}
+            onResumeGeneration={handleContinue}
             headerActions={saveControl}
             version="v4.2"
             onReset={handleReset}

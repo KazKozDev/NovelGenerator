@@ -14,6 +14,27 @@ if (API_KEY) {
   console.error("CRITICAL: API_KEY environment variable is not set. Gemini API calls will fail.");
 }
 
+/**
+ * Thinking held to the least each model allows, for every call.
+ *
+ * A Gemini model thinks by default and bills the thinking as output, out of the
+ * same output budget the answer has to fit in. Nothing in this pipeline reads a
+ * reasoning trace, and its answers are long enough to be cut off at the budget
+ * without one. The 3.x models take a level and cannot go below "minimal"; the
+ * 2.5 Flash models take a token budget and can be set to none; the Pro models
+ * cannot be switched off and are left as they are.
+ */
+export function thinkingConfigFor(model: string, deliberate = false): Record<string, unknown> | undefined {
+  const name = (model || '').toLowerCase();
+  if (/^gemini-3/.test(name) && deliberate) return { thinkingLevel: 'medium' };
+  // 3.8 refuses 'minimal' with a 400; 'low' is the least it accepts.
+  if (/^gemini-3\.8/.test(name)) return { thinkingLevel: 'low' };
+  if (/^gemini-3/.test(name)) return { thinkingLevel: 'minimal' };
+  // 2.5 Flash thinks as much as it sees fit when no budget is set.
+  if (/^gemini-2\.5-flash/.test(name)) return deliberate ? undefined : { thinkingBudget: 0 };
+  return undefined;
+}
+
 const handleApiError = (error: unknown): Error => {
   console.error("❌ Error calling Gemini API:", error);
   if (error instanceof Error) {
@@ -212,7 +233,9 @@ export async function generateGeminiText(
   topK?: number,
   maxOutputTokens?: number,
   jsonOnly = false,
-  modelName?: string
+  modelName?: string,
+  deliberate = false,
+  onUsage?: (metadata: unknown) => void,
 ): Promise<string> {
   if (!ai) {
     throw new Error("Gemini API client is not initialized. API_KEY might be missing.");
@@ -237,7 +260,8 @@ export async function generateGeminiText(
           generationConfig.topK = topK;
       }
       if (maxOutputTokens !== undefined) {
-          generationConfig.maxOutputTokens = maxOutputTokens;
+          // Thinking is spent out of the same allowance as the answer.
+          generationConfig.maxOutputTokens = maxOutputTokens + (deliberate ? 8192 : 0);
       }
       if (jsonOnly) generationConfig.responseMimeType = "application/json";
       if (responseSchema) {
@@ -253,6 +277,8 @@ export async function generateGeminiText(
         : NO_THINKING_DIRECTIVE;
 
       const resolvedModel = modelName?.trim() || GEMINI_MODEL_NAME;
+      const thinking = thinkingConfigFor(resolvedModel, deliberate);
+      if (thinking) generationConfig.thinkingConfig = thinking;
       const model = ai!.getGenerativeModel({
         model: resolvedModel,
         generationConfig,
@@ -269,6 +295,7 @@ export async function generateGeminiText(
       // layers up, and that message sends the reader looking at the schema, which is not the problem.
       const candidate: any = (response as any).candidates?.[0];
       const usage: any = (response as any).usageMetadata;
+      onUsage?.(usage);
       const thoughts = usage?.thoughtsTokenCount;
       const spent = [
         usage?.candidatesTokenCount !== undefined ? `${usage.candidatesTokenCount} output tokens` : '',
@@ -322,6 +349,8 @@ export async function generateGeminiTextStream(
       if (maxOutputTokens !== undefined) {
           generationConfig.maxOutputTokens = maxOutputTokens;
       }
+      const streamThinking = thinkingConfigFor(modelName?.trim() || GEMINI_MODEL_NAME);
+      if (streamThinking) generationConfig.thinkingConfig = streamThinking;
       if (responseSchema) {
           generationConfig.responseMimeType = "application/json";
           const sanitized = sanitizeGeminiSchema(responseSchema);

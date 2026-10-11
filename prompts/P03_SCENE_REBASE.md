@@ -1,6 +1,6 @@
 # P03_SCENE_REBASE — rebase the next scene on accepted prose
 
-When: immediately before a scene when an earlier scene already exists.
+When: before a scene, when the scene before it departed from its plan or reached the outcome this one planned to reach.
 
 TASK
 Update the next scene plan against the explicit handoff from accepted prose.
@@ -12,18 +12,19 @@ Story contract:
 Original scene plan:
 {{scene_plan}}
 
+Why this scene is being replanned:
+{{replan_reason}}
+
 State handoff from accepted prose:
 {{state_handoff}}
-
-Confirmed state:
-{{confirmed_state}}
 
 Open reader promises:
 {{open_threads}}
 
 REQUIREMENTS
 - Preserve the scene id.
-- Treat known_to_reader, confirmed_changes, and current_conditions as established.
+- Treat known_to_reader, confirmed_changes, and current_conditions as established:
+  they are what the accepted text says, and they outrank this plan.
 - Do not explain forbidden_restatements again. They may be mentioned briefly only
   when the present action changes their meaning or consequence.
 - Preserve still-relevant intentions and dependencies; remove or replace premises
@@ -41,6 +42,10 @@ REQUIREMENTS
 - Keep outcome_kind the class of change the new outcome actually produces. A
   rebase that moves the outcome usually moves its class too; carrying the old
   label forward would hide the move from every check downstream.
+- Keep state_at_start, state_at_end, establishes and pays_premise, changed
+  only where the correction requires: the scene still opens exactly where
+  the accepted text left things, and still fixes only particulars that agree
+  with what is on record.
 - Preserve the scene's fresh_constraint unless the correction made it
   impossible to spend; when it must change, replace it with an equally
   concrete one, never with an empty string.
@@ -62,6 +67,10 @@ JSON only:
   ],
   "pressure_or_uncertainty": "",
   "development": "",
+  "state_at_start": {},
+  "state_at_end": {},
+  "establishes": [],
+  "pays_premise": [],
   "required_outcome": "",
   "flexible_elements": [],
   "required_fact_refs": [],

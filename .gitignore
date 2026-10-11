@@ -38,3 +38,6 @@ runs/
 # scripts/warm-models.ts, never committed: a repository is not a CDN, and these
 # files are byte-identical to what Hugging Face already serves.
 public/models/
+
+# Local automatic project backups
+autosaves/

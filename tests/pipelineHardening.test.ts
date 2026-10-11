@@ -5,7 +5,7 @@ import { checkChapterPlan, matchLedgerEntry, outcomeRun } from '../utils/novel/v
 import { repeatedStaging, sceneShape } from '../utils/novel/v2/shapes';
 import { capitalizedMidSentence, extractPremiseNames, numericContradictions, repeatedSpans, signatureTics } from '../utils/novel/analytics';
 import { describeWorn, priorOutcomeKinds, priorRungs, spentMechanisms, textureDrift, thinScenes, wornLedger } from '../utils/novel/v2/ledger';
-import { duplicatedSentences, quoteBalance, repairRepetition } from '../utils/novel/v2/repair';
+import { duplicatedSentences, narrationRule, quoteBalance, repairRepetition } from '../utils/novel/v2/repair';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { applyThreads, citesThread } from '../utils/novel/v2/tracker';
 import { openThreadsWithAge } from '../utils/novel/v2/ledger';
@@ -72,7 +72,16 @@ function design(overrides: Partial<BookDesign> = {}): BookDesign {
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
     characters: [{ id: 'C01', name: 'Aren', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: [], initial_beliefs: [] }],
-    world_rules: [],
+    world_rules: [
+      { id: 'R01', rule: 'The tower has three floors and the lamp room is the top one.', relevant_consequences: [], subject: 'the tower', attribute: 'floors' },
+      { id: 'R02', rule: 'Accounts are kept by hand in bound books.', relevant_consequences: [], subject: 'the accounts', attribute: 'how kept' },
+      { id: 'R03', rule: 'The story takes four days in late autumn.', relevant_consequences: [], subject: 'the story', attribute: 'span' },
+      { id: 'R04', rule: 'The keeper has kept the light since boyhood.', relevant_consequences: [], subject: 'the keeper', attribute: 'length of service' },
+      { id: 'R05', rule: 'The oil store is the stone shed at the foot of the tower.', relevant_consequences: [], subject: 'the oil store', attribute: 'place' },
+      { id: 'R06', rule: 'Wages are paid quarterly in coin by the harbour board.', relevant_consequences: [], subject: 'wages', attribute: 'how paid' },
+      { id: 'R07', rule: 'The log book lists each night by date, hours of light and oil used.', relevant_consequences: [], subject: 'the log book', attribute: 'contents' },
+      { id: 'R08', rule: 'The nearest village is two miles off along the shore path.', relevant_consequences: [], subject: 'the village', attribute: 'distance' },
+    ],
     causal_map: [],
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
     chapter_map: [1, 2, 3, 4].map(n => ({
@@ -339,7 +348,9 @@ describe('the craft ledger', () => {
     expect(worn.map(item => item.phrase)).toContain('flat capitals');
     // The wording is banned; the thing it names is not.
     expect(describeWorn(worn)).toMatch(/Do not repeat this wording/);
-    expect(describeWorn(worn)).toMatch(/name it plainly/);
+    // Nothing here the writer could narrate: an instruction to "name it plainly" came back as a sentence of prose.
+    expect(describeWorn(worn)).toMatch(/under its ordinary name, once/);
+    expect(describeWorn(worn)).not.toMatch(/name it plainly/);
   });
 
   it('exempts a refrain the book declared, up to its budget', () => {
@@ -399,6 +410,21 @@ describe('span repair', () => {
     expect(outcome.prose).toContain('Hot glass, rain: the upper room');
     expect(outcome.prose).not.toContain('smelled of hot glass and rain');
     expect(outcome.left).toEqual([]);
+  });
+
+  it('keeps a first-person sentence whose rewrite came back about someone else', async () => {
+    const told = { ...design(), contract: { ...design().contract, narrative_perspective: 'first person, limited' } };
+    const mine = [{ ref: 'Chapter 1', text: 'I climbed to the upper room and counted the panes of hot glass until the stair behind me had cooled.' }];
+    const page = `Below the gallery the sea kept its counsel.\n\n${mine[0].text}`;
+    const answer = (replacement: string): NovelLLM => vi.fn(async () => JSON.stringify({ replacements: [{ original: mine[0].text, replacement, refused_because: '' }] }));
+    const slipped = await repairRepetition({ design: told, scene: scene(), prose: page, earlier: mine },
+      answer('She went up and numbered the hot panes one by one while the stair cooled at her back.'));
+    expect(slipped.prose).toBe(page);
+    expect(slipped.left.join(' ')).toMatch(/dropped the first-person narrator/);
+    const held = await repairRepetition({ design: told, scene: scene(), prose: page, earlier: mine },
+      answer('Upstairs I numbered the hot panes one by one while the stair cooled at my back.'));
+    expect(held.repaired).toHaveLength(1);
+    expect(narrationRule(told)).toContain('first person, limited; past');
   });
 
   it('refuses to splice a replacement for a sentence the scene does not contain verbatim', async () => {
@@ -496,14 +522,24 @@ describe('the replan loop', () => {
     expect(store.runLog().some(entry => entry.detail.includes('rejected before prose'))).toBe(true);
   });
 
-  it('writes the chapter anyway when the planner will not fix the defect', async () => {
+  it('allows the final repair when the set of blocking findings shrinks', async () => {
+    const store = new MemoryProjectStore();
+    const valid = plan({ chapter: 1, mechanism: 'climb', pressure_rung: 1 });
+    const incomplete = { ...valid, pressure_rung: null };
+    const { llm, plansAsked } = replies([{ ...incomplete, cost: '' }, incomplete, valid]);
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    expect(plansAsked()).toBe(3);
+    expect(store.manuscript()).toHaveLength(1);
+  });
+
+  it('stops before prose when the planner will not fix a blocking defect', async () => {
     const store = new MemoryProjectStore();
     const { llm, plansAsked } = replies([plan({ chapter: 1, cost: '', pressure_rung: 1 })]);
-    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
-    // Bounded: three attempts, then the finding travels instead of ending the book.
-    expect(plansAsked()).toBe(3);
-    expect(outcome.warnings.join(' ')).toMatch(/unfixed plan defect \(no-cost\)/);
-    expect(store.manuscript()).toHaveLength(1);
+    await expect(new ChapterPipelineV2().writeChapter(design(), 1, store, llm))
+      .rejects.toThrow(/plan not executable[\s\S]*no-cost/);
+    expect(plansAsked()).toBe(2);
+    expect(store.manuscript()).toHaveLength(0);
+    expect(vi.mocked(llm).mock.calls.some(([prompt]) => prompt.includes('Write a full literary scene'))).toBe(false);
   });
 
   it('does not argue with the planner when it refuses the chapter map itself', async () => {
@@ -674,9 +710,13 @@ describe('promises the book has made', () => {
     return applyThreads(threads, delta, 'CH03_S02');
   }
 
-  it('closes a promise cited by its id', () => {
-    expect(resolve(['CH01_S01-t1'])[0].status).toBe('resolved');
-    expect(resolve([{ id: 'CH01_S01-t1' }])[0].status).toBe('resolved');
+  it('closes a promise cited by its id with the answer the text gave, and keeps one cited with none', () => {
+    const paid = resolve([{ id: 'CH01_S01-t1', answer: 'Aren bolts the station door from the inside.' }])[0];
+    expect(paid.status).toBe('resolved');
+    expect(paid.payoff).toBe('Aren bolts the station door from the inside.');
+    expect(resolve(['CH01_S01-t1'])[0].status).toBe('open');
+    expect(resolve([{ id: 'CH01_S01-t1' }])[0].status).toBe('open');
+    expect(resolve([{ id: 'CH01_S01-t1', answer: 'Yes.' }])[0].status).toBe('open');
   });
 
   it('closes a promise cited in the model\'s own words', () => {
@@ -934,4 +974,18 @@ describe('a budget the length of the book', () => {
     expect(budgetFor(100).maxCalls).toBe(4000);
     expect(budgetFor(100).maxCalls / 100).toBe(budgetFor(20).maxCalls / 20);
   });
+});
+
+
+it('sizes progressive tool budgets from the chapter word target rather than the legacy 200-call floor',()=>{
+  const input={generation_mode:'progressive' as const,target_total_words:4*3400};
+  expect(budgetFor(4,input).maxCalls).toBe(800);
+  expect(budgetFor(4,{...input,target_total_words:4*7000}).maxCalls).toBeGreaterThan(800);
+  expect(budgetFor(4).maxCalls).toBe(200);
+});
+it('keeps an overall finite budget for automatic instrumented repairs',()=>{
+  const budget=budgetFor(100,{generation_mode:'progressive',target_total_words:100*3400});
+  expect(Number.isFinite(budget.maxCalls)).toBe(true);
+  expect(budget.maxCalls).toBeGreaterThan(budgetFor(4,{generation_mode:'progressive',target_total_words:4*3400}).maxCalls);
+  expect(budget.maxTimeMs).toBe(100*60*60*1000);
 });

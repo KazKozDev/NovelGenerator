@@ -2,9 +2,9 @@ import { renderPrompt, systemContract } from '../prompts';
 import { contentWords, extractPremiseNames } from '../analytics';
 import { structuredResponse, type NovelLLM } from './llm';
 import { isRelationKey, relationChangeRefused } from './relationships';
-import { matchKey } from './normalize';
+import { matchKey, stringList } from './normalize';
 import { describeStateDigest } from './stateDigest';
-import type { ExtractedName, ProperName, ReaderThread, StateDelta, StoryState } from './types';
+import type { ExtractedName, ProperName, ReaderThread, StateDelta, StoryState, WorldFact } from './types';
 
 /** States persisted before the name registry existed carry no names shelf. */
 export function storyNames(state: StoryState): ProperName[] {
@@ -42,7 +42,15 @@ export function paragraphsWithIds(prose: string): { id: string; text: string }[]
 
 const DELTA_KEYS = ['proper_names', 'name_variants', 'events', 'state_changes', 'knowledge_changes', 'belief_changes',
   'intentions_and_commitments', 'reader_disclosures', 'threads_opened', 'threads_resolved',
-  'contradictions', 'uncertainties', 'plan_deviations', 'restaged_beats'];
+  'contradictions', 'uncertainties', 'plan_deviations', 'restaged_beats', 'established_facts'];
+
+/**
+ * Facts one scene may put on the shelf. The shelf is the one part of memory
+ * every call receives whole, which is what makes it worth having and what makes
+ * it expensive: an editor that records everything it reads as a fact would turn
+ * it back into the log it exists to outlast.
+ */
+export const MAX_FACTS_PER_SCENE = 10;
 
 /**
  * The one list an extraction cannot leave out. A scene with no events on record
@@ -61,7 +69,10 @@ const REQUIRED_DELTA_KEYS = ['events'];
 const DELTA_SCHEMA = {
   type: 'object',
   required: DELTA_KEYS,
-  properties: Object.fromEntries(DELTA_KEYS.map(key => [key, { type: 'array' }])),
+  // Named, not typed. Gemini refuses an array with no item schema, and these
+  // lists are too various to give one: typed as arrays, every extraction sent
+  // to a Gemini editor was rejected before it was read.
+  properties: Object.fromEntries(DELTA_KEYS.map(key => [key, {}])),
   additionalProperties: true,
 };
 
@@ -139,7 +150,7 @@ export function validateDelta(raw: unknown, paragraphIds: string[] = []): StateD
   if (paragraphIds.length) {
     const known = new Set(paragraphIds);
     const dangling: string[] = [];
-    for (const group of [delta.events, delta.state_changes, delta.knowledge_changes, delta.name_variants, delta.restaged_beats] as { evidence_refs?: unknown }[][]) {
+    for (const group of [delta.events, delta.state_changes, delta.knowledge_changes, delta.name_variants, delta.restaged_beats, delta.established_facts] as { evidence_refs?: unknown }[][]) {
       for (const record of group) {
         for (const ref of (Array.isArray(record?.evidence_refs) ? record.evidence_refs : []) as unknown[]) {
           if (typeof ref === 'string' && !known.has(ref)) dangling.push(ref);
@@ -162,7 +173,8 @@ export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<Stat
   // prose and the recorded spellings, may judge a variant. Code never does.
   const recorded = storyNames(input.priorState);
   const base = {
-    prior_state: describeStateDigest(input.priorState),
+    // The names travel once, below, in the form the extraction reads them in.
+    prior_state: describeStateDigest({ ...input.priorState, names: [] }),
     open_threads: input.openThreads.length
       ? input.openThreads.map(thread => `${thread.id} — ${thread.description}`).join('\n')
       : '(no promise is outstanding)',
@@ -177,7 +189,11 @@ export async function trackScene(input: TrackInput, llm: NovelLLM): Promise<Stat
     // The model is asked for every list; the answer is accepted with the one it
     // cannot do without. validateDelta reads the rest as empty and says which.
     const raw = await structuredResponse(renderPrompt('P05_STATE_UPDATE', base) + extra, system, llm,
-      REQUIRED_DELTA_KEYS, parsed => parsed, { temperature: 0.1, maxTokens: 8192, route: 'validator', schema: DELTA_SCHEMA });
+      // Room to answer in: a thorough editor returns about two and a half times
+      // the scene in JSON — 13KB for a 5KB scene on a live run — and at 8192
+      // tokens the third scene of that run, a long one, was cut off mid-object
+      // and took the book with it.
+      REQUIRED_DELTA_KEYS, parsed => parsed, { temperature: 0.1, maxTokens: 16384, route: 'validator', schema: DELTA_SCHEMA, stage: 'track' });
     return backstopNames(validateDelta(raw, ids), input.sceneProse);
   };
   try {
@@ -252,7 +268,7 @@ export async function resolveOpenQuestions(
     `SCENE EXCERPTS:\n${context}\n\nOPEN QUESTIONS (answer from these excerpts and nothing else, one sentence per answer):\n${JSON.stringify(questions)}\nState facts about the story world only — never about these excerpts, the dialogue, or how anything was confirmed. Do not repeat the excerpts; each resolution is one sentence inside the JSON.\nReturn JSON {"resolutions":[{"question":"...","resolution":"...","kind":"fact|knowledge|belief|unresolved","subject":"character id for knowledge/belief, empty otherwise","evidence_refs":["pN"]}]}.`,
     'You resolve open story questions strictly from the quoted excerpts. Never infer beyond them.',
     llm, ['resolutions'], parsed => parsed,
-    { temperature: 0.1, maxTokens: 8192, route: 'validator' });
+    { temperature: 0.1, maxTokens: 8192, route: 'validator', stage: 'resolve-questions' });
   const list = Array.isArray((raw as { resolutions?: unknown }).resolutions)
     ? (raw as { resolutions: QuestionResolution[] }).resolutions : [];
   return list.filter(item => item && typeof item.question === 'string' && typeof item.resolution === 'string'
@@ -289,7 +305,12 @@ export function applyResolutions(state: StoryState, resolutions: QuestionResolut
 
 export interface ApplyResult {
   state: StoryState;
+  /** Contradictions with confirmed state: the one thing a scene is written again for. */
   blockers: string[];
+  /** Spellings of recorded names the scene got wrong, for code to put right in the text. */
+  variants: { used: string; recorded: string }[];
+  /** Beats staged again, each naming the record it repeats and the paragraphs that stage it. */
+  restaged: { beat: string; earlier: string; paragraphs: string[] }[];
   /** Changes memory declined to fold, with the reason. Reported, never silent. */
   refused: string[];
 }
@@ -320,6 +341,25 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
     next.events.push({ id, description: event.description, participants: event.participants, evidence_refs: event.evidence_refs });
   });
   const refused: string[] = [];
+  // Particulars onto the shelf that travels whole. An event says a letter was
+  // read; the fact says what date it carried — and it was the date, three
+  // chapters on, that nothing could see any more. Keyed by scene like events,
+  // so a replayed or corrected scene replaces its own facts and doubles none.
+  const knownFactIds = new Set(next.facts.map(fact => fact.id));
+  const statedFacts = new Set(next.facts.map(fact => matchKey(fact.statement)));
+  (delta.established_facts || []).slice(0, MAX_FACTS_PER_SCENE).forEach((fact, index) => {
+    const statement = typeof fact?.statement === 'string' ? fact.statement.trim() : '';
+    const id = `${sceneRef}-f${index + 1}`;
+    if (!statement || knownFactIds.has(id) || statedFacts.has(matchKey(statement))) return;
+    knownFactIds.add(id);
+    statedFacts.add(matchKey(statement));
+    const subject = typeof fact.subject === 'string' ? fact.subject.trim() : '';
+    const attribute = typeof fact.attribute === 'string' ? fact.attribute.trim() : '';
+    next.facts.push({
+      id, statement, evidence_refs: Array.isArray(fact.evidence_refs) ? fact.evidence_refs : [],
+      ...(subject ? { subject } : {}), ...(attribute ? { attribute } : {}),
+    });
+  });
   for (const change of delta.state_changes) {
     // The model sometimes repeats the field inside the entity ("C02.location"
     // + "location"); the key must not stutter.
@@ -349,44 +389,51 @@ export function applyDelta(state: StoryState, delta: StateDelta, sceneRef: strin
     shelf.push(change.new_belief);
     next.beliefs[change.character_id] = shelf;
   }
-  for (const disclosure of delta.reader_disclosures || []) {
+  // The format asks for strings and an editor that cites everything answers
+  // with {disclosure, evidence_refs}. Folded as given, memory held objects on a
+  // shelf of strings: no two were ever equal, so the same disclosure was kept
+  // again by every scene that restated it, and each reached the writer as a
+  // line of JSON.
+  for (const disclosure of stringList(delta.reader_disclosures)) {
     if (!next.reader_disclosures.includes(disclosure)) next.reader_disclosures.push(disclosure);
   }
   const blockers = delta.contradictions
     .filter(c => c.blocks_continuation)
     .map(c => c.description);
   // Name variants judged by the model: the scene uses a spelling of a
-  // recorded name. Code only carries the verdict — the writer gets one
-  // rewrite with the exact spelling demanded, through the existing path.
+  // recorded name. Code only carries the verdict, and carries it as what it
+  // is — a spelling. It used to buy the scene a full rewrite and a second
+  // extraction, the two most expensive calls there are, and on two measured
+  // books every one of those rewrites was for an abbreviation or a plural.
+  const variants: { used: string; recorded: string }[] = [];
   for (const variant of delta.name_variants || []) {
     const used = typeof variant?.used === 'string' ? variant.used.trim() : '';
     const recorded = typeof variant?.recorded === 'string' ? variant.recorded.trim() : '';
-    if (used && recorded) {
-      blockers.push(`Name variant in ${sceneRef}: "${used}" is used for recorded "${recorded}". Use the recorded spelling verbatim, or establish "${used}" in the scene as a different thing.`);
-    }
+    if (used && recorded && used !== recorded) variants.push({ used, recorded });
   }
-  // A beat staged twice. Every check before this one reads the plan, and a
-  // writer can be handed a sound plan and still write the scene the book already
-  // has — the confrontation again, the discovery again, in sentences that share
-  // no word run with the first. Only a reader of both can say so, and the
-  // tracker is the one call that reads the finished scene against the record.
-  // It travels the existing path: one rewrite, told exactly what it repeated.
-  //
-  // The charge has to name what is repeated. The ids are checked against the
-  // state the scene was written from, never the one being built here — a scene
-  // cannot be a repetition of itself.
+  // A beat staged twice. Only a reader of both can say so, and the tracker is
+  // the one call that reads the finished scene against the record. The charge
+  // has to name what is repeated and where: the ids are checked against the
+  // state the scene was written from — a scene cannot be a repetition of
+  // itself — and the paragraphs it cites are the only ones that will be touched.
   const recordedIds = new Set([...state.events, ...state.facts].map(item => item.id.toLowerCase()));
+  const restaged: { beat: string; earlier: string; paragraphs: string[] }[] = [];
   for (const beat of delta.restaged_beats || []) {
     const what = typeof beat?.beat === 'string' ? beat.beat.trim() : '';
     const earlier = typeof beat?.earlier_ref === 'string' ? beat.earlier_ref.trim() : '';
+    const paragraphs = (Array.isArray(beat?.evidence_refs) ? beat.evidence_refs : []).filter(ref => typeof ref === 'string' && ref.trim());
     if (!what) continue;
     if (!recordedIds.has(earlier.toLowerCase())) {
       refused.push(`${sceneRef}: the charge that "${what}" restages an earlier beat was not acted on because it names no recorded event or fact (${earlier || 'no reference given'}).`);
       continue;
     }
-    blockers.push(`Restaged beat in ${sceneRef}: "${what}" already happened (${earlier}) and the reader has it. Do not stage it again — open after it, let the scene lean on it in a line at most, and carry it to an outcome the book has not reached.`);
+    if (!paragraphs.length) {
+      refused.push(`${sceneRef}: the charge that "${what}" restages ${earlier} was not acted on because it cites no paragraph of the scene.`);
+      continue;
+    }
+    restaged.push({ beat: what, earlier, paragraphs });
   }
-  return { state: next, blockers, refused };
+  return { state: next, blockers, refused, variants, restaged };
 }
 
 /**
@@ -415,21 +462,71 @@ export function applyThreads(threads: ReaderThread[], delta: StateDelta, sceneRe
   }
   // The model cites payoffs in words (description) or by id, wrapped in objects.
   const cited = (delta.threads_resolved || []).map(item => {
-    if (typeof item === 'string') return item;
-    return item?.id || item?.thread || item?.description || '';
-  }).filter(Boolean);
+    if (typeof item === 'string') return { cite: item, answer: '' };
+    return { cite: item?.id || item?.thread || item?.description || '', answer: typeof item?.answer === 'string' ? item.answer.trim() : '' };
+  }).filter(item => item.cite);
   for (const thread of next) {
     if (thread.status !== 'open' || thread.payoff_refs.includes(sceneRef)) continue;
+    const citation = cited.find(item => citesThread(item.cite, thread));
+    if (!citation) continue;
+    // A promise the book made in a scene is a question, and it is paid by an
+    // answer. A citation that cannot say what the answer was is a mention:
+    // "who rang the bell" was closed in a measured book whose text never
+    // says. A premise given is paid by being put on the page, and has no
+    // answer to state.
+    // A payoff cited in the tracker's own sentence has said it; a bare id has not.
+    const said = citation.answer || (matchKey(citation.cite) === matchKey(thread.id) ? '' : citation.cite);
+    if (!thread.id.toUpperCase().startsWith('PREMISE') && contentWords(said).length < 2) continue;
+    thread.status = 'resolved';
+    thread.payoff_refs.push(sceneRef);
+    if (said) thread.payoff = said;
+    continue;
     // By id first, because the model is now shown the ids. Description matching
     // is the fallback, and it is by meaning-bearing words rather than by exact
     // string: a thread's description is a sentence the model wrote several
     // scenes ago, and requiring it back character for character made resolution
     // impossible — every promise a book made stayed open, and nothing could tell
     // a payoff from an abandonment.
-    if (cited.some(item => citesThread(item, thread))) {
-      thread.status = 'resolved';
-      thread.payoff_refs.push(sceneRef);
-    }
   }
   return next;
+}
+
+/** One question a fact answers: what it is about, and which property of it. Empty when the fact names neither. */
+export function factKey(fact: { subject?: string; attribute?: string }): string {
+  const subject = matchKey(String(fact.subject || '')).replace(/^(?:the|a|an) /, '');
+  const attribute = matchKey(String(fact.attribute || ''));
+  return subject && attribute ? `${subject}\n${attribute}` : '';
+}
+
+export interface FactPair {
+  /** Position in the delta's established_facts. */
+  index: number;
+  stated: { subject: string; attribute: string; statement: string; evidence_refs: string[] };
+  recorded: WorldFact;
+}
+
+/**
+ * The facts a scene states about something the record already holds under the
+ * same subject and property, in other words. Not clashes yet — "on the second
+ * floor" and "second floor, facing the water" are the same answer — only the
+ * pairs worth comparing.
+ */
+export function sameQuestionFacts(state: StoryState, delta: StateDelta): FactPair[] {
+  const recorded = new Map<string, WorldFact>();
+  for (const fact of state.facts) {
+    const key = factKey(fact);
+    if (key && !recorded.has(key)) recorded.set(key, fact);
+  }
+  const pairs: FactPair[] = [];
+  (delta.established_facts || []).slice(0, MAX_FACTS_PER_SCENE).forEach((fact, index) => {
+    const key = factKey(fact);
+    const before = key ? recorded.get(key) : undefined;
+    const statement = typeof fact?.statement === 'string' ? fact.statement.trim() : '';
+    if (!before || !statement || matchKey(before.statement) === matchKey(statement)) return;
+    pairs.push({
+      index, recorded: before,
+      stated: { subject: String(fact.subject).trim(), attribute: String(fact.attribute).trim(), statement, evidence_refs: Array.isArray(fact.evidence_refs) ? fact.evidence_refs.map(String) : [] },
+    });
+  });
+  return pairs;
 }

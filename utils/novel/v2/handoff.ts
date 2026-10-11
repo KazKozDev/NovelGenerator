@@ -37,6 +37,15 @@ export const HANDOFF_LIMITS = {
   restatements: 24,
   /** Questions still open, newest last. Standing promises reach the planner whole through the thread ledger. */
   questions: 24,
+  /**
+   * Facts, newest last. The shelf itself is whole wherever something is checked
+   * against it — the tracker, the chapter check, the planner's digest. The
+   * writer is not checking: it gets the facts its scene cites under
+   * `relevant_facts`, and here only the recent ones, or the shelf that was
+   * built so particulars would stop scrolling away becomes the next list that
+   * grows by the scene in front of every scene.
+   */
+  facts: 24,
 };
 
 function recent<T>(items: T[], limit: number): T[] {
@@ -95,8 +104,10 @@ function deltaChanges(delta: StateDelta): string[] {
     ...delta.knowledge_changes.map(item => `${item.character_id} learned: ${item.learned}`),
     ...delta.belief_changes.map(item => `${item.character_id} now believes: ${item.new_belief || ''}`),
     ...(delta.intentions_and_commitments || []).map(describeUnknown),
-    ...(delta.reader_disclosures || []),
   ]);
+  // The scene's disclosures are not repeated here. They are already the newest
+  // entries of forbidden_restatements and of known_to_reader, and a third copy
+  // was a quarter of the handoff on a run with a thorough editor.
 }
 
 function actualOutcome(delta: StateDelta, scene: ScenePlan, changes: string[]): string {
@@ -132,7 +143,9 @@ export function buildSceneHandoff(input: {
   const events = recent(input.state.events, DEFAULT_DIGEST.events);
   const disclosures = recent(input.state.reader_disclosures, DEFAULT_DIGEST.disclosures);
   const questions = [...unresolved];
+  const facts = recent(input.state.facts, HANDOFF_LIMITS.facts);
   const note = historyNote([
+    { label: 'facts on record', kept: facts.length, total: input.state.facts.length },
     { label: 'recorded events', kept: events.length, total: input.state.events.length },
     { label: 'reader disclosures', kept: disclosures.length, total: input.state.reader_disclosures.length },
     { label: 'open questions', kept: Math.min(questions.length, HANDOFF_LIMITS.questions), total: questions.length },
@@ -140,7 +153,7 @@ export function buildSceneHandoff(input: {
   return {
     after_scene_id: input.scene.id,
     known_to_reader: unique([
-      ...input.state.facts.map(item => item.statement),
+      ...facts.map(item => item.statement),
       ...events.map(item => item.description),
       ...disclosures,
     ]),
@@ -155,8 +168,10 @@ export function buildSceneHandoff(input: {
     required_new_outcome: input.nextScene?.required_outcome || '',
     forbidden_restatements: recent(unique([
       ...(input.previous?.forbidden_restatements || []),
-      ...(input.delta.reader_disclosures || []),
+      // Events first, disclosures after: the list keeps its newest entries, and
+      // what a writer explains twice is a meaning, far more often than a deed.
       ...input.delta.events.map(item => item.description),
+      ...stringList(input.delta.reader_disclosures),
       outcome,
     ]), HANDOFF_LIMITS.restatements),
     ...(note ? { history_note: note } : {}),
@@ -179,5 +194,58 @@ export function applyForwardToHandoff(handoff: SceneHandoff, forward: ForwardUpd
     previous_outcome: chapterOutcome,
     required_new_outcome: unique(necessary).join('; '),
     forbidden_restatements: recent(unique([...handoff.forbidden_restatements, chapterOutcome]), HANDOFF_LIMITS.restatements),
+  };
+}
+
+/**
+ * The handoff as each reader of it needs it.
+ *
+ * The whole object used to go to everyone: the chapter planner, which also
+ * receives the state digest those lists were built from, and the writer, which
+ * was handed forty-five things the reader knows and ninety changes the last
+ * scene made — thirty to fifty kilobytes in front of a scene of six — to be
+ * told, in effect, where things stand and what not to say twice. On the
+ * measured runs the pipeline sent forty-five to sixty-seven times the book it
+ * wrote, and the handoff was the largest single thing in the writer's prompt.
+ *
+ * The stored handoff is unchanged. These are views of it.
+ */
+
+/** For a call that also receives the state digest: only what the digest does not carry. */
+export function plannerHandoff(handoff: SceneHandoff): Record<string, unknown> {
+  return {
+    after_scene_id: handoff.after_scene_id,
+    previous_outcome: handoff.previous_outcome,
+    required_new_outcome: handoff.required_new_outcome,
+    open_questions: handoff.open_questions,
+    active_intentions: handoff.active_intentions,
+    forbidden_restatements: handoff.forbidden_restatements,
+  };
+}
+
+/** How many of the newest restatements and questions a scene's writer is shown. Judgements. */
+export const WRITER_HANDOFF = { restatements: 12, questions: 8 };
+
+/**
+ * For the writer of one scene: where the last scene left things, what is still
+ * open, what the reader has just been told, and where the people in this scene
+ * stand. Conditions of characters who are not in the scene are left out; those
+ * of things and places stay, because a scene can walk into any of them.
+ */
+export function writerHandoff(handoff: SceneHandoff, participants: string[], castIds: string[]): Record<string, unknown> {
+  const present = new Set(participants);
+  const absent = castIds.filter(id => !present.has(id));
+  const conditions = Object.fromEntries(Object.entries(handoff.current_conditions || {}).filter(([key]) => {
+    const subject = key.split(/->|\./)[0].trim();
+    return !absent.includes(subject) || (key.includes('->') && participants.some(id => key.includes(`->${id}.`)));
+  }));
+  return {
+    after_scene_id: handoff.after_scene_id,
+    previous_outcome: handoff.previous_outcome,
+    required_new_outcome: handoff.required_new_outcome,
+    current_conditions: conditions,
+    open_questions: recent(handoff.open_questions, WRITER_HANDOFF.questions),
+    active_intentions: handoff.active_intentions,
+    already_told_do_not_explain_again: recent(handoff.forbidden_restatements, WRITER_HANDOFF.restatements),
   };
 }

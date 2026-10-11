@@ -1,18 +1,22 @@
+import { designReply } from './designReplies';
 import { describe, it, expect, vi } from 'vitest';
 import { Orchestrator } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { BrowserProjectStore, emptyState, MemoryProjectStore } from '../utils/novel/v2/store';
 import { buildSceneContext, checkReadiness, rebaseScenePlan } from '../utils/novel/v2/planner';
-import { applyForwardToHandoff, buildSceneHandoff } from '../utils/novel/v2/handoff';
+import { applyForwardToHandoff, buildSceneHandoff, plannerHandoff, writerHandoff } from '../utils/novel/v2/handoff';
+import { alignSpellings } from '../utils/novel/v2/repair';
 import { readEndingReadiness, remainingEndingRequirements } from '../utils/novel/v2/forward';
 import { resolveSourceRefs } from '../utils/novel/v2/retrieval';
 import { describeShapes, recentShapes, repeatedStaging, sceneShape } from '../utils/novel/v2/shapes';
+import { openThreadsWithAge } from '../utils/novel/v2/ledger';
 import { describeRelations, parseRelation, relationsFor } from '../utils/novel/v2/relationships';
 import { applyDelta, applyResolutions, applyThreads, backstopNames, mergeProperNames, paragraphsWithIds, resolveOpenQuestions, storyNames, trackScene } from '../utils/novel/v2/tracker';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import type { BookDesign, ProjectInput } from '../utils/novel/v2/types';
 
 const input: ProjectInput = {
+  generation_mode: 'chapters',
   premise: 'A lighthouse keeper finds a door in the sea.',
   chapter_count: 2,
   genre: 'mystery',
@@ -22,7 +26,7 @@ const input: ProjectInput = {
 
 function design(): BookDesign {
   return {
-    contract: { working_title: 'A Working Title', explicit_requirements: [], inferred_decisions: [], tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
+    contract: { premise_givens: [], premise_names: [], working_title: 'A Working Title', explicit_requirements: [], inferred_decisions: [], tense: 'past', narrative_perspective: 'third', genre_expectations_selected: [] },
     profile: {
       pressure_curve: 'rising' as const,
       curve_reason: 'the sea closes in',
@@ -38,11 +42,20 @@ function design(): BookDesign {
     dramatic_core: { distinctive_situation: 's', central_conflict: 'c', stakes: 's', why_now: 'n', sources_of_development: [] },
     style_contract: { narrative_distance: 'd', attention: 'a', register: 'r', humor: 'h', emotional_expression: 'e' },
     characters: [{ id: 'C01', name: 'Aren', story_function: 'keeper', goal: 'g', motives: [], capabilities: [], limitations: [], relationships: [], behavior: 'b', voice_and_perception: 'v', initial_knowledge: ['The light must stay lit.'], initial_beliefs: [] }],
-    world_rules: [],
-    causal_map: [],
+    world_rules: [
+      { id: 'R01', rule: 'The tower has three floors and the lamp room is the top one.', relevant_consequences: [], subject: 'the tower', attribute: 'floors' },
+      { id: 'R02', rule: 'Accounts are kept by hand in bound books.', relevant_consequences: [], subject: 'the accounts', attribute: 'how kept' },
+      { id: 'R03', rule: 'The story takes four days in late autumn.', relevant_consequences: [], subject: 'the story', attribute: 'span' },
+      { id: 'R04', rule: 'The keeper has kept the light since boyhood.', relevant_consequences: [], subject: 'the keeper', attribute: 'length of service' },
+      { id: 'R05', rule: 'The oil store is the stone shed at the foot of the tower.', relevant_consequences: [], subject: 'the oil store', attribute: 'place' },
+      { id: 'R06', rule: 'Wages are paid quarterly in coin by the harbour board.', relevant_consequences: [], subject: 'wages', attribute: 'how paid' },
+      { id: 'R07', rule: 'The log book lists each night by date, hours of light and oil used.', relevant_consequences: [], subject: 'the log book', attribute: 'contents' },
+      { id: 'R08', rule: 'The nearest village is two miles off along the shore path.', relevant_consequences: [], subject: 'the village', attribute: 'distance' },
+    ],
+    causal_map: [{ id: 'E01', actor_id: 'C01', cause: 'The storm interrupts the light', action_or_event: 'Aren climbs to the lamp', consequence: 'She can restore the light', requires: [], enables: [] }],
     ending: { central_resolution: 'r', decisive_action_or_choice: 'd', required_setup: [], intentionally_open_questions: [] },
     chapter_map: [1, 2].map(n => ({
-      chapter: n, function: 'f', main_change: 'm', event_ids: [], dependencies: [], setup_or_payoff: [], pov_id: 'C01', target_words: 2000,
+      chapter: n, function: 'f', main_change: 'm', event_ids: ['E01'], dependencies: [], setup_or_payoff: [], pov_id: 'C01', target_words: 2000,
       mechanism: n === 1 ? 'climb to the lamp' : 'open the door', cost: 'the light goes out', pressure_rung: n,
     })),
   };
@@ -131,6 +144,8 @@ function audit() {
 
 function fullLlm(deltaReply: () => unknown = delta): NovelLLM {
   return vi.fn(async (prompt: string) => {
+    const reply = designReply(prompt, design());
+    if (reply) return reply;
     if (prompt.includes('Prepare a compact book construction')) return JSON.stringify(design());
     if (prompt.includes('Check whether the provided plan is ready')) return JSON.stringify({ ready: true, issues: [] });
     if (prompt.includes('Plan only the current chapter')) {
@@ -182,19 +197,22 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.loadState().events).toHaveLength(2);
     expect(store.chapterScenes(1)).toHaveLength(1);
     expect(store.runLog().map(e => e.stage)).toContain('audit');
-    expect(store.runLog().map(e => e.stage)).toContain('scene-rebase');
     expect(vi.mocked(llm).mock.calls.some(([prompt]) => prompt.includes('STATE HANDOFF FROM ACCEPTED PROSE')
       && prompt.includes('Aren reaches the upper room.'))).toBe(true);
   });
 
-  it('stops a strict book on a blocking contradiction instead of writing past it', async () => {
+  it('keeps a finished book when only its final audit fails', async () => {
     const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Aren is in two places.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
-    const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2('strict'))
-      .runBook(input, fullLlm(() => blocked));
-    expect(result.status).toBe('FAILED');
-    expect(result.stoppedReason).toMatch(/contradicts confirmed state/);
-    expect(store.manuscript()).toHaveLength(0);
+    const base = fullLlm();
+    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+      if (prompt.includes('Check the integrity of the finished book')) throw new Error('Ollama output reached its token limit; the incomplete response was rejected.');
+      return (base as NovelLLM)(prompt, system, options);
+    });
+    const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2()).runBook(input, llm);
+    expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
+    expect(result.report).toBeNull();
+    expect(result.stoppedReason).toMatch(/final audit could not be completed \(Ollama output reached its token limit/);
+    expect(store.manuscript()).toHaveLength(2);
   });
 
   it('restarts a partially written chapter from the snapshot', async () => {
@@ -251,19 +269,18 @@ describe('v2 chapter pipeline end to end', () => {
     expect(ctx.vars.scene_plan).toContain('CH01_S01');
   });
 
-  it('stitches a blocking verdict into the package instead of stopping the book', async () => {
+  it('tells the writer to show the move when a character is recorded somewhere else, without asking the editor', async () => {
     const store = new MemoryProjectStore();
     store.saveState({ ...emptyState(), conditions: { 'C01.location': 'Harbor' } });
-    const base = fullLlm();
-    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
-      if (prompt.includes('Check whether the provided plan is ready') && prompt.includes('readiness before prose')) {
-        return JSON.stringify({ ready: false, issues: [{ id: 'I01', severity: 'blocking', target_ref: 'CH01_S01', category: 'causality', problem: 'No arrival shown', evidence_refs: [], consequence_for_writing: 'teleport', required_decision: 'Add the crossing', suggested_adjustment: 's' }] });
-      }
-      return (base as NovelLLM)(prompt, system, options);
-    });
+    const llm = fullLlm();
     // Through the pipeline directly: the orchestrator would reset chapter 1 state first.
-    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
-    expect(outcome.warnings.join(' ')).toMatch(/must establish: Add the crossing/);
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    const prompts = vi.mocked(llm).mock.calls.map(([prompt]) => prompt);
+    expect(prompts.some(prompt => prompt.includes('Code-level doubts'))).toBe(false);
+    const written = prompts.find(prompt => prompt.includes('Write a full literary scene'))!;
+    expect(written).toContain('C01 was recorded at \\"Harbor\\" and the scene is set at \\"Lighthouse\\" with no recorded move.');
+    expect(written).toContain('Open by showing how they came to be here');
+    expect(store.runLog().some(entry => entry.stage === 'readiness' && /location-mismatch/.test(entry.detail))).toBe(true);
     expect(store.manuscript()).toHaveLength(1);
   });
 
@@ -306,17 +323,13 @@ describe('v2 chapter pipeline end to end', () => {
     expect(sent).not.toContain('own counsel');
   });
 
-  it('keeps the chapter standing when the resolution call dies', async () => {
+  it('carries what a scene left open to the next one without a call to settle it', async () => {
     const store = new MemoryProjectStore();
     const uncertain = { ...delta(), uncertainties: [{ question: 'Who rang?', evidence_refs: ['p1'], relevant_to_next_scene: true }] };
-    const base = fullLlm(() => uncertain);
-    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
-      if (prompt.includes('OPEN QUESTIONS')) throw new Error('Ollama output reached its token limit');
-      return (base as NovelLLM)(prompt, system, options);
-    });
+    const llm = fullLlm(() => uncertain);
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
-    expect(outcome.warnings.join(' ')).toMatch(/leaves open questions unresolved/);
-    expect(store.manuscript()).toHaveLength(1);
+    expect(vi.mocked(llm).mock.calls.some(([prompt]) => prompt.includes('OPEN QUESTIONS'))).toBe(false);
+    expect(outcome.warnings).toEqual([]);
     expect(store.loadState().events).toHaveLength(1);
     expect(store.chapterScenes(1)[0].handoff?.open_questions).toContain('Who rang?');
   });
@@ -383,13 +396,19 @@ describe('v2 chapter pipeline end to end', () => {
     expect(added.names).toHaveLength(2);
   });
 
-  it('turns the model variant verdict into continuity blockers', () => {
+  it('hands a variant verdict back as a spelling to put right, not as a reason to rewrite the scene', () => {
     const state = { ...emptyState(), names: [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
     const flagged = { ...delta(), name_variants: [{ used: 'Kessel', recorded: 'Kessen', evidence_refs: ['p2'] }] };
     const applied = applyDelta(state, flagged, 'CH02_S01');
-    expect(applied.blockers).toHaveLength(1);
-    expect(applied.blockers[0]).toMatch(/Kessel.*Kessen/);
+    expect(applied.blockers).toEqual([]);
+    expect(applied.variants).toEqual([{ used: 'Kessel', recorded: 'Kessen' }]);
     expect(applied.state.names).toHaveLength(1);
+  });
+
+  it('respells a variant by whole word and leaves a longer name that contains it alone', () => {
+    const fixed = alignSpellings('The Kessel answered. Kessel\'s lamp was out; the Kesselring did not answer.', [{ used: 'Kessel', recorded: 'Kessen' }]);
+    expect(fixed.prose).toBe('The Kessen answered. Kessen\'s lamp was out; the Kesselring did not answer.');
+    expect(fixed.changed).toEqual([{ used: 'Kessel', recorded: 'Kessen', places: 2 }]);
   });
 
   it('merges possessives and leaves different skeletons alone', () => {
@@ -423,21 +442,26 @@ describe('v2 chapter pipeline end to end', () => {
     expect(short.names).toHaveLength(2);
   });
 
-  it('blocks an undeclared near-twin spelling end to end', async () => {
-    // Chapter 1 established the ship as Kessen. Chapter 2 writes Kessel.
-    // The model verdict — not code similarity — names the variant,
-    // and the line blocks.
-    const priorState = { ...emptyState(), names: [{ name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S02' }] };
-    const radio = 'Marn Relay, Marn Relay. This is the Kessel. Do you read?';
-    let sent = '';
-    const llm: NovelLLM = vi.fn(async (prompt: string) => {
-      sent = prompt;
-      return JSON.stringify({ ...delta(), name_variants: [{ used: 'Kessel', recorded: 'Kessen', evidence_refs: ['p1'] }] });
+  it('puts an undeclared near-twin spelling right in the text, with no second writing call', async () => {
+    // Chapter 1 established the ship as Kessen. Chapter 2 writes Kessel. The
+    // model verdict — not code similarity — names the variant, and code
+    // carries it out as what it is: a spelling.
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    store.saveState({ ...store.loadState(), names: [...store.loadState().names, { name: 'Kessen', kind: 'ship', refers_to: '', aliases: [], first_seen: 'CH01_S01' }] });
+    const base = fullLlm(() => ({ ...delta(), name_variants: [{ used: 'Kessel', recorded: 'Kessen', evidence_refs: ['p1'] }] }));
+    const sent: string[] = [];
+    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+      if (prompt.includes('Write a full literary scene')) return 'The Kessel stood off the rock.\n\nBelow the gallery the outer door stood open on nothing at all.';
+      if (prompt.includes('Extract the essential changes from the new scene')) sent.push(prompt);
+      return (base as NovelLLM)(prompt, system, options);
     });
-    const tracked = await trackScene({ priorState, scenePlan: {}, sceneProse: radio, sourceExcerpts: [], openThreads: [] }, llm);
-    expect(sent).toMatch(/Kessen/);
-    const applied = applyDelta(priorState, tracked, 'CH02_S01');
-    expect(applied.blockers.join(' ')).toMatch(/Kessel.*Kessen/);
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    expect(sent[0]).toMatch(/Kessen/);
+    expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+    expect(store.manuscript()[1].text).toContain('The Kessen stood off the rock.');
+    expect(outcome.warnings.join(' ')).toMatch(/"Kessel" was respelt "Kessen" in 1 place\(s\)/);
   });
 
   it('shows the registry in the writer package, verbatim', () => {
@@ -524,7 +548,7 @@ describe('v2 chapter pipeline end to end', () => {
       required_outcome: calls++ === 0 ? 'Aren reaches the upper room.' : 'Aren gives the lamp key to Miro.',
     }));
     const rebased = await rebaseScenePlan({
-      design: design(), scene: original, handoff, state: emptyState(), openThreads: [],
+      design: design(), scene: original, handoff, openThreads: [],
     }, llm);
     expect(rebased.required_outcome).toBe('Aren gives the lamp key to Miro.');
     expect(llm).toHaveBeenCalledTimes(2);
@@ -573,22 +597,6 @@ describe('v2 chapter pipeline end to end', () => {
     expect(warnings.join(' ')).not.toContain('[object Object]');
   });
 
-  it('writes the planned scene when the rebase will not validate', async () => {
-    const store = new MemoryProjectStore();
-    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
-    const base = fullLlm();
-    const llm: NovelLLM = vi.fn(async (prompt, system, options) => (
-      prompt.includes('Update the next scene plan against the explicit handoff')
-        ? '{"nothing":"usable"}'
-        : base(prompt, system, options)
-    ));
-    const { warnings } = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
-    expect(store.chapterScenes(2)).toHaveLength(1);
-    expect(store.chapterScenes(2)[0].plan?.required_outcome).toBe(plan(2).scenes[0].required_outcome);
-    expect(warnings.join(' ')).toMatch(/kept its planned causal chain/);
-    expect(store.runLog().some(e => e.stage === 'scene-rebase' && /rebase failed/.test(e.detail))).toBe(true);
-  });
-
   it('keeps one entry when an intention arrives with and without its reason', () => {
     const withReason = { ...plan(1).scenes[0], participant_intentions: [{ character_id: 'C01', intention: 'Relight the lamp.', reason_now: 'The dark grows.' }] };
     const carried = { ...delta(), intentions_and_commitments: [{ character_id: 'C01', intention: 'Relight the lamp.' }] };
@@ -614,6 +622,19 @@ describe('v2 chapter pipeline end to end', () => {
     // The design's list stays authoritative; the reading only retires and adds.
     expect(remainingEndingRequirements(design2, readiness))
       .toEqual(['Miro learns to swim.', 'Someone must open the outer door.']);
+  });
+
+  it('retires an ending requirement cited by id or retyped, and keeps one the reading never mentions', () => {
+    const required = [
+      'The keeper learns who cut the second key and why it was hidden (Chapter 1)',
+      'Miro learns to swim well enough to reach the outer rock (Chapter 2)',
+      'The lamp oil is counted and found short by a full week (Chapter 2)',
+    ];
+    const design3 = { ...design(), ending: { ...design().ending, required_setup: required } };
+    const reading = (established: string[]) => ({ established_requirements: established, remaining_requirements: ['E3'], capacity_problems: [] });
+    expect(remainingEndingRequirements(design3, reading(['E1', 'Miro learns to swim well enough to reach the outer rock.']))).toEqual([required[2]]);
+    expect(remainingEndingRequirements(design3, reading(['The keeper learns who cut the second key, and why it was hidden']))).toEqual([required[1], required[2]]);
+    expect(remainingEndingRequirements(design3, reading(['A storm closes the harbour']))).toEqual(required);
   });
 
   it('keeps the ending readiness and warns when the chapters left cannot carry it', async () => {
@@ -668,7 +689,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(resolved.missing).toEqual(['CH01_S01#p9', 'the bit about the lamp', 'CH07_S01#p1']);
   });
 
-  it('hands the writer the cited paragraph and sends an unresolvable citation to the gate', async () => {
+  it('hands the writer the cited paragraph and tells it not to lean on a citation nothing answers', async () => {
     const store = new MemoryProjectStore();
     await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
     const base = fullLlm();
@@ -678,10 +699,6 @@ describe('v2 chapter pipeline end to end', () => {
         chapterPlan.scenes[0].required_source_refs = ['CH01_S01#p1', 'CH01_S01#p9'];
         return JSON.stringify(chapterPlan);
       }
-      if (prompt.includes('Update the next scene plan against the explicit handoff')) {
-        const match = prompt.match(/Original scene plan:\n(\{[^\n]+\})/);
-        return JSON.stringify(match ? JSON.parse(match[1]) : plan(2).scenes[0]);
-      }
       return base(prompt, system, options);
     });
     await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
@@ -690,9 +707,8 @@ describe('v2 chapter pipeline end to end', () => {
       .find(prompt => prompt.includes('Write a full literary scene') && prompt.includes('CH01_S01#p1')) || '';
     expect(writePrompt).toContain(first.slice(0, 40));
     expect(store.runLog().some(e => e.stage === 'retrieval')).toBe(true);
-    const gatePrompt = vi.mocked(llm).mock.calls.map(([prompt]) => prompt)
-      .find(prompt => prompt.includes('missing-source')) || '';
-    expect(gatePrompt).toContain('CH01_S01#p9');
+    expect(writePrompt).toContain('cites earlier text that cannot be retrieved: CH01_S01#p9');
+    expect(writePrompt).toContain('Write the scene without leaning on that earlier passage');
   });
 
   it('names a third scene running in the same staging and leaves two alone', () => {
@@ -840,14 +856,7 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.loadState().events).toHaveLength(1);
   });
 
-  it('fails loudly in a strict run when the rewrite breaks continuity again', async () => {
-    const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
-    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, store, fullLlm(() => blocked)))
-      .rejects.toThrow(/contradicts confirmed state/);
-  });
-
-  it('keeps the rewritten scene and reports it when an unattended run cannot clear the objection', async () => {
+  it('keeps the rewritten scene and reports it when the rewrite does not clear the objection', async () => {
     const store = new MemoryProjectStore();
     const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
     const llm = fullLlm(() => blocked);
@@ -858,40 +867,57 @@ describe('v2 chapter pipeline end to end', () => {
     expect(store.runLog().some(entry => entry.stage === 'continuity')).toBe(true);
   });
 
-  it('rewrites nothing for a continuity objection when the checks are off, and still says so', async () => {
-    const store = new MemoryProjectStore();
-    const blocked = { ...delta(), contradictions: [{ description: 'Aren was elsewhere.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] };
-    const llm = fullLlm(() => blocked);
-    const outcome = await new ChapterPipelineV2('off').writeChapter(design(), 1, store, llm);
-    expect(store.manuscript()).toHaveLength(1);
-    expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
-    expect(outcome.warnings.join(' ')).toMatch(/continuity checks are off\): Aren was elsewhere/);
-  });
-
-  it('sends a scene back once when it stages a beat the book already has', async () => {
+  it('cuts down in place the paragraph that stages a beat the book already has, and writes nothing again', async () => {
     const store = new MemoryProjectStore();
     await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
-    let extractions = 0;
-    const restaged = { ...delta(), restaged_beats: [{ beat: 'Aren reaches the upper room for the first time', earlier_ref: 'CH01_S01-e1', evidence_refs: ['p1'] }] };
-    const base = fullLlm(() => (extractions++ === 0 ? restaged : delta()));
-    const rewrites: string[] = [];
+    const long = 'Aren came up the last turn of the stair and into the upper room as though for the first time, the hot glass and the rain meeting her exactly as they had before, and she stood in it and took it all in again from the beginning.';
+    const restaged = {
+      ...delta(),
+      events: [
+        { description: 'Aren reaches the upper room.', participants: ['C01'], evidence_refs: ['p1'] },
+        { description: 'Aren finds the outer door open.', participants: ['C01'], evidence_refs: ['p2'] },
+      ],
+      restaged_beats: [{ beat: 'Aren reaches the upper room for the first time', earlier_ref: 'CH01_S01-e1', evidence_refs: ['p1'] }],
+    };
+    const base = fullLlm(() => restaged);
     const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
-      if (prompt.includes('Write a full literary scene') && extractions > 0) rewrites.push(prompt);
+      if (prompt.includes('Write a full literary scene')) return `${long}\n\nBelow the gallery the outer door stood open on nothing at all.`;
+      if (prompt.includes('Rewrite the listed paragraphs so they no longer stage')) {
+        expect(prompt).toContain('already on record as CH01_S01-e1');
+        return JSON.stringify({ replacements: [{ paragraph: 'p1', replacement: 'Aren was back in the upper room.' }] });
+      }
       return (base as NovelLLM)(prompt, system, options);
     });
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
-    expect(rewrites).toHaveLength(1);
-    expect(rewrites[0]).toMatch(/Restaged beat in CH02_S01/);
-    expect(rewrites[0]).toMatch(/already happened \(CH01_S01-e1\)/);
-    expect(outcome.warnings.join(' ')).toMatch(/rewritten/);
-    expect(store.manuscript()).toHaveLength(2);
+    const calls = vi.mocked(llm).mock.calls.map(([prompt]) => prompt);
+    expect(calls.filter(prompt => prompt.includes('Write a full literary scene'))).toHaveLength(1);
+    expect(calls.filter(prompt => prompt.includes('Extract the essential changes from the new scene'))).toHaveLength(1);
+    expect(store.manuscript()[1].text).toBe('Aren was back in the upper room.\n\nBelow the gallery the outer door stood open on nothing at all.');
+    // The event that paragraph was the only evidence for is not recorded twice.
+    expect(store.loadState().events.map(event => event.description)).toEqual(['Aren reaches the upper room.', 'Aren finds the outer door open.']);
+    expect(outcome.warnings.join(' ')).toMatch(/1 paragraph\(s\) that staged again what the book already had were cut down in place/);
+  });
+
+  it('keeps a paragraph whose rewrite is not clearly shorter, and says so', async () => {
+    const store = new MemoryProjectStore();
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm());
+    const restaged = { ...delta(), restaged_beats: [{ beat: 'Aren reaches the upper room again', earlier_ref: 'CH01_S01-e1', evidence_refs: ['p1'] }] };
+    const base = fullLlm(() => restaged);
+    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+      if (prompt.includes('Rewrite the listed paragraphs so they no longer stage')) {
+        return JSON.stringify({ replacements: [{ paragraph: 'p1', replacement: 'The upper room smelled of hot glass and of the rain again.' }] });
+      }
+      return (base as NovelLLM)(prompt, system, options);
+    });
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    expect(outcome.warnings.join(' ')).toMatch(/p1 was kept: the rewrite was not clearly shorter/);
   });
 
   it('does not rewrite a scene over a repetition charge that names nothing on record', async () => {
     const store = new MemoryProjectStore();
     const vague = { ...delta(), restaged_beats: [{ beat: 'They argue again', earlier_ref: 'somewhere earlier', evidence_refs: ['p1'] }] };
     const llm = fullLlm(() => vague);
-    const outcome = await new ChapterPipelineV2('strict').writeChapter(design(), 1, store, llm);
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
     expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
     expect(outcome.warnings.join(' ')).toMatch(/names no recorded event or fact \(somewhere earlier\)/);
   });
@@ -899,23 +925,34 @@ describe('v2 chapter pipeline end to end', () => {
   it('reads a list the extraction left out as empty instead of ending the book over it', async () => {
     const store = new MemoryProjectStore();
     const { knowledge_changes: _dropped, plan_deviations: _alsoDropped, ...partial } = delta();
-    const outcome = await new ChapterPipelineV2('strict').writeChapter(design(), 1, store, fullLlm(() => partial));
+    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(() => partial));
     expect(store.manuscript()).toHaveLength(1);
     expect(store.loadState().events).toHaveLength(1);
     expect(outcome.warnings).toEqual([]);
-    expect(store.runLog().some(entry => entry.stage === 'memory' && /left out knowledge_changes, plan_deviations, restaged_beats; read as empty/.test(entry.detail))).toBe(true);
+    expect(store.runLog().some(entry => entry.stage === 'memory' && /left out knowledge_changes, plan_deviations, restaged_beats, established_facts; read as empty/.test(entry.detail))).toBe(true);
+  });
+
+  it('folds a disclosure the editor wrapped in an object as the sentence it carries, once', async () => {
+    const store = new MemoryProjectStore();
+    const wrapped = () => ({ ...delta(), reader_disclosures: [{ disclosure: 'The ledger was rewritten.', evidence_refs: ['p1'] }] });
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(wrapped));
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, fullLlm(wrapped));
+    expect(store.loadState().reader_disclosures).toEqual(['The ledger was rewritten.']);
+    const handoff = store.chapterScenes(2)[0].handoff!;
+    expect(handoff.known_to_reader).toContain('The ledger was rewritten.');
+    expect(JSON.stringify(handoff)).not.toContain('evidence_refs');
   });
 
   it('still refuses an extraction with no events list, or with a list that is not one', async () => {
     const { events: _events, ...eventless } = delta();
     await expect(new ChapterPipelineV2().writeChapter(design(), 1, new MemoryProjectStore(), fullLlm(() => eventless)))
-      .rejects.toThrow(/validator call failed twice/);
+      .rejects.toThrow(/validator call failed/);
     const malformed = { ...delta(), knowledge_changes: 'none' };
     await expect(new ChapterPipelineV2().writeChapter(design(), 1, new MemoryProjectStore(), fullLlm(() => malformed)))
       .rejects.toThrow(/"knowledge_changes" as something other than a list/);
   });
 
-  it('finishes the chapter when the reconciliation fails after it, unless the run is strict', async () => {
+  it('finishes the chapter when the reconciliation fails after it', async () => {
     const failing = (): NovelLLM => {
       const base = fullLlm();
       return vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
@@ -927,11 +964,9 @@ describe('v2 chapter pipeline end to end', () => {
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, failing());
     expect(store.manuscript()).toHaveLength(1);
     expect(outcome.warnings.join(' ')).toMatch(/plan ahead was not reconciled with chapter 1/);
-    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, new MemoryProjectStore(), failing()))
-      .rejects.toThrow();
   });
 
-  it('diverts a restaged scene to review before any prose exists', async () => {
+  it('tells the writer not to stage again what a finished chapter already staged, before any prose exists', async () => {
     const store = new MemoryProjectStore();
     store.saveManuscript(1, 'The upper room held its light over the stairs. Aren watched.');
     const echoPlan = {
@@ -947,55 +982,467 @@ describe('v2 chapter pipeline end to end', () => {
     const base = fullLlm();
     const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
       if (prompt.includes('Plan only the current chapter')) return JSON.stringify(echoPlan);
-      if (prompt.includes('Check whether the provided plan is ready') && prompt.includes('restaging-suspect')) {
-        return JSON.stringify({ ready: false, issues: [{ id: 'I01', severity: 'blocking', target_ref: 'CH02_S01', category: 'originality', problem: 'Lamp-room staging repeats chapter 1', evidence_refs: [], consequence_for_writing: 'restaging', required_decision: 'Differentiate the staging on the page', suggested_adjustment: 's' }] });
-      }
       return (base as NovelLLM)(prompt, system, options);
     });
-    const outcome = await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
-    expect(outcome.warnings.join(' ')).toMatch(/must establish: Differentiate the staging/);
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, llm);
+    const prompts = vi.mocked(llm).mock.calls.map(([prompt]) => prompt);
+    expect(prompts.some(prompt => prompt.includes('Code-level doubts'))).toBe(false);
+    const written = prompts.find(prompt => prompt.includes('Write a full literary scene'))!;
+    expect(written).toContain('shares distinctive phrasing with Chapter 1');
+    expect(written).toContain('Do not stage that passage again.');
     expect(store.manuscript()).toHaveLength(2);
     expect(store.manuscript().find(item => item.chapter === 2)?.text).toContain('the outer door stood open');
   });
 
-  it('carries semantic gate suspicions into the plan review', async () => {
+  it('has the editor read the strongest of a scene\'s plan-against-memory clashes, once for the chapter, and no more', async () => {
     const store = new MemoryProjectStore();
-    const stubGate = async () => ({
-      problems: new Map([['CH01_S01', [{ code: 'clash-suspect' as const, detail: 'Plan states the lamp is lit but confirmed state holds it is dark.' }]]]),
-      warnings: [] as string[],
-      mode: 'full' as const,
-    });
+    const clashes = Array.from({ length: 12 }, (_, index) => ({
+      code: 'clash-suspect' as const,
+      detail: `Plan states claim ${index + 1} but confirmed state holds otherwise (contradiction 0.${String(99 - index).padStart(2, '0')}). Reconcile before writing.`,
+    }));
+    const stubGate = async () => ({ problems: new Map([['CH01_S01', clashes]]), warnings: [] as string[], mode: 'full' as const });
     const base = fullLlm();
+    const reviews: string[] = [];
     const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
-      if (prompt.includes('lamp is lit')) {
+      if (prompt.includes('Code-level doubts')) {
+        reviews.push(prompt);
         return JSON.stringify({ ready: false, issues: [{ id: 'I01', severity: 'major', target_ref: 'CH01_S01', category: 'continuity', problem: 'Lamp state clash', evidence_refs: [], consequence_for_writing: 'x', required_decision: 'Show the lamp dark on the page', suggested_adjustment: 's' }] });
       }
       return (base as NovelLLM)(prompt, system, options);
     });
     const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm, stubGate);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toContain('Plan states claim 1 but');
+    expect(reviews[0]).toContain('Plan states claim 4 but');
+    expect(reviews[0]).not.toContain('Plan states claim 5 but');
+    const written = vi.mocked(llm).mock.calls.map(([prompt]) => prompt).find(prompt => prompt.includes('Write a full literary scene'))!;
+    // The editor's verdict reaches the writer; the head's raw suspicions do not.
+    expect(written).toContain('Show the lamp dark on the page');
+    expect(written).not.toContain('Plan states claim');
     expect(outcome.warnings.join(' ')).toMatch(/Show the lamp dark/);
     expect(store.manuscript()).toHaveLength(1);
   });
 
-  it('writes the scene when its readiness review cannot be had, unless the run is strict', async () => {
-    const stubGate = async () => ({
-      problems: new Map([['CH01_S01', [{ code: 'clash-suspect' as const, detail: 'Plan states the lamp is lit but confirmed state holds it is dark.' }]]]),
-      warnings: [] as string[],
-      mode: 'full' as const,
-    });
-    const unreviewed = (): NovelLLM => {
+  describe('the doubts only a reader can settle, read once for the chapter', () => {
+    const strangers = () => {
+      const planned = plan(1);
+      const second = { ...planned.scenes[0], id: 'CH01_S02', location: 'Gallery', function: 'The keeper is questioned', required_outcome: 'Aren learns who lit the lamp.', outcome_kind: 'knowledge', participants: ['C01', 'The inspector'] };
+      return { ...planned, scenes: [{ ...planned.scenes[0], participants: ['C01', 'Antagonist'] }, second] };
+    };
+    const staged = (review: () => string) => {
       const base = fullLlm();
-      return vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
-        if (prompt.includes('lamp is lit')) return 'not json';
+      const reviews: string[] = [];
+      const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Plan only the current chapter')) return JSON.stringify(strangers());
+        if (prompt.includes('Check whether the provided plan is ready') && prompt.includes('readiness')) { reviews.push(prompt); return review(); }
         return (base as NovelLLM)(prompt, system, options);
       });
+      return { llm, reviews };
     };
+
+    it('asks about every such scene of the chapter in one review and gives each writer its own verdict', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, reviews } = staged(() => JSON.stringify({ ready: false, issues: [
+        { id: 'I01', severity: 'major', target_ref: 'CH01_S01', category: 'cast', problem: 'p', evidence_refs: [], consequence_for_writing: 'c', required_decision: 'Keep the antagonist offstage and unnamed.', suggested_adjustment: 's' },
+        { id: 'I02', severity: 'major', target_ref: 'CH01_S02', category: 'cast', problem: 'p', evidence_refs: [], consequence_for_writing: 'c', required_decision: 'The inspector is heard through the door only.', suggested_adjustment: 's' },
+      ] }));
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0]).toContain('- CH01_S01 unknown-participant:');
+      expect(reviews[0]).toContain('- CH01_S02 unknown-participant:');
+      const writes = vi.mocked(llm).mock.calls.map(([prompt]) => prompt).filter(prompt => prompt.includes('Write a full literary scene'));
+      expect(writes[0]).toContain('Keep the antagonist offstage and unnamed.');
+      expect(writes[0]).not.toContain('The inspector is heard through the door only.');
+      expect(writes[1]).toContain('The inspector is heard through the door only.');
+      expect(outcome.warnings.join(' ')).toMatch(/Scene CH01_S02 must establish: The inspector is heard through the door only\./);
+    });
+
+    it('reads the scenes one at a time when the chapter review cannot be had, and writes them when that fails too', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, reviews } = staged(() => 'not json');
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      // One for the chapter, then one for each of the two scenes; each asked twice by the retry.
+      expect(new Set(reviews.map(prompt => prompt.slice(0, prompt.indexOf('Code-level doubts')))).size).toBe(3);
+      expect(store.manuscript()).toHaveLength(1);
+      expect(outcome.warnings.join(' ')).toMatch(/CH01_S01 was written without its readiness review .*Unanswered doubts: unknown-participant/);
+    });
+  });
+
+  it('keeps the particulars a scene fixes on the shelf that travels whole, ten a scene and none twice', async () => {
     const store = new MemoryProjectStore();
-    const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, unreviewed(), stubGate);
-    expect(store.manuscript()).toHaveLength(1);
-    expect(outcome.warnings.join(' ')).toMatch(/written without its readiness review .*Unanswered doubts: clash-suspect/);
-    await expect(new ChapterPipelineV2('strict').writeChapter(design(), 1, new MemoryProjectStore(), unreviewed(), stubGate))
-      .rejects.toThrow();
+    const facts = Array.from({ length: 14 }, (_, index) => ({ statement: `The ledger shows ${index + 1} entries.`, evidence_refs: ['p1'] }));
+    const stating = () => ({ ...delta(), established_facts: [...facts, { statement: 'the ledger shows 1 entries', evidence_refs: ['p1'] }] });
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, fullLlm(stating));
+    // The design's own particulars are on the shelf first, before any scene.
+    const ids = store.loadState().facts.map(fact => fact.id);
+    expect(ids.slice(0, 8)).toEqual(['DESIGN-R01', 'DESIGN-R02', 'DESIGN-R03', 'DESIGN-R04', 'DESIGN-R05', 'DESIGN-R06', 'DESIGN-R07', 'DESIGN-R08']);
+    expect(ids.slice(8)).toEqual(Array.from({ length: 10 }, (_, index) => `CH01_S01-f${index + 1}`));
+    expect(store.loadState().facts[0]).toMatchObject({ subject: 'the tower', attribute: 'floors' });
+    await new ChapterPipelineV2().writeChapter(design(), 2, store, fullLlm(stating));
+    expect(store.loadState().facts).toHaveLength(18);
+  });
+
+  it('shows the reconciliation what the chapter itself recorded and where it left its plan', async () => {
+    const store = new MemoryProjectStore();
+    const deviating = () => ({ ...delta(), plan_deviations: [{ planned: 'One guest was erased.', actual: 'Three guests were erased.', future_dependency_affected: 'the ending' }] });
+    const llm = fullLlm(deviating);
+    await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+    const prompts = vi.mocked(llm).mock.calls.map(([prompt]) => prompt);
+    const forwardPrompt = prompts.find(prompt => prompt.includes('Refine the forward plan'))!;
+    expect(forwardPrompt).toContain('CH01_S01: planned "One guest was erased.", written "Three guests were erased." — affects the ending');
+    expect(forwardPrompt).toContain('CH01_S01: Aren reaches the upper room.');
+  });
+
+  it('enters what the premise gave as promises before the first scene, people excepted, and never twice', async () => {
+    const store = new MemoryProjectStore();
+    const given = design();
+    given.contract.premise_givens = [
+      { given: 'Aren', kind: 'person' },
+      { given: 'a door in the sea', kind: 'thing' },
+      { given: 'the only keeper left on the rock', kind: 'fact' },
+    ];
+    await new ChapterPipelineV2().writeChapter(given, 1, store, fullLlm());
+    await new ChapterPipelineV2().writeChapter(given, 1, store, fullLlm());
+    const premise = store.loadThreads().filter(thread => thread.id.startsWith('PREMISE-'));
+    expect(premise.map(thread => thread.description)).toEqual(['a door in the sea', 'the only keeper left on the rock']);
+    expect(premise.every(thread => thread.status === 'open')).toBe(true);
+    // Aged from chapter one, so the plan gate can see one that is being dropped.
+    expect(openThreadsWithAge(store).filter(item => item.thread.id.startsWith('PREMISE-')).map(item => item.madeInChapter)).toEqual([1, 1]);
+  });
+
+  it('says where a run sent its calls and its characters, stage by stage', async () => {
+    const store = new MemoryProjectStore();
+    const result = await new Orchestrator(store, { maxCalls: 200, maxTimeMs: 60000 }, new ChapterPipelineV2()).runBook(input, fullLlm());
+    const stages = new Map((result.usage || []).map(item => [item.stage, item]));
+    expect([...stages.keys()]).toEqual(expect.arrayContaining(['audit', 'chapter-plan', 'design', 'design-review', 'forward', 'scene-write', 'track']));
+    expect(stages.has('unlabelled')).toBe(false);
+    expect(stages.has('scene-rebase')).toBe(false);
+    expect(stages.get('scene-write')?.calls).toBe(2);
+    expect(stages.get('track')!.sent).toBeGreaterThan(stages.get('track')!.received);
+    const lines = store.runLog().filter(entry => entry.stage === 'usage').map(entry => entry.detail);
+    expect(lines.at(-1)).toMatch(/^total: \d+ call\(s\), sent \d+ \(\d+\.\dx the manuscript\), received \d+/);
+  });
+
+  it('shows the writer where things stand for the people in the scene, not the whole record', () => {
+    const handoff = {
+      after_scene_id: 'CH01_S01', known_to_reader: ['a', 'b'], confirmed_changes: ['c'],
+      current_conditions: { 'C01.location': 'gallery', 'C09.location': 'harbour', 'lamp.state': 'dark', 'C09->C01.trust': 'broken', 'C01->C09.debt': 'owed' },
+      open_questions: Array.from({ length: 12 }, (_, index) => `Q${index + 1}`), active_intentions: [], previous_outcome: 'o',
+      required_new_outcome: 'n', forbidden_restatements: Array.from({ length: 20 }, (_, index) => `R${index + 1}`),
+    };
+    const view = writerHandoff(handoff, ['C01'], ['C01', 'C09']) as Record<string, any>;
+    expect(Object.keys(view.current_conditions)).toEqual(['C01.location', 'lamp.state', 'C09->C01.trust', 'C01->C09.debt']);
+    expect(view.open_questions).toHaveLength(8);
+    expect(view.already_told_do_not_explain_again).toHaveLength(12);
+    expect(view.already_told_do_not_explain_again.at(-1)).toBe('R20');
+    expect(view.known_to_reader).toBeUndefined();
+    expect(view.confirmed_changes).toBeUndefined();
+    expect(Object.keys(plannerHandoff(handoff))).not.toContain('known_to_reader');
+  });
+
+  describe('a scene replanned only when the one before it left its plan', () => {
+    const solitaryDesign = () => {
+      const d = design();
+      d.profile.dialogue_weight = 'low';
+      return d;
+    };
+    const two = () => {
+      const planned = plan(1);
+      const second = { ...planned.scenes[0], id: 'CH01_S02', location: 'Gallery', function: 'Aren deals with the outer door', required_outcome: 'Aren opens the outer door and looks out.', outcome_kind: 'knowledge' };
+      return { ...planned, scenes: [planned.scenes[0], second] };
+    };
+    const staged = (first: () => unknown, replan?: () => unknown) => {
+      const base = fullLlm();
+      let tracked = 0;
+      const replans: string[] = [];
+      const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Plan only the current chapter')) return JSON.stringify(two());
+        if (prompt.includes('Extract the essential changes from the new scene')) return JSON.stringify(tracked++ === 0 ? first() : delta());
+        if (prompt.includes('Update the next scene plan against the explicit handoff')) {
+          replans.push(prompt);
+          if (replan) return JSON.stringify(replan());
+        }
+        return (base as NovelLLM)(prompt, system, options);
+      });
+      return { llm, replans };
+    };
+
+    it('writes the next scene as planned when the scene before it kept to its plan', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, replans } = staged(delta);
+      await new ChapterPipelineV2().writeChapter(solitaryDesign(), 1, store, llm);
+      expect(replans).toEqual([]);
+      expect(store.chapterScenes(1)).toHaveLength(2);
+    });
+
+    it('does not replan for a detail the scene supplied or a departure the next scene can live with', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, replans } = staged(() => ({ ...delta(), plan_deviations: [
+        { planned: 'Aren finds the log.', actual: 'Aren finds four logs, the top one dated 3 January.', future_dependency_affected: 'the date is now fixed', next_scene_must_change: false },
+        { planned: 'Aren is told about the door.', actual: 'Aren works it out herself.', future_dependency_affected: 'later chapters' },
+      ] }));
+      await new ChapterPipelineV2().writeChapter(solitaryDesign(), 1, store, llm);
+      expect(replans).toEqual([]);
+      expect(store.chapterScenes(1)).toHaveLength(2);
+    });
+
+    it('replans the next scene, with the reason, when the scene before it departed from its plan', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, replans } = staged(() => ({ ...delta(), plan_deviations: [{ planned: 'Aren stops at the upper room.', actual: 'Aren already opened the outer door.', future_dependency_affected: 'the next scene', next_scene_must_change: true }] }));
+      await new ChapterPipelineV2().writeChapter(solitaryDesign(), 1, store, llm);
+      expect(replans).toHaveLength(1);
+      expect(replans[0]).toContain('was planned as "Aren stops at the upper room." and was written as "Aren already opened the outer door.", which affects the next scene.');
+      expect(replans[0]).not.toContain('Confirmed state:');
+      expect(store.runLog().some(entry => entry.stage === 'scene-rebase' && /replanned after CH01_S01: 1 departure/.test(entry.detail))).toBe(true);
+    });
+
+    it('writes the planned scene when the replan will not validate', async () => {
+      const store = new MemoryProjectStore();
+      const { llm } = staged(
+        () => ({ ...delta(), plan_deviations: [{ planned: 'p', actual: 'a', future_dependency_affected: '', next_scene_must_change: true }] }),
+        () => ({ nothing: 'usable' }),
+      );
+      const { warnings } = await new ChapterPipelineV2().writeChapter(solitaryDesign(), 1, store, llm);
+      expect(store.chapterScenes(1)).toHaveLength(2);
+      expect(warnings.join(' ')).toMatch(/kept its planned causal chain/);
+      expect(store.runLog().some(e => e.stage === 'scene-rebase' && /rebase failed/.test(e.detail))).toBe(true);
+    });
+  });
+
+  describe('the chapter check, while nothing after the chapter exists', () => {
+    const WRONG = 'Aren climbed while the storm took the rail from her hands.';
+    const RIGHT = 'Aren climbed while the storm took the lamp from her hands.';
+    const checking = (overrides: { check: unknown; extraction?: (prompt: string) => unknown; correction?: unknown; beat?: string }) => {
+      const base = fullLlm();
+      const seen: string[] = [];
+      const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Refine the forward plan')) {
+          seen.push('check');
+          return typeof overrides.check === 'string' ? overrides.check : JSON.stringify({ ...forward(), ...(overrides.check as object) });
+        }
+        if (prompt.includes('Rewrite the listed sentences so each states what the book holds')) { seen.push('correct'); return JSON.stringify(overrides.correction); }
+        if (prompt.includes('Write the short passage that goes between the two paragraphs')) { seen.push('insert'); return overrides.beat || ''; }
+        if (overrides.extraction && prompt.includes('Extract the essential changes from the new scene')) {
+          return JSON.stringify(overrides.extraction(prompt));
+        }
+        return (base as NovelLLM)(prompt, system, options);
+      });
+      return { llm, seen };
+    };
+    const align = { repairs: [{ id: 'R1', kind: 'align', problem: 'The rail is said to be lost; the book holds that the lamp was.', scene_id: 'CH01_S01', canonical: 'The storm took the lamp, not the rail.', quotes: [WRONG] }], leave_to_later: [] };
+
+    it('corrects a sentence in place, reads the scene into memory again, and keeps the original beside it', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, seen } = checking({
+        check: align,
+        correction: { replacements: [{ original: WRONG, replacement: RIGHT, refused_because: '' }] },
+        extraction: prompt => (prompt.includes('took the lamp')
+          ? { ...delta(), events: [{ description: 'The storm takes the lamp from Aren.', participants: ['C01'], evidence_refs: ['p1'] }] }
+          : delta()),
+      });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(seen).toEqual(['check', 'correct']);
+      expect(store.manuscript()[0].text).toContain(RIGHT);
+      expect(store.manuscript()[0].text).not.toContain(WRONG);
+      const scene = store.chapterScenes(1)[0];
+      expect(scene.original_prose).toContain(WRONG);
+      // Memory holds what the corrected scene says, once — not both versions.
+      expect(store.loadState().events.map(event => event.description)).toEqual(['The storm takes the lamp from Aren.']);
+      expect(scene.handoff?.known_to_reader).toContain('The storm takes the lamp from Aren.');
+      expect(outcome.warnings.join(' ')).toMatch(/check corrected CH01_S01: 1 sentence\(s\) corrected/);
+      expect(store.checkpoints()).toContain('chapter-check-1');
+    });
+
+    it('does not read the scene again when the corrected sentence is one no record cites', async () => {
+      const store = new MemoryProjectStore();
+      const SMELL = 'The upper room smelled of hot glass and rain.';
+      const { llm, seen } = checking({
+        check: { repairs: [{ id: 'R1', kind: 'align', problem: 'The room smells of oil in every other scene.', scene_id: 'CH01_S01', canonical: 'The upper room smells of lamp oil.', quotes: [SMELL] }] },
+        correction: { replacements: [{ original: SMELL, replacement: 'The upper room smelled of lamp oil and rain.' }] },
+      });
+      await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(seen).toEqual(['check', 'correct']);
+      // The fixture's one event cites p1; the correction was in p2.
+      expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Extract the essential changes from the new scene'))).toHaveLength(1);
+      expect(store.manuscript()[0].text).toContain('lamp oil and rain');
+      expect(store.chapterScenes(1)[0].original_prose).toContain(SMELL);
+      expect(store.loadState().events).toHaveLength(1);
+    });
+
+    it('makes no correction on a quotation the scene does not contain', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, seen } = checking({ check: { repairs: [{ ...align.repairs[0], quotes: ['Aren climbed while the storm tore the rail away.'] }] } });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(seen).toEqual(['check']);
+      expect(store.manuscript()[0].text).toContain(WRONG);
+      expect(outcome.warnings.join(' ')).toMatch(/quotes nothing CH01_S01 says word for word/);
+    });
+
+    it('takes a correction back out when memory refuses the corrected scene', async () => {
+      const store = new MemoryProjectStore();
+      const { llm } = checking({
+        check: align,
+        correction: { replacements: [{ original: WRONG, replacement: RIGHT, refused_because: '' }] },
+        extraction: prompt => (prompt.includes('took the lamp')
+          ? { ...delta(), contradictions: [{ description: 'The lamp was never carried up.', prior_refs: [], scene_refs: ['p1'], blocks_continuation: true }] }
+          : delta()),
+      });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(store.manuscript()[0].text).toContain(WRONG);
+      expect(store.chapterScenes(1)[0].original_prose).toBeUndefined();
+      expect(store.loadState().events.map(event => event.description)).toEqual(['Aren reaches the upper room.']);
+      expect(outcome.warnings.join(' ')).toMatch(/correction was taken back out — memory refused the corrected scene \(The lamp was never carried up\)/);
+    });
+
+    it('adds one short beat after the paragraph it names and moves nothing else', async () => {
+      const store = new MemoryProjectStore();
+      const beat = 'She counted the steps as she went, the way her mother had taught her.';
+      const { llm, seen } = checking({
+        check: { repairs: [{ id: 'R1', kind: 'insert', problem: 'The counting is used later and never shown.', scene_id: 'CH01_S01', after_paragraph: 'CH01_S01#p1', must_establish: 'Aren counts the steps.' }] },
+        beat: `Here is the passage:\n\n${beat}`,
+      });
+      await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(seen).toEqual(['check', 'insert']);
+      expect(store.manuscript()[0].text).toBe(`${WRONG}\n\n${beat}\n\nThe upper room smelled of hot glass and rain.`);
+    });
+
+    it('refuses a beat that came back the length of a scene', async () => {
+      const store = new MemoryProjectStore();
+      const { llm } = checking({
+        check: { repairs: [{ id: 'R1', kind: 'insert', problem: 'p', scene_id: 'CH01_S01', after_paragraph: 'p1', must_establish: 'Aren counts the steps.' }] },
+        beat: Array.from({ length: 400 }, () => 'step').join(' '),
+      });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(store.manuscript()[0].text).toBe(PROSE);
+      expect(outcome.warnings.join(' ')).toMatch(/came back at 400 words against a limit of 150/);
+    });
+
+    it('lets the chapter stand when the check itself cannot be had', async () => {
+      const store = new MemoryProjectStore();
+      const { llm } = checking({ check: 'not json' });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(store.manuscript()).toHaveLength(1);
+      expect(outcome.warnings.join(' ')).toMatch(/plan ahead was not reconciled with chapter 1, and the chapter was not checked against the book's record/);
+    });
+  });
+
+  describe('speech and images, measured rather than requested', () => {
+    const two = () => {
+      const cast = design();
+      cast.characters = [...cast.characters, { ...cast.characters[0], id: 'C02', name: 'Bram' }];
+      return cast;
+    };
+    const narrated = Array.from({ length: 40 }, (_, index) => `Aren crossed the gallery a ${index + 1}th time and Bram watched her do it.`).join(' ');
+    const said = Array.from({ length: 40 }, (_, index) => `"You counted ${index + 1} steps," Bram said.`).join(' ');
+    const staged = (drafts: string[]) => {
+      const base = fullLlm();
+      let writes = 0;
+      const prompts: string[] = [];
+      const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Plan only the current chapter')) {
+          const planned = plan(1);
+          planned.scenes[0].participants = ['C01', 'C02'];
+          return JSON.stringify(planned);
+        }
+        if (prompt.includes('Write a full literary scene')) { prompts.push(prompt); return drafts[Math.min(writes++, drafts.length - 1)]; }
+        return (base as NovelLLM)(prompt, system, options);
+      });
+      return { llm, prompts };
+    };
+
+    it('writes a two-person scene once more when it comes back narrated, with the number in the request', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, prompts } = staged([narrated, said]);
+      const outcome = await new ChapterPipelineV2().writeChapter(two(), 1, store, llm);
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]).toMatch(/gave 0\.0% of its words to speech with 2 people present/);
+      expect(store.manuscript()[0].text).toContain('"You counted 1 steps," Bram said.');
+      expect(outcome.warnings.join(' ')).not.toMatch(/asked for more speech/);
+      expect(store.runLog().some(entry => entry.stage === 'texture' && /rewritten once, now/.test(entry.detail))).toBe(true);
+    });
+
+    it('asks once, keeps the better draft, and says so when the scene still will not speak', async () => {
+      const store = new MemoryProjectStore();
+      const { llm, prompts } = staged([narrated, narrated]);
+      const outcome = await new ChapterPipelineV2().writeChapter(two(), 1, store, llm);
+      expect(prompts).toHaveLength(2);
+      expect(outcome.warnings.join(' ')).toMatch(/CH01_S01 was asked for more speech and still gives 0\.0%/);
+    });
+
+    it('leaves a scene with one person in it alone', async () => {
+      const store = new MemoryProjectStore();
+      const llm = fullLlm();
+      await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      expect(vi.mocked(llm).mock.calls.filter(([prompt]) => prompt.includes('Write a full literary scene'))).toHaveLength(1);
+    });
+
+    it('counts an image the check names and rewrites the sentences past its allowance out of the chapter', async () => {
+      const store = new MemoryProjectStore();
+      const sea = [
+        'The sea worked at the shingle below the lamp.',
+        'Out there the tide dragged the stones of the sea back.',
+        'She heard the sea knocking the shingle together.',
+        'The sea took the stones and gave them back.',
+        'Under it all the sea was at the shingle again.',
+        'The sea went on with its stones.',
+      ];
+      const prose = `${sea.join(' ')}\n\nAren reached the upper room.`;
+      const base = fullLlm();
+      const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+        if (prompt.includes('Write a full literary scene')) return prose;
+        if (prompt.includes('Refine the forward plan')) {
+          return JSON.stringify({ ...forward(), repairs: [], worn_images: [{ image: 'the sea on the shingle', anchors: ['sea', 'shingle', 'stones'] }, { image: 'one word is a subject', anchors: ['sea'] }] });
+        }
+        if (prompt.includes('Rewrite the listed sentences') && prompt.includes('WORN IMAGE')) {
+          expect(prompt).toContain('— rewrite without it) Under it all the sea was at the shingle again.');
+          expect(prompt).not.toContain('The sea worked at the shingle below the lamp.');
+          return JSON.stringify({ replacements: [
+            { original: sea[4], replacement: 'Under it all the lamp ticked as it cooled.' },
+            { original: sea[5], replacement: 'The sea kept at its stones.' },
+          ] });
+        }
+        return (base as NovelLLM)(prompt, system, options);
+      });
+      const outcome = await new ChapterPipelineV2().writeChapter(design(), 1, store, llm);
+      const text = store.manuscript()[0].text;
+      expect(text).toContain('Under it all the lamp ticked as it cooled.');
+      // A rewrite that still carries the image is not spliced: it is counted, not trusted.
+      expect(text).toContain(sea[5]);
+      expect(store.loadChapterPlan(1)?.worn_images).toEqual([{ image: 'the sea on the shingle', anchors: ['sea', 'shingle', 'stones'] }]);
+      expect(outcome.warnings.join(' ')).toMatch(/"the sea on the shingle" stood at 6 use\(s\) against an allowance of 4; 1 sentence\(s\) in this chapter were rewritten without it and it now stands at 5/);
+      expect(store.chapterScenes(1)[0].original_prose).toContain(sea[4]);
+    });
+  });
+
+  it('plans the chapter with the editor\'s model, shares its length among the scenes, and carries an unpaid premise given to the chapter\'s close', async () => {
+    const store = new MemoryProjectStore();
+    const given = design();
+    given.contract.premise_givens = [{ given: 'asks for the same room', kind: 'situation' }];
+    const base = fullLlm();
+    const routes: Record<string, string | undefined> = {};
+    const llm: NovelLLM = vi.fn(async (prompt: string, system: string, options?: Parameters<NovelLLM>[2]) => {
+      if (options?.stage) routes[options.stage] = options.route;
+      if (prompt.includes('Plan only the current chapter')) {
+        const planned = plan(1);
+        Object.assign(planned.scenes[0], { target_words: 5000, pays_premise: [{ id: 'PREMISE-t1', action: 'He names the room before she offers one.' }], establishes: ['The upper room is on the third landing.'] });
+        return JSON.stringify(planned);
+      }
+      return (base as NovelLLM)(prompt, system, options);
+    });
+    await new ChapterPipelineV2().writeChapter(given, 1, store, llm);
+    expect(routes['chapter-plan']).toBe('validator');
+    expect(routes['scene-write']).toBe('writer');
+    const prompts = vi.mocked(llm).mock.calls.map(([prompt]) => prompt);
+    const planPrompt = prompts.find(prompt => prompt.includes('Plan only the current chapter'))!;
+    expect(planPrompt).toContain('PREMISE-t1 — asks for the same room');
+    expect(planPrompt).toContain('room for 2 scenes');
+    // One scene planned in a chapter of 2000 words: the scene gets the chapter, not the planner's number.
+    expect(store.chapterScenes(1)[0].plan?.target_words).toBe(2000);
+    const written = prompts.find(prompt => prompt.includes('Write a full literary scene'))!;
+    expect(written).toContain('Owed from the premise, to be put on the page here: He names the room before she offers one.');
+    expect(written).toContain('  - The upper room is on the third landing.');
+    const closing = prompts.find(prompt => prompt.includes('Refine the forward plan'))!;
+    expect(closing).toContain('CH01_S01: planned to put the premise given "asks for the same room" on the page by "He names the room before she offers one.", and the tracker did not find it done');
   });
 
   it('refuses a chapter the plan itself declares unplannable', async () => {

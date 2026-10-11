@@ -1,19 +1,22 @@
+import type {RepairReport} from '../utils/novel/v2/repairPackage';
+import {addTokenUsage,emptyTokenTotals,savedTokenTotals,type TokenTotals} from '../utils/tokenUsage';
+import { allocateThesisWords, renderThesisBook, previousThesisChapter } from '../utils/novel/v2/theses';
+import { inputKey } from '../utils/novel/v2/progressive';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
-import { generateText, getStoredContinuityMode, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import type { NovelLLM } from '../utils/novel/v2/llm';
+import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { downloadJson, restoreSnapshot, snapshotProject } from '../utils/novel/v2/export';
 import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
+import { browserHabitMemory } from '../utils/novel/v2/habits';
+import { readGenerationSettings, saveGenerationSettings, readMainForm, saveMainForm, buildProjectInput, DEFAULT_GENERATION_SETTINGS } from '../utils/generationSettings';
 
-const DEFAULT_SETTINGS: StorySettings = {
-  genre: 'fantasy', narrativeVoice: 'third-limited', tone: 'serious', targetAudience: 'adult',
-  writingStyle: 'descriptive', tense: 'past',
-  ending: 'closed', targetWordsPerChapter: 4000,
-};
+const DEFAULT_SETTINGS = DEFAULT_GENERATION_SETTINGS;
 
 /**
  * What a call is for, in the words a reader of the log would use. v2 prompts
@@ -22,17 +25,90 @@ const DEFAULT_SETTINGS: StorySettings = {
  */
 export function stepName(prompt: string): string {
   const steps: [string, string][] = [
+    ['Build three pressure situations', 'Testing character intentions'],
+    ['Choose an action for this person', 'Choosing a character action'],
+    ['Resolve what follows when independently chosen actions meet', 'Resolving character choices'],
+    ['Generate exactly THREE', 'Exploring book plans'],
+    ['Compare three candidate plans', 'Choosing the book plan'],
+    ['Crystallize the approved short plan', 'Developing the story structure'],
+    ['Crystallize the approved structure', 'Developing the chapter map'],
     ['Prepare a compact book construction', 'Designing the book'],
     ['Check whether the provided plan is ready', 'Reviewing the plan'],
     ['Plan only the current chapter', 'Planning the chapter'],
     ['Write a full literary scene', 'Writing a scene'],
     ['Extract the essential changes from the new scene', 'Updating story memory'],
-    ['Refine the forward plan', 'Reconciling the plan'],
+    ['Refine the forward plan', 'Closing the chapter'],
+    ['Rewrite the listed sentences so each states what the book holds', 'Correcting a stated fact'],
+    ['Write the short passage that goes between the two paragraphs', 'Adding a missing beat'],
+    ['Rewrite the listed paragraphs so they no longer stage', 'Condensing a repeated beat'],
+    ['Rewrite the listed sentences', 'Repairing repeated prose'],
     ['Check the integrity of the finished book', 'Auditing the finished book'],
   ];
   const matched = steps.find(([key]) => prompt.includes(key));
   return matched ? matched[1] : prompt.slice(0, 60);
 }
+
+const STAGES: Record<string, string> = {
+  'thesis-synopsis': 'Synopsis',
+  'thesis-chapter-development': 'Chapter development · writing',
+  'thesis-chapter-development-review': 'Chapter development · review',
+  'thesis-chapter-development-repair': 'Chapter development · rewriting only the chapters with findings',
+  'thesis-plan': 'Scene plan · writing',
+  'thesis-plan-review': 'Scene plan · review',
+  'thesis-premise-coverage': 'Scene plan · is every premise given played in a scene?',
+  'thesis-plan-stress': 'Scene plan · stress test of the mechanism',
+  'thesis-plan-repair': 'Scene plan · repair by field edits',
+  'thesis-scene-design': 'Scene plan · redesign',
+  'thesis-scene-coverage': 'Scene plan · adding scenes to a short chapter',
+  'thesis-scene-review': 'Scene plan · review of the redesign',
+  'thesis-block-write': 'writing',
+  'thesis-block-review': 'review',
+  'thesis-block-repair': 'repair',
+  'thesis-habits': 'Naming writing habits in the new scene',
+  'thesis-state': 'where things are at the end of it',
+  'thesis-impact-review': 're-review after an edit',
+  'thesis-expand': 'expanding to length',
+  'thesis-expand-review': 'review after expanding',
+  'thesis-polish': 'polishing',
+  'thesis-polish-review': 'review after polishing',
+  'thesis-final-recheck-review': 'final re-review',
+  'thesis-seam-review': 'Seam between scenes · review',
+  'thesis-seam-final-review': 'Seam between scenes · final review',
+  'thesis-seam-repair': 'Seam between scenes · repair',
+  'thesis-rough-review': 'Whole book · review',
+  'thesis-rough-reconcile': 'Whole-book repair · correcting the plan',
+  'thesis-causal-review': 'Whole-book repair · checking the corrected plan',
+  'thesis-rough-repair': 'Whole-book repair · patching',
+  'thesis-rough-verify': 'Whole-book repair · were the defects resolved?',
+  'thesis-rough-candidate-review': 'Whole-book repair · review of the patched book',
+  'thesis-expanded-causal-review': 'Whole book · review after expansion',
+  'thesis-audit-causal-review': 'Final audit · locating its findings',
+  'thesis-audit-repair': 'Final audit · repair',
+  'thesis-final-audit': 'Final audit',
+};
+const SCENE_STAGES = new Set(['thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
+const SCENE_PATTERNS = [/CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n\{"id":"([^"]+)"/, /"thesis":"(\S+) \(whole in the outline/, /Current thesis: \{"id":"([^"]+)"/, /CURRENT SCENE ONLY: \{"id":"([^"]+)"/, /\nSCENE (\S+):\n/, /^SCENE (\S+):\n/, /Writable blocks: \["([^"]+)"\]/];
+
+/**
+ * What a call is doing, in words a reader of the run can follow: the step, the scene it
+ * concerns, and whether it is a first attempt or the repair of a refused answer. Every
+ * entry used to show the first sixty characters of the prompt, which is the author's
+ * request and is the same for all of them.
+ */
+export function describeCall(stage: string | undefined, prompt: string): { title: string; reason: string } {
+  const evidence = stage?.endsWith('-evidence');
+  const base = evidence ? stage!.slice(0, -'-evidence'.length) : stage || '';
+  const named = STAGES[base];
+  const scene = SCENE_STAGES.has(base) ? SCENE_PATTERNS.map(pattern => prompt.match(pattern)?.[1]).find(Boolean) : undefined;
+  let title = named ? (SCENE_STAGES.has(base) ? `Scene ${scene || '?'} · ${named}` : named) : stage ? stage : stepName(prompt);
+  if (evidence) title += ' · locating the cited passages';
+  const patch = prompt.match(/Validation defect: ([\s\S]{0,400}?)\.\nOriginal task and requirements:/)?.[1];
+  const redo = prompt.match(/\nRepair the previous response: ([\s\S]{0,400})/)?.[1];
+  const reason = (patch || redo || '').replace(/^Error:\s*/, '').split('\n')[0].slice(0, 240);
+  if (patch || redo) title += ' · fixing a refused answer';
+  return { title, reason };
+}
+const size = (characters: number): string => characters >= 1000 ? `${Math.round(characters / 1000)}K` : String(characters);
 
 /**
  * The book's own title when the design carries one. A book designed before P01
@@ -71,11 +147,15 @@ export function splitError(message: string): { headline: string; detail: string 
 
 /** React presents snapshots; the v2 store owns execution state. */
 export default function useBookGenerator() {
-  const [storyPremise, setStoryPremise] = useState('');
-  const [numChapters, setNumChapters] = useState(3);
-  const [storySettings, setStorySettings] = useState<StorySettings>(DEFAULT_SETTINGS);
+  const [storyPremise, setStoryPremise] = useState(()=>readMainForm().premise);
+  const [numChapters, setNumChapters] = useState(()=>readMainForm().chapters);
+  const [storySettings, setStorySettings] = useState<StorySettings>(()=>readGenerationSettings(DEFAULT_SETTINGS));
+  useEffect(()=>{saveGenerationSettings(storySettings)},[storySettings]);
+  useEffect(()=>{saveMainForm(storyPremise,numChapters)},[storyPremise,numChapters]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [repairProgress,setRepairProgress]=useState<RepairReport|undefined>();
+  const [tokenTotals,setTokenTotals]=useState<TokenTotals>(emptyTokenTotals);
   const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const [currentStep, setCurrentStep] = useState<GenerationStep>(GenerationStep.Idle);
   const [currentChapterProcessing, setCurrentChapterProcessing] = useState(0);
@@ -84,12 +164,14 @@ export default function useBookGenerator() {
   const [finalMetadataJson, setFinalMetadataJson] = useState<string | null>(null);
   const [currentStoryOutline, setCurrentStoryOutline] = useState('');
   const [currentChapterPlan, setCurrentChapterPlan] = useState('');
+  const [autosaveStatus, setAutosaveStatus] = useState<PersistentProjectStore['saveStatus']>();
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>(undefined);
   const storeRef = useRef<PersistentProjectStore | null>(null);
   const inputRef = useRef<ProjectInput | null>(null);
   const epoch = useRef(0);
   const busy = useRef(false);
   const currentChapterRef = useRef(0);
+  const [developmentLabel, setDevelopmentLabel] = useState<string | undefined>();
   const [hasUnfinished, setHasUnfinished] = useState(false);
   const [storeReady, setStoreReady] = useState(false);
 
@@ -100,30 +182,47 @@ export default function useBookGenerator() {
 
   function refreshFromStore() {
     const store = getStore();
+    setTokenTotals(savedTokenTotals(store.runLog()));
     const manuscript = store.manuscript();
-    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text })));
+    const theses = store.loadTheses();
+    setRepairProgress(theses?.repair_reports?.at(-1));
+    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(theses ? { plan: renderThesisBook(theses, chapter, false), previousContent: previousThesisChapter(theses, chapter) } : {}) })));
+    const progressive = store.loadProgressive();
+    if (progressive) {
+      const pass = progressive.pending?.pass || progressive.versions.at(-1)?.pass;
+      const labels = { story: 'Writing the complete short story', scenes: 'Making choices and consequences clear', prose: 'Bringing the scenes fully into focus', polish: 'Finishing the whole story' };
+      setDevelopmentLabel(progressive.completed ? (store.loadReport() ? undefined : 'Reviewing the complete book') : pass ? labels[pass] : 'Planning the whole book');
+      setCurrentStoryOutline(progressive.plan);
+      setCurrentChapterPlan(`Whole-book draft: ${progressive.pending?.pass || progressive.versions.at(-1)?.pass || 'plan'}`);
+    }
+    if (theses) {
+      setDevelopmentLabel(!theses.plan && theses.chapter_development ? (theses.chapter_development.review?.ready ? 'Dividing chapter development into scenes' : 'Developing and checking chapter progression') : theses.scene_design ? 'Planning scenes and chapter budgets' : theses.rough_gate?.repair ? `Repairing connected story defects · round ${theses.rough_gate.attempts}` : theses.rough_gate && !theses.rough_gate.review?.ready && theses.manifestation?.phase === 'rough' && theses.blocks.length === theses.plan?.theses.length ? 'Checking the complete short book' : theses.completed ? (store.loadReport() ? undefined : 'Reviewing the complete book') : !theses.plan_ready ? 'Clarifying and checking the thesis outline' : theses.manifestation && theses.manifestation.phase !== 'rough' ? `${theses.manifestation.phase}: ${theses.plan!.theses[theses.manifestation.next]?.id || ''}` : `Writing beneath thesis ${theses.plan!.theses[theses.blocks.length]?.id || ''}`);
+      setCurrentStoryOutline(renderThesisBook(theses, undefined, false));
+      const activeChapter = theses.plan?.theses[theses.blocks.length]?.chapter || currentChapterRef.current || 1;
+      setCurrentChapterPlan(renderThesisBook(theses, activeChapter, false));
+    }
     const design = store.loadDesign();
-    if (design) {
+    if (design && !progressive && !theses) {
       setCurrentStoryOutline(
         `Central conflict: ${design.dramatic_core.central_conflict}\nStakes: ${design.dramatic_core.stakes}\nResolution: ${design.ending.central_resolution}`
       );
       setCurrentChapterPlan(JSON.stringify(design.chapter_map, null, 2));
     }
-    if (manuscript.length) setLastSavedAt(Date.now());
+
     const input = store.loadInput();
     // A book with no chapter written is not work to continue: it is a book that
     // never started. The form, still holding the premise, is where the author
     // belongs — a resume card offering "0 of 3 chapters written" is not an offer.
-    setHasUnfinished(!!input && manuscript.length > 0 && manuscript.length < input.chapter_count);
+    setHasUnfinished(!!input && (theses ? !theses.completed || !store.loadReport() : input.generation_mode === 'theses' ? !store.loadReport() : progressive ? !progressive.completed || !store.loadReport() : input.generation_mode === 'progressive' ? !store.loadReport() : manuscript.length > 0 && manuscript.length < input.chapter_count));
   }
 
   function publishFinal() {
     const store = getStore();
     const input = store.loadInput();
-    if (!input) return;
+    if (!input || (store.loadTheses() && (!store.loadTheses()!.completed || !store.loadReport())) || (store.loadProgressive() && (!store.loadProgressive()!.completed || !store.loadReport()))) return;
     const manuscript = store.manuscript();
     const report = store.loadReport();
-    const title = bookTitle(getStore().loadDesign()?.contract?.working_title, input.premise);
+    const title = bookTitle(store.loadTheses()?.plan?.title || store.loadDesign()?.contract?.working_title, input.premise);
     const content = `# ${title}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
     setFinalBookContent(content);
     setFinalMetadataJson(JSON.stringify({
@@ -153,47 +252,71 @@ export default function useBookGenerator() {
     const token = epoch.current;
     const checkActive = () => { if (epoch.current !== token) throw new Error('This run was cancelled.'); };
     setIsLoading(true);
+    setCurrentStep(GenerationStep.GeneratingOutline);
     setError(null);
     // A fresh book starts with a clean log; a continued run keeps the trail,
     // otherwise two runs glue together and every stage looks doubled.
-    if (fresh) setAgentLogs([]);
+    if (fresh) {setAgentLogs([]);setTokenTotals(emptyTokenTotals());setRepairProgress(undefined);}
     setFinalBookContent(null);
     setFinalMetadataJson(null);
     setGeneratedChapters([]);
     setCurrentChapterProcessing(0);
     // The same slot continues: finished chapters are skipped, partial ones restart.
     const store = getStore();
+    const writer = getStoredProviderConfig();
+    const validator = getStoredValidatorConfig();
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the
       // 500-char window: keep the head for context and the tail for the cause.
-      const details = prompt.includes('could not be validated:')
-        ? `${prompt.slice(0, 200)}\n…\n${prompt.slice(-400)}`
-        : prompt.slice(0, 500);
-      const writer = getStoredProviderConfig();
-      const validator = getStoredValidatorConfig();
+      // The head of a prompt is the author's request, the same on every call; what this
+      // call was asked is at its end, and what it was refused for is named separately.
+      const call = describeCall(options.stage, prompt);
+      const details = [`stage: ${options.stage || 'unlabelled'} · role: ${options.route || 'writer'} · sent ${size(prompt.length + system.length)} characters`,
+        call.reason ? `refused for: ${call.reason}` : '', `the request ends:\n…${prompt.slice(-700)}`].filter(Boolean).join('\n\n');
+      const finish = (type: 'success' | 'warning', outcome: string) => setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.type === 'execution' && entry.details === details ? { ...entry, type: type === 'warning' ? type : entry.type, finished: true, outcome } : entry));
       const role = options.route === 'validator' && validator ? validator : writer;
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
-      const servingTag = role.provider === 'ollama'
+      const servingTag = role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
         ? `Ollama:${role.ollamaModel || '?'}` : `Gemini:${role.geminiModel || 'default'}`;
-      setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: currentChapterRef.current, type: 'execution', message: `${stepName(prompt)} · ${servingTag}`, details }]);
-      // Structured validator calls carry a JSON contract under a tight output
-      // cap: model reasoning would spend that cap before the answer starts, so
-      // thinking is always off on this route. The writer toggle stays the author's.
-      const provider = options.route === 'validator' ? { ...role, think: false } : role;
-      const result = await generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, provider, options.maxTokens, options.json);
+      setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: currentChapterRef.current, type: 'execution', message: `${call.title} · ${servingTag}`, details, ...(call.reason ? { outcome: `Refused for: ${call.reason}` } : {}) }]);
+      const ask = async (maxTokens: number | undefined, retry = false) => {
+        checkActive();
+        if (retry) setAgentLogs(previous => [...previous, {
+          timestamp: Date.now(), chapterNumber: currentChapterRef.current, type: 'execution',
+          message: `Retry after output limit · ${servingTag}`,
+          details: `Incomplete answer rejected. Repeating the same request with an output limit of ${maxTokens} tokens.`,
+        }]);
+        return generateText(prompt, system, options.schema, options.temperature ?? 0.4, undefined, undefined, role, maxTokens, options.json, options.deliberate,usage=>{
+          if(epoch.current!==token)return;
+          const totals=addTokenUsage(savedTokenTotals(store.runLog()),usage);
+          store.log('token_totals',JSON.stringify(totals));
+          setTokenTotals(totals);
+        });
+      };
+      const seconds = () => `${Math.max(1, Math.round((Date.now() - start) / 1000))}s`;
+      let result: string;
+      try {
+        result = role.provider === 'ollama'
+          ? await withOllamaOutputRoom(ask, options.maxTokens)
+          : await ask(options.maxTokens);
+      } catch (error) {
+        finish('warning', `Failed after ${seconds()}: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`);
+        throw error;
+      }
+      finish('success', `${seconds()} · sent ${size(prompt.length + system.length)} · received ${size(result.length)}${call.reason ? ` · was refused for: ${call.reason}` : ''}`);
       checkActive();
       return result;
     };
     const poll = setInterval(() => { if (epoch.current === token) refreshFromStore(); }, 1500);
     try {
-      const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count), new ChapterPipelineV2(getStoredContinuityMode()), (stage, chapter) => {
+      const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count,input), new ChapterPipelineV2(), (stage, chapter) => {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
-      });
+      }, browserHabitMemory(`${writer.provider}:${writer.provider === 'qwen' ? writer.qwenModel || 'qwen3.8-flash' : writer.provider === 'ollama' ? writer.ollamaModel || '?' : writer.geminiModel || 'default'}`));
       const result = await orchestrator.runBook(input, llm);
       if (epoch.current !== token) return;
       refreshFromStore();
@@ -224,17 +347,25 @@ export default function useBookGenerator() {
     PersistentProjectStore.open().then(store => {
       if (!live) return;
       storeRef.current = store;
+      store.onSaveStatus = status => { if (live) { setAutosaveStatus(status); setLastSavedAt(status.savedAt); } };
+      setAutosaveStatus(store.saveStatus); setLastSavedAt(store.saveStatus.savedAt);
+      if (store.saveStatus.state === 'error') { setError(store.saveStatus.error || 'Project storage failed'); setCurrentStep(GenerationStep.Error); }
       const input = store.loadInput();
       if (input) {
         inputRef.current = input;
         setStoryPremise(input.premise);
         setNumChapters(input.chapter_count);
         refreshFromStore();
-        if (store.manuscript().length >= input.chapter_count) publishFinal();
+        if (store.manuscript().length >= input.chapter_count && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
       }
       setStoreReady(true);
-    }).catch(() => {
-      if (live) setStoreReady(true);
+    }).catch(error => {
+      if (live) {
+        setError(`Project storage could not be opened: ${error instanceof Error ? error.message : String(error)}`);
+        setCurrentStep(GenerationStep.Error);
+        setAutosaveStatus({state:'error',error:String(error)});
+        setStoreReady(false);
+      }
     });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,22 +373,8 @@ export default function useBookGenerator() {
 
   async function startGeneration(premise: string, count: number) {
     if (busy.current || !storeRef.current) return;
+    const input = buildProjectInput(premise,count,storySettings);
     getStore().clearAll();
-    const wordsPerChapter = storySettings.targetWordsPerChapter || 4000;
-    const input: ProjectInput = {
-      premise,
-      chapter_count: count,
-      genre: storySettings.genre || 'fantasy',
-      target_total_words: wordsPerChapter * count,
-      author_requirements: [
-        storySettings.narrativeVoice ? `Voice: ${storySettings.narrativeVoice}.` : '',
-        storySettings.tone ? `Tone: ${storySettings.tone}.` : '',
-        storySettings.writingStyle ? `Style: ${storySettings.writingStyle}.` : '',
-        storySettings.targetAudience ? `Audience: ${storySettings.targetAudience}.` : '',
-        storySettings.tense ? `Tense: ${storySettings.tense}.` : '',
-        storySettings.ending ? `Ending: ${storySettings.ending}.` : '',
-      ].filter(Boolean).join(' ') || '(none)',
-    };
     inputRef.current = input;
     setStoryPremise(premise);
     setNumChapters(count);
@@ -266,6 +383,24 @@ export default function useBookGenerator() {
 
   async function continueGeneration() {
     if (busy.current || !inputRef.current || !storeRef.current) return;
+    let configured:ProjectInput;
+    try { configured=buildProjectInput(storyPremise,numChapters,storySettings); }
+    catch(error){setError(error instanceof Error?error.message:String(error));setCurrentStep(GenerationStep.Error);return;}
+    if(configured.premise!==inputRef.current.premise||configured.chapter_count!==inputRef.current.chapter_count) {
+      setError('Premise or chapter count changed. Start a new book with the main-page settings.');setCurrentStep(GenerationStep.Error);return;
+    }
+    const input={...inputRef.current,...configured};
+    if (inputKey(input)!==inputKey(inputRef.current)) {
+      const store=getStore(), theses=store.loadTheses();
+      if (theses) {
+        theses.input_key=inputKey(input);
+        if (theses.plan) { theses.plan=allocateThesisWords(theses.plan,input); theses.plan_ready=false; theses.budget_replan=true; theses.rounds=[{plan:structuredClone(theses.plan),review:null}]; delete theses.rough_gate; delete theses.scene_design; delete theses.tool_session; }
+        store.saveTheses(theses);
+      }
+      const progressive=store.loadProgressive();
+      if(progressive){progressive.input_key=inputKey(input);store.saveProgressive(progressive);}
+      store.clearReport?.(); store.saveInput(input); inputRef.current=input;
+    }
     await run(inputRef.current, false);
   }
 
@@ -298,7 +433,7 @@ export default function useBookGenerator() {
     setFinalMetadataJson(null);
     setError(null);
     refreshFromStore();
-    if (input && store.manuscript().length >= input.chapter_count) publishFinal();
+    if (input && store.manuscript().length >= input.chapter_count && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
     else setCurrentStep(GenerationStep.Idle);
   }
 
@@ -314,6 +449,7 @@ export default function useBookGenerator() {
     busy.current = false;
     setIsLoading(false);
     setError(null);
+    setHasUnfinished(false);
     setCurrentStep(GenerationStep.Idle);
   }
 
@@ -321,7 +457,17 @@ export default function useBookGenerator() {
     epoch.current++;
     busy.current = false;
     setIsLoading(false);
-    getStore().clearAll();
+    const store = getStore();
+    // Save even the edits still waiting for the debounce before clearing.
+    // The repository backend archives this snapshot when the empty slot arrives.
+    try { await store.flush(); }
+    catch (error) {
+      setError(`Clean Slate could not save the current project: ${error instanceof Error ? error.message : String(error)}`);
+      setCurrentStep(GenerationStep.Error);
+      return;
+    }
+    store.clearAll();
+    await store.flush().catch(() => undefined);
     inputRef.current = null;
     setStoryPremise('');
     setNumChapters(3);
@@ -330,27 +476,42 @@ export default function useBookGenerator() {
     setGeneratedChapters([]);
     setFinalBookContent(null);
     setFinalMetadataJson(null);
+    setDevelopmentLabel(undefined);
     setCurrentStoryOutline('');
     setCurrentChapterPlan('');
     setCurrentChapterProcessing(0);
     setCurrentStep(GenerationStep.Idle);
     setLastSavedAt(undefined);
+    setTokenTotals(emptyTokenTotals());
+    setRepairProgress(undefined);
     setHasUnfinished(false);
   }
 
+  // Derive from the durable history even when an in-flight poll was started
+  // before a hot update; remounting the text view must not erase its baseline.
+  const workspaceTheses = storeRef.current?.loadTheses();
+  const workspaceReport = storeRef.current?.loadReport();
+  const revisionStatus = workspaceReport?.status === 'COMPLETE' && workspaceTheses?.completed && workspaceTheses.final_checks
+    && Object.values(workspaceTheses.final_checks).every(check=>check.passed)
+    && workspaceTheses.blocks.every(block=>block.review.ready) ? 'Checks passed'
+      : workspaceReport?.status === 'COMPLETE_WITH_WARNINGS' ? 'Reviewed · warnings' : 'Draft · not verified';
+  const workspaceChapters = workspaceTheses ? generatedChapters.map((chapter, index) => ({...chapter,
+    revisionStatus,
+    previousContent: previousThesisChapter(workspaceTheses, index + 1)})) : generatedChapters;
+
   return {
     storyPremise, setStoryPremise, numChapters, setNumChapters, storySettings, setStorySettings,
-    isLoading, currentStep, error,
+    isLoading, currentStep, error, developmentLabel,
     isResumable: hasUnfinished && !isLoading,
-    storeReady, exportProject, importProject,
+    tokenTotals, repairProgress, storeReady, exportProject, importProject,
     startGeneration, continueGeneration, resetGenerator, editSettings,
     finalBookContent,
     finalMetadataJson,
-    generatedChapters,
+    generatedChapters: workspaceChapters,
     currentChapterProcessing,
     totalChaptersToProcess: numChapters,
     currentStoryOutline,
     currentChapterPlan,
-    agentLogs, lastSavedAt,
+    agentLogs, lastSavedAt, autosaveStatus,
   };
 }

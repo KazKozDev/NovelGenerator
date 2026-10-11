@@ -11,6 +11,13 @@ describe('Pipeline prompts on disk', () => {
   it('covers every pipeline prompt', () => {
     expect(PIPELINE_PROMPT_NAMES).toEqual([
       'P01_BOOK_DESIGN',
+      'P01_CONCEPT_SELECT',
+      'P01_INTENTION_SITUATIONS',
+      'P01_INTENTION_CHOICE',
+      'P01_INTENTION_RESOLVE',
+      'P01_READER_TRACES',
+      'P01_READER_INFER',
+      'P01_READER_REVIEW',
       'P02_PLAN_REVIEW',
       'P02_PLAN_REFINE',
       'P03_CHAPTER_PLAN',
@@ -20,6 +27,9 @@ describe('Pipeline prompts on disk', () => {
       'P06_FORWARD_UPDATE',
       'P07_FINAL_AUDIT',
       'P08_SPAN_REPAIR',
+      'P09_BEAT_CONDENSE',
+      'P10_SPAN_CORRECT',
+      'P11_BEAT_INSERT',
     ]);
   });
 
@@ -39,11 +49,15 @@ describe('Pipeline prompts on disk', () => {
   });
 
   it('keeps every JSON format block parseable', () => {
-    // P04 returns prose only by design; every other prompt carries a JSON format block.
+    // P04 and P11 return prose only by design; every other prompt carries a JSON format block.
     for (const name of PIPELINE_PROMPT_NAMES) {
       const rendered = renderPrompt(name, sampleVars(name));
       const blocks = [...rendered.matchAll(/^\{[\s\S]*?\n\}/gm)].map(match => match[0]);
-      if (name === 'P04_SCENE_WRITE') {
+      if (name === 'P01_BOOK_DESIGN') {
+        expect(promptVariables(name)).toContain('output_schema');
+        continue;
+      }
+      if (name === 'P04_SCENE_WRITE' || name === 'P11_BEAT_INSERT') {
         expect(blocks.length).toBe(0);
         continue;
       }

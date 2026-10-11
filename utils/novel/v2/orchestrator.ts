@@ -1,3 +1,7 @@
+import { SCENE_WORD_CAP } from './sceneBudget';
+import { writeThesisBook } from './theses';
+import type { HabitMemory } from './habits';
+import { developBook, inputKey } from './progressive';
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { auditBook } from './auditor';
 import { designReviewedBook } from './reviewer';
@@ -7,7 +11,7 @@ import type { BookDesign, FinalReport, PlanReview, ProjectInput } from './types'
 
 /**
  * Orchestrator: owns the order of work, the versions, the budgets and the
- * record. One design call, one construction review (plus bounded fixes), then
+ * record. Successive design levels with reviews and bounded repairs, then
  * chapters in order through the injected chapter pipeline, then the audit.
  *
  * The chapter pipeline (planner, writer, tracker, forward update) and the final
@@ -33,6 +37,27 @@ export type BookStatus = 'COMPLETE' | 'COMPLETE_WITH_WARNINGS' | 'PARTIAL' | 'FA
 
 export type ProgressStage = 'design' | 'chapter' | 'audit' | 'done';
 
+/** What one kind of call cost over a run, in characters: providers report no usage. */
+export interface StageUsage {
+  stage: string;
+  calls: number;
+  sent: number;
+  received: number;
+}
+
+/** The usage table as one line per stage, largest sender first, with the totals and the manuscript beside them. */
+export function describeUsage(usage: StageUsage[], manuscriptChars: number): string[] {
+  const sent = usage.reduce((sum, item) => sum + item.sent, 0);
+  const received = usage.reduce((sum, item) => sum + item.received, 0);
+  const calls = usage.reduce((sum, item) => sum + item.calls, 0);
+  const ratio = (value: number): string => (manuscriptChars ? `${(value / manuscriptChars).toFixed(1)}x the manuscript` : 'no manuscript');
+  return [
+    ...usage.slice().sort((first, second) => second.sent - first.sent)
+      .map(item => `${item.stage}: ${item.calls} call(s), sent ${item.sent}, received ${item.received}`),
+    `total: ${calls} call(s), sent ${sent} (${ratio(sent)}), received ${received} (${ratio(received)}), manuscript ${manuscriptChars}`,
+  ];
+}
+
 export interface BookResult {
   status: BookStatus;
   design: BookDesign | null;
@@ -41,6 +66,8 @@ export interface BookResult {
   callsUsed: number;
   tokensUsed: number;
   stoppedReason: string | null;
+  /** Calls and characters by stage. Absent on results built before a run counted anything. */
+  usage?: StageUsage[];
 }
 
 /**
@@ -72,10 +99,16 @@ export interface BookResult {
  * making progress, not to pace one that has not. Each call still has its own
  * deadline in the transport.
  */
-export function budgetFor(chapters: number): CallBudget {
+export function budgetFor(chapters: number, input?:Pick<ProjectInput,'generation_mode'|'target_total_words'|'planning_version'>): CallBudget {
   const perChapter = Math.max(1, chapters);
+  // Progressive passes use tool calls for individual scene reads, patches and reviews.
+  // Keep the legacy pipeline budget, but size instrumented runs by the user's scene volume.
+  // A new book arrives from the form with no generation_mode yet; planning_version 2 is one.
+  const instrumented=input?.generation_mode==='progressive'||input?.generation_mode==='theses'||input?.planning_version===2;
+  const words=input?.target_total_words||perChapter*SCENE_WORD_CAP;
+  const scenes=perChapter*Math.max(1,Math.ceil(words/perChapter/SCENE_WORD_CAP));
   return {
-    maxCalls: Math.max(200, perChapter * 40),
+    maxCalls: instrumented ? Math.max(600,scenes*40+perChapter*20+80) : Math.max(200, perChapter * 40),
     maxTimeMs: Math.max(60, perChapter * 60) * 60 * 1000,
   };
 }
@@ -86,12 +119,14 @@ export class Orchestrator {
   private callsUsed = 0;
   private tokensUsed = 0;
   private startedAt = 0;
+  private stages = new Map<string, StageUsage>();
 
   constructor(
     private readonly store: ProjectStore = new MemoryProjectStore(),
     private readonly budget: CallBudget = DEFAULT_BUDGET,
     private readonly pipeline: ChapterPipeline | null = null,
     private readonly onProgress: (stage: ProgressStage, chapter?: number) => void = () => {},
+    private readonly habitMemory?: HabitMemory,
   ) {}
 
   /** First-attempt failures go to the run log with their reasons. */
@@ -112,7 +147,13 @@ export class Orchestrator {
         const finished = this.store.manuscript().length;
         throw new Error(`Time budget of ${Math.round(this.budget.maxTimeMs / 60000)} minutes exhausted with ${finished} chapter(s) written. Continuing keeps them and starts the clock again.`);
       }
+      const stage = options?.stage || 'unlabelled';
+      const tally = this.stages.get(stage) || { stage, calls: 0, sent: 0, received: 0 };
+      tally.calls++;
+      tally.sent += prompt.length + system.length;
+      this.stages.set(stage, tally);
       const result = await llm(prompt, system, options);
+      tally.received += result.length;
       this.tokensUsed += Math.ceil((prompt.length + system.length + result.length) / 4);
       if (this.budget.maxTokens !== undefined && this.tokensUsed > this.budget.maxTokens) {
         throw new Error(`Token budget exhausted after ~${this.tokensUsed} estimated tokens.`);
@@ -121,23 +162,73 @@ export class Orchestrator {
     };
   }
 
+  /**
+   * The run, and after it — however it ended — where its calls and its
+   * characters went. A pipeline that sends fifty times the book it writes
+   * cannot be made cheaper by anyone who cannot see which stage sent it.
+   */
   async runBook(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
+    const result = await this.run(input, llm);
+    const usage = [...this.stages.values()];
+    const manuscript = this.store.manuscript().reduce((sum, item) => sum + item.text.length, 0);
+    for (const line of describeUsage(usage, manuscript)) this.store.log('usage', line);
+    return { ...result, usage };
+  }
+
+  private async run(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
     this.callsUsed = 0;
     this.tokensUsed = 0;
+    this.stages = new Map();
     this.startedAt = Date.now();
     const call = this.counted(llm);
+    const storedInput = this.store.loadInput();
+    const theses = this.store.loadTheses();
+    const progressive = this.store.loadProgressive();
+    if ((theses && theses.input_key !== inputKey(input))
+      || (storedInput?.generation_mode === 'theses' && inputKey(storedInput) !== inputKey(input))
+      || (progressive && progressive.input_key !== inputKey(input))
+      || (storedInput?.generation_mode === 'progressive' && inputKey(storedInput) !== inputKey(input))) {
+      return { status: 'FAILED', design: null, review: null, report: null, callsUsed: 0, tokensUsed: 0,
+        stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
+    }
     this.store.saveInput(input);
     this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}.`);
     try {
+      const freshThesisBook = !input.generation_mode && !storedInput?.generation_mode && !this.store.loadDesign() && !progressive;
+      if ((input.generation_mode === 'progressive' && !progressive) || input.generation_mode === 'theses' || theses || freshThesisBook || (!input.generation_mode && storedInput?.generation_mode === 'theses')) {
+        if (progressive || this.store.loadDesign() && this.store.manuscript().length && !theses) throw new Error('Start a fresh project to use thesis writing for an existing book.');
+        const thesisInput = { ...input, generation_mode: (freshThesisBook || input.generation_mode === 'progressive' || theses?.manifestation ? 'progressive' : 'theses') as ProjectInput['generation_mode'] };
+        this.store.saveInput(thesisInput);
+        await writeThesisBook(thesisInput, this.store, call, this.onProgress, this.habitMemory);
+        this.flushRetries();
+        const report = this.store.loadReport()!;
+        this.store.log('audit', report.summary);
+        return { status: report.status === 'COMPLETE' ? 'COMPLETE' : 'COMPLETE_WITH_WARNINGS', design: null, review: null, report,
+          callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
+      }
+      if (input.generation_mode !== 'chapters'  && (input.generation_mode === 'progressive' || storedInput?.generation_mode === 'progressive' || this.store.loadProgressive() || !this.store.loadDesign())) {
+        this.store.saveInput({ ...input, generation_mode: 'progressive' });
+        await developBook(input, this.store, call, this.onProgress);
+        this.flushRetries();
+        const report = this.store.loadReport()!;
+        this.store.log('audit', report.summary);
+        return { status: report.status === 'COMPLETE' ? 'COMPLETE' : 'COMPLETE_WITH_WARNINGS', design: this.store.loadDesign(), review: null, report,
+          callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
+      }
       // Resume: a stored design for the same book skips straight to the first
       // unfinished chapter; finished chapters keep their manuscript and memory.
-      const storedInput = this.store.loadInput();
       const storedDesign = this.store.loadDesign();
       // A stored design is resumed only if it still validates. One that does not
       // was written against an older schema, and continuing it would mean
       // planning every remaining chapter against budgets it never declared.
       const resumable = (() => {
         if (!storedDesign) return false;
+        if ((!storedDesign.planning_history || !storedDesign.intention_collisions ||
+          !storedDesign.intention_collisions.review.ready ||
+          !storedDesign.planning_history.rounds.at(-1)?.review.ready) && !this.store.manuscript().length) {
+          this.store.log('resume', 'Stored draft predates the current planning passes; generating a reviewed plan before prose.');
+          return false;
+        }
         try {
           validateBookDesign(storedDesign, input.chapter_count);
           return true;
@@ -151,16 +242,15 @@ export class Orchestrator {
         && storedInput.chapter_count === input.chapter_count;
       let design: BookDesign;
       let review: PlanReview | null;
-      // A design the review never fully cleared still writes, with the
-      // objections carried into the contract — the reader is told which ones.
-      const designWarnings: string[] = [];
       if (sameBook && storedDesign) {
         design = storedDesign;
         review = null;
         this.store.log('resume', `Continuing "${input.premise.slice(0, 60)}" from stored state.`);
       } else {
         this.onProgress('design');
-        const fresh = await designReviewedBook(input, call);
+        const fresh = await designReviewedBook(input, call, 2, level => {
+          this.store.log('design', `Crystallization approved: ${level}.`);
+        }, draft => this.store.saveDesign(draft));
         this.flushRetries();
         design = fresh.design;
         review = fresh.review;
@@ -168,20 +258,14 @@ export class Orchestrator {
         this.store.saveStyleContract(design.style_contract);
         this.store.checkpoint('design');
         this.store.log('design', `Book designed and reviewed: ${design.characters.length} characters, ${design.causal_map.length} causal events.`);
-        if (!review.ready) {
-          const unresolved = review.issues.filter(item => item?.severity === 'blocking' || item?.severity === 'major');
-          for (const item of unresolved) {
-            designWarnings.push(`The design review still objects to ${item.target_ref}: ${item.problem} It travels as a requirement the chapters must meet.`);
-          }
-          this.store.log('design', `Review unresolved on ${unresolved.length} point(s); carried into the contract.`);
-        }
+
       }
 
       if (!this.pipeline) {
         return { status: 'PARTIAL', design, review, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: 'Chapter pipeline not attached yet.' };
       }
       const finished = new Set(this.store.manuscript().map(item => item.chapter));
-      const warnings: string[] = [...designWarnings];
+      const warnings: string[] = [];
       for (let chapter = 1; chapter <= input.chapter_count; chapter++) {
         this.onProgress('chapter', chapter);
         if (finished.has(chapter)) {
@@ -208,13 +292,27 @@ export class Orchestrator {
       }
       this.onProgress('audit');
       this.flushRetries();
-      const report = await auditBook({
-        design: this.store.loadDesign() || design,
-        manuscript: this.store.manuscript(),
-        finalState: this.store.loadState(),
-        threads: this.store.loadThreads(),
-        coverage: `Full manuscript, ${this.store.manuscript().length} chapters.`,
-      }, true, call);
+      // The audit reports on a book that is already written. Losing the report
+      // is not losing the book: a run that wrote every chapter and then had its
+      // audit cut off mid-answer used to end FAILED with a complete manuscript
+      // in the store. It ends with warnings and says the audit is missing.
+      let report: FinalReport;
+      try {
+        report = await auditBook({
+          design: this.store.loadDesign() || design,
+          manuscript: this.store.manuscript(),
+          finalState: this.store.loadState(),
+          threads: this.store.loadThreads(),
+          coverage: `Full manuscript, ${this.store.manuscript().length} chapters.`,
+        }, true, call);
+      } catch (error) {
+        const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0];
+        this.flushRetries();
+        this.store.log('audit', `The final audit could not be completed: ${reason}`);
+        warnings.push(`The book is written, and its final audit could not be completed (${reason}). The manuscript is unchecked as a whole.`);
+        this.onProgress('done');
+        return { status: 'COMPLETE_WITH_WARNINGS', design, review, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: warnings.join('; ') };
+      }
       this.flushRetries();
       this.store.saveReport(report);
       this.store.log('audit', `Final audit: ${report.status}. ${report.summary}`);

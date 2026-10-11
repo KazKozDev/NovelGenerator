@@ -61,7 +61,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
 
       </div>
       
-      <div className="flex border-b border-zinc-800">
+      <div className="flex flex-wrap border-b border-zinc-800">
         <button
           onClick={() => setActiveTab('book')}
           className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
@@ -115,14 +115,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             </div>
           </div>
           {bookViewMode === 'rendered' ? (
-            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded max-h-[65vh] overflow-y-auto text-left">
+            <div className="bg-zinc-900 border border-zinc-800 p-3 sm:p-6 rounded max-h-[65vh] overflow-y-auto text-left">
               <MarkdownView 
                 content={bookContent} 
-                className="font-serif text-prose max-w-[62ch] mx-auto" 
+                className="font-serif text-prose break-words max-w-[62ch] mx-auto" 
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto text-left">
+            <pre className="whitespace-pre-wrap break-words text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto text-left">
               {bookContent}
             </pre>
           )}
@@ -161,7 +161,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
 
       {activeTab === 'metadata' && (
         <div className="p-4 border border-zinc-800 rounded">
-          <div className="flex justify-end mb-3 space-x-2">
+          <div className="app-toolbar flex flex-wrap gap-2 justify-end mb-3">
             <Button 
               onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
               variant="secondary"
@@ -177,7 +177,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               Download .json
             </Button>
           </div>
-          <pre className="whitespace-pre-wrap text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto">
+          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto">
             {metadataJson}
           </pre>
         </div>

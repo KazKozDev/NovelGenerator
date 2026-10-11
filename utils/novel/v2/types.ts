@@ -120,10 +120,25 @@ export interface WorldRule {
   id: string;
   rule: string;
   relevant_consequences: string[];
+  /**
+   * A rule that fixes a particular names what it is about and which property
+   * of it: "the east stair" / "where it leads". Such a rule is on the facts
+   * shelf before the first scene is written, so the first scene to mention
+   * the thing finds it decided rather than deciding it.
+   */
+  subject?: string;
+  attribute?: string;
 }
 
 export interface CausalEvent {
   id: string;
+  /**
+   * True for what happened before the first page: the past the book uncovers.
+   * It is decided here, whole, and every chapter that reveals a piece of it
+   * reveals a piece of this — two planners inventing it a chapter apart
+   * invented two different pasts.
+   */
+  before_story?: boolean;
   cause: string;
   actor_id: string;
   action_or_event: string;
@@ -164,7 +179,85 @@ export interface ChapterMapEntry {
   pressure_rung: number | null;
 }
 
+export interface IntentionObservation {
+  source_event_id: string;
+  statement: string;
+  perception: string;
+}
+
+export interface IntentionSituation {
+  id: string;
+  event_id: string;
+  situation: string;
+  participants: { character_id: string; observations: IntentionObservation[] }[];
+  /** Observations code left out of the packets — hidden past, the tested event or later, no perception route. */
+  refused_observations?: string[];
+}
+
+export interface IntentionChoice {
+  situation_id: string;
+  character_id: string;
+  action: string;
+  goal_served: string;
+  knowledge_used: string[];
+  alternative: string;
+  why_this_choice: string;
+  expected_consequence: string;
+  risk_accepted: string;
+}
+
+export interface IntentionCollision {
+  situation_id: string;
+  event_id: string;
+  action_response_chain: string;
+  required_decisions: { character_id: string | null; actor_name: string; choice_ref: string | null; decision: string }[];
+  cost: string;
+  resulting_situation: string;
+  planned_outcome_supported: boolean;
+  reason: string;
+}
+
+export interface IntentionSimulation {
+  situations: IntentionSituation[];
+  choices: IntentionChoice[];
+  collisions: IntentionCollision[];
+  review: PlanReview;
+}
+
+export interface ReaderBeat {
+  chapter: number;
+  traces: { id: string; source_event_id: string; visible_fact: string; discovery_route: string }[];
+  price: string;
+  new_difficulty: string;
+}
+export interface ReaderReading {
+  chapter: number;
+  interpretation: string;
+  support_ids: string[];
+  alternative: string;
+  alternative_support_ids: string[];
+  changed_understanding: string;
+  next_question: string;
+}
+export interface ReaderSimulation {
+  beats: ReaderBeat[];
+  readings: ReaderReading[];
+  retrospective: { trace_id: string; ending_explanation: string; earned: boolean }[];
+  closure: { question: string; answer: string; support_ids: string[]; resolved: boolean; intentionally_open: boolean }[];
+  review: PlanReview;
+}
+
 export interface BookDesign {
+  /** Authorial planning experiments; never confirmed narrative memory. */
+  intention_collisions?: IntentionSimulation;
+  /** Historical/standalone diagnostic only; not an automatic planning gate. */
+  reader_understanding?: ReaderSimulation;
+  /** Alternatives and verdicts from planning; never evidence that an event happened. */
+  planning_history?: {
+    candidates: Partial<BookDesign>[];
+    selection: { candidate_index: number; comparisons: { candidate_index: number; strengths: string; weaknesses: string }[]; reason: string };
+    rounds: { level: string; plan: Partial<BookDesign>; review: PlanReview; intention_collisions?: IntentionSimulation; reader_understanding?: ReaderSimulation }[];
+  };
   contract: DesignContract;
   profile: BookProfile;
   dramatic_core: DramaticCore;
@@ -204,6 +297,28 @@ export interface ScenePlan {
   participant_intentions: { character_id: string; intention: string; reason_now: string }[];
   pressure_or_uncertainty: string;
   development: string;
+  /**
+   * Where things stand when the scene opens and when it closes: who is where,
+   * who holds what, the state of an object that matters — a few entries, keyed
+   * by the person or thing. The same key in one scene's end and the next
+   * scene's start is compared in code before any prose, because a plan that
+   * closes a book in one scene and finds it open in the next is written
+   * faithfully both times. Optional: plans made before these existed carry none.
+   */
+  state_at_start?: Record<string, string>;
+  state_at_end?: Record<string, string>;
+  /**
+   * The particulars this scene fixes — a number, a date, a name given to a
+   * thing, who did what — decided in the plan rather than left for the writer
+   * to supply, one sentence each. Checked against the facts on record before
+   * the scene is written, and handed to the writer to use as they stand.
+   */
+  establishes?: string[];
+  /**
+   * Premise givens this scene puts on the page, each by the id it is owed
+   * under (PREMISE-t3) and the action that pays it.
+   */
+  pays_premise?: { id: string; action: string }[];
   required_outcome: string;
   flexible_elements: string[];
   required_fact_refs: string[];
@@ -244,6 +359,18 @@ export interface ChapterPlan {
   cost: string;
   /** Where the chapter sits on the declared pressure curve; null when the plan took none. */
   pressure_rung: number | null;
+  /** Images the check of this chapter found worn. Named by the editor, counted by code. */
+  worn_images?: WornImage[];
+}
+
+/**
+ * A picture the book keeps returning to in different words. The editor names
+ * it and gives the words that mark it; whether it is overused is a count of
+ * sentences, made in code over the whole accepted text.
+ */
+export interface WornImage {
+  image: string;
+  anchors: string[];
 }
 
 /**
@@ -301,10 +428,16 @@ export interface StateDelta {
   reader_disclosures: string[];
   threads_opened: string[];
   /** The model cites payoffs in words (thread description or id), not only ids. */
-  threads_resolved: (string | { id?: string; thread?: string; description?: string })[];
+  threads_resolved: (string | { id?: string; thread?: string; description?: string; answer?: string })[];
   contradictions: { description: string; prior_refs: string[]; scene_refs: string[]; blocks_continuation: boolean }[];
   uncertainties: { question: string; evidence_refs: string[]; relevant_to_next_scene: boolean }[];
-  plan_deviations: { planned: string; actual: string; future_dependency_affected: string }[];
+  /**
+   * Where the scene departed from its plan. `next_scene_must_change` is the
+   * editor's answer to one question — would the next scene, written as planned,
+   * now repeat or contradict this one — and is the only thing a scene is
+   * replanned on.
+   */
+  plan_deviations: { planned: string; actual: string; future_dependency_affected: string; next_scene_must_change?: boolean }[];
   /**
    * Beats this scene stages again although memory already holds them as having
    * happened: the same confrontation, discovery or disclosure, in new words.
@@ -312,6 +445,12 @@ export interface StateDelta {
    * repetition that cannot say what it repeats is not folded as one.
    */
   restaged_beats?: { beat: string; earlier_ref: string; evidence_refs: string[] }[];
+  /**
+   * Particulars the scene fixed that a later scene could contradict — a number,
+   * a date, who did what. Folded onto the facts shelf, which travels whole,
+   * where events only travel while they are recent.
+   */
+  established_facts?: { subject?: string; attribute?: string; statement: string; evidence_refs: string[] }[];
   /** Lists the extraction left out entirely and code read as empty. Reported, never silent. */
   omitted_lists?: string[];
 }
@@ -320,6 +459,14 @@ export interface WorldFact {
   id: string;
   statement: string;
   evidence_refs: string[];
+  /**
+   * What the fact is about and which property of it it fixes. Two facts under
+   * the same pair are two answers to one question, and only such a pair can be
+   * compared: read as bare sentences, a local model called most unrelated
+   * facts of a measured book contradictory.
+   */
+  subject?: string;
+  attribute?: string;
 }
 
 export interface StoryEvent {
@@ -361,6 +508,8 @@ export interface ReaderThread {
   status: 'open' | 'resolved';
   setup_refs: string[];
   payoff_refs: string[];
+  /** What the text said that paid it, as the tracker stated it when it closed the promise. */
+  payoff?: string;
 }
 
 /**
@@ -409,6 +558,8 @@ export interface FinalReport {
 }
 
 export interface ProjectInput {
+  planning_version?:2;
+  generation_mode?: 'theses' | 'progressive' | 'chapters';
   premise: string;
   chapter_count: number;
   genre: string;

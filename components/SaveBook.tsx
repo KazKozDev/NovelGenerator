@@ -20,8 +20,8 @@ export default function SaveBook({ content, metadata = {}, draft = false }: { co
       else setAuthorOpen(true);
     } catch (error) { setError(String(error)); }
   };
-  return <div className="shrink-0">
-    <div className="flex flex-wrap items-center gap-2">
+  return <div className="shrink-0 max-w-full">
+    <div className="app-toolbar flex flex-wrap items-center gap-2">
       <select aria-label="Save format" value={format} onChange={event => setFormat(event.target.value)} disabled={busy} className="bg-zinc-900 border border-zinc-700 rounded h-7 px-3 py-1 text-xs text-zinc-200">
         <option value="epub">EPUB</option><option value="pdf">PDF</option><option value="txt">TXT</option><option value="md">Markdown</option><option value="report">Report (JSON)</option>
       </select>

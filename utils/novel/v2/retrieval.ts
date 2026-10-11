@@ -17,7 +17,7 @@ import type { StoryState } from './types';
  */
 
 const QUALIFIED = /^(CH\d+_S\d+)\s*[#:\-/]\s*(p\d+)$/i;
-const RECORD_ID = /^(CH\d+_S\d+)-(?:e|q|t)\d+$/i;
+const RECORD_ID = /^(CH\d+_S\d+)-(?:e|q|t|f)\d+$/i;
 const SCENE_CHAPTER = /^CH(\d+)_S\d+$/i;
 
 /** No excerpt is worth the whole writing budget; a paragraph past this is cut with a mark. */

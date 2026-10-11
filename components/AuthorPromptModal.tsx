@@ -43,7 +43,7 @@ const AuthorPromptModal: React.FC<AuthorPromptModalProps> = ({
               autoFocus
             />
           </div>
-          <div className="flex justify-end gap-3 p-4 bg-zinc-950/60 border-t border-zinc-800/80 rounded-b">
+          <div className="flex flex-wrap justify-end gap-3 p-4 bg-zinc-950/60 border-t border-zinc-800/80 rounded-b">
             <Button
               type="button"
               onClick={onCancel}

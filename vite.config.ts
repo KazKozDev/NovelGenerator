@@ -1,6 +1,8 @@
 import path from 'path';
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { projectAutosavePlugin } from './services/projectAutosavePlugin';
+import { qwenDevPlugin } from './services/qwenDevPlugin';
 
 function terminalLoggerPlugin(): Plugin {
   let lastKey = '';
@@ -85,6 +87,10 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         proxy: {
+          '/api/live-book': {
+            target: 'http://127.0.0.1:4318',
+            rewrite: p => p.replace(/^\/api\/live-book/, ''),
+          },
           '/api/ollama': {
             target: env.OLLAMA_HOST || 'http://127.0.0.1:11434',
             rewrite: (p) => p.replace(/^\/api\/ollama/, ''),
@@ -92,7 +98,7 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
-      plugins: [react(), terminalLoggerPlugin()],
+      plugins: [react(), terminalLoggerPlugin(), qwenDevPlugin(), projectAutosavePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
@@ -104,4 +110,3 @@ export default defineConfig(({ mode }) => {
       }
     };
 });
-

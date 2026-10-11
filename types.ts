@@ -45,6 +45,8 @@ export enum ChapterGenerationStage {
 }
 
 export interface ChapterData {
+  revisionStatus?: string;
+  previousContent?: string;
   title?: string; 
   content: string;
   summary?: string;
@@ -299,13 +301,16 @@ export interface AgentLogEntry {
   type: 'decision' | 'execution' | 'evaluation' | 'iteration' | 'warning' | 'success' | 'diff';
   message: string;
   details?: any;
+  /** How the call ended: time taken, sizes, and the reason when it failed. */
+  outcome?: string;
+  finished?: boolean;
   // For diff visualization
   beforeText?: string;
   afterText?: string;
   strategy?: string;
 }
 
-export type LLMProviderType = 'gemini' | 'ollama';
+export type LLMProviderType = 'gemini' | 'ollama' | 'qwen';
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -313,10 +318,5 @@ export interface LLMProviderConfig {
   ollamaModel: string;
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
-  /**
-   * Reasoning trace for the prose writer only. Structured validator calls run
-   * under a tight output cap that reasoning would spend before the answer, so
-   * the generator forces thinking off on that route regardless of this flag.
-   */
-  think?: boolean;
+  qwenModel?: string;
 }

@@ -55,16 +55,17 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
               ) : (
                 <div className={`mb-1.5 pl-2.5 border-l-2 ${ACCENT[log.type] || ACCENT.default}`}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-zinc-500">{LABEL[log.type] || log.type}</span>
+                    <span className="text-xs font-semibold uppercase text-zinc-500">{log.finished ? (log.type === 'warning' ? 'Failed' : 'Done') : LABEL[log.type] || log.type}</span>
                     {/* A timestamp is a machine value, so it keeps the monospaced face. */}
                     <span className="text-xs text-zinc-500 shrink-0">{formatTime(log.timestamp)}</span>
                   </div>
                   <p className="text-xs text-zinc-300">{log.message}</p>
+                  {log.outcome && <p className="text-xs text-zinc-500 mt-0.5">{log.outcome}</p>}
 
                   {log.details && (
                     <details className="mt-1">
                       <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-300">Details</summary>
-                      <pre className="mt-1 p-2 text-xs text-zinc-400 border border-zinc-800 rounded overflow-auto">
+                      <pre className="mt-1 p-2 text-xs text-zinc-400 border border-zinc-800 rounded whitespace-pre-wrap break-words">
                         {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
                       </pre>
                     </details>

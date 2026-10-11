@@ -33,12 +33,25 @@ export async function auditBook(input: AuditInput, finishedAllChapters: boolean,
     story_contract: JSON.stringify(input.design.contract),
     book_design_digest: JSON.stringify({ dramatic_core: input.design.dramatic_core, causal_map: input.design.causal_map, ending: input.design.ending }),
     manuscript_or_review_material: material,
-    final_state: JSON.stringify(input.finalState),
-    threads: JSON.stringify(input.threads),
+    // The audit reads the manuscript itself, whole. Beside it goes what the
+    // manuscript has to agree with — the particulars on record, where things
+    // stand, what each person knows and believes — and not the log of events
+    // and disclosures extracted from the same pages, which on a three-chapter
+    // book was most of a prompt of two hundred thousand characters.
+    final_state: JSON.stringify({
+      facts: input.finalState.facts,
+      conditions: input.finalState.conditions,
+      knowledge: input.finalState.knowledge,
+      beliefs: input.finalState.beliefs,
+    }),
+    threads: JSON.stringify({
+      open: input.threads.filter(thread => thread.status === 'open').map(thread => ({ id: thread.id, promise: thread.description, made_in: thread.setup_refs[0] || '' })),
+      kept: input.threads.filter(thread => thread.status !== 'open').length,
+    }),
     coverage_description: input.coverage,
   });
   const raw = await structuredResponse(prompt, system, llm, AUDIT_KEYS, parsed => parsed,
-    { temperature: 0.1, maxTokens: 16384, route: 'validator' });
+    { temperature: 0.1, maxTokens: 16384, route: 'validator', stage: 'audit', deliberate: true });
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { findings?: unknown }).findings)) {
     throw new Error('Final audit returned no findings array.');
   }

@@ -6,8 +6,9 @@
 import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
+import { generateQwenBrowserText } from './qwenBrowserService';
+import { providerTokenUsage, type TokenUsage } from '../utils/tokenUsage';
 import { logToTerminal } from '../utils/terminalLogger';
-import { readContinuityMode, type ContinuityMode } from '../utils/novel/v2/continuity';
 
 const LLM_STORAGE_KEY = 'novelGenerator_llm_config';
 
@@ -24,9 +25,10 @@ export function getStoredProviderConfig(): LLMProviderConfig {
     if (!raw) return DEFAULT_LLM_CONFIG;
     const parsed = JSON.parse(raw);
     return {
-      provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
       // Only present when the author typed one: stored configs keep their exact shape otherwise.
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
@@ -49,10 +51,10 @@ export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
-      think: Boolean(parsed.think),
+      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
@@ -67,27 +69,6 @@ export function saveStoredValidatorConfig(config: (LLMProviderConfig & { enabled
     else localStorage.setItem(VALIDATOR_STORAGE_KEY, JSON.stringify(config));
   } catch (err) {
     console.error('Failed to save editor model config to localStorage:', err);
-  }
-}
-
-const CONTINUITY_STORAGE_KEY = 'novelGenerator_continuity_mode';
-
-/** What a run does when a scene fails its checks twice. Unset means `warn`: finish the book and report. */
-export function getStoredContinuityMode(): ContinuityMode {
-  if (typeof window === 'undefined') return readContinuityMode(undefined);
-  try {
-    return readContinuityMode(localStorage.getItem(CONTINUITY_STORAGE_KEY));
-  } catch {
-    return readContinuityMode(undefined);
-  }
-}
-
-export function saveStoredContinuityMode(mode: ContinuityMode): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(CONTINUITY_STORAGE_KEY, mode);
-  } catch (err) {
-    console.error('Failed to save continuity mode to localStorage:', err);
   }
 }
 
@@ -112,10 +93,12 @@ export async function generateText(
   topK?: number,
   overrideConfig?: LLMProviderConfig,
   maxTokens?: number,
-  jsonOnly = false
+  jsonOnly = false,
+  deliberate = false,
+  onUsage?: (usage:TokenUsage) => void,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}${config.think ? ' (thinking)' : ''}` : 'Gemini';
+  const providerTag = config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -124,8 +107,18 @@ export async function generateText(
     'llm'
   );
 
+  let reported=false;
+  const recordUsage=(metadata:unknown)=>{
+    const usage=providerTokenUsage(config.provider,metadata);
+    if(usage.input===undefined&&usage.output===undefined)return;
+    reported=true;
+    onUsage?.({input:usage.input??Math.ceil((prompt.length+(systemInstruction?.length||0)+(schema?JSON.stringify(schema).length:0))/4),
+      output:usage.output??0,estimatedInput:usage.input===undefined,estimatedOutput:usage.output===undefined});
+  };
   let result: string;
-  if (config.provider === 'ollama') {
+  if (config.provider === 'qwen') {
+    result = await generateQwenBrowserText(prompt, systemInstruction, maxTokens, config.qwenModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage);
+  } else if (config.provider === 'ollama') {
     result = await generateOllamaText(
       prompt,
       systemInstruction,
@@ -136,11 +129,13 @@ export async function generateText(
       maxTokens,
       topP,
       topK,
-      config.think
+      undefined, recordUsage
     );
   } else {
-    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly, config.geminiModel);
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly, config.geminiModel, deliberate, recordUsage);
   }
+
+  if(!reported)onUsage?.({input:Math.ceil((prompt.length+(systemInstruction?.length||0)+(schema?JSON.stringify(schema).length:0))/4),output:Math.ceil(result.length/4),estimatedInput:true,estimatedOutput:true});
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
   const words = result.split(/\s+/).filter(Boolean).length;
@@ -166,7 +161,7 @@ export async function generateTextStream(
   maxTokens?: number,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -182,7 +177,10 @@ export async function generateTextStream(
   };
 
   let result: string;
-  if (config.provider === 'ollama') {
+  if (config.provider === 'qwen') {
+    result = await generateQwenBrowserText(prompt, systemInstruction, maxTokens, config.qwenModel, temperature, schema);
+    wrappedOnChunk(result);
+  } else if (config.provider === 'ollama') {
     result = await generateOllamaTextStream(
       prompt,
       wrappedOnChunk,

@@ -19,10 +19,12 @@
  * check alone. Never throws into the run.
  */
 import { contentWords, paragraphsOf, splitSentences } from '../analytics';
+import { seamKey, seamPairs, type SeamVerdicts } from './planGate';
 import { contradictionFindings, naturalizeClaim, sharedNLIScorer, type NLIScorer } from '../nli';
 import { rerankRepetitionScore, sharedReranker, type Reranker } from '../reranker';
 import type { ChapterPlan, StoryState } from './types';
 import type { PriorChapter, ReadinessProblem } from './planner';
+import type { FactPair } from './tracker';
 
 /**
  * Two modes, not three, and only one of them is a choice anybody makes.
@@ -178,4 +180,66 @@ export async function runPrewriteGate(
     };
   }
   return { problems, warnings: [], mode: resolved };
+}
+
+/** How sure the head has to be that two entries cannot both hold. Measured: real breaks score 0.98 and above, agreeing entries 0.03 and below. */
+const SEAM_CONTRADICTION = 0.85;
+
+/**
+ * The plan's seams, read by the NLI head: for each key a scene opens with, does
+ * the entry contradict the one the scene before it closed on? Shared words say
+ * whether two entries talk about the same things, and "shut" and "lying open"
+ * talk about the same book. Each entry is put to the head as "key: value", the
+ * form in which it tells a state from a sentence fragment.
+ *
+ * Returns nothing when the gate is off or the model cannot be had; the seams
+ * are then judged by their words.
+ */
+export async function readSeams(
+  plan: ChapterPlan,
+  previousEnd: { scene: string; state: Record<string, string> } | undefined,
+  scoreNLI?: NLIScorer,
+  mode: GateMode = currentGateMode(),
+): Promise<SeamVerdicts | undefined> {
+  if (mode === 'off' && !scoreNLI) return undefined;
+  const pairs = seamPairs(plan, previousEnd);
+  if (!pairs.length) return new Map();
+  try {
+    const score = scoreNLI || sharedNLIScorer();
+    const verdicts: SeamVerdicts = new Map();
+    for (const pair of pairs) {
+      const result = await score(`${pair.key}: ${pair.before}.`, `${pair.key}: ${pair.after}.`);
+      verdicts.set(seamKey(pair.key, pair.before, pair.after), result.contradiction >= SEAM_CONTRADICTION);
+    }
+    return verdicts;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Which of the facts a scene states contradict the fact on record for the same
+ * subject and property. Each pair is put to the head as "subject — property:
+ * statement", both ways round, and it must be sure both ways: read one way
+ * only, it called a third of compatible pairs contradictory.
+ *
+ * Returns none when the gate is off or the model cannot be had. A fact is
+ * never refused on shared words alone.
+ */
+export async function readFactClashes(pairs: FactPair[], scoreNLI?: NLIScorer, mode: GateMode = currentGateMode()): Promise<FactPair[]> {
+  if (!pairs.length || (mode === 'off' && !scoreNLI)) return [];
+  try {
+    const score = scoreNLI || sharedNLIScorer();
+    const clashes: FactPair[] = [];
+    for (const pair of pairs) {
+      const head = `${pair.stated.subject} — ${pair.stated.attribute}`;
+      const forward = await score(`${head}: ${pair.recorded.statement}`, `${head}: ${pair.stated.statement}`);
+      if (forward.contradiction < SEAM_CONTRADICTION) continue;
+      const back = await score(`${head}: ${pair.stated.statement}`, `${head}: ${pair.recorded.statement}`);
+      if (back.contradiction >= SEAM_CONTRADICTION) clashes.push(pair);
+    }
+    return clashes;
+  } catch {
+    return [];
+  }
 }

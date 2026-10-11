@@ -28,6 +28,8 @@ export interface ProfileBands {
   mechanismReuse: number;
   /** Uses of an undeclared phrase before it counts as worn. Not genre-dependent. */
   phraseTolerance: number;
+  /** Share of a chapter's scenes that must hold two or more people, so there is someone to speak to. */
+  spokenScenes: number;
 }
 
 /**
@@ -58,6 +60,11 @@ const BANDS = {
     medium: { run: 2, window: 3 },
     high: { run: 1, window: 2 },
   },
+  // A scene with one person in it has no dialogue to write, whatever the
+  // writer is told: on a measured book the scenes holding one person ran at 0%
+  // speech each while the ones holding two ran from 14% to 43%. Speech is
+  // decided when the scene is cast, so that is where it is counted.
+  spoken_scenes: { low: 0, medium: 0.5, high: 0.67 },
   mechanism_reuse: {
     low: 1,
     medium: 2,
@@ -175,6 +182,7 @@ export function bandsFor(profile: BookProfile): ProfileBands {
     stagingWindow: staging.window,
     mechanismReuse: BANDS.mechanism_reuse[profile.mechanism_reuse],
     phraseTolerance: PHRASE_TOLERANCE,
+    spokenScenes: BANDS.spoken_scenes[profile.dialogue_weight],
   };
 }
 

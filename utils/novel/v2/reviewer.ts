@@ -1,7 +1,8 @@
+import { simulateIntentions } from './intentions';
 import { renderPrompt, systemContract } from '../prompts';
 import { structuredResponse, type NovelLLM } from './llm';
-import { designBook, designBudgetGaps, premiseGivenGaps, premiseNameGaps, validateBookDesign } from './designer';
-import type { BookDesign, PlanIssue, PlanReview, ProjectInput } from './types';
+import { conceptCandidates, selectConcept, designLayer, DESIGN_LEVELS, LEVEL_KEYS, designBudgetGaps, designStructureGaps, premiseGivenGaps, premiseNameGaps, validateBookDesign, type DesignDraft, type DesignLevel } from './designer';
+import type { BookDesign, IntentionSimulation, PlanIssue, PlanReview, ProjectInput } from './types';
 
 /**
  * A premise name with nobody answering to it is a blocking grounding issue,
@@ -42,15 +43,7 @@ function givenCharges(design: BookDesign, round: number): PlanIssue[] {
   }));
 }
 
-/**
- * The profile's own budgets, as review charges.
- *
- * Deliberately major and not blocking: a ledger one entry short is a real
- * defect and not a reason to refuse to write a book. It goes back to the
- * designer like any other finding, and if it survives the fix rounds it
- * travels into the contract as a requirement the chapters must meet — which
- * is exactly where the plan-time gates will pick it up again.
- */
+/** Deterministic findings keep their responsible section, so escalation repairs its cause. */
 function budgetCharges(design: BookDesign, chapterCount: number, round: number): PlanIssue[] {
   return designBudgetGaps(design, chapterCount).map((gap, index) => ({
     id: `B${round + 1}${index + 1}`,
@@ -59,7 +52,7 @@ function budgetCharges(design: BookDesign, chapterCount: number, round: number):
     // resolves one gap shifts every later index, and the convergence logic then
     // reads an old target as new — downgrading a real objection, or re-raising a
     // settled one, purely because the list got shorter.
-    target_ref: `profile:budget:${gap.code}`,
+    target_ref: `${gap.code === 'particulars-unfixed' ? 'world_rules' : gap.code === 'past-undecided' ? 'causal_map' : 'profile'}:budget:${gap.code}`,
     category: 'budget',
     problem: gap.detail,
     evidence_refs: [],
@@ -79,7 +72,12 @@ function budgetCharges(design: BookDesign, chapterCount: number, round: number):
 export function settleReview(raw: unknown): PlanReview {
   if (!raw || typeof raw !== 'object') throw new Error('Plan review is not an object.');
   const review = raw as { ready?: unknown; issues?: unknown };
-  const issues = Array.isArray(review.issues) ? review.issues as PlanIssue[] : [];
+  if (!Array.isArray(review.issues)) throw new Error('Plan review has no issues array.');
+  const issues = review.issues as PlanIssue[];
+  if (issues.some(item => !item || !['blocking', 'major', 'optional'].includes(item.severity) ||
+      typeof item.target_ref !== 'string' || !item.target_ref.trim())) {
+    throw new Error('Plan review contains an invalid issue severity or target.');
+  }
   const blocking = issues.some(item => item?.severity === 'blocking' || item?.severity === 'major');
   return { ready: !blocking, issues };
 }
@@ -95,6 +93,7 @@ export async function reviewPlan(
   relevantState: string,
   sourceExcerpts: string,
   llm: NovelLLM,
+  stage = 'design-review',
 ): Promise<PlanReview> {
   const system = systemContract();
   const prompt = renderPrompt('P02_PLAN_REVIEW', {
@@ -106,8 +105,8 @@ export async function reviewPlan(
     previous_plan: '(none — first review)',
     review_issues: '(none)',
   });
-  const raw = await structuredResponse(prompt, system, llm, ['ready', 'issues'], parsed => parsed,
-    { temperature: 0.1, maxTokens: 8192, route: 'validator' });
+  const raw = await structuredResponse(prompt, system, llm, ['ready', 'issues'], settleReview,
+    { temperature: 0.1, maxTokens: 8192, route: 'validator', stage, deliberate: true });
   return settleReview(raw);
 }
 
@@ -115,93 +114,114 @@ function issueSummary(issues: PlanIssue[]): string {
   return issues.map(item => `[${item.severity}] ${item.target_ref}: ${item.problem} Required decision: ${item.required_decision}`).join('\n');
 }
 
-/**
- * Re-review convergence: every fix round is judged de novo by the model, so a
- * strict reviewer can raise a fresh set of majors forever — each fix adds new
- * surface for new findings and the loop never converges. A major flagged for
- * the first time on a later round is therefore treated as prose-carriable
- * (optional): if the reviewer insists on the same target twice, or calls it
- * blocking, it keeps its severity. Only genuinely load-bearing incoherence can
- * still kill the book after round zero.
- */
-export function calibrateReview(review: PlanReview, seenTargets: Set<string>): PlanReview {
-  const issues = review.issues.map(item => {
-    if (item?.severity === 'major' && item.target_ref && !seenTargets.has(item.target_ref)) {
-      return { ...item, severity: 'optional' as const };
-    }
-    return item;
-  });
-  const blocking = issues.some(item => item?.severity === 'blocking' || item?.severity === 'major');
-  return { ready: !blocking, issues };
+/** Compatibility helper: new major findings keep their full severity. */
+export function calibrateReview(review: PlanReview, _seenTargets: Set<string>): PlanReview {
+  return settleReview(review);
 }
 
 /**
  * Design, review, and refine until the plan is executable or the budget is spent.
  * Returns the design together with the review that passed it.
  */
+/** An issue must name a top-level section to request reopening a frozen level. */
+export function issueOwner(issue: PlanIssue): DesignLevel | undefined {
+  const root = String(issue.target_ref || '').split(/[:.\[]/)[0];
+  return DESIGN_LEVELS.find(level => (LEVEL_KEYS[level] as readonly string[]).includes(root));
+}
+
 export async function designReviewedBook(
   input: ProjectInput,
   llm: NovelLLM,
   maxFixes = 2,
+  onLevel: (level: DesignLevel, review: PlanReview) => void = () => {},
+  onDraft: (design: BookDesign) => void = () => {},
 ): Promise<{ design: BookDesign; review: PlanReview }> {
-  let design = await designBook(input, llm);
-  const ctx: ReviewContext = {
-    story_contract: JSON.stringify(design.contract),
-  };
-  // Targets already litigated in earlier rounds: re-flagging them keeps severity.
-  const seenTargets = new Set<string>();
-  let priorSummary = '';
-  for (let round = 0; ; round++) {
-    const scope = round === 0
-      ? 'Whole book design before any prose is written.'
-      : `Re-verify after fixes. Previously raised:\n${priorSummary}\nJudge only whether those fixes worked and whether the fixes broke coherence; settled points stay settled.`;
-    const raw = await reviewPlan(ctx, scope, design, '', '', llm);
-    const charges = [
-      ...groundingIssues(design, input.premise, round),
-      ...givenCharges(design, round),
-      ...budgetCharges(design, input.chapter_count, round),
-    ];
-    const merged: PlanReview = charges.length ? { ready: false, issues: [...raw.issues, ...charges] } : raw;
-    const review = round === 0 ? merged : calibrateReview(merged, seenTargets);
-    for (const item of review.issues) {
-      if (item?.target_ref && (item.severity === 'blocking' || item.severity === 'major')) seenTargets.add(item.target_ref);
+  const candidates = await conceptCandidates(input, llm);
+  const selection = await selectConcept(input, candidates, llm);
+  const layers: DesignDraft[] = [candidates[selection.candidate_index]];
+  const reviews: PlanReview[] = [];
+  const history: { level: DesignLevel; plan: DesignDraft; review: PlanReview; intention_collisions?: IntentionSimulation }[] = [];
+  const fixes = [0, 0, 0];
+  const reopened = new Set<number>();
+  let pendingFindings = '';
+  let index = 0;
+  while (index < DESIGN_LEVELS.length) {
+    const level = DESIGN_LEVELS[index];
+    const approved = Object.assign({}, ...layers.slice(0, index)) as DesignDraft;
+    if (!layers[index] || pendingFindings) {
+      layers[index] = await designLayer(input, level, approved, layers[index] || {}, pendingFindings, llm);
+      pendingFindings = '';
     }
-    priorSummary = issueSummary(review.issues);
-    if (review.ready) return { design, review };
-    if (round >= maxFixes) {
-      // What code charges is objective and fatal: a premise name nobody answers
-      // to, a premise given the construction never places. The book cannot be
-      // written because it would not be the book that was asked for.
-      const codeCharges = [...groundingIssues(design, input.premise, round), ...givenCharges(design, round)];
-      if (codeCharges.length) {
-        throw new Error(`Book design not executable after ${maxFixes + 1} attempts. Unresolved:\n${issueSummary(codeCharges)}`);
-      }
-      // What the model still objects to is a judgement, and after three rounds
-      // of the same objection it is usually a demand the prose can satisfy —
-      // "say how they both got to the clearing" is a sentence, not a redesign.
-      // It travels as a requirement the chapters must meet, the way a blocking
-      // scene verdict already does, instead of ending a book nobody has read.
-      const unresolved = review.issues.filter(item => item?.severity === 'blocking' || item?.severity === 'major');
-      design.contract.explicit_requirements = [
-        ...(Array.isArray(design.contract.explicit_requirements) ? design.contract.explicit_requirements : []),
-        ...unresolved.map(item => `${item.target_ref}: ${item.required_decision || item.problem}`),
-      ];
-      return { design, review };
+    const draft = { ...approved, ...layers[index] };
+    // Full schema validation is due only once all sections exist.
+    const complete = index === DESIGN_LEVELS.length - 1 ? validateBookDesign(draft, input.chapter_count) : null;
+    const scope = `Book crystallization level ${level}. Only sections ${LEVEL_KEYS[level].join(', ')} are editable.
+Approved upper levels: ${JSON.stringify(approved)}.
+Later sections are intentionally absent and are NOT defects. Review only decisions due at this level.
+Check fidelity, causality and coherence against the approved upper levels.
+Also assess reader interest: meaningful stakes or uncertainty, changing choices, developing questions,
+and a payoff that earns its setup. Assess whether the distinctive causal invention survives expansion,
+not merely whether there are many twists. Cite concrete plan evidence; optional taste is not a defect.
+For every issue target_ref must begin with the responsible top-level section name followed by a colon.
+If a defect requires changing an approved upper level, target that upper section explicitly.
+The review must return issues for unresolved major or blocking defects, even on a later round.`;
+    const raw = await reviewPlan({ story_contract: JSON.stringify(draft.contract) }, scope, draft, '', '', llm, 'design-review');
+    const charges = complete ? [
+      ...groundingIssues(complete, input.premise, fixes[index]),
+      ...givenCharges(complete, fixes[index]),
+      ...budgetCharges(complete, input.chapter_count, fixes[index]),
+    ] : level === 'structure' ? [
+      ...groundingIssues(draft as BookDesign, input.premise, fixes[index]),
+      ...givenCharges(draft as BookDesign, fixes[index]),
+      ...designStructureGaps(draft as Pick<BookDesign, 'world_rules' | 'causal_map'>).map((gap, ordinal) => ({
+      id: `S${ordinal}`, severity: 'major' as const,
+      target_ref: `${gap.code === 'past-undecided' ? 'causal_map' : 'world_rules'}:${gap.code}`,
+      category: 'coherence', problem: gap.detail, evidence_refs: [],
+      consequence_for_writing: 'Scenes would invent incompatible particulars.',
+      required_decision: gap.detail, suggested_adjustment: gap.detail,
+    })),
+    ] : [];
+    let review = settleReview({ issues: [...raw.issues, ...charges] });
+    let simulation: IntentionSimulation | undefined;
+    if (level === 'structure' && review.ready) {
+      simulation = await simulateIntentions(draft as BookDesign, llm);
+      review = settleReview({ issues: [...review.issues, ...simulation.review.issues] });
+      if (review.ready) layers[index] = { ...layers[index], intention_collisions: simulation };
     }
-    // Its own prompt, not the reviewer's with a different scope line. P02 tells
-    // the model to check a plan and return {ready, issues}; asking that same
-    // text for a whole revised construction gave it two jobs and two output
-    // formats, and it answered with whichever it read last — a verdict the key
-    // check rejected, or the construction handed back unchanged.
-    const system = systemContract();
-    const prompt = renderPrompt('P02_PLAN_REFINE', {
-      story_contract: ctx.story_contract,
-      previous_plan: JSON.stringify(design),
-      review_issues: issueSummary(review.issues),
+    history.push({ level, plan: structuredClone(draft), review: structuredClone(review),
+      ...(simulation ? { intention_collisions: structuredClone(simulation) } : {}) });
+    if (complete) onDraft({ ...complete,
+      planning_history: { candidates, selection, rounds: structuredClone(history) },
     });
-    const rawDesign = await structuredResponse(prompt, system, llm,
-      ['contract', 'profile', 'dramatic_core', 'style_contract', 'characters', 'world_rules', 'causal_map', 'ending', 'chapter_map'],
-      parsed => parsed, { temperature: 0.4, maxTokens: 16384, route: 'writer' });
-    design = validateBookDesign(rawDesign, input.chapter_count);
+    const unresolved = review.issues.filter(item => item.severity === 'blocking' || item.severity === 'major');
+    if (review.ready) {
+      reviews[index] = review;
+      onLevel(level, review);
+      index++;
+      continue;
+    }
+    const upper = unresolved.map(issue => issueOwner(issue))
+      .filter((owner): owner is DesignLevel => !!owner)
+      .map(owner => DESIGN_LEVELS.indexOf(owner))
+      .filter(owner => owner < index);
+    if (upper.length) {
+      const target = Math.min(...upper);
+      if (reopened.has(target)) throw new Error(`Book design not executable: ${DESIGN_LEVELS[target]} already reopened once.\n${issueSummary(unresolved)}`);
+      reopened.add(target);
+      layers.length = target + 1;
+      reviews.length = target;
+      index = target;
+      pendingFindings = issueSummary(unresolved);
+      continue;
+    }
+    if (fixes[index] >= maxFixes) {
+      throw new Error(`Book design not executable: ${level} failed after ${fixes[index] + 1} attempts.\n${issueSummary(unresolved)}`);
+    }
+    fixes[index]++;
+    pendingFindings = issueSummary(unresolved);
   }
+  const design = validateBookDesign(Object.assign({}, ...layers), input.chapter_count);
+  // Persist alternatives, the selection rationale and all level verdicts with the design.
+  design.planning_history = { candidates, selection, rounds: history };
+  return { design, review: settleReview({ issues: reviews.flatMap(item => item.issues) }) };
 }
