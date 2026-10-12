@@ -50,6 +50,8 @@ export interface DeskState {
   /** The author's own chapter records: memory, never a keeper's judgement. */
   facts?: { file: string; step: number; text: string; stale?: boolean }[];
   interviews_required?: boolean;
+  /** The size the publisher had in mind for a chapter: used only to tell a chapter from a stub of one. */
+  chapter_words?: number;
   /** What the author has been reminded of once. A reminder is said once and then stands aside: nothing here can stop a book. */
   reminded?: string[];
   interview_cast?: string[];
@@ -175,6 +177,16 @@ export function interviewView(state: DeskState): string {
 }
 
 /**
+ * Whether a chapter's text is too slight to be the chapter: under a sixth of the size the publisher had in mind for
+ * one. Not a rule about length — a chapter is as long as it needs — but the difference between a chapter and what
+ * is left when a model is cut off or declines to write it. Books of very short chapters are not judged this way.
+ */
+export function isStub(state: DeskState, file: string): boolean {
+  const words = count(state.files[file] || '');
+  return !!words && (state.chapter_words || 0) >= 1000 && words < state.chapter_words! / 6;
+}
+
+/**
  * Carry out one step on the desk. Returns what the author is told about it.
  * `ask` is how a second mind is reached; it is counted against the budget by the caller.
  */
@@ -276,7 +288,9 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // written; going back did not leave books with fewer contradictions than their first drafts; and rewriting the
     // last chapter took it from 1,700 words to 4,300 with three endings.
     const whole = /[.!?…"”’')\]—–-]\s*[*_]*$/.test((state.files[file] || '').trim());
-    if (isChapter && (tool === 'write' || tool === 'append') && state.files[file]?.trim() && (whole || tool === 'write')) {
+    // A stub is not a chapter. One model's second chapter came back as 225 words where the others ran to two thousand
+    // — its provider had cut it off — and the author spent five calls being told that chapter was already written.
+    if (isChapter && (tool === 'write' || tool === 'append') && state.files[file]?.trim() && !isStub(state, file) && (whole || tool === 'write')) {
       note(`${tool} ${file}: already written`);
       const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim());
       return `${file} is written and has gone to the typesetter: the book is written once and moves forward.${whole ? '' : ' It stops in the middle of a sentence: append can finish it.'} ${ahead.length ? `What it lacks, ${ahead[0]} can carry.` : 'Every chapter is written: the book is done.'}`;
@@ -395,6 +409,7 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
     desk.causality_required = desk.interviews_required && names.every(name => !desk.files[name]?.trim());
     if (desk.causality_required) desk.budget += 3; // review request, reader, author's revision
   }
+  desk.chapter_words = words;
   desk.files['given-premise.md'] ||= `GIVEN PREMISE: ${input.premise}\nREQUIREMENTS: ${input.author_requirements || ''}`;
   const system = voice({ ...input, author_interviews: desk.interviews_required }, words, Object.keys(desk.files));
   let saved = names.map(name => desk.files[name] || '');
@@ -462,7 +477,7 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       if (desk.finished) break;
     }
     // The book is done when its last chapter is: nothing is read, mended or written again after that.
-    if (!desk.finished && names.every(name => desk.files[name]?.trim()) && /[.!?…"”’')\]—–-]\s*[*_]*$/.test(desk.files[names.at(-1)!].trim())) {
+    if (!desk.finished && names.every(name => desk.files[name]?.trim()) && !names.some(name => isStub(desk, name)) && /[.!?…"”’')\]—–-]\s*[*_]*$/.test(desk.files[names.at(-1)!].trim())) {
       desk.finished = true; desk.journal.push(`${desk.step}. the last chapter is written: the book is done`);
     }
     result = told.filter(Boolean).join('\n\n');

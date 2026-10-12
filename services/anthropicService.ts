@@ -61,6 +61,9 @@ export async function generateAnthropicText(
   return text;
 }
 
+/** Models that refused to have thinking switched off, learned as they are met. */
+const mustThink = new Set<string>();
+
 /** What the app writes with when no model is named on the form. */
 export const APP_ANTHROPIC_MODEL = 'claude-opus-5-5';
 
@@ -73,7 +76,10 @@ export async function generateAnthropicLive(prompt: string, system?: string, max
   onMetadata?: (metadata: unknown) => void, schema?: object, live: { onDelta?: (text: string) => void; onRestart?: (why: string) => void } = {}): Promise<string> {
   const instructions = (system || '') + (schema ? `\nReturn one JSON object and nothing else. Every required field in this complete JSON Schema must be present; no omitted fields:\n${JSON.stringify(schema)}` : '');
   const ask = async () => {
-    const stream = anthropic().messages.stream({ model, max_tokens: maxTokens, thinking: { type: 'disabled' as const },
+    // Some models cannot have thinking switched off; they are asked to think as little as they can, with room left for it.
+    const thinks = mustThink.has(model);
+    const stream = anthropic().messages.stream({ model, max_tokens: maxTokens + (thinks ? 4000 : 0),
+      ...(thinks ? { thinking: { type: 'adaptive' as const }, output_config: { effort: 'low' as const } } : { thinking: { type: 'disabled' as const } }),
       ...(instructions.trim() ? { system: instructions } : {}), messages: [{ role: 'user', content: prompt }] });
     stream.on('text', delta => live.onDelta?.(delta));
     return stream.finalMessage();
@@ -83,7 +89,9 @@ export async function generateAnthropicLive(prompt: string, system?: string, max
   for (const wait of [0, 3000, 10000, 30000]) {
     if (wait) { live.onRestart?.(failure instanceof Error ? failure.message : String(failure)); await new Promise(resolve => setTimeout(resolve, process.env.VITEST ? 0 : wait)); }
     try { message = await ask(); break; }
-    catch (error) { failure = error; const status = (error as { status?: number })?.status; if (status !== undefined && ![408, 409, 425, 429, 500, 502, 503, 504, 529].includes(status)) break; }
+    catch (error) {
+      failure = error; const status = (error as { status?: number })?.status;
+      if (status === 400 && !mustThink.has(model) && /thinking\.type\.disabled/i.test(error instanceof Error ? error.message : String(error))) { mustThink.add(model); try { message = await ask(); break; } catch (again) { failure = again; } } if (status !== undefined && ![408, 409, 425, 429, 500, 502, 503, 504, 529].includes(status)) break; }
   }
   if (!message) {
     const status = (failure as { status?: number })?.status;

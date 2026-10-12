@@ -272,6 +272,23 @@ describe('who reads the book', () => {
 });
 
 describe('the desk', () => {
+  it('lets a stub be written again: what a model left when it was cut off is not a chapter', async () => {
+    const long = (word: string) => Array.from({ length: 900 }, () => word).join(' ') + '.';
+    const state = newDesk(3); state.told_promises = true; state.chapter_words = 2300; const ask = async () => '';
+    const write = (file: string, text: string) => takeStep(state, readStep(step('Write.', 'write', file, text)), 3, ask);
+    await write('chapter-1.md', long('rain'));
+    // The second chapter comes back as a few lines: it can be written again, as often as it takes to be a chapter.
+    await write('chapter-2.md', 'I cannot write this chapter as requested.');
+    expect(await write('chapter-2.md', 'I am sorry, this is high risk.')).toContain('chapter-2.md is written');
+    expect(await write('chapter-2.md', long('salt'))).toContain('chapter-2.md is written');
+    // Once it is a chapter, it stands.
+    expect(await write('chapter-2.md', long('other'))).toContain('has gone to the typesetter');
+    expect(state.files['chapter-2.md']).toContain('salt');
+    // A short chapter that is still a chapter stands: four hundred words where twenty-three hundred were in mind.
+    const brief = newDesk(2); brief.told_promises = true; brief.chapter_words = 2300;
+    await takeStep(brief, readStep(step('One.', 'write', 'chapter-1.md', Array.from({ length: 400 }, () => 'a').join(' ') + '.')), 2, ask);
+    expect(await takeStep(brief, readStep(step('One.', 'write', 'chapter-1.md', 'Again.')), 2, ask)).toContain('has gone to the typesetter');
+  });
   it('hands back the ages and spans of time a chapter names, beside those the earlier chapters named', async () => {
     expect(spansOf('He found her when she was sixteen. Twenty-five years of it. Bernadette was ninety-one years old; it had been a year.')).toEqual(['was sixteen', 'twenty-five years', 'ninety-one years old', 'a year']);
     // An hour is not an age, and a day is not a span worth naming.
