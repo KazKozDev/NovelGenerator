@@ -3,7 +3,7 @@
  *
  *   npx vite-node scripts/author-book.ts --chapters 6 --words 2300 --genre mystery --premise "..." --out runs/book [--reader qwen3.8-max]
  */
-import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { writeBookOnce } from '../utils/novel/v3/author';
@@ -25,6 +25,12 @@ const log = (line: string) => { console.log(line); appendFileSync(join(out, 'log
 const store = new MemoryProjectStore();
 const flush = () => {
   const draft = store.loadAuthor(); if (!draft) return;
+  // The book as it stood the first time every chapter had text: kept beside the final one, to see what going back did to it.
+  if (draft.desk && !existsSync(join(out, 'first-draft')) && Array.from({ length: chapters }, (_, at) => draft.desk!.files[`chapter-${at + 1}.md`]).every(text => text?.trim())) {
+    mkdirSync(join(out, 'first-draft'), { recursive: true });
+    for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, 'first-draft', name), text);
+    writeFileSync(join(out, 'first-draft', 'journal.md'), draft.desk.journal.join('\n'));
+  }
   if (draft.desk) { for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, name), text); writeFileSync(join(out, 'journal.md'), draft.desk.journal.join('\n')); writeFileSync(join(out, 'answers.md'), draft.desk.answers.map(answer => `## ${answer.who}, step ${answer.step} ${answer.about}\n${answer.text}`).join('\n\n')); return; }
   writeFileSync(join(out, 'notebook.md'), draft.notebook || ''); writeFileSync(join(out, 'clock.md'), draft.clock); writeFileSync(join(out, 'plan.md'), draft.plan);
   draft.chapters.forEach((chapter, at) => writeFileSync(join(out, `chapter-${at + 1}.md`), chapter.text));

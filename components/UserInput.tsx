@@ -223,7 +223,7 @@ const UserInput: React.FC<UserInputProps> = ({
           </label>
           <p className="text-xs text-zinc-500">
             Another model that reads what the author writes: the reader the author asks about a chapter, and
-            the one who says what the finished book left hanging. It sees what the
+            the one who says, before the ending, what the book still owes. It sees what the
             author reads past. Off means the author's own model reads its own text.
           </p>
 
@@ -394,14 +394,14 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
             <p className="text-xs text-zinc-500">
-              Each chapter is written whole, one at a time, and never patched: to change one, the author writes it again. One small thing may be set into a chapter already written for a later one to pay off.
+              The book moves forward. Each chapter is written whole, one at a time, and never patched; once the next is begun it stands as it is. One small thing may be set into an earlier chapter for a later one to pay off.
             </p>
           </div>
 
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">04. The reader</h3>
             <p className="text-xs text-zinc-500">
-              A reader, another model if you set one, says what they are waiting for, where their attention slipped and what did not add up. When the last chapter is written, a reader says what the book left hanging.
+              A reader, another model if you set one, says what they are waiting for, where their attention slipped and what did not add up. Before the last chapter is written, a reader says what the book still owes them.
             </p>
           </div>
         </div>

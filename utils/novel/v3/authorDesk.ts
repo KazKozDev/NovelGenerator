@@ -25,8 +25,9 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   the ages and spans of time it names beside theirs.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
  * - a reader is another model than the author when one is set: the same head does not see what it wrote past.
- * - saying it is done brings back, once, what a reader who has just closed the book was promised
- *   and not given. One book raised the question of who knew the day of five deaths and never
+ * - the book moves forward: a chapter is open while it is the last one written. And once, as the last chapter is
+ *   about to be written, a reader of the book so far says what they are holding — what was promised
+ *   and not given yet. One book raised the question of who knew the day of five deaths and never
  *   came back to it; another forged the heroine's own will and then forgot the threat.
  * Nothing here tells it what to do next. What is kept from the later versions is only what
  * informs it: an answer from a reader or a character stays on the desk until it is no longer
@@ -83,7 +84,7 @@ const voice = (input: ProjectInput, words: number, files: string[]): string => `
 THE PREMISE YOU WERE GIVEN:
 ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
-YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. You may go back into a chapter you have written whenever a later one needs something set up earlier. Write the book in English.
+YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. The book moves forward: a chapter is yours to write again while it is the last one written, and when you begin the next it goes to the typesetter and stands as it is. What a later chapter needs from an earlier one is sown there with plant. Write the book in English.
 
 YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; and one file per chapter. Your files: ${files.join(', ')}.
 
@@ -102,7 +103,7 @@ the content
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
 - done: you are finished. No content.
-The moment the last chapter has text, someone reads the whole book through and tells you what it promised and did not deliver. That happens once and costs one call.
+
 
 Every answer costs one call from your budget, however many steps it holds. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
 
@@ -150,12 +151,33 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   const note = (line: string) => { state.journal.push(`${state.step}. ${line}${thought ? ` — ${thought.slice(0, 220)}` : ''}`); };
   const chapterNames = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
   const isChapter = chapterNames.includes(file);
+  {
+    // Forward only: a chapter that has a written chapter after it has gone to the typesetter. Across ten books of one
+    // story, the only one with whole scenes told twice was the one that rewrote its third, fourth and fifth chapters
+    // after the sixth was written; and going back did not leave the books with fewer contradictions than their first drafts.
+    const later = isChapter ? chapterNames.slice(chapterNames.indexOf(file) + 1).find(chapter => state.files[chapter]?.trim()) : undefined;
+    if (later && (tool === 'write' || tool === 'append') && state.files[file]?.trim()) {
+      note(`${tool} ${file}: it went to the typesetter when ${later} was begun`);
+      const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim()), open = chapterNames.filter(chapter => state.files[chapter]?.trim()).at(-1)!;
+      return `${file} went to the typesetter when you began ${later}: the book moves forward, and it stands as it is. ${ahead.length ? `What it got wrong can be answered in ${ahead[0]}, which is still to be written; what a later chapter needs from it can be sown with plant.` : `The one chapter still open is ${open}, the last.`}`;
+    }
+  }
   const changed = () => { if (isChapter) for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(file)) answer.stale = true; };
 
   // Not a check and not advice: what a reader who has just closed the book is still holding.
   // It comes once, the moment the last chapter has text, while there are still calls to do something about it.
   const hanging = async (lead: string): Promise<string> => {
     const whole = chapterNames.map(chapter => state.files[chapter] || '');
+    // The reader speaks as they turn to the last chapter, so the ending is written with every debt in view. Told after
+    // the ending instead, the author wrote its last chapter four times over, and it grew from 1,700 words to 4,300.
+    if (!state.told_promises && chapters > 1 && !whole.at(-1)!.trim() && whole.slice(0, -1).every(text => text.trim()) && state.budget - state.spent >= 2) {
+      const said = await ask('reader', `${whole.slice(0, -1).join('\n\n')}\n\n---\nThat is a novel up to its last chapter, which you have not read yet. As a reader, in under 220 words, say what you are holding as you turn to the ending: every question the book has made you ask and not answered yet; every thing, person or threat it brought in with weight and has not used yet; anything it announced that has not happened yet. For each, name the place where it was raised. Then one line: what you most want to be in the room for when it ends.`,
+        'You are an ordinary reader. You are not a writer or an editor: you say what you are holding, and you never say how to fix anything.');
+      state.told_promises = true; state.answers.push({ who: 'a reader about to read the ending', step: state.step, about: '', text: said });
+      state.journal.push(`${state.step}. the book was written up to its last chapter, and a reader said what they were holding`);
+      return `Every chapter but the last now has text. Someone has read the book up to here, and says what they are holding as they turn to the ending:\n${said}\n\nThat cost one call; you have ${state.budget - state.spent} left. What you do about any of it is yours to decide.`;
+    }
+    if (chapters > 1) { if (whole.every(text => text.trim())) state.told_promises = true; return ''; }
     if (state.told_promises || whole.some(text => !text.trim()) || state.budget - state.spent < 2) return '';
     const said = await ask('reader', `${whole.join('\n\n')}\n\n---\nYou have just finished this novel. As a reader, in under 200 words, say what it left in your hands: every question it made you ask and never answered; every thing, person or threat it brought in with weight and then never used; anything it announced that did not happen. For each, name the place where it was raised. If nothing was left hanging, say so in a sentence.`,
       'You are an ordinary reader. You are not a writer or an editor: you say what you were left holding, and you never say how to fix anything.');

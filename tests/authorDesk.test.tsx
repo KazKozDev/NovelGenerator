@@ -35,11 +35,11 @@ describe('the author at its desk', () => {
       step('Chapter two.', 'write', 'chapter-2.md', 'In the morning the notebook was ash.'),
     ], seen));
     expect(result.status, result.stoppedReason || '').toBe('COMPLETE');
-    expect(seen.map(call => call.stage)).toEqual(['author-step', 'author-step', 'author-character', 'author-step', 'author-step', 'author-reader', 'author-step', 'author-step', 'author-reader', 'author-step']);
-    // The moment the last chapter had text, a reader of the whole book said what it left hanging: once, and in time to act on it.
-    expect(seen[8].prompt).toContain('You have just finished this novel'); expect(seen[8].prompt).toContain('She left the drawer open'); expect(seen[8].prompt).toContain('the notebook was ash');
-    expect(seen[9].prompt).toContain('Every chapter now has text. Someone has read the book through, and says what it left in their hands:');
-    expect(author_journal(store)).toContain('the book was whole for the first time, and a reader said what it left hanging');
+    expect(seen.map(call => call.stage)).toEqual(['author-step', 'author-step', 'author-character', 'author-step', 'author-reader', 'author-step', 'author-reader', 'author-step', 'author-step', 'author-step']);
+    // With every chapter but the last written, a reader said what they were holding: once, and before the ending existed.
+    expect(seen[4].prompt).toContain('a novel up to its last chapter, which you have not read yet'); expect(seen[4].prompt).toContain('She locked the drawer'); expect(seen[4].prompt).not.toContain('ash');
+    expect(seen[5].prompt).toContain('Every chapter but the last now has text. Someone has read the book up to here, and says what they are holding as they turn to the ending:');
+    expect(author_journal(store)).toContain('the book was written up to its last chapter, and a reader said what they were holding');
     expect(store.manuscript()).toEqual([{ chapter: 1, text: 'She left the drawer open and went to bed.' }, { chapter: 2, text: 'In the morning the notebook was ash.' }]);
     const author = store.loadAuthor()!;
     expect(author.notebook).toBe('The ending: she burns it.'); expect(author.completed).toBe(true);
@@ -49,8 +49,8 @@ describe('the author at its desk', () => {
     expect(seen[0].system).not.toMatch(/first write|before any chapter|you must/i);
     // What it was told stays on its desk, and says when the text has changed under it.
     expect(seen[3].prompt).toContain('Nora answers:\nI would burn it before I let him read it.');
-    expect(seen[7].prompt).toContain('[a reader, at step 4, about chapter-1.md — YOU HAVE CHANGED chapter-1.md SINCE');
-    expect(seen[7].prompt).toContain('[Nora, at step 2]');
+    expect(seen[8].prompt).toContain('[a reader, at step 4, about chapter-1.md — YOU HAVE CHANGED chapter-1.md SINCE');
+    expect(seen[8].prompt).toContain('[Nora, at step 2]');
   });
 
   it('is told when the book is not all there, and is stopped by its budget, not by a rule', async () => {
@@ -111,8 +111,8 @@ describe('the desk', () => {
     const before = state.files['chapter-1.md'];
     expect(await plant()).toContain('there is no later chapter to plant for. To change chapter-1.md, write it again whole.');
     expect(state.files['chapter-1.md']).toBe(before);
-    // Writing a chapter again whole is still there.
-    expect(await takeStep(state, readStep(step('Again.', 'write', 'chapter-1.md', 'She came in out of the rain.')), 2, ask)).toContain('chapter-1.md is written');
+    // Writing the last chapter again whole is still there.
+    expect(await takeStep(state, readStep(step('Again.', 'write', 'chapter-2.md', 'Two, again.')), 2, ask)).toContain('chapter-2.md is written');
   });
   it('hands back the ages and spans of time a chapter names, beside those the earlier chapters named', async () => {
     expect(spansOf('He found her when she was sixteen. Twenty-five years of it. Bernadette was ninety-one years old; it had been a year.')).toEqual(['was sixteen', 'twenty-five years', 'ninety-one years old', 'a year']);
@@ -146,21 +146,36 @@ describe('the desk', () => {
     // One thing set down in passing is not a new chapter: the reader who read it has nothing new to say, and says so for nothing.
     expect(await read()).toContain('has already read the book through chapter-1.md'); expect(readers).toBe(1);
   });
-  it('hears what the book left hanging once, when it says done, and may go back or print', async () => {
-    const state = newDesk(2); state.files['chapter-1.md'] = 'A gun on the wall.'; state.files['chapter-2.md'] = 'They had tea.';
-    let asked = 0; const ask = async () => { asked++; state.spent++; return 'The gun in chapter one was never fired.'; };
-    const first = await takeStep(state, readStep('THOUGHT: Done.\nTOOL: done'), 2, ask);
-    expect(first).toContain('The gun in chapter one was never fired.'); expect(state.finished).toBe(false);
-    // It is free to go back and pay it off, and the second done is final and asks nobody.
-    await takeStep(state, readStep('THOUGHT: Fire it.\nTOOL: append\nFILE: chapter-2.md\n---\nThe gun went off.'), 2, ask);
-    expect(await takeStep(state, readStep('THOUGHT: Done.\nTOOL: done'), 2, ask)).toBe(''); expect(state.finished).toBe(true); expect(asked).toBe(1);
-    // Written to the end with calls in hand, it hears it at once and is not told again when it says done.
-    const desk = newDesk(2); desk.files['chapter-1.md'] = 'A gun on the wall.';
-    expect(await takeStep(desk, readStep('THOUGHT: Two.\nTOOL: write\nFILE: chapter-2.md\n---\nThey had tea.'), 2, ask)).toContain('Every chapter now has text.');
-    expect(await takeStep(desk, readStep('THOUGHT: Done.\nTOOL: done'), 2, ask)).toBe(''); expect(asked).toBe(2); asked = 1;
-    // With no call left to pay for a reader, done is simply done.
-    const broke = newDesk(1); broke.files['chapter-1.md'] = 'One.'; broke.spent = broke.budget;
-    await takeStep(broke, readStep('THOUGHT: Done.\nTOOL: done'), 1, ask); expect(broke.finished).toBe(true); expect(asked).toBe(1);
+  it('hears once, as it turns to the last chapter, what a reader of the book so far is holding', async () => {
+    const state = newDesk(3); state.files['chapter-1.md'] = 'A gun on the wall.';
+    let asked = 0, read = ''; const ask = async (kind: string, prompt: string) => { asked++; state.spent++; read = prompt; return 'The gun in chapter one has not been fired.'; };
+    const first = await takeStep(state, readStep(step('Two.', 'write', 'chapter-2.md', 'They had tea.')), 3, ask);
+    expect(first).toContain('Every chapter but the last now has text.'); expect(first).toContain('The gun in chapter one has not been fired.'); expect(first).toContain('That cost one call');
+    expect(read).toContain('A gun on the wall.'); expect(read).toContain('up to its last chapter, which you have not read yet');
+    // Once: neither writing the ending nor saying done brings another, and done is simply done.
+    expect(await takeStep(state, readStep(step('Three.', 'write', 'chapter-3.md', 'The gun went off.')), 3, ask)).not.toContain('Someone has read');
+    expect(await takeStep(state, readStep('THOUGHT: Done.\nTOOL: done'), 3, ask)).toBe(''); expect(state.finished).toBe(true); expect(asked).toBe(1);
+    // With no call left to pay for a reader, nobody reads.
+    const broke = newDesk(2); broke.spent = broke.budget - 1;
+    expect(await takeStep(broke, readStep(step('One.', 'write', 'chapter-1.md', 'One.')), 2, ask)).not.toContain('Someone has read'); expect(asked).toBe(1);
+  });
+  it('moves forward: a chapter is open while it is the last one written, and closes when the next is begun', async () => {
+    const state = newDesk(3); state.told_promises = true; const ask = async () => '';
+    const write = (file: string, text: string) => takeStep(state, readStep(step('Write.', 'write', file, text)), 3, ask);
+    await write('chapter-1.md', 'She came in from the rain.');
+    expect(await write('chapter-1.md', 'She came in out of the rain.')).toContain('chapter-1.md is written');
+    await write('chapter-2.md', 'Two.');
+    const closed = await write('chapter-1.md', 'A different first chapter.');
+    expect(closed).toContain('chapter-1.md went to the typesetter when you began chapter-2.md'); expect(closed).toContain('can be answered in chapter-3.md');
+    expect(state.files['chapter-1.md']).toBe('She came in out of the rain.');
+    expect(await takeStep(state, readStep(step('More.', 'append', 'chapter-1.md', 'And more.')), 3, ask)).toContain('went to the typesetter');
+    // A plant still sows into a closed chapter for one not yet written.
+    expect(await takeStep(state, readStep('THOUGHT: Sow.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in out of the rain.\n===\nA phone lay on the sill.'), 3, ask)).toContain('Set into chapter-1.md');
+    await write('chapter-3.md', 'Three.');
+    // In a whole book only the last chapter is open.
+    expect(await write('chapter-2.md', 'Two, again.')).toContain('The one chapter still open is chapter-3.md, the last.');
+    expect(await write('chapter-3.md', 'Three, again.')).toContain('chapter-3.md is written');
+    expect(state.journal.join('\n')).toContain('write chapter-1.md: it went to the typesetter when chapter-2.md was begun');
   });
   it('reads a step however the model dresses it', () => {
     expect(readStep('**THOUGHT:** Write it.\n**TOOL:** `write`\nFILE: `chapter-1.md`\n---\nText.\n\n---\n\nMore.')).toEqual({ thought: 'Write it.', tool: 'write', file: 'chapter-1.md', name: '', content: 'Text.\n\n---\n\nMore.' });
