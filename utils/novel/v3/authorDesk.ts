@@ -97,7 +97,7 @@ NAME: the character (for ask_character)
 the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
-- plant: sets one thing into a chapter already written, for a later chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
+- plant: sets one thing into a chapter already written, for a later chapter that is not written yet to pay off: a thing on a table, a line someone says. Once every chapter has text there is nothing left to plant for. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
@@ -186,6 +186,10 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}`; }
   if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
   if (tool === 'plant') {
+    // A plant sows for a chapter still to be written. One book set four things into its chapters after the last was
+    // written, to answer a reader, and three of them showed: a pen bagged by a detective that lay in her kitchen that
+    // night; three questions answered before the one that was asked. In a whole book there is nothing ahead to sow for.
+    if (isChapter && chapterNames.every(chapter => state.files[chapter]?.trim())) { note(`plant ${file}: the book is whole`); return `plant sets one thing into an earlier chapter for a later chapter to pay off. Every chapter has text now, so there is no later chapter to plant for. To change ${file}, write it again whole.`; }
     if (!isChapter || !state.files[file]?.trim()) { note(`plant ${file}: not a written chapter`); return `plant sets something into a chapter that is already written. ${file} is not one.`; }
     const [where, what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
     const parts = state.files[file].split(/\n\s*\n/), key = (where || '').trim().replace(/^["“]|["”…]+$/g, '').slice(0, 60).toLowerCase();

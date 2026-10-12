@@ -103,6 +103,17 @@ describe('who reads the book', () => {
 });
 
 describe('the desk', () => {
+  it('plants for a chapter still to be written, and not into a book that is whole', async () => {
+    const state = newDesk(2); state.told_promises = true; state.files['chapter-1.md'] = 'She came in from the rain.\n\nShe sat down.'; const ask = async () => '';
+    const plant = () => takeStep(state, readStep('THOUGHT: Sow it.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in from the rain.\n===\nA phone lay on the sill.'), 2, ask);
+    expect(await plant()).toContain('Set into chapter-1.md');
+    await takeStep(state, readStep(step('Two.', 'write', 'chapter-2.md', 'Two.')), 2, ask);
+    const before = state.files['chapter-1.md'];
+    expect(await plant()).toContain('there is no later chapter to plant for. To change chapter-1.md, write it again whole.');
+    expect(state.files['chapter-1.md']).toBe(before);
+    // Writing a chapter again whole is still there.
+    expect(await takeStep(state, readStep(step('Again.', 'write', 'chapter-1.md', 'She came in out of the rain.')), 2, ask)).toContain('chapter-1.md is written');
+  });
   it('hands back the ages and spans of time a chapter names, beside those the earlier chapters named', async () => {
     expect(spansOf('He found her when she was sixteen. Twenty-five years of it. Bernadette was ninety-one years old; it had been a year.')).toEqual(['was sixteen', 'twenty-five years', 'ninety-one years old', 'a year']);
     // An hour is not an age, and a day is not a span worth naming.
