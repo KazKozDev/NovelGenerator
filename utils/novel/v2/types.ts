@@ -558,6 +558,8 @@ export interface FinalReport {
 }
 
 export interface ProjectInput {
+  /** New author books interview their cast before planning. False replays older experiments. */
+  author_interviews?: boolean;
   planning_version?:2;
   generation_mode?: 'theses' | 'progressive' | 'chapters' | 'author';
   premise: string;

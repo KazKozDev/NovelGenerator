@@ -63,7 +63,9 @@ export function cleanChapter(text: string): string {
   // "END OF CHAPTER TWO", and after the last chapter the title of the book again: a model's flourish, not the chapter.
   const end = parts.findIndex((part, at) => at >= parts.length - 4 && /^[*_#\s]*(END OF (THE )?(CHAPTER|BOOK|NOVEL)\b[^\n]*|THE END)[*_\s.]*$/i.test(part));
   if (end > 0) parts.length = end;
-  while (parts.length && rule(parts.at(-1)!)) parts.pop();
+  // A pointer to the author's own desk — "[Record: see keeper entry for chapter 1.]" — is a note to itself, not a line of the book.
+  const aside = (part: string) => /^[*_\s]*\[[^\]\n]{0,160}\b(record|keeper|dossier|notebook|plan\.md|facts)\b[^\]\n]{0,160}\][*_\s.]*$/i.test(part);
+  while (parts.length && (rule(parts.at(-1)!) || aside(parts.at(-1)!))) parts.pop();
   while (parts.length && (rule(parts[0]) || /^#{1,3}\s*\**\s*chapter\b[^\n]*$/i.test(parts[0]))) parts.shift();
   return parts.join('\n\n');
 }

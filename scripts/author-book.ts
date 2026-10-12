@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { writeBookOnce } from '../utils/novel/v3/author';
-import { writeAtDesk } from '../utils/novel/v3/authorDesk';
+import { writeAtDesk, keeperRecords } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
 
@@ -31,7 +31,7 @@ const flush = () => {
     for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, 'first-draft', name), text);
     writeFileSync(join(out, 'first-draft', 'journal.md'), draft.desk.journal.join('\n'));
   }
-  if (draft.desk) { for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, name), text); writeFileSync(join(out, 'journal.md'), draft.desk.journal.join('\n')); writeFileSync(join(out, 'answers.md'), draft.desk.answers.map(answer => `## ${answer.who}, step ${answer.step} ${answer.about}\n${answer.text}`).join('\n\n')); return; }
+  if (draft.desk) { writeFileSync(join(out, 'keeper.md'), keeperRecords(draft.desk)); for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, name), text); writeFileSync(join(out, 'journal.md'), draft.desk.journal.join('\n')); writeFileSync(join(out, 'answers.md'), draft.desk.answers.map(answer => `## ${answer.who}, step ${answer.step} ${answer.about}\n${answer.text}`).join('\n\n')); return; }
   writeFileSync(join(out, 'notebook.md'), draft.notebook || ''); writeFileSync(join(out, 'clock.md'), draft.clock); writeFileSync(join(out, 'plan.md'), draft.plan);
   draft.chapters.forEach((chapter, at) => writeFileSync(join(out, `chapter-${at + 1}.md`), chapter.text));
   writeFileSync(join(out, 'readers.md'), draft.chapters.map((chapter, at) => `## After chapter ${at + 1}\n${chapter.reader}`).join('\n\n'));

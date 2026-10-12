@@ -142,4 +142,11 @@ describe('what code checks, without reading', () => {
     expect(wornPhrases(['a glass of ice water going warm', 'a glass of ice water going warm', 'a glass of ice water going warm'])[0]).toContain('(3 times)');
   });
 
+
+  it('leaves the author\'s notes to itself out of the chapter', async () => {
+    const { cleanChapter } = await import('../utils/novel/v3/author');
+    expect(cleanChapter('She went in, and closed the door behind her, and said nothing at all.\n\n---\n\n*[Record: see keeper entry for chapter 1.]*')).toBe('She went in, and closed the door behind her, and said nothing at all.');
+    // A bracketed line that is part of the story stays.
+    expect(cleanChapter('She read the sign.\n\n[CLOSED UNTIL FURTHER NOTICE]')).toBe('She read the sign.\n\n[CLOSED UNTIL FURTHER NOTICE]');
+  });
 });

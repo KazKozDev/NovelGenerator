@@ -378,30 +378,30 @@ const UserInput: React.FC<UserInputProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Its people</h3>
             <p className="text-xs text-zinc-500">
-              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters.
+              Before anything is planned, the author asks its main characters, each from the inside: what they want, what they fear, what they will and will not do. The one the book turns on tells, hour by hour, what they did.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Its people</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. The plan</h3>
             <p className="text-xs text-zinc-500">
-              Before a scene that turns on someone, the author asks that person from the inside what they want and what they would do. Their answers decide the scene, not a template.
+              The plan is built from their answers: how the book ends and why, what turns in the middle, what must be set down early. One outside reader asks why things happen as they do, and the author answers once.
             </p>
           </div>
 
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
             <p className="text-xs text-zinc-500">
-              The book moves forward. Each chapter is written whole, one at a time, and never patched; once the next is begun it stands as it is. One small thing may be set into an earlier chapter for a later one to pay off.
+              The book is written once and moves forward. Each chapter is written whole and then stands as it is; after each, the author notes what it has fixed, and writes the next with those notes in front of it.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. The reader</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. The ending</h3>
             <p className="text-xs text-zinc-500">
-              A reader, another model if you set one, says what they are waiting for, where their attention slipped and what did not add up. Before the last chapter is written, a reader says what the book still owes them.
+              Before the last chapter, a reader says what the book still owes them. The last chapter is written with that in view, and when it is written the book is done: nothing is read or rewritten after.
             </p>
           </div>
         </div>
