@@ -220,12 +220,13 @@ export async function withRoom<T>(ask: (maxTokens: number) => Promise<T>, maxTok
 }
 
 /** Browser Ollama calls get enough output room and one bounded retry on truncation. */
-export async function withOllamaOutputRoom<T>(ask: (maxTokens: number, retry: boolean) => Promise<T>, requested?: number): Promise<T> {
-  const limit = Math.max(32768, requested ?? 0);
+/** Any provider's answer cut off at its output limit is asked for once more with twice the room. `floor` is the least room worth asking for: generous for a local model, the requested size for a metered one. */
+export async function withOllamaOutputRoom<T>(ask: (maxTokens: number, retry: boolean) => Promise<T>, requested?: number, floor = 32768): Promise<T> {
+  const limit = Math.max(floor, requested ?? 0);
   try {
     return await ask(limit, false);
   } catch (error) {
-    if (!/Ollama output reached its token limit/i.test(String(error))) throw error;
+    if (!/output reached its token limit/i.test(String(error))) throw error;
     return ask(limit * 2, true);
   }
 }

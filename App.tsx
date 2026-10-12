@@ -7,6 +7,7 @@ import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import SystemManualToggle from './components/SystemManualModal';
+import ApiKeysToggle from './components/ApiKeysModal';
 import BookDisplay from './components/BookDisplay';
 import SaveBook from './components/SaveBook';
 
@@ -36,9 +37,12 @@ const App: React.FC = () => {
     editSettings,
     currentStoryOutline,
     currentChapterPlan,
+    deskTools,
+    deskNow,
     developmentLabel,
     isResumable,
     agentLogs,
+    liveDraft,
     tokenTotals, repairProgress,
     lastSavedAt, autosaveStatus,
     exportProject,
@@ -187,6 +191,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
             <ThemeToggle />
+            <ApiKeysToggle />
             <SystemManualToggle />
           </div>
         </div>
@@ -246,9 +251,12 @@ const App: React.FC = () => {
             totalChaptersToProcess={totalChaptersToProcess}
             currentStoryOutline={currentStoryOutline}
             currentChapterPlan={currentChapterPlan}
+            tools={deskTools}
+            toolFocus={deskNow}
             developmentLabel={developmentLabel}
             generatedChapters={generatedChapters}
             agentLogs={agentLogs}
+            liveDraft={liveDraft}
             tokenTotals={tokenTotals}
             repairProgress={repairProgress}
             lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus}

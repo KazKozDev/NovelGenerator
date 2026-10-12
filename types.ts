@@ -280,14 +280,18 @@ export type ChapterMode = 'full' | 'scene';
 
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
-  tense?: 'past' | 'present';
-  ending?: 'closed' | 'open' | 'series';
+  /** past or present — or the author's own words. */
+  tense?: string;
+  /** closed, open or series — or the author's own words for how the book should end. */
+  ending?: string;
   targetWordsPerChapter?: number;
   genre?: string;
   narrativeVoice?: string;
   tone?: string;
   targetAudience?: string;
   writingStyle?: string;
+  /** How intimate scenes are written; passed to the writer verbatim. */
+  intimacy?: string;
   generationSpeedMode?: GenerationSpeedMode;
   chapterMode?: ChapterMode;
   skipEditing?: boolean;
@@ -310,7 +314,7 @@ export interface AgentLogEntry {
   strategy?: string;
 }
 
-export type LLMProviderType = 'gemini' | 'ollama' | 'qwen';
+export type LLMProviderType = 'gemini' | 'ollama' | 'qwen' | 'huggingface' | 'anthropic';
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -319,4 +323,8 @@ export interface LLMProviderConfig {
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
   qwenModel?: string;
+  /** Hugging Face Inference Providers model: org/name, optionally org/name:provider. */
+  hfModel?: string;
+  /** Anthropic model id (e.g. claude-opus-5-5). Absent means the server's default. */
+  anthropicModel?: string;
 }

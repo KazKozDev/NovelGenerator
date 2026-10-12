@@ -559,7 +559,7 @@ export interface FinalReport {
 
 export interface ProjectInput {
   planning_version?:2;
-  generation_mode?: 'theses' | 'progressive' | 'chapters';
+  generation_mode?: 'theses' | 'progressive' | 'chapters' | 'author';
   premise: string;
   chapter_count: number;
   genre: string;

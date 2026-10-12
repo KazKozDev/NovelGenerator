@@ -94,3 +94,18 @@ it('keeps the material when the refusal is about a citation into it', async () =
     ['answer'], raw => { if (!raw.answer) throw new Error('evidence is not a verbatim substring of supplied prose'); return raw.answer; });
   expect(prompts[1]).toContain('MATERIAL-MIDDLE');
 });
+
+it('reads a development finding for what it says, and names the field when it cannot', async () => {
+  const { readDevelopmentIssues } = await import('../utils/novel/v2/chapterDevelopment');
+  expect(readDevelopmentIssues({ issues: [] }, 4)).toEqual([]);
+  expect(readDevelopmentIssues({ issues: [
+    { chapter: '3', problem: 'The key card is two objects', required_change: 'Say which is which' },
+    { problem: 'C2S5 hands over a card nobody retrieved. Required change: in C1S4, have Daniel take it from the nightstand.' },
+  ] }, 4)).toEqual([
+    { chapter: 3, problem: 'The key card is two objects', required_change: 'Say which is which' },
+    { chapter: 2, problem: 'C2S5 hands over a card nobody retrieved.', required_change: 'in C1S4, have Daniel take it from the nightstand.' },
+  ]);
+  expect(() => readDevelopmentIssues({ issues: [{ chapter: 9, problem: 'Something is off', required_change: '' }] }, 4))
+    .toThrow('Issue 1: required_change is empty (say what must change, in its own field); chapter must be a whole number from 1 to 4; got 9');
+  expect(() => readDevelopmentIssues({}, 4)).toThrow('issues as an array');
+});

@@ -1,7 +1,7 @@
 import type { StorySettings } from '../types';
 import type { ProjectInput } from './novel/v2/types';
 export const MAIN_FORM_KEY='novelGenerator_main_form';
-export const DEFAULT_GENERATION_SETTINGS:StorySettings={genre:'fantasy',narrativeVoice:'third-limited',tone:'serious',targetAudience:'adult',writingStyle:'descriptive',tense:'past',ending:'closed',targetWordsPerChapter:4000};
+export const DEFAULT_GENERATION_SETTINGS:StorySettings={genre:'fantasy',narrativeVoice:'third-limited',tone:'serious',targetAudience:'adult',writingStyle:'descriptive',tense:'past',ending:'closed',intimacy:'on the page, not faded out',targetWordsPerChapter:4000};
 export const GENERATION_SETTINGS_KEY='novelGenerator_story_settings';
 export const DEFAULT_WORDS_PER_CHAPTER=4000;
 export function getWordsPerChapter():number {
@@ -28,5 +28,6 @@ export function buildProjectInput(premise:string,chapters:number,settings:StoryS
     settings.narrativeVoice?`Voice: ${settings.narrativeVoice}.`:'',settings.tone?`Tone: ${settings.tone}.`:'',
     settings.writingStyle?`Style: ${settings.writingStyle}.`:'',settings.targetAudience?`Audience: ${settings.targetAudience}.`:'',
     settings.tense?`Tense: ${settings.tense}.`:'',settings.ending?`Ending: ${settings.ending}.`:'',
+    settings.intimacy?`Intimate scenes: ${settings.intimacy}.`:'',
   ].filter(Boolean).join(' ')||'(none)'};
 }

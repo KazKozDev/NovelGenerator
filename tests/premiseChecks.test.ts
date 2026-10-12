@@ -165,8 +165,9 @@ describe('the plan played forward by code', () => {
     expect(problems.some(problem => problem.includes('and Nora never learns it'))).toBe(true);
     expect(problems.some(problem => problem.includes('the reader is never given it'))).toBe(true);
   });
-  it('refuses a need that the scene could not use, and says nothing about a plan with no chain', () => {
-    expect(chainGaps(chain([scene('T1', ['C1'], 'L1', { needs_things: [{ thing: 'K1', at: 'C2' }] })]))[0].problem).toContain('that person is not in the scene');
+  it('lets a scene depend on a thing that is somewhere else, and says nothing about a plan with no chain', () => {
+    expect(chainGaps(chain([scene('T1', ['C1'], 'L2', { needs_things: [{ thing: 'K1', at: 'L1' }] })]))).toEqual([]);
+    expect(chainGaps(chain([scene('T1', ['C1'], 'L2', { needs_things: [{ thing: 'K1', at: 'C2' }] })]))[0].problem).toContain('but it is in the office — left there by the start of the book');
     expect(chainGaps(plan)).toEqual([]);
   });
 });

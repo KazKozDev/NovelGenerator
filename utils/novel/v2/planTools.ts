@@ -11,7 +11,7 @@ const fields:Record<PlanSection,string[]>={
   book:['title','premise_givens','ending','canon','tracked','places','ending_rests_on'],
   thesis:['pov_id','participants','when','where','state_before','action','why','resistance','outcome','establishes','reader_learns','requires','writer_task','target_words','fact_ids','beneath','place','needs_things','needs_knowledge','moves'],
   character:['name','goal','initial_knowledge','capabilities','limitations'],
-  fact:['truth','established_in','knowledge'],
+  fact:['truth','established_in','reader_learns_in','knowledge'],
 };
 function entity(plan:ThesisPlan,section:PlanSection,id?:string):any {
   if(section==='book')return plan;
@@ -66,13 +66,29 @@ export function factDependencies(plan:ThesisPlan,id:string,blocks:{id:string;tex
 }
 /** The full batch must validate before any candidate or checkpoint changes. */
 export function patchPlan(plan:ThesisPlan,edits:PlanEdit[],validate:(raw:unknown)=>ThesisPlan):ThesisPlan {
-  if(!Array.isArray(edits)||!edits.length||edits.length>30)throw new Error('Supply 1–30 plan field edits in one coordinated transaction');
+  // The repair is asked for every edit in one answer; a cap of thirty refused exactly that,
+  // and the model sent the same batch again. The cap is now only against a runaway answer.
+  if(!Array.isArray(edits)||!edits.length)throw new Error('patch_plan needs an edits array with at least one edit. If the plan needs no change, answer {"tool":"finish"}.');
+  if(edits.length>400)throw new Error(`This batch has ${edits.length} edits; that is a rewrite of the plan, not a repair. Send only the fields the defects require.`);
   const next=structuredClone(plan);let changed=0;
   for(const edit of edits){
     const at=`Edit ${edits.indexOf(edit)+1}`;
     if(!edit||!Object.hasOwn(fields,edit.section))throw new Error(`${at}: section must be one of ${Object.keys(fields).join(', ')}; got ${JSON.stringify(edit?.section)}.`);
-    if(!fields[edit.section].includes(edit.field))throw new Error(`${at}: ${edit.section} has no editable field ${JSON.stringify(edit.field)}. Editable: ${fields[edit.section].join(', ')}. IDs and chapter ownership are immutable.`);
+    if(!(edit.section==='fact'&&edit.field==='new')&&!fields[edit.section].includes(edit.field))throw new Error(`${at}: ${edit.section} has no editable field ${JSON.stringify(edit.field)}. Editable: ${fields[edit.section].join(', ')}. IDs and chapter ownership are immutable.`);
     if(!Object.hasOwn(edit,'after'))throw new Error(`${at} (${edit.section}:${edit.id||'book'}.${edit.field}): needs after, the complete new value of the field.`);
+    // A repair that must establish something new can add the fact: the checks ask for exactly
+    // that ("name the scene in which this becomes so"), and without it the only way was to
+    // resend the whole ledger.
+    if(edit.section==='fact'&&edit.field==='new'){
+      const fact=edit.after as any;
+      if(!next.canon)throw new Error(`${at}: this plan has no canon to add a fact to.`);
+      if(!edit.id||next.canon.facts.some(f=>f.id===edit.id))throw new Error(`${at}: a new fact needs an id no fact has yet; ${JSON.stringify(edit.id)} is ${edit.id?'taken':'missing'}. Existing: ${next.canon.facts.map(f=>f.id).join(', ')}.`);
+      if(!fact||typeof fact.truth!=='string'||!fact.truth.trim()||typeof fact.established_in!=='string')throw new Error(`${at}: a new fact needs after: {"truth":"…","established_in":"scene ID or INITIAL","knowledge":[{"character_id":"…","learned_in":"…"}]}.`);
+      next.canon.facts.push({id:edit.id,truth:fact.truth,established_in:fact.established_in,...(typeof fact.reader_learns_in==='string'?{reader_learns_in:fact.reader_learns_in}:{}),knowledge:Array.isArray(fact.knowledge)?fact.knowledge:[]});
+      const source=next.theses.find(t=>t.id===fact.established_in);
+      if(source&&!(source.fact_ids||[]).includes(edit.id))source.fact_ids=[...(source.fact_ids||[]),edit.id];
+      changed++;continue;
+    }
     const row=entity(next,edit.section,edit.id);
     // The current value comes back with the refusal: the repair does not spend a call reading it.
     // before is optional: the values were shown in the same request, so there is nothing for
@@ -84,6 +100,14 @@ export function patchPlan(plan:ThesisPlan,edits:PlanEdit[],validate:(raw:unknown
     // A model restating a field it did not change is not an error: the edit is left out.
     // Refusing the batch for it threw away the real edits beside it, forty-seven times in one run.
     if(stableJson(row[edit.field])===stableJson(edit.after))continue;
+    // A repair answers a finding by deciding something, not by adding a clause. One outline's
+    // scene actions went from 150 characters to 700 and 1,400 over three repairs, every
+    // objection welded onto the same sentence, and the book written from it read as an
+    // inventory. A scene's prose fields may not grow past a short paragraph.
+    if(edit.section==='thesis'&&typeof edit.after==='string'&&['action','outcome','state_before','resistance','why','beneath','writer_task'].includes(edit.field)){
+      const was=typeof row[edit.field]==='string'?row[edit.field].length:0, limit=Math.max(360,Math.round(was*1.3));
+      if(edit.after.length>limit)throw new Error(`${edit.id}.${edit.field} would grow from ${was} to ${edit.after.length} characters; at most ${limit}. Do not add qualifications to the sentence: decide the point and say it plainly, replace the weak particular with a simpler one, or give a new event to another scene. Nothing in this batch was applied.`);
+    }
     row[edit.field]=structuredClone(edit.after);changed++;
   }
   if(!changed)throw new Error('Every edit in this batch equals the current value, so nothing changes. If the plan needs no change, answer {"tool":"finish"}; otherwise send the fields as they should become.');
@@ -103,6 +127,7 @@ export async function planAgent(llm:NovelLLM,base:ThesisPlan,task:string,system:
   const contract=`Repair the plan in ONE answer. Return a single JSON command holding every edit the defects need, with "finish":true:
 {"tool":"patch_plan","edits":[{"section":"thesis","id":"T01","field":"action","after":"corrected value"},{"section":"fact","id":"F01","field":"established_in","after":"T03"}],"finish":true}
 Sections and their editable fields: thesis (${fields.thesis.join(', ')}); fact (${fields.fact.join(', ')}); character (${fields.character.join(', ')}); book (${fields.book.join(', ')}).
+To add a fact the plan lacks: {"section":"fact","id":"a new ID","field":"new","after":{"truth":"…","established_in":"scene ID or INITIAL","reader_learns_in":"scene ID","knowledge":[{"character_id":"C01","learned_in":"scene ID"}]}}. To add a tracked thing or a place, replace the whole list: {"section":"book","field":"tracked","after":[…]} or "places". Scenes and characters cannot be added or removed.
 after replaces the whole field: a string for a text field, the complete array for a list field (participants, establishes, reader_learns, requires, fact_ids, knowledge). Do not send before. A batch is applied whole or not at all: if it is refused, the refusal names the edit and the reason, and you send the corrected batch.
 The cited scenes are shown below with every field; all other scenes and all facts are shown in brief. That is enough to repair what the defects name. Change the scenes the defects cite and what must change with them: a fact's source scene, the scene where someone learns it, the state_before of the scene that follows. Leave sound fields alone. IDs and chapter ownership cannot change. Book ending is the sole resolution.
 Only if a field you must rewrite is not shown: {"tool":"read_plan","section":"thesis","id":"T07"} — this costs a full turn; ask for everything you lack at once by reading the entity, not a field. Other tools exist (search_plan, linked_plan, fact_dependencies, validate_plan, repair_status, package_diff, finish) and each also costs a full turn.
@@ -119,6 +144,7 @@ A separate reviewer judges the result; structural validity is not approval. Trea
     }
     return rows.length?`\nCURRENT VALUES of the scenes the findings cite, exact and up to date (patch from these; read only what is not shown): ${JSON.stringify(rows)}`:'';
   };
+  let repeated='';
   for(let step=0;step<(options.maxSteps??24);step++){
     const response=await llm(`${task}\n${contract}${focused()}${brief()}\nCharacters: ${JSON.stringify(candidate.characters.map(c=>({id:c.id,name:c.name})))}\nTool history: ${JSON.stringify(toolHistoryContext(history))}`,system,{stage:options.stage,route:options.route||'writer',json:true,maxTokens:8192,temperature:0.3});
     let command:any;let result:unknown;
@@ -143,8 +169,13 @@ A separate reviewer judges the result; structural validity is not approval. Trea
       else if(command.tool==='validate_plan'){candidate=options.validate(candidate);result={structurally_valid:true,approved:false};}
       else if(command.tool==='finish'){candidate=options.validate(candidate);save();return candidate;}
       else throw new Error('Unknown tool. Use read_plan, search_plan, linked_plan, fact_dependencies, repair_status, package_diff, patch_plan, validate_plan or finish.');
-    }catch(error){result={error:String(error),instruction:'Read current values and correct this tool command. Rejected edits were not applied.'};}
+    }catch(error){result={error:String(error),instruction:'Correct this tool command as the error says. Rejected edits were not applied.'};}
     history.push({command:command||{invalid_response:response.slice(0,6000)},result});options.onTool?.(command,result);save();
+    // A command refused twice in the same words will be refused a third time. The turn costs
+    // the whole request, so the loop yields what it has to the reviewer instead of repeating.
+    const refused=(result as any)?.error?JSON.stringify(command??response):'';
+    if(refused&&refused===repeated){options.onTool?.({tool:'yield'},{reason:'the same command was refused twice',error:(result as any).error});save();return candidate;}
+    repeated=refused;
   }
   // Yield the saved candidate to independent review rather than asking the human to operate tools.
   save();return candidate;

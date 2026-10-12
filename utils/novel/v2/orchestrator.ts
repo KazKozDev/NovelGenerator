@@ -1,3 +1,5 @@
+import { authorKey, writeBookOnce } from '../v3/author';
+import { writeAtDesk } from '../v3/authorDesk';
 import { SCENE_WORD_CAP } from './sceneBudget';
 import { writeThesisBook } from './theses';
 import type { HabitMemory } from './habits';
@@ -192,6 +194,31 @@ export class Orchestrator {
       || (storedInput?.generation_mode === 'progressive' && inputKey(storedInput) !== inputKey(input))) {
       return { status: 'FAILED', design: null, review: null, report: null, callsUsed: 0, tokensUsed: 0,
         stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
+    }
+    // A new book is written by its author, once. A book begun under the older pipelines is
+    // finished by the pipeline that began it.
+    const authored = this.store.loadAuthor();
+    if (authored ? true : input.generation_mode === 'author' || (!input.generation_mode && !storedInput?.generation_mode && !theses && !progressive && !this.store.loadDesign())) {
+      if (authored && authored.input_key !== authorKey(input)) return { status: 'FAILED', design: null, review: null, report: null, callsUsed: 0, tokensUsed: 0,
+        stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
+      this.store.saveInput({ ...input, generation_mode: 'author' });
+      this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. The author is at its desk.`);
+      try {
+        // The author works at its desk as it sees fit. A book begun by the fixed sequence
+        // (clock, plan, each chapter once) is finished by it.
+        if (authored && !authored.desk) await writeBookOnce({ ...input, generation_mode: 'author' }, this.store, call, this.onProgress);
+        else await writeAtDesk({ ...input, generation_mode: 'author' }, this.store, call, this.onProgress);
+        this.flushRetries();
+        const report = this.store.loadReport()!;
+        this.store.log('audit', report.summary);
+        return { status: report.status === 'COMPLETE' ? 'COMPLETE' : 'COMPLETE_WITH_WARNINGS', design: null, review: null, report,
+          callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
+      } catch (error) {
+        this.flushRetries();
+        const message = error instanceof Error ? error.message : String(error);
+        this.store.log('stopped', message);
+        return { status: 'FAILED', design: null, review: null, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: message };
+      }
     }
     this.store.saveInput(input);
     this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}.`);

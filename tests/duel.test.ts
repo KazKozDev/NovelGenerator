@@ -22,7 +22,7 @@ describe('two writers, one scene', () => {
   it('measures a draft without reading it, and names what puts it out', () => {
     expect(measure(words(100), 100, 'T2', [], []).out).toBe('');
     expect(measure(words(40), 100, 'T2', [], []).out).toBe('only 40 of 100 words');
-    expect(measure(words(250), 100, 'T2', [], []).out).toContain('250 words against a target of 100');
+    expect(measure(words(250), 100, 'T2', [], []).out).toBe('');
     const twice = 'A cold suspicion settled in her stomach as she watched him.';
     expect(measure(`${twice} ${words(90)}`, 100, 'T2', [{ thesis_id: 'T1', text: twice }], []).out).toBe('repeats a sentence the book already has');
     const measured = measure(`Her heart hammered against her ribs. Her stomach lurched. ${words(90)}`, 100, 'T2', [], [{ device: 'Heart pounding', markers: ['hammered', 'ribs'], example: '' }]);
@@ -43,12 +43,12 @@ describe('two writers, one scene', () => {
     expect(prompt).not.toMatch(/writer2|second writer|first writer/i);
     const logged: string[] = [];
     const useless = async () => JSON.stringify({ choose: 'both' });
-    expect(await chooseDraft([draft('writer', words(180)), draft('writer2', words(100))], {}, '', false, '', useless, line => logged.push(line))).toMatchObject({ winner: 'writer2', by: 'measurements' });
+    expect(await chooseDraft([draft('writer', words(70)), draft('writer2', words(180))], {}, '', false, '', useless, line => logged.push(line))).toMatchObject({ winner: 'writer2', by: 'measurements' });
     expect(logged[0]).toContain('Draft choice not obtained');
   });
 });
 
-it('drafts each scene twice, keeps the chosen draft, sends its repair back to its own writer, and remembers who won', async () => {
+it('drafts each scene twice, keeps the chosen draft, and remembers who won', async () => {
   const thesis = (id: string, requires: string[] = []) => ({ id, chapter: 1, pov_id: 'C1', fact_ids: id === 'T1' ? ['F1'] : [], participants: [{ character_id: 'C1', intention: 'Keep it hidden', knows: [], does: 'Locks the drawer' }], when: 'Night', where: 'Study', state_before: 'Quiet', action: 'Nora hides the notebook', why: 'Fear', resistance: 'Time', outcome: 'Hidden', establishes: [], reader_learns: [], requires, writer_task: 'Show', target_words: 8 });
   const plan = { title: 'T', premise_givens: [], ending: 'End', tracked: [{ id: 'K1', name: 'The notebook', start: 'On the desk' }], characters: [{ id: 'C1', name: 'Nora', goal: 'Hide', initial_knowledge: [], capabilities: [], limitations: [] }],
     canon: { resolution: 'End', facts: [{ id: 'F1', truth: 'The notebook exists.', established_in: 'T1', knowledge: [] }] }, theses: [thesis('T1'), thesis('T2', ['T1'])] } as unknown as ThesisPlan;
@@ -72,8 +72,35 @@ it('drafts each scene twice, keeps the chosen draft, sends its repair back to it
   expect(routes.slice(0, 2).sort()).toEqual(['writer', 'writer2']);
   expect(draft.blocks[0].text).toContain('SECOND writer');
   expect(draft.authors!.T1).toBe('writer2');
-  expect(repairRoute).toBe('writer2');
   expect(draft.duels![0]).toMatchObject({ thesis_id: 'T1', kind: 'solitary', winner: 'writer2', by: 'editor' });
   expect(saved!.solitary.writer2).toBeGreaterThanOrEqual(1);
   expect(store.runLog().some(entry => entry.detail.includes("T1 (solitary): two drafts, second writer's goes in — editor"))).toBe(true);
+});
+
+it('keeps the scene when one of the two writers fails, and does not count it as a win', async () => {
+  const thesis = (id: string, requires: string[] = []) => ({ id, chapter: 1, pov_id: 'C1', fact_ids: id === 'T1' ? ['F1'] : [], participants: [{ character_id: 'C1', intention: 'Keep it hidden', knows: [], does: 'Locks the drawer' }], when: 'Night', where: 'Study', state_before: 'Quiet', action: 'Nora hides the notebook', why: 'Fear', resistance: 'Time', outcome: 'Hidden', establishes: [], reader_learns: [], requires, writer_task: 'Show', target_words: 8 });
+  const plan = { title: 'T', premise_givens: [], ending: 'End', tracked: [{ id: 'K1', name: 'The notebook', start: 'On the desk' }], characters: [{ id: 'C1', name: 'Nora', goal: 'Hide', initial_knowledge: [], capabilities: [], limitations: [] }],
+    canon: { resolution: 'End', facts: [{ id: 'F1', truth: 'The notebook exists.', established_in: 'T1', knowledge: [] }] }, theses: [thesis('T1'), thesis('T2', ['T1'])] } as unknown as ThesisPlan;
+  const store = new MemoryProjectStore(); let chosen = 0;
+  await new Orchestrator(store, undefined, null, () => {}, undefined, { name: 'second' })
+    .runBook({ premise: 'Nora hides a notebook.', author_requirements: '', genre: 'thriller', chapter_count: 1, target_total_words: 16, generation_mode: 'progressive', planning_version: 2 }, async (_prompt, _system, options) => {
+      const stage = options?.stage || '';
+      { const premise = premiseReply(options); if (premise) return premise; }
+      if (stage === 'thesis-synopsis') return 'A notebook is hidden.';
+      if (stage === 'thesis-state') return JSON.stringify({ states: [], minds: [] });
+      if (stage === 'thesis-chapter-development') return JSON.stringify({ chapters: [{ chapter: 1, start: 's', goal: 'g', steps: [{ id: 'C1S1', action: 'a', resistance: 'r', consequence: 'c', necessity: 'n' }], result: 'r', handoff: 'h', budget_rationale: 'b' }] });
+      if (stage === 'thesis-chapter-development-review' || stage === 'thesis-plan-review') return JSON.stringify({ ready: true, issues: [] });
+      if (stage === 'thesis-plan') return JSON.stringify(plan);
+      if (stage === 'thesis-block-write') { if (options!.route === 'writer2') throw new Error('Hugging Face request failed [503]'); return JSON.stringify({ tool: 'finish', text: 'Nora hid the notebook under the seat of the car.' }); }
+      if (stage === 'thesis-draft-choice') { chosen++; return JSON.stringify({ choose: 'A' }); }
+      if (stage === 'thesis-block-review') return JSON.stringify({ ready: true, issues: [] });
+      throw new Error(`Stop at ${stage}`);
+    });
+  const draft = store.loadTheses()!;
+  expect(draft.blocks[0].text).toContain('under the seat');
+  expect(draft.authors!.T1).toBe('writer');
+  expect(chosen).toBe(0);
+  expect(draft.duels || []).toEqual([]);
+  expect(draft.duel_record!.solitary).toEqual({ writer: 0, writer2: 0 });
+  expect(store.runLog().some(entry => entry.detail.includes('the second writer gave no draft'))).toBe(true);
 });

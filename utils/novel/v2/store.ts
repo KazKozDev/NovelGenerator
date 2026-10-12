@@ -1,5 +1,6 @@
 import { thesisManuscript, type ThesisDraft } from './theses';
 import type { ProgressiveDraft } from './progressive';
+import type { AuthorDraft } from '../v3/author';
 import type { BookDesign, ChapterMapEntry, ChapterPlan, EndingReadiness, FinalReport, ProjectInput, ReaderThread, SceneHandoff, StateDelta, StoryState, StyleContract } from './types';
 import type { QuestionResolution } from './tracker';
 
@@ -40,6 +41,9 @@ export interface ProjectStore {
   loadTheses(): ThesisDraft | null;
   saveProgressive(draft: ProgressiveDraft): void;
   loadProgressive(): ProgressiveDraft | null;
+  /** The book an author writes once: its clock, plan and closed chapters. */
+  saveAuthor(draft: AuthorDraft): void;
+  loadAuthor(): AuthorDraft | null;
   saveInput(input: ProjectInput): void;
   loadInput(): ProjectInput | null;
   saveDesign(design: BookDesign): void;
@@ -83,6 +87,7 @@ export function emptyState(): StoryState {
 export class MemoryProjectStore implements ProjectStore {
   private thesisDraft: ThesisDraft | null = null;
   private progressive: ProgressiveDraft | null = null;
+  private author: AuthorDraft | null = null;
   private input: ProjectInput | null = null;
   private design: BookDesign | null = null;
   private style: StyleContract | null = null;
@@ -100,6 +105,8 @@ export class MemoryProjectStore implements ProjectStore {
   loadTheses(): ThesisDraft | null { return this.thesisDraft ? structuredClone(this.thesisDraft) : null; }
   saveProgressive(draft: ProgressiveDraft): void { this.progressive = structuredClone(draft); }
   loadProgressive(): ProgressiveDraft | null { return this.progressive ? structuredClone(this.progressive) : null; }
+  saveAuthor(draft: AuthorDraft): void { this.author = structuredClone(draft); }
+  loadAuthor(): AuthorDraft | null { return this.author ? structuredClone(this.author) : null; }
   saveInput(input: ProjectInput): void { this.input = input; }
   loadInput(): ProjectInput | null { return this.input; }
   saveDesign(design: BookDesign): void { this.design = design; }
@@ -151,6 +158,7 @@ export class MemoryProjectStore implements ProjectStore {
   clearAll(): void {
     this.thesisDraft = null;
     this.progressive = null;
+    this.author = null;
     this.input = null;
     this.design = null;
     this.style = null;
@@ -219,6 +227,8 @@ export class BrowserProjectStore extends MemoryProjectStore {
     if (theses) super.saveTheses(theses);
     const progressive = this.read<ProgressiveDraft>('progressive');
     if (progressive) super.saveProgressive(progressive);
+    const author = this.read<AuthorDraft>('author');
+    if (author) super.saveAuthor(author);
     const design = this.read<BookDesign>('design');
     if (design) super.saveDesign(design);
     const style = this.read<StyleContract>('style');
@@ -246,6 +256,7 @@ export class BrowserProjectStore extends MemoryProjectStore {
 
   saveTheses(draft: ThesisDraft): void { super.saveTheses(draft); this.write('theses', draft); }
   saveProgressive(draft: ProgressiveDraft): void { super.saveProgressive(draft); this.write('progressive', draft); }
+  saveAuthor(draft: AuthorDraft): void { super.saveAuthor(draft); this.write('author', draft); }
   saveInput(input: ProjectInput): void { super.saveInput(input); this.write('input', input); }
   saveDesign(design: BookDesign): void {
     super.saveDesign(design);
@@ -304,7 +315,7 @@ export class BrowserProjectStore extends MemoryProjectStore {
   clearAll(): void {
     super.clearAll();
     if (!this.backend) return;
-    for (const key of ['theses', 'progressive', 'input', 'design', 'chapter_map', 'style', 'plans', 'scenes', 'state', 'threads', 'ending_readiness', 'manuscript', 'report', 'log', 'checkpoints', 'snaps']) {
+    for (const key of ['theses', 'progressive', 'author', 'input', 'design', 'chapter_map', 'style', 'plans', 'scenes', 'state', 'threads', 'ending_readiness', 'manuscript', 'report', 'log', 'checkpoints', 'snaps']) {
       this.remove(key);
     }
   }

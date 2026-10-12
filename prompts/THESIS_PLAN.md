@@ -23,7 +23,7 @@ The chain. The outline is also a chain that a program plays forward, scene by sc
 - ending_rests_on: the canon facts the resolution cannot do without — each proof, admission, discovery. Each must be established in a scene, learned by the last scene's point-of-view character in a scene, and given to the reader.
 - places: every place a scene happens in or a thing is left in. place on each thesis is one of them.
 - tracked[].at: the character who holds the thing, or the place it lies in, before the first scene.
-- needs_things: what must already be where, for this scene to happen as planned — the thing, and the character who must have it or the place it must be in. That character must be in the scene, or the scene must be in that place.
+- needs_things: what must already be where, for this scene to happen as planned — the thing, and the character who must have it or the place it must be in. It may be somewhere other than the scene: a scene at home can depend on the notebook still lying in the office.
 - moves: every time this scene hands a thing over, takes it, hides it or leaves it: the thing, and the character or place it ends with; "GONE" when it is destroyed, surrendered or put out of reach. A thing stays where the last move left it. If a later scene needs it elsewhere, a scene in between moves it, and says so in its action or outcome.
 - needs_knowledge: who must already know which fact for what they do in this scene. They must have learned it in an earlier scene (knowledge.learned_in), not this one and not a later one.
 Use empty arrays where a scene needs or moves nothing. Do not leave a need out to make the chain pass: the writer will need the thing anyway, and it will not be there.

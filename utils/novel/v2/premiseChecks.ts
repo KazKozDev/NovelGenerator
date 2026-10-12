@@ -30,7 +30,8 @@ export function readCoverage(raw: any, plan: ThesisPlan): Issues {
   const seen = new Set<number>();
   const issues: Issues = [];
   for (const entry of raw.coverage) {
-    if (!entry || !Number.isInteger(entry.given) || entry.given < 0 || entry.given >= givens.length || seen.has(entry.given)) throw new Error('Coverage must cite every given index exactly once.');
+    if (!entry || !Number.isInteger(entry.given) || entry.given < 0 || entry.given >= givens.length) throw new Error(`Coverage: given must be an index from 0 to ${givens.length - 1}; got ${JSON.stringify(entry?.given)}. One entry per given, each exactly once.`);
+    if (seen.has(entry.given)) throw new Error(`Coverage: given ${entry.given} is answered twice; still unanswered: ${givens.map((_, at) => at).filter(at => !seen.has(at) && at !== entry.given).join(', ') || 'none'}. One entry per given, each exactly once.`);
     if (!['story', 'requirement'].includes(entry.kind) || !FIELDS.includes(entry.field) || !plan.theses.some(t => t.id === entry.thesis_id)) throw new Error(`Coverage entry ${entry.given} needs kind, an existing thesis_id (${plan.theses.map(t => t.id).join(', ')}) and field ${FIELDS.join('|')}.`);
     seen.add(entry.given);
     if (entry.kind === 'requirement' || entry.field === 'action' || entry.field === 'outcome') continue;
@@ -45,11 +46,14 @@ export function readCoverage(raw: any, plan: ThesisPlan): Issues {
  * Two questions the bookkeeping review does not ask: does the mechanism survive being
  * played from inside its people, and does every premise given happen in a scene.
  */
-export async function premiseChecks(plan: ThesisPlan, request: string, system: string, llm: NovelLLM): Promise<Issues> {
+export async function premiseChecks(plan: ThesisPlan, request: string, system: string, llm: NovelLLM, mechanism = true): Promise<Issues> {
   const outline = JSON.stringify(plan);
   const coverage = await structuredResponse(fillTemplate('THESIS_COVERAGE', coverageRaw, { givens: JSON.stringify(plan.premise_givens.map((given, index) => ({ given: index, text: given }))), plan: JSON.stringify(plan.theses.map(t => ({ id: t.id, chapter: t.chapter, state_before: t.state_before, action: t.action, outcome: t.outcome }))) }), system, llm, ['coverage'],
     raw => readCoverage(raw, plan),
     { stage: 'thesis-premise-coverage', route: 'validator', schema: coverageSchema(plan), maxTokens: 4096 });
+  // The mechanism is attacked before the outline exists, where an answer is a decision. Asked
+  // again of the finished outline, every objection became a clause welded onto a scene.
+  if (!mechanism) return [...canonGaps(plan), ...chainGaps(plan), ...coverage, ...crowdedPlaces(plan)];
   const stress = await structuredResponse(fillTemplate('THESIS_STRESS', stressRaw, { input: request, plan: outline }), system, llm, ['ready', 'issues'],
     raw => readThesisReview(raw, plan).issues,
     { stage: 'thesis-plan-stress', route: 'validator', schema: planReviewSchema(plan.theses.map(t => t.id)), maxTokens: 8192, deliberate: true });
@@ -120,13 +124,14 @@ export function chainGaps(plan: ThesisPlan): Issues {
   const location = new Map<string, { at: string; by: string }>();
   for (const [id, thing] of things) if (thing.at) location.set(id, { at: thing.at, by: 'the start of the book' });
   plan.theses.forEach((t, index) => {
-    const present = new Set([...t.participants.map(p => p.character_id), ...(t.place ? [t.place] : [])]);
     const known = (id: string) => people.has(id) || places.has(id);
     for (const need of t.needs_things || []) {
       const thing = things.get(need.thing);
       if (!thing) { hole([t.id], `${t.id} needs thing ${need.thing}, which is not on the tracked list.`, `Use a tracked ID (${[...things.keys()].join(', ') || 'none defined'}), or add the thing to tracked with where it starts.`); continue; }
       if (!known(need.at)) { hole([t.id], `${t.id} needs "${thing.name}" at ${need.at}, which is neither a character nor a place ID.`, `Use a character ID (${[...people.keys()].join(', ')}) or a place ID (${[...places.keys()].join(', ') || 'none defined'}).`); continue; }
-      if (!present.has(need.at)) hole([t.id], `${t.id} needs "${thing.name}" ${where(need.at)}, but that person is not in the scene and the scene is not in that place.`, 'A scene can only use a thing that is with someone present or in the place where the scene happens. Bring the person in, set the scene there, or say where the thing really must be.');
+      // A scene may depend on a thing being somewhere else — the notebook still in the office
+      // while she lies at home. Planners state needs that way, and it is a real dependency:
+      // what is checked is that the thing is where the scene says, not that it is in the room.
       const now = location.get(need.thing);
       if (!now) hole([t.id], `${t.id} needs "${thing.name}" ${where(need.at)}, but the plan never says where it starts.`, `Give ${need.thing} an "at" on the tracked list, or have an earlier scene move it there.`);
       else if (now.at !== need.at) hole([t.id, now.by], `${t.id} needs "${thing.name}" ${where(need.at)}, but it is ${where(now.at)} — left there by ${now.by} — and no scene between moves it.`,
@@ -143,7 +148,6 @@ export function chainGaps(plan: ThesisPlan): Issues {
       const thing = things.get(move.thing);
       if (!thing) { hole([t.id], `${t.id} moves thing ${move.thing}, which is not on the tracked list.`, 'Use a tracked ID or add the thing to tracked.'); continue; }
       if (move.to !== 'GONE' && !known(move.to)) { hole([t.id], `${t.id} moves "${thing.name}" to ${move.to}, which is neither a character, a place nor GONE.`, 'Use a character ID, a place ID or GONE.'); continue; }
-      if (move.to !== 'GONE' && !present.has(move.to)) hole([t.id], `${t.id} moves "${thing.name}" ${where(move.to)}, but that person is not in the scene and the scene is not in that place.`, 'A thing can be handed to someone present or left in the place where the scene happens.');
       location.set(move.thing, { at: move.to, by: t.id });
     }
   });
@@ -157,4 +161,14 @@ export function chainGaps(plan: ThesisPlan): Issues {
     if (fact.reader_learns_in === 'NEVER') hole([last.id], `The ending rests on "${fact.truth}", and the reader is never given it.`, 'Set reader_learns_in to the scene that shows it.');
   }
   return issues;
+}
+
+/** A book that sits in one room. Counted, not judged: more than two fifths of the scenes in one place. */
+export function crowdedPlaces(plan: ThesisPlan): Issues {
+  if (plan.theses.length < 6) return [];
+  const count = new Map<string, string[]>();
+  for (const thesis of plan.theses) { const place = String((thesis as any).place || thesis.where || '').trim().toLowerCase(); if (place) count.set(place, [...(count.get(place) || []), thesis.id]); }
+  return [...count].filter(([, ids]) => ids.length > plan.theses.length * 0.4).map(([place, ids]) => ({ severity: 'major' as const, thesis_ids: ids,
+    problem: `${ids.length} of ${plan.theses.length} scenes happen in the same place (${place}). A story told in one room is people talking about the story.`,
+    required_change: 'Move scenes to where their event would really happen — where the thing is found, the person is followed, the act is done — until no place holds more than two fifths of the book.' }));
 }

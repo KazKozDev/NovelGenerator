@@ -30,8 +30,14 @@ export interface ThreeZoneGenerationViewProps {
   totalChaptersToProcess: number;
   currentStoryOutline: string;
   currentChapterPlan: string;
+  /** The author's tools, each as readable text: shown as tabs beside the view of the chapter. */
+  tools?: { name: string; count: number; text: string }[];
+  /** Where the author is working now: the centre pane follows it into that tab, and back to the chapter. */
+  toolFocus?: { tab: string | null; label: string; text: string } | null;
   generatedChapters: ChapterData[];
   agentLogs: AgentLogEntry[];
+  /** The prose of the call now in flight, as far as it has arrived. */
+  liveDraft?: { label: string; text: string } | null;
   tokenTotals?:TokenTotals;
   repairProgress?:RepairReport;
   autosaveStatus?: { state: 'saving' | 'saved' | 'error'; error?: string };
@@ -54,8 +60,11 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   totalChaptersToProcess,
   currentStoryOutline,
   currentChapterPlan,
+  tools,
+  toolFocus,
   generatedChapters,
   agentLogs,
+  liveDraft,
   tokenTotals, repairProgress,
   lastSavedAt, autosaveStatus,
   version,
@@ -72,7 +81,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   // Sync selected chapter with currently processing chapter
   useEffect(() => {
     if (!followActiveChapter) return;
-    if (currentChapterProcessing > 0 && currentChapterProcessing <= generatedChapters.length) {
+    // The chapter being written is followed from its first word, before it has any saved text:
+    // otherwise its live text was shown under the chapter before it.
+    if (currentChapterProcessing > 0 && currentChapterProcessing <= Math.max(totalChaptersToProcess, generatedChapters.length)) {
       setSelectedChapterIdx(currentChapterProcessing - 1);
     } else if (generatedChapters.length > 0 && selectedChapterIdx >= generatedChapters.length) {
       setSelectedChapterIdx(generatedChapters.length - 1);
@@ -81,7 +92,9 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
   useEffect(() => { if (selectedChapterNumber) setSelectedChapterIdx(selectedChapterNumber - 1); }, [selectedChapterNumber]);
 
-  const activeChapter = generatedChapters[selectedChapterIdx] || generatedChapters[currentChapterProcessing - 1] || null;
+  const activeChapter = generatedChapters[selectedChapterIdx] || null;
+  // Text that is arriving belongs to the chapter being written and is shown only there.
+  const liveHere = liveDraft?.text && (!currentChapterProcessing || selectedChapterIdx + 1 === currentChapterProcessing) ? liveDraft : null;
   const activeChapterNum = selectedChapterIdx + 1;
   // The stored title may already carry its number ("Chapter 1" from the v2
   // hook, "Chapter 1: The Awakening" from older runs): strip it before the
@@ -208,7 +221,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                       ) : isCompleted ? (
                         <span className="text-zinc-400 text-xs">Accepted</span>
                       ) : (
-                        <span className="text-zinc-600 text-xs">{chapter?.content ? 'Needs review' : 'Pending'}</span>
+                        <span className="text-zinc-600 text-xs">{chapter?.content ? (isLoading ? 'Draft' : 'Written') : 'Pending'}</span>
                       )}
                     </div>
                   </button>
@@ -263,10 +276,13 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           data-testid="zone-prose"
           className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} studio-manuscript min-w-0 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet`}
         >
-          {proseContent ? proseContent(activeChapterNum) : isWritingProse || activeContent ? (
+          {proseContent ? proseContent(activeChapterNum) : isWritingProse || activeContent || liveHere || tools?.length ? (
             <StreamingContentView
               title={proseHeading}
               content={activeContent}
+              live={liveHere}
+              tools={tools}
+              toolFocus={toolFocus}
               previousContent={activeChapter?.previousContent}
               fullHeight={true}
             />

@@ -15,6 +15,7 @@ export interface ProjectSnapshot {
   files: {
     thesis_draft?: unknown;
     progressive_draft?: unknown;
+    author_draft?: unknown;
     input: unknown;
     book_design: unknown;
     chapter_map: unknown;
@@ -39,6 +40,7 @@ export function snapshotProject(store: ProjectStore): ProjectSnapshot {
     files: {
       thesis_draft: store.loadTheses(),
       progressive_draft: store.loadProgressive(),
+      author_draft: store.loadAuthor(),
       input: store.loadInput(),
       book_design: design,
       chapter_map: store.loadChapterMap(),
@@ -107,6 +109,7 @@ export function restoreSnapshot(store: ProjectStore, snap: unknown): void {
   store.saveInput(files.input as Parameters<ProjectStore['saveInput']>[0]);
   if (files.thesis_draft) store.saveTheses(files.thesis_draft as Parameters<ProjectStore['saveTheses']>[0]);
   if (files.progressive_draft) store.saveProgressive(files.progressive_draft as Parameters<ProjectStore['saveProgressive']>[0]);
+  if (files.author_draft && typeof files.author_draft === 'object' && Array.isArray((files.author_draft as { chapters?: unknown }).chapters)) store.saveAuthor(files.author_draft as Parameters<ProjectStore['saveAuthor']>[0]);
   if (files.book_design) store.saveDesign(files.book_design as Parameters<ProjectStore['saveDesign']>[0]);
   if (files.style_contract && typeof files.style_contract === 'object') {
     store.saveStyleContract(files.style_contract as Parameters<ProjectStore['saveStyleContract']>[0]);

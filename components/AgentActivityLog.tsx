@@ -30,17 +30,19 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
   const formatTime = (timestamp: number) =>
     new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const logsByChapter = logs.reduce((acc, log) => {
-    (acc[log.chapterNumber] ||= []).push(log);
+  // In the order things happened. Grouping by chapter put a late pass over an early scene
+  // above work done an hour before it, and the log read as if it jumped back and forth.
+  const runs = [...logs].sort((a, b) => a.timestamp - b.timestamp).reduce((acc, log) => {
+    if (acc.at(-1)?.[0].chapterNumber === log.chapterNumber) acc.at(-1)!.push(log); else acc.push([log]);
     return acc;
-  }, {} as Record<number, AgentLogEntry[]>);
+  }, [] as AgentLogEntry[][]);
 
   return (
     <div className="mt-2">
-      {Object.entries(logsByChapter).map(([chapterNum, chapterLogs]) => (
-        <div key={chapterNum} className="mb-4">
+      {runs.map((chapterLogs, run) => (
+        <div key={`${chapterLogs[0].timestamp}-${run}`} className="mb-4">
           <h4 className="text-xs font-semibold uppercase text-zinc-500 mb-1.5">
-            Chapter {chapterNum}
+            {chapterLogs[0].chapterNumber ? `Chapter ${chapterLogs[0].chapterNumber}` : 'Before the chapters'}
           </h4>
 
           {chapterLogs.map((log, idx) => (

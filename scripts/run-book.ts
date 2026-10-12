@@ -24,6 +24,7 @@ import { generateOllamaText } from '../services/ollamaService';
 import { generateGeminiText } from '../services/geminiService';
 import { generateAnthropicText } from '../services/anthropicService';
 import { generateQwenText } from '../services/qwenService';
+import { generateHuggingFaceText } from '../services/hfService';
 import { inputKey } from '../utils/novel/v2/progressive';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 
@@ -179,7 +180,9 @@ async function main(): Promise<void> {
     let lastStreamLog = 0;
     for (let attempt = 1; ; attempt++) {
       try {
-        const result = via === 'qwen'
+        const result = via === 'huggingface'
+          ? await generateHuggingFaceText(prompt, system, outputTokens, model, options?.temperature ?? 0.2, metadata => log(`HF#${calls} attempt=${attempt} ${JSON.stringify(metadata)}`), options?.schema)
+          : via === 'qwen'
           ? await generateQwenText(prompt, system, outputTokens, model, options?.temperature ?? 0.2, metadata => log(`QWEN#${calls} attempt=${attempt} ${JSON.stringify(metadata)}`), options?.schema)
           : via === 'anthropic'
           ? await generateAnthropicText(prompt, system, options?.maxTokens ?? 16384, model, Boolean(options?.deliberate))

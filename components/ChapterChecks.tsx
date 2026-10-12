@@ -56,7 +56,7 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
         <h4 className="text-xs font-semibold uppercase text-zinc-500 mb-3">Measured</h4>
         <div className="flex flex-col gap-3 pr-1">
           {[
-            {label:'Words',value:(content.match(/\S+/gu)?.length || 0).toLocaleString()+(targetWords ? ` / ${targetWords.toLocaleString()}` : '')},
+            {label:'Words',value:(content.match(/\S+/gu)?.length || 0).toLocaleString()},
             {label:'Dialogue',value:`${Math.round(texture.dialogueShare*100)}%`},
             {label:'Median paragraph',value:`${texture.medianParagraphWords}w`},
             {label:'Comparisons/1k',value:texture.similesPer1000.toFixed(1)},

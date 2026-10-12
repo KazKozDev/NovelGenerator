@@ -22,7 +22,7 @@ const chapterSchema=object({chapter:{type:'integer',minimum:1},start:string,goal
   steps:{type:'array',minItems:1,items:object({id:string,action:string,resistance:string,consequence:string,necessity:string})},
   result:string,handoff:string,budget_rationale:string});
 export function readChapterDevelopment(raw:any,input:ProjectInput):ChapterDevelopment[] {
-  if(!Array.isArray(raw?.chapters)||raw.chapters.length!==input.chapter_count)throw Error('Development must cover every requested chapter in order.');
+  if(!Array.isArray(raw?.chapters)||raw.chapters.length!==input.chapter_count)throw Error(`Development must have exactly ${input.chapter_count} chapters, 1 to ${input.chapter_count} in order; got ${Array.isArray(raw?.chapters)?raw.chapters.length:'no chapters array'}.`);
   const ids=new Set<string>();
   for(const [i,ch] of raw.chapters.entries()) {
     // Name the field: "chapter 2 needs its start, goal, steps…" sent a model round the same
@@ -38,6 +38,30 @@ export function readChapterDevelopment(raw:any,input:ProjectInput):ChapterDevelo
     }
   }
   return raw.chapters;
+}
+/**
+ * A finding is read for what it says, and refused only for what cannot be recovered — with
+ * the finding and the field named. A reviewer that writes the chapter as "3", names it only
+ * through a step ID, or puts "Required change: …" inside the problem has said everything
+ * needed; refusing that with one sentence for three possible faults sent two models round
+ * the same review five times.
+ */
+export function readDevelopmentIssues(raw:any,chapters:number):DevelopmentReview['issues'] {
+  if(!Array.isArray(raw?.issues))throw Error('Return issues as an array; an empty array when the development has no defect.');
+  return raw.issues.map((issue:any,index:number)=>{
+    const at=`Issue ${index+1}`;
+    let problem=nonempty(issue?.problem)?issue.problem.trim():'';
+    let change=nonempty(issue?.required_change)?issue.required_change.trim():'';
+    const inline=problem.match(/^([\s\S]*?)\s*Required change:\s*([\s\S]+)$/i);
+    if(!change&&inline){problem=inline[1].trim();change=inline[2].trim();}
+    const named=Number(issue?.chapter);
+    const fromStep=Number((`${problem} ${change}`.match(/\bC(\d+)S\d+\b/)||[])[1]);
+    const chapter=Number.isInteger(named)&&named>=1&&named<=chapters?named:Number.isInteger(fromStep)&&fromStep>=1&&fromStep<=chapters?fromStep:0;
+    const lacking=[!problem?'problem is empty':'',!change?'required_change is empty (say what must change, in its own field)':'',
+      !chapter?`chapter must be a whole number from 1 to ${chapters}; got ${JSON.stringify(issue?.chapter)} — give the chapter where the defect starts`:''].filter(Boolean);
+    if(lacking.length)throw Error(`${at}: ${lacking.join('; ')}. Keep the finding; correct only these fields.`);
+    return {chapter,problem,required_change:change};
+  });
 }
 export function developmentContext(state:ChapterDevelopmentState|undefined,input:ProjectInput):string {
   if(!state)return '';
@@ -77,8 +101,8 @@ export async function developChapters(input:ProjectInput,synopsis:string,system:
     const review=await structuredResponse(
       `Author request: ${JSON.stringify(input)}\nSynopsis: ${synopsis}\nChapter development with USER budgets: ${developmentContext(state,input)}\nIndependently check the dramatic chain before scene planning. Does each action have a cause and a consequential result? Does that result affect the next action and the next chapter? What would be lost if each step were removed? Is there enough concrete dramatic material for the chapter's volume without repeated exposition, decorative filler or compressed crucial investigation? A numerical count of steps is NOT proof of sufficiency; do not impose a fixed structure or mandatory failed attempt. Check protagonist choices, opposition, setup and payoff. The synopsis is a sketch: this development exists to invent the intermediate events, people and evidence it leaves out, so an event or person absent from the synopsis is NOT a defect. Report an invented event only when nothing inside this development causes it, when it contradicts the author's premise, or when it does a job the protagonist's own choice should do. Judge the development as written, never as it would stand after your own requested change. Report each root cause once, in the chapter where it starts, and name the later steps that depend on it inside that one finding; do not list the dependants as findings of their own. Return {ready,issues:[{chapter,problem,required_change}]}. Report only concrete defects, with the responsible step IDs inside problem and a specific semantic correction. Empty issues means ready.`,
       system,llm,['ready','issues'],raw=>{
-        if(!Array.isArray(raw?.issues)||raw.issues.some((issue:any)=>!Number.isInteger(issue?.chapter)||issue.chapter<1||issue.chapter>input.chapter_count||!nonempty(issue.problem)||!nonempty(issue.required_change)))throw Error('Development review requires concrete defects, a real chapter and required changes.');
-        return {ready:raw.issues.length===0,issues:raw.issues} as DevelopmentReview;
+        const issues=readDevelopmentIssues(raw,input.chapter_count);
+        return {ready:issues.length===0,issues} as DevelopmentReview;
       },{stage,route:'validator',schema:object({ready:{type:'boolean'},issues:{type:'array',items:object({chapter:{type:'integer',enum:budgets.map(b=>b.chapter)},problem:string,required_change:string})}}),maxTokens:4096,deliberate:true,
         initialResponse:state.response_candidate?.stage===stage?state.response_candidate.raw:undefined,
         onCandidate:(raw,error)=>{state.response_candidate={stage,raw,error};onSave(state);}});

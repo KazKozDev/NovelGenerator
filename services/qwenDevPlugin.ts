@@ -1,9 +1,17 @@
 import type { Plugin } from 'vite';
-import { generateQwenText } from './qwenService';
+import { generateQwenText, listQwenModels } from './qwenService';
 
 /** Development backend: never puts credentials in Vite's browser defines. */
 export function qwenDevPlugin():Plugin {
   return {name:'qwen-local-gateway',configureServer(server){
+    // The list of models comes first: the route below answers everything under /api/qwen.
+    server.middlewares.use('/api/qwen/models',(req,res)=>{
+      res.setHeader('Content-Type','application/json');
+      try {const origin=new URL(req.headers.origin||`http://${req.headers.host}`);
+        if(!['localhost','127.0.0.1'].includes(origin.hostname)||origin.host!==req.headers.host)throw Error();
+      }catch{res.statusCode=403;res.end(JSON.stringify({error:'Local requests only'}));return;}
+      listQwenModels().then(models=>res.end(JSON.stringify({models})),error=>{res.statusCode=502;res.end(JSON.stringify({error:error instanceof Error?error.message:'Model list failed'}));});
+    });
     server.middlewares.use('/api/qwen',(req,res)=>{
       res.setHeader('Content-Type','application/json');
       if(req.method!=='POST'){res.statusCode=405;res.end(JSON.stringify({error:'POST required'}));return;}

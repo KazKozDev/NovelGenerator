@@ -79,3 +79,21 @@ it('repairs a plan in one answer: everything is shown, no anchor is demanded, an
   const joined=await planAgent(async()=>'{"tool":"patch_plan","edits":[{"section":"thesis","id":"T1","field":"action","after":"Opens it"}]} {"tool":"patch_plan","edits":[{"section":"thesis","id":"T2","field":"state_before","after":"It lies open"}],"finish":true}',plan,'Repair','',{stage:'repair',key:'joined',validate});
   expect(joined.theses[0].action).toBe('Opens it');expect(joined.theses[1].state_before).toBe('It lies open');
 });
+
+it('takes a batch as large as the repair needs, and does not ask a third time for a command refused twice', async () => {
+  const many = Array.from({ length: 45 }, (_, at) => ({ section: 'thesis', id: at % 2 ? 'T1' : 'T2', field: 'why', after: `Reason ${at}` }));
+  expect(patchPlan(plan, many as any, validate).theses[0].why).toBe('Reason 43');
+  let turns = 0;
+  const result = await planAgent(async () => { turns++; return '{"tool":"patch_plan","edits":[{"section":"thesis","id":"T1","field":"chapter","after":9}],"finish":true}'; }, plan, 'Repair', '', { stage: 'repair', key: 'refused-twice', validate });
+  expect(turns).toBe(2);
+  expect(result.theses[0].chapter).toBe(plan.theses[0].chapter);
+});
+
+it('lets a repair do what the checks ask of it: add a fact, and say when the reader learns one', () => {
+  const added = patchPlan(plan, [{ section: 'fact', id: 'F9', field: 'new', after: { truth: 'The letter was forged.', established_in: 'T2', reader_learns_in: 'T2', knowledge: [{ character_id: 'C1', learned_in: 'T2' }] } },
+    { section: 'fact', id: 'F1', field: 'reader_learns_in', after: 'T1' }] as any, validate);
+  expect(added.canon!.facts.find(f => f.id === 'F9')).toMatchObject({ truth: 'The letter was forged.', established_in: 'T2' });
+  expect(added.theses.find(t => t.id === 'T2')!.fact_ids).toContain('F9');
+  expect(added.canon!.facts.find(f => f.id === 'F1')!.reader_learns_in).toBe('T1');
+  expect(() => patchPlan(plan, [{ section: 'fact', id: 'F1', field: 'new', after: { truth: 'x', established_in: 'T1' } }] as any, validate)).toThrow('a new fact needs an id no fact has yet');
+});

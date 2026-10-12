@@ -16,3 +16,11 @@ it('does not search with a zero limit when repairing the first pending block',()
   const plan={theses:[{id:'A',requires:[]}]} as unknown as ThesisPlan;
   expect(affectedByEdits(plan,[],[{block_id:'A',before:'old',after:'new'}])).toEqual([]);
 });
+
+it('leaves the next scene alone when the edit is not in the ending', () => {
+  const plan = { theses: [{ id: 'A', requires: [] }, { id: 'B', requires: [] }] } as unknown as ThesisPlan;
+  const block = (id: string, text: string) => ({ thesis_id: id, text, review: { ready: true, issues: [] } });
+  const blocks = [block('A', 'She took the bronze key.\n\nShe left by the back stairs.'), block('B', 'Morning.')] as ThesisDraft['blocks'];
+  expect(affectedByEdits(plan, blocks, [{ block_id: 'A', before: 'silver key', after: 'bronze key' }])).toEqual(['A']);
+  expect(affectedByEdits(plan, blocks, [{ block_id: 'A', before: 'front door', after: 'back stairs' }])).toEqual(['A', 'B']);
+});

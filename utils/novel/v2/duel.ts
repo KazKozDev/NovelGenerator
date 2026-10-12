@@ -37,10 +37,10 @@ export function contenders(record: DuelRecord, kind: SceneKind, sceneNumber: num
 export function measure(text: string, target: number, id: string, earlier: { thesis_id: string; text: string }[], habits: Habit[]): Measured {
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const repeats = textFindings([...earlier, { thesis_id: id, text }]).filter(finding => finding.severity === 'major' && finding.thesis_ids.includes(id)).length;
-  const out = !words ? 'empty' : words < target * 0.6 ? `only ${words} of ${target} words` : words > target * 2 ? `${words} words against a target of ${target}` : repeats ? 'repeats a sentence the book already has' : '';
+  const out = !words ? 'empty' : words < target * 0.6 ? `only ${words} of ${target} words` : repeats ? 'repeats a sentence the book already has' : '';
   return { words, target, bodily: Math.max(0, somaticBeats(text).length - somaticAllowance(text)), spent: habitUses([{ thesis_id: id, text }], habits).reduce((sum, entry) => sum + entry.uses.length, 0), repeats, out };
 }
-const penalty = (m: Measured) => Math.abs(m.words - m.target) / Math.max(1, m.target) + m.bodily * 0.5 + m.spent * 0.5 + m.repeats * 2;
+const penalty = (m: Measured) => Math.max(0, m.target - m.words) / Math.max(1, m.target) + m.bodily * 0.5 + m.spent * 0.5 + m.repeats * 2;
 const describe = (m: Measured) => `${m.words} words against a target of ${m.target}; ${m.bodily} bodily reaction(s) past the scene's allowance; ${m.spent} move(s) the book has already spent`;
 
 export interface Draft { author: Author; text: string; measured: Measured }

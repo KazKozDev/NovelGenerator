@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
+import { Combo } from './common/Combo';
 import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
-import { GENRE_CONFIGS } from '../utils/genrePrompts';
+import { GENRE_CHOICES } from '../utils/genreList';
+import { fetchHuggingFaceModels } from '../services/hfBrowserService';
 import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
+import { fetchProviderModels } from '../services/qwenBrowserService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
@@ -49,70 +52,57 @@ const UserInput: React.FC<UserInputProps> = ({
     setSecondWriter(next);
     saveStoredSecondWriterConfig(next.enabled ? next : undefined);
   };
+  const fieldId = (label: string) => `model-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  // Hugging Face Inference Providers: the router's public list, as suggestions for the model field.
+  const [hfModels, setHfModels] = useState<{ id: string; providers: string[] }[]>([]);
+  const [hfNote, setHfNote] = useState('');
+  const loadHfModels = () => { setHfNote('Loading…'); fetchHuggingFaceModels().then(models => { setHfModels(models); setHfNote(`${models.length} models on the router`); }, error => setHfNote(error instanceof Error ? error.message : 'Model list failed')); };
+  const hfField = (label: string, value: string | undefined, onChange: (model: string) => void) => (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <label className="block text-sm text-zinc-400">{label}</label>
+        <button type="button" onClick={loadHfModels} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+      </div>
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="org/model or org/model:provider" className="text-xs py-1.5 font-mono" options={hfModels.map(model => ({ value: model.id, label: model.providers.join(', ') }))} />
+      <p className="text-xs text-zinc-500">
+        Hugging Face routes the request to a provider that serves the model; add <span className="font-mono">:provider</span>, <span className="font-mono">:fastest</span> or <span className="font-mono">:cheapest</span> to choose. Uses HF_TOKEN from .env.local.{hfNote ? ` ${hfNote}.` : ''}
+        {value && hfModels.find(m => m.id === value.split(':')[0]) ? ` Served by: ${hfModels.find(m => m.id === value.split(':')[0])!.providers.join(', ')}.` : ''}
+      </p>
+    </div>
+  );
   const updateValidator = (change: Partial<LLMProviderConfig & { enabled: boolean }>) => {
     const next = { ...validator, ...change };
     setValidator(next);
     saveStoredValidatorConfig(next.enabled ? next : undefined);
   };
+  // Gemini, Qwen and Anthropic: the models their own servers report, as suggestions for the same kind of field.
+  const [listed, setListed] = useState<{ gemini: string[]; qwen: string[]; anthropic: string[] }>({ gemini: [], qwen: [], anthropic: [] });
+  const [listNote, setListNote] = useState<{ gemini: string; qwen: string; anthropic: string }>({ gemini: '', qwen: '', anthropic: '' });
+  const loadListed = (provider: 'gemini' | 'qwen' | 'anthropic') => { setListNote(note => ({ ...note, [provider]: 'Loading…' })); fetchProviderModels(provider).then(models => { setListed(all => ({ ...all, [provider]: models })); setListNote(note => ({ ...note, [provider]: `${models.length} models from ${provider === 'gemini' ? 'Gemini' : provider === 'qwen' ? 'Qwen' : 'Anthropic'}` })); }, error => setListNote(note => ({ ...note, [provider]: error instanceof Error ? error.message : 'Model list failed' }))); };
+  const listedField = (provider: 'gemini' | 'qwen' | 'anthropic', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <label className="block text-sm text-zinc-400">{label}</label>
+        <button type="button" onClick={() => loadListed(provider)} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+      </div>
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder={placeholder} className="text-xs py-1.5 font-mono" options={listed[provider].map(model => ({ value: model }))} />
+      <p className="text-xs text-zinc-500">{hint}{listNote[provider] ? ` ${listNote[provider]}.` : ''}</p>
+    </div>
+  );
+  // Ollama: the models it reports, as suggestions for the model field — the same field as Hugging Face's.
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
-  const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
-  const [fetchStatus, setFetchStatus] = useState<{ success: boolean; message: string } | null>(null);
-
-  const handleFetchOllamaModels = async () => {
-    setIsFetchingModels(true);
-    setFetchStatus(null);
-    try {
-      const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
-      setOllamaModels(models);
-      if (models.length > 0) {
-        setFetchStatus({ success: true, message: `Found ${models.length} models in Ollama` });
-        if (!models.includes(providerConfig.ollamaModel)) {
-          const updated = { ...providerConfig, ollamaModel: models[0] };
-          setProviderConfig(updated);
-          saveStoredProviderConfig(updated);
-        }
-      } else {
-        setFetchStatus({
-          success: false,
-          message: 'Ollama is reachable, but model list is empty. Pull a model via `ollama pull llama3.1`.'
-        });
-      }
-    } catch (err: any) {
-      setFetchStatus({
-        success: false,
-        message: err.message || 'Cannot connect to Ollama. Make sure Ollama server is running.'
-      });
-    } finally {
-      setIsFetchingModels(false);
-    }
-  };
-
-  const handleFetchEditorModels = async () => {
-    setIsFetchingModels(true);
-    setFetchStatus(null);
-    try {
-      const models = await fetchOllamaModels(providerConfig.ollamaEndpoint);
-      setOllamaModels(models);
-      if (models.length > 0) {
-        setFetchStatus({ success: true, message: `Found ${models.length} models in Ollama` });
-        if (!models.includes(validator.ollamaModel)) {
-          updateValidator({ ollamaModel: models[0] });
-        }
-      } else {
-        setFetchStatus({
-          success: false,
-          message: 'Ollama is reachable, but model list is empty. Pull a model via `ollama pull llama3.1`.'
-        });
-      }
-    } catch (err: any) {
-      setFetchStatus({
-        success: false,
-        message: err.message || 'Cannot connect to Ollama. Make sure Ollama server is running.'
-      });
-    } finally {
-      setIsFetchingModels(false);
-    }
-  };
+  const [ollamaNote, setOllamaNote] = useState('');
+  const loadOllamaModels = () => { setOllamaNote('Loading…'); fetchOllamaModels(providerConfig.ollamaEndpoint).then(models => { setOllamaModels(models); setOllamaNote(models.length ? `${models.length} models in Ollama` : 'Ollama is reachable, but its model list is empty'); }, error => setOllamaNote(error instanceof Error ? error.message : 'Cannot connect to Ollama')); };
+  const ollamaField = (label: string, value: string | undefined, onChange: (model: string) => void, hint: string) => (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <label className="block text-sm text-zinc-400">{label}</label>
+        <button type="button" onClick={loadOllamaModels} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+      </div>
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="llama3.1 or name:cloud" className="text-xs py-1.5 font-mono" options={ollamaModels.map(model => ({ value: model }))} />
+      <p className="text-xs text-zinc-500">{hint}{ollamaNote ? ` ${ollamaNote}.` : ''}</p>
+    </div>
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,16 +117,16 @@ const UserInput: React.FC<UserInputProps> = ({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
       <div className="border border-zinc-800 rounded p-4 md:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+        <div className="space-y-3 mb-3">
           <div>
             <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-zinc-400" />
-              <span>AI provider</span>
+              <span>Author model</span>
             </h3>
-            <p className="text-xs text-zinc-500">Choose inference provider: Gemini, Ollama or Qwen</p>
+            <p className="text-xs text-zinc-500">The model that writes the book: it keeps the notebook, plans, speaks as its people and writes every chapter.</p>
           </div>
           
-          <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800 self-start sm:self-auto">
+          <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
             <button
               type="button"
               onClick={() => {
@@ -168,35 +158,18 @@ const UserInput: React.FC<UserInputProps> = ({
               Ollama
             </button>
             <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
           </div>
         </div>
+        {providerConfig.provider==='anthropic' && <div className="mt-4 pt-3 border-t border-zinc-800">{listedField('anthropic', 'Anthropic model', providerConfig.anthropicModel, model => { const updated = { ...providerConfig, anthropicModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.')}</div>}
+        {providerConfig.provider==='huggingface' && <div className="mt-4 pt-3 border-t border-zinc-800">{hfField('Hugging Face model', providerConfig.hfModel, model => {const updated={...providerConfig,hfModel:model||undefined};setProviderConfig(updated);saveStoredProviderConfig(updated);})}</div>}
 
-        {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3"><label className="block text-sm text-zinc-400">Qwen Model<Input value={providerConfig.qwenModel||'qwen3.8-flash'} onChange={e=>{const updated={...providerConfig,qwenModel:e.target.value};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className="text-xs font-mono mt-1.5"/></label><p className="text-xs text-zinc-500">Uses the server API key and endpoint from .env.local. Thinking is off.</p></div>}
+        {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{listedField('qwen', 'Qwen model', providerConfig.qwenModel, model => { const updated = { ...providerConfig, qwenModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'qwen3.8-flash', 'Uses the server API key and endpoint from .env.local. Thinking is off. Empty means qwen3.8-flash.')}</div>}
         {/* Gemini Details */}
         {providerConfig.provider === 'gemini' && (
           <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                Gemini Model
-              </label>
-              <Input
-                type="text"
-                value={providerConfig.geminiModel || ''}
-                onChange={(e) => {
-                  const typed = e.target.value.trim();
-                  const updated = { ...providerConfig };
-                  if (typed) updated.geminiModel = typed;
-                  else delete updated.geminiModel;
-                  setProviderConfig(updated);
-                  saveStoredProviderConfig(updated);
-                }}
-                placeholder={GEMINI_MODEL_NAME}
-                className="text-xs py-1.5 font-mono"
-              />
-              <p className="text-xs text-zinc-500 mt-1">
-                Type any Gemini model ID — empty means the default ({GEMINI_MODEL_NAME})
-              </p>
-            </div>
+            {listedField('gemini', 'Gemini model', providerConfig.geminiModel, model => { const updated = { ...providerConfig }; if (model) updated.geminiModel = model; else delete updated.geminiModel; setProviderConfig(updated); saveStoredProviderConfig(updated); }, GEMINI_MODEL_NAME, `Any Gemini model ID. Empty means the default (${GEMINI_MODEL_NAME}).`)}
           </div>
         )}
 
@@ -227,77 +200,8 @@ const UserInput: React.FC<UserInputProps> = ({
                 </p>
               </div>
 
-              <div>
-                <div className="flex flex-wrap gap-2 items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-zinc-400">
-                    Ollama Model
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleFetchOllamaModels}
-                    disabled={isFetchingModels}
-                    className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
-                  >
-                    {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
-                  </button>
-                </div>
-
-                {ollamaModels.length > 0 ? (
-                  <Select
-                    value={providerConfig.ollamaModel}
-                    onChange={(e) => {
-                      const updated = { ...providerConfig, ollamaModel: e.target.value };
-                      setProviderConfig(updated);
-                      saveStoredProviderConfig(updated);
-                    }}
-                    className="text-xs py-1.5"
-                  >
-                    {[...new Set([providerConfig.ollamaModel, ...ollamaModels])].map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    type="text"
-                    value={providerConfig.ollamaModel}
-                    onChange={(e) => {
-                      const updated = { ...providerConfig, ollamaModel: e.target.value };
-                      setProviderConfig(updated);
-                      saveStoredProviderConfig(updated);
-                    }}
-                    placeholder="llama3.1"
-                    className="text-xs py-1.5"
-                  />
-                )}
-                <p className="text-xs text-zinc-500 mt-1">
-                  {ollamaModels.length > 0
-                    ? `Selected from ${ollamaModels.length} models Ollama reports`
-                    : `Click "Fetch Ollama Models" to retrieve models`}
-                </p>
-              </div>
+              {ollamaField('Ollama model', providerConfig.ollamaModel, model => { const updated = { ...providerConfig, ollamaModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'Any model your Ollama serves, local or cloud.')}
             </div>
-
-            <p className="text-xs text-zinc-500">
-              A cross-encoder reads each chapter plan against finished prose, and an NLI head
-              reads the scene's claims against confirmed state, before a word is written —
-              the only check that catches a scene retold in different words. Both run on your
-              machine; the weights download once with progress shown. There is no setting: a
-              check you can quietly turn down is a check nobody can trust the absence of.
-            </p>
-
-            {fetchStatus && (
-              <div
-                className={`text-xs px-3 py-2 rounded ${
-                  fetchStatus.success
-                    ? 'bg-emerald-950/40 text-emerald-300/90 border border-emerald-900/60'
-                    : 'bg-red-950/40 text-red-300/90 border border-red-900/60'
-                }`}
-              >
-                {fetchStatus.message}
-              </div>
-            )}
           </div>
         )}
 
@@ -315,11 +219,12 @@ const UserInput: React.FC<UserInputProps> = ({
                 : { enabled: false })}
               className="accent-zinc-200"
             />
-            <span className="font-medium">Separate editor model</span>
+            <span className="font-medium">Reader model</span>
           </label>
           <p className="text-xs text-zinc-500">
-            The editor reviews chapter plans and prose. A different model than the writer is strongly
-            recommended — off means the writer judges its own text, which is the weakest configuration.
+            Another model that reads what the author writes: the reader the author asks about a chapter, and
+            the one who says what the finished book left hanging. It sees what the
+            author reads past. Off means the author's own model reads its own text.
           </p>
 
           {validator.enabled && (
@@ -348,113 +253,15 @@ const UserInput: React.FC<UserInputProps> = ({
                   Ollama
                 </button>
                 <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
+                <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
+                <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
               </div>
 
-              {validator.provider === 'qwen' ? <label className="block text-sm text-zinc-400">Editor Qwen Model<Input value={validator.qwenModel||'qwen3.8-flash'} onChange={e=>updateValidator({qwenModel:e.target.value})} className="text-xs font-mono mt-1.5"/></label> : validator.provider === 'gemini' ? (
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                    Editor Gemini Model
-                  </label>
-                  <Input
-                    type="text"
-                    value={validator.geminiModel || ''}
-                    onChange={(e) => {
-                      const typed = e.target.value.trim();
-                      const change: Partial<LLMProviderConfig & { enabled: boolean }> = {};
-                      if (typed) change.geminiModel = typed;
-                      else change.geminiModel = undefined;
-                      updateValidator(change);
-                    }}
-                    placeholder={GEMINI_MODEL_NAME}
-                    className="text-xs py-1.5 font-mono"
-                  />
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Pick a different model than the writer — empty means the default ({GEMINI_MODEL_NAME})
-                  </p>
-                </div>
+              {validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
+                listedField('gemini', 'Reader Gemini model', validator.geminiModel, model => updateValidator({ geminiModel: model || undefined }), GEMINI_MODEL_NAME, `Pick a different model than the author. Empty means the default (${GEMINI_MODEL_NAME}).`)
               ) : (
-                <div>
-                  <div className="flex flex-wrap gap-2 items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-zinc-400">
-                      Editor Ollama Model
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleFetchEditorModels}
-                      disabled={isFetchingModels}
-                      className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium flex items-center gap-1 disabled:opacity-50"
-                    >
-                      {isFetchingModels ? 'Loading...' : 'Fetch Ollama Models'}
-                    </button>
-                  </div>
-                  {ollamaModels.length > 0 ? (
-                    <Select
-                      value={validator.ollamaModel}
-                      onChange={(e) => updateValidator({ ollamaModel: e.target.value })}
-                      className="text-xs py-1.5"
-                    >
-                      {/* The saved model is always an option: without it the list would show its
-                          first entry while calls go to the saved one. */}
-                      {[...new Set([validator.ollamaModel, ...ollamaModels])].map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <Input
-                      type="text"
-                      value={validator.ollamaModel}
-                      onChange={(e) => updateValidator({ ollamaModel: e.target.value })}
-                      placeholder="llama3.1"
-                      className="text-xs py-1.5"
-                    />
-                  )}
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Uses the same Ollama endpoint as the writer
-                  </p>
-                </div>
+                ollamaField('Reader Ollama model', validator.ollamaModel, model => updateValidator({ ollamaModel: model }), 'Uses the same Ollama endpoint as the author.')
               )}
-            </div>
-          )}
-        </div>
-
-        {/* A second writer: each scene is drafted by both, measured by code, and the editor,
-            not told whose is whose, keeps one. Off means one writer, as before. */}
-        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={secondWriter.enabled}
-              onChange={(e) => updateSecondWriter(e.target.checked ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint } : { enabled: false })}
-              className="accent-zinc-200"
-            />
-            <span className="font-medium">Second writer model</span>
-          </label>
-          <p className="text-xs text-zinc-500">
-            Both writers draft each scene and the editor keeps the better draft without knowing whose it is.
-            Once one writer plainly leads a kind of scene, it writes those alone. Pick a model different from the first writer.
-          </p>
-          {secondWriter.enabled && (
-            <div className="space-y-3 animate-fade-in">
-              <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
-                {(['gemini', 'ollama', 'qwen'] as const).map(provider => (
-                  <button key={provider} type="button" onClick={() => updateSecondWriter({ provider })}
-                    className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${secondWriter.provider === provider ? 'bg-zinc-200 text-zinc-900 shadow-sm' : 'text-zinc-400 hover:text-zinc-300'}`}>
-                    {provider === 'gemini' ? 'Gemini' : provider === 'ollama' ? 'Ollama' : 'Qwen'}
-                  </button>
-                ))}
-              </div>
-              <label className="block text-sm text-zinc-400">
-                {secondWriter.provider === 'qwen' ? 'Second writer Qwen model' : secondWriter.provider === 'ollama' ? 'Second writer Ollama model' : 'Second writer Gemini model'}
-                <Input
-                  type="text"
-                  value={(secondWriter.provider === 'qwen' ? secondWriter.qwenModel : secondWriter.provider === 'ollama' ? secondWriter.ollamaModel : secondWriter.geminiModel) || ''}
-                  onChange={(e) => updateSecondWriter(secondWriter.provider === 'qwen' ? { qwenModel: e.target.value } : secondWriter.provider === 'ollama' ? { ollamaModel: e.target.value } : { geminiModel: e.target.value.trim() || undefined })}
-                  placeholder={secondWriter.provider === 'qwen' ? 'qwen3.8-flash' : secondWriter.provider === 'ollama' ? 'llama3.1' : GEMINI_MODEL_NAME}
-                  className="text-xs py-1.5 font-mono mt-1.5"
-                />
-              </label>
             </div>
           )}
         </div>
@@ -482,17 +289,9 @@ const UserInput: React.FC<UserInputProps> = ({
           <label htmlFor="genre" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Genre
           </label>
-          <Select
-            id="genre"
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-          >
-            {Object.entries(GENRE_CONFIGS).map(([key, config]) => (
-              <option key={key} value={key}>
-                {config.name} — {config.description}
-              </option>
-            ))}
-          </Select>
+          <Combo id="genre" value={genre} onChange={setGenre} placeholder="thriller" className="text-xs py-1.5 font-mono"
+            options={GENRE_CHOICES} />
+          <p className="text-xs text-zinc-500 mt-1">Pick one, type to search, or name your own.</p>
         </div>
 
         <div>
@@ -513,83 +312,96 @@ const UserInput: React.FC<UserInputProps> = ({
 
         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
           {([
-            ['targetAudience', 'Target audience', 'adult'],
-            ['narrativeVoice', 'Narrative voice / POV', 'third-limited'],
-            ['tone', 'Tone', 'serious'],
-            ['writingStyle', 'Style and voice notes', 'descriptive'],
-          ] as const).map(([key, label, fallback]) => (
+            ['targetAudience', 'Target audience', 'adult', [
+              ['adult', 'Grown readers; nothing is held back for age'], ['new adult', 'Readers of 18–25; first jobs, first serious loves'],
+              ['young adult', 'Teen readers; teen heroes'], ['middle grade', 'Readers of 8–12']]],
+            ['narrativeVoice', 'Narrative voice / POV', 'third-limited', [
+              ['third-limited', 'She — inside one head at a time'], ['first-person', 'I — the hero tells it'],
+              ['third-omniscient', 'A narrator who knows everyone'], ['multiple POV', 'Several heads, taking turns by chapter'], ['second-person', 'You — rare, close, strange']]],
+            ['tone', 'Tone', 'serious', [
+              ['serious', 'Played straight'], ['dark', 'Bleak, with real harm'], ['tense', 'Tight, something always about to happen'], ['sensual', 'Bodies, heat, wanting'],
+              ['romantic', 'Warm, hopeful about love'], ['melancholic', 'Quiet, with loss in it'], ['humorous', 'Light, funny'], ['ironic', 'Dry, knowing']]],
+            ['writingStyle', 'Style and voice notes', 'descriptive', [
+              ['descriptive', 'Rich in place and detail'], ['spare', 'Short, plain sentences; little ornament'], ['lyrical', 'Musical, image-led'],
+              ['fast-paced', 'Short scenes, quick cuts'], ['dialogue-driven', 'Carried by what people say'], ['cinematic', 'Seen from outside, scene by scene']]],
+          ] as const).map(([key, label, fallback, choices]) => (
             <div key={key}>
               <label htmlFor={key} className="block text-sm font-medium text-zinc-400 mb-1.5">{label}</label>
-              <Input id={key} value={storySettings[key] || fallback}
-                onChange={event => setStorySettings({ ...storySettings, [key]: event.target.value })} />
+              <Combo id={key} value={storySettings[key] ?? fallback} onChange={value => setStorySettings({ ...storySettings, [key]: value })} placeholder={fallback} className="text-xs py-1.5 font-mono"
+                options={choices.map(([value, hint]) => ({ value, label: hint }))} />
+              <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way.</p>
             </div>
           ))}
           <div>
-            <label htmlFor="targetWords" className="block text-sm font-medium text-zinc-400 mb-1.5">Target words per chapter</label>
+            <label htmlFor="intimacy" className="block text-sm font-medium text-zinc-400 mb-1.5">Intimate scenes</label>
+            <Combo id="intimacy" value={storySettings.intimacy ?? 'on the page, not faded out'} onChange={intimacy => setStorySettings({ ...storySettings, intimacy })} placeholder="on the page, restrained" className="text-xs py-1.5 font-mono"
+              options={[{ value: 'fade to black', label: 'The door closes; the next line is morning' }, { value: 'on the page, restrained', label: 'The scene is written, without detail' }, { value: 'on the page, explicit', label: 'The scene is written in full' }]} />
+            <p className="text-xs text-zinc-500 mt-1">How far a love scene goes on the page. Pick one or say it your way.</p>
+          </div>
+          <div>
+            <label htmlFor="targetWords" className="block text-sm font-medium text-zinc-400 mb-1.5">Rough words per chapter</label>
             <Input id="targetWords" type="number" min={300} max={10000} step={100}
               value={storySettings.targetWordsPerChapter || 4000}
               onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
           </div>
           <div>
             <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>
-            <Select id="tense" value={storySettings.tense || 'past'} onChange={event => setStorySettings({ ...storySettings, tense: event.target.value as StorySettings['tense'] })}>
-              <option value="past">Past</option><option value="present">Present</option>
-            </Select>
+            <Combo id="tense" value={storySettings.tense ?? 'past'} onChange={tense => setStorySettings({ ...storySettings, tense })} placeholder="past" className="text-xs py-1.5 font-mono"
+              options={[{ value: 'past', label: 'She opened the door' }, { value: 'present', label: 'She opens the door' }]} />
+            <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way.</p>
           </div>
           <div>
             <label htmlFor="ending" className="block text-sm font-medium text-zinc-400 mb-1.5">Ending</label>
-            <Select id="ending" value={storySettings.ending || 'closed'} onChange={event => setStorySettings({ ...storySettings, ending: event.target.value as StorySettings['ending'] })}>
-              <option value="closed">Resolved</option><option value="open">Intentionally open</option><option value="series">Part of a series</option>
-            </Select>
+            <Combo id="ending" value={storySettings.ending ?? 'closed'} onChange={ending => setStorySettings({ ...storySettings, ending })} placeholder="closed" className="text-xs py-1.5 font-mono"
+              options={[{ value: 'closed', label: 'Resolved' }, { value: 'open', label: 'Intentionally open' }, { value: 'series', label: 'Part of a series' }]} />
+            <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way, e.g. closed, bittersweet.</p>
           </div>
         </div>
       </div>
 
       <div className="pt-2">
-        <p className="text-xs text-zinc-500">Chapters are written sequentially with story memory. Optional editing is available after the book is complete.</p>
+        <p className="text-xs text-zinc-500">One author writes the whole book at its desk. The chapter length is a rough size for the book: no chapter is cut or padded to it. While it works, the tabs above the text show what it asks its readers and its people, word for word.</p>
       </div>
 
       <div className="flex justify-end pt-2">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
-          {isLoading ? 'Generating Outline...' : 'Start Generation'}
+          {isLoading ? 'Starting…' : 'Start Generation'}
         </Button>
       </div>
 
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
           <h2 className="text-xs font-semibold text-zinc-400 uppercase">
-            How your manuscript develops
+            How the book is written
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Master Story Outline</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
             <p className="text-xs text-zinc-500">
-              Establishes premise, characters, central conflicts, recurring motifs, and comprehensive chapter-by-chapter plans.
+              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Scene writing</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Its people</h3>
             <p className="text-xs text-zinc-500">
-              Each scene follows its characters’ goals, conflicts and consequential choices in your requested voice.
+              Before a scene that turns on someone, the author asks that person from the inside what they want and what they would do. Their answers decide the scene, not a template.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Continuity</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
             <p className="text-xs text-zinc-500">
-              Accepted passages establish the story’s facts, and every later scene is written against them.
-              Problems are caught in the plan, before the prose exists; a finished chapter is never reopened.
+              Each chapter is written whole, one at a time, and never patched: to change one, the author writes it again. One small thing may be set into a chapter already written for a later one to pay off.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Audit &amp; export</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. The reader</h3>
             <p className="text-xs text-zinc-500">
-              The finished book is read once more against its own design, and what the checks found travels with it.
-              Download the manuscript, or the whole project with its plans, memory and run log.
+              A reader, another model if you set one, says what they are waiting for, where their attention slipped and what did not add up. When the last chapter is written, a reader says what the book left hanging.
             </p>
           </div>
         </div>

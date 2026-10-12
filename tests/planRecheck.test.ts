@@ -10,24 +10,23 @@ const plan = { title: 'T', premise_givens: [], ending: 'End', characters: [{ id:
 const input = { premise: 'Nora hides a notebook.', author_requirements: '', genre: 'thriller', chapter_count: 1, target_total_words: 16, generation_mode: 'theses' as const, planning_version: 2 as const };
 const verified = (count: number) => JSON.stringify({ ready: true, checks: Array.from({ length: count }, (_, issue) => ({ issue, status: 'repaired', evidence: '@P0001', explanation: 'The cause is now in the plan' })), issues: [] });
 
-it('stress-tests the plan a second time after it has been repaired, repairs what that finds, and does not test a third time', async () => {
+it('checks the plan once and repairs it once: no second stress test, and what the repair left open is carried, not repaired again', async () => {
   const store = new MemoryProjectStore(); const stages: string[] = []; let reviews = 0, stress = 0, repairs = 0;
   const result = await new Orchestrator(store).runBook(input, async (_prompt, _system, options) => {
     const stage = options?.stage || ''; stages.push(stage);
-    if (stage === 'thesis-plan-stress') return JSON.stringify(++stress === 2 ? { ready: false, issues: [{ severity: 'major', thesis_ids: ['T2'], problem: 'The repair left nobody with a reason to look in the drawer', required_change: 'Decide who looks and why' }] } : { ready: true, issues: [] });
+    if (stage === 'thesis-plan-stress') stress++;
     { const premise = premiseReply(options); if (premise) return premise; }
     if (stage === 'thesis-plan') return JSON.stringify(plan);
     if (stage === 'thesis-plan-repair') return JSON.stringify({ ...plan, title: `Repair ${++repairs}` });
-    if (stage === 'thesis-plan-review') return ++reviews === 1 ? JSON.stringify({ ready: false, issues: [{ severity: 'major', thesis_ids: ['T1'], problem: 'The hiding has no cause', required_change: 'Give it one' }] }) : verified(1);
+    if (stage === 'thesis-plan-review') return ++reviews === 1 ? JSON.stringify({ ready: false, issues: [{ severity: 'major', thesis_ids: ['T1'], problem: 'The hiding has no cause', required_change: 'Give it one' }] })
+      : JSON.stringify({ ready: false, checks: [{ issue: 0, status: 'unresolved', evidence: '@P0001', explanation: 'Still no cause' }], issues: [] });
     throw new Error(`Stop at ${stage}`);
   });
   expect(result.stoppedReason).toContain('Stop at thesis-block-write');
-  expect(stress).toBe(2); expect(repairs).toBe(2);
-  expect(stages.filter(stage => /plan|coverage/.test(stage))).toEqual(['thesis-plan', 'thesis-plan-review', 'thesis-premise-coverage', 'thesis-plan-stress', 'thesis-plan-dryrun',
-    'thesis-plan-repair', 'thesis-plan-review', 'thesis-premise-coverage', 'thesis-plan-stress', 'thesis-plan-dryrun', 'thesis-plan-repair', 'thesis-plan-review']);
+  expect(stress).toBe(1); expect(repairs).toBe(1);
+  expect(stages.filter(stage => /plan|coverage/.test(stage))).toEqual(['thesis-plan', 'thesis-plan-review', 'thesis-premise-coverage', 'thesis-plan-stress', 'thesis-plan-dryrun', 'thesis-plan-repair', 'thesis-plan-review']);
   expect(store.loadTheses()!.plan_ready).toBe(true);
-  expect(store.loadTheses()!.premise_rechecked).toBe(true);
-  expect(store.runLog().some(entry => entry.detail.includes('Premise checks on the repaired plan: 1 blocking finding'))).toBe(true);
+  expect(store.loadTheses()!.carried_findings!.map(issue => issue.problem)).toEqual(['The hiding has no cause']);
 });
 it('does not test again a plan that passed its first review unrepaired', async () => {
   const store = new MemoryProjectStore(); let stress = 0;
@@ -39,4 +38,21 @@ it('does not test again a plan that passed its first review unrepaired', async (
     throw new Error(`Stop at ${options?.stage}`);
   });
   expect(stress).toBe(1);
+});
+
+it('does not build a second outline, however much is wrong with the first: it is repaired once and written', async () => {
+  const store = new MemoryProjectStore(); const stages: string[] = []; let reviews = 0;
+  const many = Array.from({ length: 13 }, (_, at) => ({ severity: 'major', thesis_ids: ['T1'], problem: `Construction failure ${at}`, required_change: 'Decide who acts' }));
+  const result = await new Orchestrator(store).runBook(input, async (_prompt, _system, options) => {
+    const stage = options?.stage || ''; stages.push(stage);
+    { const premise = premiseReply(options); if (premise) return premise; }
+    if (stage === 'thesis-plan') return JSON.stringify(plan);
+    if (stage === 'thesis-plan-repair') return JSON.stringify({ ...plan, title: 'Repaired' });
+    if (stage === 'thesis-plan-review') return ++reviews === 1 ? JSON.stringify({ ready: false, issues: many }) : verified(13);
+    throw new Error(`Stop at ${stage}`);
+  });
+  expect(result.stoppedReason).toContain('Stop at thesis-block-write');
+  expect(stages).not.toContain('thesis-replan');
+  expect(stages.filter(stage => stage === 'thesis-plan-repair')).toHaveLength(1);
+  expect(store.loadTheses()!.plan!.title).toBe('Repaired');
 });

@@ -60,3 +60,46 @@ export async function generateAnthropicText(
   if (!text.trim()) throw new Error(`${model} returned an empty answer.`);
   return text;
 }
+
+/** What the app writes with when no model is named on the form. */
+export const APP_ANTHROPIC_MODEL = 'claude-opus-5-5';
+
+/**
+ * The same call for the app's local gateway: the text is passed on as it arrives, and what it
+ * cost is reported in the names the app already reads for Qwen and Hugging Face. A schema, when
+ * there is one, goes into the instructions; none is imposed, for the reason given above.
+ */
+export async function generateAnthropicLive(prompt: string, system?: string, maxTokens = 16384, model = APP_ANTHROPIC_MODEL,
+  onMetadata?: (metadata: unknown) => void, schema?: object, live: { onDelta?: (text: string) => void; onRestart?: (why: string) => void } = {}): Promise<string> {
+  const instructions = (system || '') + (schema ? `\nReturn one JSON object and nothing else. Every required field in this complete JSON Schema must be present; no omitted fields:\n${JSON.stringify(schema)}` : '');
+  const ask = async () => {
+    const stream = anthropic().messages.stream({ model, max_tokens: maxTokens, thinking: { type: 'disabled' as const },
+      ...(instructions.trim() ? { system: instructions } : {}), messages: [{ role: 'user', content: prompt }] });
+    stream.on('text', delta => live.onDelta?.(delta));
+    return stream.finalMessage();
+  };
+  // An overloaded service or a dropped connection is not the book's failure: it is asked again, a few times.
+  let message: Awaited<ReturnType<typeof ask>> | undefined, failure: unknown;
+  for (const wait of [0, 3000, 10000, 30000]) {
+    if (wait) { live.onRestart?.(failure instanceof Error ? failure.message : String(failure)); await new Promise(resolve => setTimeout(resolve, process.env.VITEST ? 0 : wait)); }
+    try { message = await ask(); break; }
+    catch (error) { failure = error; const status = (error as { status?: number })?.status; if (status !== undefined && ![408, 409, 425, 429, 500, 502, 503, 504, 529].includes(status)) break; }
+  }
+  if (!message) {
+    const status = (failure as { status?: number })?.status;
+    throw new Error(`Anthropic request failed${status ? ` [${status}]` : ''}: ${status === 401 ? 'API key not valid — the key was refused' : status === 404 ? `model ${model} not found` : failure instanceof Error ? failure.message : String(failure)}`);
+  }
+  onMetadata?.({ finish_reason: message.stop_reason, usage: { prompt_tokens: message.usage?.input_tokens, completion_tokens: message.usage?.output_tokens } });
+  if (message.stop_reason === 'refusal') throw new Error(`${model} declined the request.`);
+  const text = message.content.flatMap(block => (block.type === 'text' ? [block.text] : [])).join('');
+  if (message.stop_reason === 'max_tokens') throw new Error('Anthropic output reached its token limit; partial response rejected.');
+  if (!text.trim()) throw new Error(`${model} returned an empty answer.`);
+  return text;
+}
+
+/** The models this key may use, newest first, by their ids. */
+export async function listAnthropicModels(): Promise<string[]> {
+  const ids: string[] = [];
+  for await (const model of anthropic().models.list({ limit: 1000 })) ids.push(model.id);
+  return ids;
+}

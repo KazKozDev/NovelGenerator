@@ -23,7 +23,7 @@ export async function generateQwenText(prompt: string, system?: string, maxToken
         max_tokens: maxTokens, temperature, enable_thinking: false, stream: false,
         ...(schema ? { response_format: { type: 'json_object' } } : {}) }),
     });
-    if (!response.ok) throw new Error(`Qwen API request failed [${response.status}].`);
+    if (!response.ok) throw new Error(`Qwen API request failed [${response.status}]. ${(await response.text().catch(() => '')).slice(0, 300)}`.trim());
     const data = await response.json();
     const choice = data.choices?.[0];
     onMetadata?.({ finish_reason: choice?.finish_reason ?? null, usage: data.usage ?? null });
@@ -32,4 +32,16 @@ export async function generateQwenText(prompt: string, system?: string, maxToken
     if (typeof choice.message?.content !== 'string' || !choice.message.content.trim()) throw new Error('Qwen returned no final content.');
     return choice.message.content;
   } finally { clearTimeout(timeout); }
+}
+
+/** The models the configured Qwen endpoint offers, by their ids. */
+export async function listQwenModels(): Promise<string[]> {
+  const apiKey = qwenSetting('QWEN_API_KEY'), base = qwenSetting('QWEN_BASE_URL');
+  if (!apiKey || !base) throw new Error('Set QWEN_API_KEY and QWEN_BASE_URL in .env.local or the environment.');
+  const response = await fetch(`${base.replace(/\/+$/, '')}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const data: any = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || `Qwen model list failed (${response.status})`);
+  return (Array.isArray(data.data) ? data.data : []).map((model: any) => String(model.id || ''))
+    // A book is written with a text model: what listens, speaks, draws or embeds is left out of the list.
+    .filter((id: string) => id.startsWith('qwen') && !/audio|asr|tts|realtime|image|video|ocr|embed|rerank|omni|-mt-|livetranslate/i.test(id)).sort();
 }

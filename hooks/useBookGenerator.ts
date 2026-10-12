@@ -7,6 +7,8 @@ import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterDat
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
 import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
+import { authorKey } from '../utils/novel/v3/author';
+import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
@@ -15,6 +17,7 @@ import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
 import { browserHabitMemory } from '../utils/novel/v2/habits';
+import { livePreview } from '../utils/livePreview';
 import { readGenerationSettings, saveGenerationSettings, readMainForm, saveMainForm, buildProjectInput, DEFAULT_GENERATION_SETTINGS } from '../utils/generationSettings';
 
 const DEFAULT_SETTINGS = DEFAULT_GENERATION_SETTINGS;
@@ -65,6 +68,13 @@ const STAGES: Record<string, string> = {
   'thesis-scene-design': 'Scene plan · redesign',
   'thesis-scene-coverage': 'Scene plan · adding scenes to a short chapter',
   'thesis-scene-review': 'Scene plan · review of the redesign',
+  'author-step': 'The author at its desk',
+  'author-character': 'The author asks one of its people',
+  'author-notebook': 'The author thinks the book through in its notebook',
+  'author-clock': 'The author settles the clock: who, where, at what hour, and what the truth comes out by',
+  'author-plan': 'The author plans the book',
+  'author-chapter': 'The author writes the chapter, once',
+  'author-reader': 'A reader reads this far and says what they are waiting for',
   'thesis-block-write': 'writing',
   'thesis-draft-choice': 'choosing between two drafts, blind',
   'thesis-block-review': 'review',
@@ -72,6 +82,11 @@ const STAGES: Record<string, string> = {
   'thesis-habits': 'Naming writing habits in the new scene',
   'thesis-state': 'where things are, and who has learned what',
   'thesis-impact-review': 're-review after an edit',
+  'thesis-voice-opponent': 'The opponent speaks for themselves: what I want and what I will do',
+  'thesis-voice-protagonist': 'The protagonist speaks for themselves, seeing only what comes before their eyes',
+  'thesis-spine': 'Building the story where the two accounts collide',
+  'thesis-scene-voices': 'the others in the room say what they came for',
+  'thesis-record': 'Taking down what the scene has committed the book to',
   'thesis-expand': 'expanding to length',
   'thesis-expand-review': 'review after expanding',
   'thesis-polish': 'polishing',
@@ -91,7 +106,7 @@ const STAGES: Record<string, string> = {
   'thesis-audit-repair': 'Final audit · repair',
   'thesis-final-audit': 'Final audit',
 };
-const SCENE_STAGES = new Set(['thesis-draft-choice', 'thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
+const SCENE_STAGES = new Set(['thesis-scene-voices', 'thesis-draft-choice', 'thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
 const SCENE_PATTERNS = [/THE SCENE BOTH DRAFTS WERE ASKED TO WRITE:\n\{"id":"([^"]+)"/, /THE SCENE TO WRITE, AS ITS POINT-OF-VIEW CHARACTER HAS IT:\n\{"id":"([^"]+)"/, /CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n\{"id":"([^"]+)"/, /"thesis":"(\S+) \(whole in the outline/, /Current thesis: \{"id":"([^"]+)"/, /CURRENT SCENE ONLY: \{"id":"([^"]+)"/, /\nSCENE (\S+):\n/, /^SCENE (\S+):\n/, /Writable blocks: \["([^"]+)"\]/];
 
 /**
@@ -162,6 +177,8 @@ export default function useBookGenerator() {
   const [repairProgress,setRepairProgress]=useState<RepairReport|undefined>();
   const [tokenTotals,setTokenTotals]=useState<TokenTotals>(emptyTokenTotals);
   const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
+  // The prose of the call now in flight, as far as it has arrived.
+  const [liveDraft, setLiveDraft] = useState<{ label: string; text: string } | null>(null);
   const [currentStep, setCurrentStep] = useState<GenerationStep>(GenerationStep.Idle);
   const [currentChapterProcessing, setCurrentChapterProcessing] = useState(0);
   const [generatedChapters, setGeneratedChapters] = useState<ChapterData[]>([]);
@@ -169,6 +186,11 @@ export default function useBookGenerator() {
   const [finalMetadataJson, setFinalMetadataJson] = useState<string | null>(null);
   const [currentStoryOutline, setCurrentStoryOutline] = useState('');
   const [currentChapterPlan, setCurrentChapterPlan] = useState('');
+  // What the author's tools hold, as text: its talk with readers, with its people, with the keeper.
+  const [deskTools, setDeskTools] = useState<DeskTab[]>([]);
+  // Where the author is working at this moment, so that the screen follows it from tab to tab.
+  const [deskNow, setDeskNow] = useState<DeskFocus | null>(null);
+  const deskTabRef = useRef<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<PersistentProjectStore['saveStatus']>();
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>(undefined);
   const storeRef = useRef<PersistentProjectStore | null>(null);
@@ -191,7 +213,8 @@ export default function useBookGenerator() {
     const manuscript = store.manuscript();
     const theses = store.loadTheses();
     setRepairProgress(theses?.repair_reports?.at(-1));
-    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(theses ? { plan: renderThesisBook(theses, chapter, false), previousContent: previousThesisChapter(theses, chapter) } : {}) })));
+    const author = store.loadAuthor();
+    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}), ...(theses ? { plan: renderThesisBook(theses, chapter, false), previousContent: previousThesisChapter(theses, chapter) } : {}) })));
     const progressive = store.loadProgressive();
     if (progressive) {
       const pass = progressive.pending?.pass || progressive.versions.at(-1)?.pass;
@@ -206,8 +229,17 @@ export default function useBookGenerator() {
       const activeChapter = theses.plan?.theses[theses.blocks.length]?.chapter || currentChapterRef.current || 1;
       setCurrentChapterPlan(renderThesisBook(theses, activeChapter, false));
     }
+    setDeskTools(author?.desk ? deskTabs(author.desk) : []);
+    if (author) {
+      // The left pane shows the author's own desk: the plan it wrote for itself, and its clock.
+      setDevelopmentLabel(author.completed ? undefined : author.desk ? `The author is at its desk · step ${author.desk.step} · ${author.desk.budget - author.desk.spent} calls left` : !author.notebook && !author.clock ? 'The author is thinking the book through' : !author.clock ? 'The author is settling who, where and when' : !author.plan ? 'The author is planning the book' : `The author is writing chapter ${Math.min(author.chapters.length + 1, store.loadInput()?.chapter_count || 1)}`);
+      setCurrentStoryOutline([author.notebook ? `# The author's notebook\n\n${author.notebook}` : '', author.plan ? `# The author's plan\n\n${author.plan}` : '', author.clock ? `# ${author.desk ? 'The dossier' : 'The clock'}\n\n${author.clock}` : ''].filter(Boolean).join('\n\n') || 'The author has not written its plan yet.');
+      const at = author.chapters.at(-1);
+      if (author.desk) setCurrentChapterPlan(`**What the author has done, step by step**\n\n${author.desk.journal.slice(-30).map(line => `- ${line}`).join('\n') || '(nothing yet)'}${author.desk.answers.length ? `\n\n**What it was last told**\n\n*${author.desk.answers.at(-1)!.who}:* ${author.desk.answers.at(-1)!.text}` : ''}`);
+      else setCurrentChapterPlan(at ? `**Chapter ${author.chapters.length}, as the author noted it**\n\n${at.card}${author.waiting ? `\n\n**What a reader is waiting for now**\n\n${author.waiting}` : ''}${author.noticed.length ? `\n\n**What readers said did not add up** (carried forward, not rewritten)\n\n${author.noticed.map(item => `- ${item}`).join('\n')}` : ''}` : author.plan || 'The first chapter is not written yet.');
+    }
     const design = store.loadDesign();
-    if (design && !progressive && !theses) {
+    if (design && !progressive && !theses && !author) {
       setCurrentStoryOutline(
         `Central conflict: ${design.dramatic_core.central_conflict}\nStakes: ${design.dramatic_core.stakes}\nResolution: ${design.ending.central_resolution}`
       );
@@ -218,16 +250,16 @@ export default function useBookGenerator() {
     // A book with no chapter written is not work to continue: it is a book that
     // never started. The form, still holding the premise, is where the author
     // belongs — a resume card offering "0 of 3 chapters written" is not an offer.
-    setHasUnfinished(!!input && (theses ? !theses.completed || !store.loadReport() : input.generation_mode === 'theses' ? !store.loadReport() : progressive ? !progressive.completed || !store.loadReport() : input.generation_mode === 'progressive' ? !store.loadReport() : manuscript.length > 0 && manuscript.length < input.chapter_count));
+    setHasUnfinished(!!input && (author ? !author.completed || !store.loadReport() : theses ? !theses.completed || !store.loadReport() : input.generation_mode === 'theses' ? !store.loadReport() : progressive ? !progressive.completed || !store.loadReport() : input.generation_mode === 'progressive' ? !store.loadReport() : manuscript.length > 0 && manuscript.length < input.chapter_count));
   }
 
   function publishFinal() {
     const store = getStore();
     const input = store.loadInput();
-    if (!input || (store.loadTheses() && (!store.loadTheses()!.completed || !store.loadReport())) || (store.loadProgressive() && (!store.loadProgressive()!.completed || !store.loadReport()))) return;
+    if (!input || (store.loadAuthor() && (!store.loadAuthor()!.completed || !store.loadReport())) || (store.loadTheses() && (!store.loadTheses()!.completed || !store.loadReport())) || (store.loadProgressive() && (!store.loadProgressive()!.completed || !store.loadReport()))) return;
     const manuscript = store.manuscript();
     const report = store.loadReport();
-    const title = bookTitle(store.loadTheses()?.plan?.title || store.loadDesign()?.contract?.working_title, input.premise);
+    const title = bookTitle(store.loadAuthor()?.title || store.loadTheses()?.plan?.title || store.loadDesign()?.contract?.working_title, input.premise);
     const content = `# ${title}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
     setFinalBookContent(content);
     setFinalMetadataJson(JSON.stringify({
@@ -244,6 +276,8 @@ export default function useBookGenerator() {
     if (stage === 'design') setCurrentStep(GenerationStep.GeneratingOutline);
     else if (stage === 'chapter') {
       setCurrentStep(GenerationStep.GeneratingChapters);
+      // Set at once as well: a call that starts in the same tick read the previous chapter.
+      currentChapterRef.current = chapter || 0;
       setCurrentChapterProcessing(chapter || 0);
       refreshFromStore();
     }
@@ -271,7 +305,9 @@ export default function useBookGenerator() {
     const writer = getStoredProviderConfig();
     const validator = getStoredValidatorConfig();
     const second = getStoredSecondWriterConfig();
-    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
+    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
+    // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
+    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       const start = Date.now();
@@ -287,13 +323,36 @@ export default function useBookGenerator() {
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
-      const servingTag = role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
+      const servingTag = role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
         ? `Ollama:${role.ollamaModel || '?'}` : `Gemini:${role.geminiModel || 'default'}`;
       setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: currentChapterRef.current, type: 'execution', message: `${call.title} · ${servingTag}`, details, ...(call.reason ? { outcome: `Refused for: ${call.reason}` } : {}) }]);
+      // While an answer arrives: the inspector says how much has come and how fast, and a
+      // writer's prose is shown as it is written. Both are refreshed a few times a second at most.
+      const writing = /^(author-step|author-chapter|thesis-(block-write|block-repair|expand|polish|seam-repair|rough-repair|audit-repair))$/.test(options.stage || '');
+      let arrived = '', shown = 0;
+      const progress = (force = false) => {
+        if (epoch.current !== token || (!force && Date.now() - shown < 400)) return;
+        shown = Date.now();
+        const elapsed = Math.max(1, (Date.now() - start) / 1000);
+        const note = `${Math.round(elapsed)}s · received ${size(arrived.length)} so far · ${Math.round(arrived.length / elapsed)} characters/s`;
+        setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.type === 'execution' && entry.details === details && !entry.finished ? { ...entry, outcome: note } : entry));
+        const focus = deskFocus(options.stage || '', arrived, deskTabRef.current);
+        if (focus) { deskTabRef.current = focus.tab; setDeskNow(focus); }
+        if (writing) {
+          // At its desk the author's answer is a thought, a tool and then the text: only a chapter being written is shown as it arrives.
+          const desk = options.stage === 'author-step';
+          // One answer may hold several steps: only the step now arriving counts, and only if it is a chapter.
+          const now = desk ? arrived.slice(Math.max(0, ...[...arrived.matchAll(/^\**TOOL\**\s*:/gmi)].map(found => found.index ?? 0))) : '';
+          const body = desk ? (/^\**FILE\**\s*:\**\s*[`"']?chapter-\d+/mi.test(now) && /^\**TOOL\**\s*:\**\s*`?(write|append)/mi.test(now) ? now.split(/\n-{3,}[ \t]*\n/)[1] || '' : '') : livePreview(arrived).split(/\n\s*={3,}\s*CARD/i)[0];
+          if (body || !desk) setLiveDraft({ label: desk ? `The author is writing ${now.match(/^\**FILE\**\s*:\**\s*[`"']?(chapter-\d+)/mi)?.[1].replace('-', ' ') || 'a chapter'}` : call.title, text: body });
+        }
+      };
+      const live = { onChunk: (chunk: string) => { arrived += chunk; progress(); }, onRestart: (why: string) => { arrived = ''; progress(true); setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.details === details && !entry.finished ? { ...entry, outcome: `Asking again: ${why}` } : entry)); } };
       const ask = async (maxTokens: number | undefined, retry = false) => {
         checkActive();
+        arrived = '';
         if (retry) setAgentLogs(previous => [...previous, {
-          timestamp: Date.now(), chapterNumber: currentChapterRef.current, type: 'execution',
+          timestamp: Date.now(), chapterNumber: currentChapterRef.current, type: 'decision',
           message: `Retry after output limit · ${servingTag}`,
           details: `Incomplete answer rejected. Repeating the same request with an output limit of ${maxTokens} tokens.`,
         }]);
@@ -302,19 +361,28 @@ export default function useBookGenerator() {
           const totals=addTokenUsage(savedTokenTotals(store.runLog()),usage);
           store.log('token_totals',JSON.stringify(totals));
           setTokenTotals(totals);
-        });
+        }, live);
       };
       const seconds = () => `${Math.max(1, Math.round((Date.now() - start) / 1000))}s`;
       let result: string;
       try {
         result = role.provider === 'ollama'
           ? await withOllamaOutputRoom(ask, options.maxTokens)
-          : await ask(options.maxTokens);
+          // A metered provider is asked for what the call asked, and for twice that if the answer
+          // was cut off — but not for a scene or an edit of one: a scene that fills eight thousand
+          // tokens is a model in a loop, and twice the room is twice the loop.
+          : writing ? await ask(options.maxTokens) : await withOllamaOutputRoom(ask, options.maxTokens, options.maxTokens ?? 16384);
       } catch (error) {
         finish('warning', `Failed after ${seconds()}: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`);
+        if (writing) setLiveDraft(null);
+        if (/^author-(step|reader|character)$/.test(options.stage || '')) setDeskNow(now => now && now.text ? { ...now, text: '' } : now);
         throw error;
       }
-      finish('success', `${seconds()} · sent ${size(prompt.length + system.length)} · received ${size(result.length)}${call.reason ? ` · was refused for: ${call.reason}` : ''}`);
+      // What the author decided to do at this step, in its own words.
+      const did = options.stage === 'author-step' ? (() => { const tool = result.match(/^\**TOOL\**\s*:\**\s*(.*)$/mi)?.[1].trim() || '', file = result.match(/^\**(?:FILE|NAME)\**\s*:\**\s*(.*)$/mi)?.[1].trim() || '', thought = result.match(/^\**THOUGHT\**\s*:\**\s*(.*)$/mi)?.[1].trim() || ''; return `${[tool, file].filter(Boolean).join(' ')}${thought ? ` — ${thought.slice(0, 260)}` : ''} · `; })() : '';
+      finish('success', `${did}${seconds()} · sent ${size(prompt.length + system.length)} · received ${size(result.length)}${call.reason ? ` · was refused for: ${call.reason}` : ''}`);
+      if (writing) setLiveDraft(null);
+      if (/^author-(step|reader|character)$/.test(options.stage || '')) setDeskNow(now => now && now.text ? { ...now, text: '' } : now);
       checkActive();
       return result;
     };
@@ -364,7 +432,7 @@ export default function useBookGenerator() {
         setStoryPremise(input.premise);
         setNumChapters(input.chapter_count);
         refreshFromStore();
-        if (store.manuscript().length >= input.chapter_count && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
+        if (store.manuscript().length >= input.chapter_count && (!store.loadAuthor() || store.loadAuthor()!.completed && !!store.loadReport()) && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
       }
       setStoreReady(true);
     }).catch(error => {
@@ -407,6 +475,9 @@ export default function useBookGenerator() {
       }
       const progressive=store.loadProgressive();
       if(progressive){progressive.input_key=inputKey(input);store.saveProgressive(progressive);}
+      // An author's book goes on under the settings it is resumed with; what is written stays.
+      const authored=store.loadAuthor();
+      if(authored){authored.input_key=authorKey({...input,generation_mode:'author'});store.saveAuthor(authored);}
       store.clearReport?.(); store.saveInput(input); inputRef.current=input;
     }
     await run(inputRef.current, false);
@@ -441,7 +512,7 @@ export default function useBookGenerator() {
     setFinalMetadataJson(null);
     setError(null);
     refreshFromStore();
-    if (input && store.manuscript().length >= input.chapter_count && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
+    if (input && store.manuscript().length >= input.chapter_count && (!store.loadAuthor() || store.loadAuthor()!.completed && !!store.loadReport()) && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
     else setCurrentStep(GenerationStep.Idle);
   }
 
@@ -486,7 +557,7 @@ export default function useBookGenerator() {
     setFinalMetadataJson(null);
     setDevelopmentLabel(undefined);
     setCurrentStoryOutline('');
-    setCurrentChapterPlan('');
+    setCurrentChapterPlan(''); setDeskTools([]); setDeskNow(null); deskTabRef.current = null;
     setCurrentChapterProcessing(0);
     setCurrentStep(GenerationStep.Idle);
     setLastSavedAt(undefined);
@@ -520,6 +591,8 @@ export default function useBookGenerator() {
     totalChaptersToProcess: numChapters,
     currentStoryOutline,
     currentChapterPlan,
-    agentLogs, lastSavedAt, autosaveStatus,
+    deskTools,
+    deskNow,
+    agentLogs, liveDraft, lastSavedAt, autosaveStatus,
   };
 }

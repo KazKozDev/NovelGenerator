@@ -34,6 +34,26 @@ describe('manuscript search and exact editing', () => {
     expect(await manuscriptAgent(async prompt => { prompts.push(prompt); return JSON.stringify({ tool: 'finish', text: 'The scene.' }); }, blocks, 'Write', 'System', { stage: 'write' })).toBe('The scene.');
     expect(prompts[0]).toContain('Return what the task asks for in ONE answer');
   });
+  it('gives up on an edit refused twice in the same words, but keeps asking a writer for prose', async () => {
+    let turns = 0;
+    const note = await manuscriptAgent(async () => { turns++; return JSON.stringify({ tool: 'replace', edits: [{ block_id: 'T01', before: 'not in the text', after: 'x' }] }); },
+      blocks, 'Edit', '', { stage: 'edit', writable: ['T01'] });
+    expect(turns).toBe(2); expect(note).toContain('Editing tool budget reached');
+    let writes = 0;
+    expect(await manuscriptAgent(async () => ++writes < 4 ? JSON.stringify({ tool: 'finish', text: '' }) : JSON.stringify({ tool: 'finish', text: 'The scene.' }), blocks, 'Write', '', { stage: 'write' })).toBe('The scene.');
+    expect(writes).toBe(4);
+  });
+  it('puts a scene to the other model when the writer runs it out to the length limit, instead of ending the book', async () => {
+    const routes: string[] = [];
+    const text = await manuscriptAgent(async (_prompt, _system, options) => {
+      routes.push(options!.route!);
+      if (options!.route === 'writer') throw new Error('Hugging Face output reached its token limit; partial response rejected.');
+      return JSON.stringify({ tool: 'finish', text: 'The scene, written by the editor\'s model.' });
+    }, blocks, 'Write', '', { stage: 'write' });
+    expect(routes).toEqual(['writer', 'validator']);
+    expect(text).toContain('written by the editor');
+    await expect(manuscriptAgent(async () => { throw new Error('Hugging Face request failed [401]: API key not valid'); }, blocks, 'Write', '', { stage: 'write' })).rejects.toThrow('[401]');
+  });
   it('finds Russian phrases and returns bounded references without sending unrelated blocks', () => {
     expect(searchManuscript(blocks, 'двадцать лет')[0].block_id).toBe('T01');
     expect(searchManuscript(blocks, 'неизвестное')).toEqual([]);
@@ -316,10 +336,9 @@ describe('progressive manifestation through exact patches', () => {
     expect(store.loadTheses()!.rounds[0].plan.theses[0].why).toBe('Save sibling');
     expect(store.loadTheses()!.rounds).toHaveLength(2);
   });
-  it('uses progressive manifestation by default for a fresh book', async () => {
+  it('still runs progressive manifestation when a book asks for it by name', async () => {
     const store = new MemoryProjectStore(); const stages: string[] = [];
-    const { generation_mode, ...fresh } = input;
-    const result = await new Orchestrator(store).runBook(fresh, progressiveModel(stages));
+    const result = await new Orchestrator(store).runBook({ ...input, generation_mode: 'progressive' }, progressiveModel(stages));
     expect(result.status, result.stoppedReason || '').toBe('COMPLETE');
     expect(stages[0]).toBe('thesis-synopsis'); expect(store.loadInput()!.generation_mode).toBe('progressive');
   });
@@ -576,7 +595,7 @@ it('requires exact proof and complete distinct coverage for repair acceptance', 
   const plan = {title:'Letter', premise_givens:[input.premise],characters:[{id:'C',name:'Marta',goal:'Save sibling',initial_knowledge:['Letter'],capabilities:['Has letter'],limitations:['Fear']}],theses:[thesis],ending:'Letter revealed'};
   const check = {issue:0,status:'repaired',evidence:'@P0001',explanation:'The clue is now shown'};
   expect(readRepairVerification({ready:true,checks:[check],issues:[]},plan,'Marta read the letter.',1).accepted).toBe(true);
-  expect(()=>readRepairVerification({ready:true,checks:[],issues:[]},plan,'Marta read the letter.',1)).toThrow('every original');
+  expect(()=>readRepairVerification({ready:true,checks:[],issues:[]},plan,'Marta read the letter.',1)).toThrow('one verdict for each of the');
   expect(()=>readRepairVerification({ready:true,checks:[check,check],issues:[]},plan,'Marta read the letter.',2)).toThrow('Repair verdict 2: defect 0 already has a verdict');
   expect(()=>readRepairVerification({ready:true,checks:[{...check,evidence:'Imaginary evidence'}],issues:[]},plan,'Marta read the letter.',1)).toThrow('exact evidence');
   expect(readRepairVerification({ready:true,checks:[{...check,status:'unresolved'}],issues:[]},plan,'Marta read the letter.',1).accepted).toBe(false);
