@@ -6,6 +6,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import StreamingContentView from '../components/StreamingContentView';
 import { deskTabs, deskFocus } from '../utils/novel/v3/deskTabs';
+import { spansOf } from '../utils/novel/v3/authorDesk';
 import { deskBudget, deskView, newDesk, ownWords, readStep, readSteps, takeStep } from '../utils/novel/v3/authorDesk';
 
 const input = { premise: 'Nora hides a notebook.', author_requirements: 'Voice: third-limited. Audience: adult.', genre: 'thriller', chapter_count: 2, target_total_words: 600, planning_version: 2 as const };
@@ -102,6 +103,14 @@ describe('who reads the book', () => {
 });
 
 describe('the desk', () => {
+  it('hands back the ages and spans of time a chapter names, beside those the earlier chapters named', async () => {
+    expect(spansOf('He found her when she was sixteen. Twenty-five years of it. Bernadette was ninety-one years old; it had been a year.')).toEqual(['was sixteen', 'twenty-five years', 'ninety-one years old', 'a year']);
+    // An hour is not an age, and a day is not a span worth naming.
+    expect(spansOf('At 23:00 he was alert. She came at eleven at night, one day in March, and was eleven minutes late.')).toEqual([]);
+    const desk = newDesk(2); desk.told_promises = true; desk.files['chapter-1.md'] = 'He took her in when she was sixteen, twenty-five years ago.';
+    const told = await takeStep(desk, readStep(step('Two.', 'write', 'chapter-2.md', 'It was the winter she was nineteen. She had said it for twenty-two years.')), 2, async () => '');
+    expect(told).toContain('Ages and spans of time it names: was nineteen, twenty-two years. Earlier chapters named — chapter-1.md: was sixteen, twenty-five years ago.');
+  });
   it('writes one chapter to an answer: what follows a chapter in the same answer waits until its result is seen', async () => {
     const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
     const three = { ...input, chapter_count: 3, target_total_words: 900 };

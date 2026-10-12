@@ -21,7 +21,8 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   answer comes back at no cost. A second reader for a rewritten chapter is dearer than the
  *   first, a third dearer still. It went round a chapter sixty times when readers were cheap.
  * - writing a chapter brings back what code can count: the turns of phrase the book has worn
- *   out, and the days and hours this chapter names beside those the earlier ones named.
+ *   out, and the days and hours this chapter names beside those the earlier ones named, and
+ *   the ages and spans of time it names beside theirs.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
  * - a reader is another model than the author when one is set: the same head does not see what it wrote past.
  * - saying it is done brings back, once, what a reader who has just closed the book was promised
@@ -105,6 +106,19 @@ The moment the last chapter has text, someone reads the whole book through and t
 
 Every answer costs one call from your budget, however many steps it holds. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
 
+const NUMBER = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?';
+const AGE = '(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?|[1-9]\\d)';
+/**
+ * The ages and spans of time a text names: "at sixteen", "was nineteen", "twenty-two years", "a year",
+ * "eleven days". One book took its heroine in at sixteen in three chapters and at nineteen in a fourth,
+ * and called three months "a year" twice; these are what a book most often gets wrong against itself.
+ */
+export function spansOf(text: string): string[] {
+  const spans = text.match(new RegExp(`\\b${NUMBER} (?:years?|months?|weeks?|days?|decades?|winters?|summers?)(?: old| ago| later| before| earlier)?\\b`, 'gi')) || [];
+  const ages = text.match(new RegExp(`\\b(?:at|was|were|is|am|turned|aged) ${AGE}\\b(?!-\\w|:\\d|[- ](?:years?|months?|weeks?|days?|hours?|minutes?|percent|o'clock|dollars?|thousand|hundred|miles?|feet|people|men|women|of|times|past|to|in the|at night|in the morning|a\\.m|p\\.m)\\b)`, 'gi')) || [];
+  return [...new Set([...ages, ...spans].map(found => found.toLowerCase().replace(/\s+/g, ' ')))].filter(found => !/^(a|an|one) days?$/.test(found)).slice(0, 18);
+}
+
 /**
  * Having written a file, a model sometimes goes on and writes the desk it expects to see
  * next — "===== chapter-3.md (0 words) =====", "BUDGET LEFT: 19 of 24 calls" — and that went
@@ -161,9 +175,11 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const worn = wornPhrases(chapterNames.map(chapter => state.files[chapter] || ''), 8);
     const times = (text: string) => [...new Set(text.match(/\b(?:(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day|(?:January|February|March|April|May|June|July|August|September|October|November|December)(?: \d{1,2}(?:st|nd|rd|th)?)?|(?:the )?(?:\w+-)?\w+(?:st|nd|rd|th) of \w+|\d{1,2}[:.]\d{2}(?: ?[ap]\.?m\.?)?|(?:nineteen|twenty)[ -]\w+(?:[ -]\w+)?|(?:19|20)\d{2})\b/g) || [])].slice(0, 24);
     const here = times(state.files[file]), earlier = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => `${chapter}: ${times(state.files[chapter] || '').join(', ') || 'none'}`);
+    const spans = spansOf(state.files[file]), spansBefore = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => ({ chapter, named: spansOf(state.files[chapter] || '') })).filter(item => item.named.length).map(item => `${item.chapter}: ${item.named.join(', ')}`);
     const last = state.files[file].split(/\n\s*\n/).at(-1) || '';
     return (/[.!?…"”’')\]—–-]\s*[*_]*$/.test(last.trim()) ? '' : ' It stops in the middle of a sentence.')
       + (here.length ? `\nDays, dates and hours it names: ${here.join(', ')}.${earlier.length ? ` Earlier chapters named — ${earlier.join(' | ')}.` : ''}` : '')
+      + (spans.length ? `\nAges and spans of time it names: ${spans.join(', ')}.${spansBefore.length ? ` Earlier chapters named — ${spansBefore.join(' | ')}.` : ''}` : '')
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
