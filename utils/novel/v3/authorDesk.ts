@@ -29,6 +29,12 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   out, and the days and hours this chapter names beside those the earlier ones named, and
  *   the ages and spans of time it names beside theirs.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
+ * - among its files is an envelope: the scene the reader is not shown until the end, written as a scene. Nothing is
+ *   done with it — no seal, no list, nobody set to read it: with those the author followed a procedure and stopped
+ *   asking. The file alone is kept because of what the books say without it. Reader after reader of a finished book
+ *   says the same thing: "I still don't know what happened in that room", and the author then writes its last chapter
+ *   again and again, longer each time, to find out. When the file was there, every author wrote the scene first, and
+ *   their endings were built from things their first chapters had set down.
  * - a reader is another model than the author when one is set: the same head does not see what it wrote past.
  * - nothing is closed to it. It may go back to any chapter, write it again, set a thing into it. Doors were tried —
  *   chapters that "went to the typesetter", one rewrite and no more, a book declared finished — and each one stopped a
@@ -70,7 +76,7 @@ export interface DeskState {
 }
 
 export const chapterFile = (n: number): string => `chapter-${n}.md`;
-const NOTES = ['notebook.md', 'dossier.md', 'plan.md'];
+const NOTES = ['notebook.md', 'dossier.md', 'plan.md', 'envelope.md'];
 const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const field = (text: string, name: string) => text.match(new RegExp(`^\\**${name}\\**\\s*:\\**\\s*(.*)$`, 'mi'))?.[1].trim() || '';
 
@@ -104,7 +110,7 @@ ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
 YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. Every chapter is yours for as long as you have calls: you may go back to any of them. Write the book in English.
 
-YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; and one file per chapter. Your files: ${files.join(', ')}.
+YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; envelope.md for the scene the reader is not shown until the end — what was really done, by whose hands, with which things, through which door, at what hour — written as a scene, moment by moment, not as notes, and yours to write again like any other file; and one file per chapter. Your files: ${files.join(', ')}.
 
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
@@ -373,7 +379,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // The reader speaks as they turn to the last chapter, so the ending is written with every debt in view. Told after
     // the ending instead, the author wrote its last chapter four times over, and it grew from 1,700 words to 4,300.
     if (!state.told_promises && chapters > 1 && !whole.at(-1)!.trim() && whole.slice(0, -1).every(text => text.trim()) && state.budget - state.spent >= 2) {
-      const said = await ask('reader', `${whole.slice(0, -1).join('\n\n')}\n\n---\nThat is a novel up to its last chapter, which you have not read yet. As a reader, in under 220 words, say what you are holding as you turn to the ending: every question the book has made you ask and not answered yet; every thing, person or threat it brought in with weight and has not used yet; anything it announced that has not happened yet. For each, name the place where it was raised. Then one line: what you most want to be in the room for when it ends.`,
+      const said = await ask('reader', `${whole.slice(0, -1).join('\n\n')}\n\n---\nThat is a novel up to its last chapter, which you have not read yet. As a reader, in under 220 words, say what you are holding as you turn to the ending: every question the book has made you ask and not answered yet; every thing, person or threat it brought in with weight and has not used yet; anything it announced that has not happened yet; and anything it has told twice as if for the first time. For each, name the place where it was raised. Then one line: what you most want to be in the room for when it ends.`,
         'You are an ordinary reader. You are not a writer or an editor: you say what you are holding, and you never say how to fix anything.');
       state.told_promises = true; state.answers.push({ who: 'a reader about to read the ending', step: state.step, about: '', text: said });
       state.journal.push(`${state.step}. the book was written up to its last chapter, and a reader said what they were holding`);
@@ -527,7 +533,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     if (state.budget - state.spent < price) { note(`ask_reader ${target}: costs ${price}, not enough budget`); return `Another reader for ${target} costs ${price} calls and you have ${state.budget - state.spent}.`; }
     const upTo = chapterNames.indexOf(target), last = upTo + 1 >= chapters;
     const book = chapterNames.slice(0, upTo + 1).map(chapter => state.files[chapter]).filter(text => text.trim()).join('\n\n');
-    const said = await ask('reader', `${book}\n\n---\nThat is ${last ? 'a whole short novel' : `the first ${upTo + 1} chapter${upTo ? 's' : ''} of a novel`} you picked up in a shop. You know nothing else about it.${content.trim() ? ' The author asks: ' + content.trim() : ''}\nAnswer as a reader, in under 220 words, in three parts. WAITING FOR: ${last ? 'whether the ending gave you what the book made you wait for, and what it left you with' : 'what you are waiting to find out, and what you expect to happen'}. SLIPPED: the exact place in the last chapter where your attention slipped, or nowhere. DOES NOT ADD UP: anything that contradicts what came before — a day or hour, a place, who has which thing, who knew what, who could have done it — or nothing.`,
+    const said = await ask('reader', `${book}\n\n---\nThat is ${last ? 'a whole short novel' : `the first ${upTo + 1} chapter${upTo ? 's' : ''} of a novel`} you picked up in a shop. You know nothing else about it.${content.trim() ? ' The author asks: ' + content.trim() : ''}\nAnswer as a reader, in under 220 words, in three parts. WAITING FOR: ${last ? 'whether the ending gave you what the book made you wait for, and what it left you with' : 'what you are waiting to find out, and what you expect to happen'}. SLIPPED: the exact place in the last chapter where your attention slipped, or nowhere. DOES NOT ADD UP: anything that contradicts what came before — a day or hour, a place, who has which thing, who knew what, who could have done it — or anything the book tells twice as if for the first time, the same meeting or telephone call or discovery in two chapters; or nothing.`,
       'You are an ordinary reader. You are not a writer or an editor: you say what you felt and what you noticed, and you never say how to fix anything.');
     state.spent += price - 1; state.readings = { ...(state.readings || {}), [target]: had + 1 };
     state.answers.push({ who: 'a reader', step: state.step, about: target, asked: content.trim(), text: said }); note(`a reader read through ${target}${price > 1 ? ` (reader ${had + 1} of this chapter, ${price} calls)` : ''}`); return `The reader says:\n${said}`;

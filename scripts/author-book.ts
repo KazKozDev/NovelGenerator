@@ -39,6 +39,8 @@ const flush = () => {
 };
 (arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
   calls++; sent += prompt.length + system.length; const at = Date.now();
+  // What the author was told about its last step, kept beside the book: the journal has what it did, this has what came back.
+  if (options?.stage === 'author-step' && prompt.startsWith('RESULT OF YOUR LAST TOOL')) appendFileSync(join(out, 'shown.md'), `\n\n## before answer ${calls}\n${prompt.split('\n\nYOUR DESK NOW:')[0].replace('RESULT OF YOUR LAST TOOL:\n', '')}`);
   const other = options?.route === 'validator' && reader;
   const text = other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
     : await generateOllamaText(prompt, system, undefined, options?.temperature ?? 0.8, other ? reader : model, endpoint, options?.maxTokens);
