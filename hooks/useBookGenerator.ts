@@ -9,8 +9,8 @@ import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
 import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
-import { HELPER_MODEL } from '../utils/novel/v3/envelope';
-import { generateHuggingFaceBrowserText } from '../services/hfBrowserService';
+import { HELPER_MODEL, type LabelRequest } from '../utils/novel/v3/envelope';
+import { labelHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
@@ -310,11 +310,11 @@ export default function useBookGenerator() {
     const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
     const helperModel = getStoredHelperModel() || HELPER_MODEL;
-    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`} · small model: huggingface:${helperModel}`);
+    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`} · small network: huggingface:${helperModel}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
-      // The small sorter: dozens of one-line questions to a chapter, asked quietly of a small model on Hugging Face. Without a token it fails, and the engine goes on without it.
-      if (options.route === 'helper') return generateHuggingFaceBrowserText(prompt, system, options.maxTokens ?? 600, helperModel, options.temperature ?? 0);
+      // The small network that labels sentences for the code, asked quietly. Without a token it fails, and the engine goes on without it.
+      if (options.route === 'helper') { const request = JSON.parse(prompt) as LabelRequest; return JSON.stringify(await labelHuggingFaceBrowser(helperModel, request.inputs, request.labels, request.template)); }
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the
       // 500-char window: keep the head for context and the tail for the cause.

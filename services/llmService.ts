@@ -114,8 +114,8 @@ export function saveStoredSecondWriterConfig(config: (LLMProviderConfig & { enab
   }
 }
 
-const HELPER_STORAGE_KEY = 'novelGenerator_helper_model';
-/** The small Hugging Face model that sorts sentences for the engine; empty means the engine's own default. */
+const HELPER_STORAGE_KEY = 'novelGenerator_label_model';
+/** The small Hugging Face classifier that labels sentences for the engine; empty means the engine's own default. */
 export function getStoredHelperModel(): string {
   if (typeof window === 'undefined') return '';
   try { return (localStorage.getItem(HELPER_STORAGE_KEY) || '').trim(); } catch { return ''; }

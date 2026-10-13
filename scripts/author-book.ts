@@ -10,14 +10,15 @@ import { writeBookOnce } from '../utils/novel/v3/author';
 import { writeAtDesk } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
-import { generateHuggingFaceText } from '../services/hfService';
+import { labelHuggingFace } from '../services/hfLabelService';
+import { HELPER_MODEL, type LabelRequest } from '../utils/novel/v3/envelope';
 
 const arg = (name: string, fallback: string) => { const at = process.argv.indexOf(`--${name}`); return at > 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback; };
 const model = arg('model', 'deepseek-v4.1-flash:cloud'), endpoint = arg('endpoint', 'http://127.0.0.1:11434'), out = arg('out', 'runs/book');
 // The reader may be another model: --reader qwen3.8-max goes to Qwen, any other name to Ollama; empty means the author's own.
 const reader = arg('reader', '');
 // The small model that sorts sentences for the engine, on Hugging Face.
-const helper = arg('helper', 'google/gemma-3-12b-it');
+const helper = arg('helper', HELPER_MODEL);
 const chapters = Number(arg('chapters', '6')), words = Number(arg('words', '2300'));
 const input = { planning_version: 2 as const, generation_mode: 'author' as const, premise: arg('premise', ''), chapter_count: chapters, genre: arg('genre', 'thriller'),
   target_total_words: chapters * words, author_requirements: arg('settings', 'Voice: third-limited. Tone: serious. Style: descriptive. Audience: adult. Tense: past. Ending: closed. Intimate scenes: on the page, not faded out.') };
@@ -41,14 +42,13 @@ const flush = () => {
   writeFileSync(join(out, 'threads.md'), draft.threads || ''); writeFileSync(join(out, 'noticed.md'), draft.noticed.join('\n\n'));
 };
 (arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
+  if (options?.route === 'helper') { const request = JSON.parse(prompt) as LabelRequest; return JSON.stringify(await labelHuggingFace(helper, request.inputs, request.labels, request.template)); }
   calls++; sent += prompt.length + system.length; const at = Date.now();
   const other = options?.route === 'validator' && reader;
-  const text = options?.route === 'helper' ? await generateHuggingFaceText(prompt, system, options?.maxTokens, helper, 0)
-    : other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
+  const text = other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
     : await generateOllamaText(prompt, system, undefined, options?.temperature ?? 0.8, other ? reader : model, endpoint, options?.maxTokens);
   got += text.length; const did = options?.stage === 'author-step' ? ` ${text.match(/^\**TOOL\**\s*:\**\s*(.*)$/mi)?.[1] || ''} ${text.match(/^\**(?:FILE|NAME)\**\s*:\**\s*(.*)$/mi)?.[1] || ''} — ${(text.match(/^\**THOUGHT\**\s*:\**\s*(.*)$/mi)?.[1] || '').slice(0, 230)}` : '';
   log(`[${calls}] ${options?.stage} ${Math.round((Date.now() - at) / 1000)}s sent ${Math.round(prompt.length / 1000)}K got ${text.split(/\s+/).length} words${did}`);
-  if (options?.stage === 'author-helper') return text;
   if (options?.stage !== 'author-step') log('     ' + text.replace(/\s+/g, ' ').slice(0, 500));
   return text;
 }, () => flush()).then(() => {

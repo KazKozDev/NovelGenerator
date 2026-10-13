@@ -52,3 +52,17 @@ export async function fetchHuggingFaceModels(): Promise<{ id: string; providers:
   if (!response.ok) throw new Error(data.error || 'Model list failed');
   return Array.isArray(data.models) ? data.models : [];
 }
+
+/** A small classifier through the local gateway: for each sentence, the score of the first label. */
+export async function labelHuggingFaceBrowser(model: string, inputs: string[], labels: string[], template: string): Promise<number[]> {
+  const response = await fetch('/api/hf/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, inputs, labels, template }) });
+  const data = await response.json();
+  if (!response.ok || !Array.isArray(data.scores)) throw new Error(data.error || 'Labelling failed');
+  return data.scores;
+}
+export async function fetchHuggingFaceLabelModels(): Promise<{ id: string; providers: string[] }[]> {
+  const response = await fetch('/api/hf/label-models');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Model list failed');
+  return Array.isArray(data.models) ? data.models : [];
+}

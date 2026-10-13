@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { ENVELOPE, around, mentions, readNumbers, readThings, sideBySide } from '../utils/novel/v3/envelope';
+import { ENVELOPE, KEEP_AT, around, labelsFor, listedThings, mentions, sceneOf, sideBySide, type LabelRequest } from '../utils/novel/v3/envelope';
 import { newDesk, takeStep } from '../utils/novel/v3/authorDesk';
 
 describe('the sealed envelope', () => {
-  it('reads the list of things a small model gives, and passes over anything else', () => {
-    expect(readThings('Here is the list:\n- the brass key: key, keys\n2. **the side door**: door, entrance\nnothing more')).toEqual([
-      { thing: 'the brass key', words: ['key', 'keys'] }, { thing: 'the side door', words: ['door', 'entrance'] }]);
+  it('reads the things the author listed at the foot of its envelope', () => {
+    const envelope = 'She took the key from the drawer and left by the side door.\n\nTHINGS:\n- the brass key\n- **the side door of the hotel**: door, entrance\n3. the glass on the nightstand\n';
+    expect(listedThings(envelope)).toEqual([{ thing: 'the brass key', words: ['key'] }, { thing: 'the side door of the hotel', words: ['door', 'entrance'] }, { thing: 'the glass on the nightstand', words: ['glass'] }]);
+    expect(listedThings('THINGS: the lamp, the tie, the service stair')).toHaveLength(3);
+    expect(listedThings('A scene with no list.')).toEqual([]);
+    expect(listedThings('THINGS\nthe side door\nthe balcony door\nthe window that will not close\nthe hour, four o\'clock').map(thing => thing.words[0])).toEqual(['side door', 'balcony door', 'window', 'hour']);
+    expect(sceneOf(envelope)).not.toContain('brass');
   });
 
-  it('finds the sentences that name a thing, and reads back only numbers that exist', () => {
+  it('finds the sentences that name a thing', () => {
     const text = 'She kept the key on a chain at her neck. It rained all night on the harbor road. The keys were never out of her sight.';
     expect(mentions(text, { thing: 'the brass key', words: ['key'] })).toHaveLength(2);
-    expect(readNumbers('2, 7 and 1', 2)).toEqual([2, 1]);
-    expect(readNumbers('none', 5)).toEqual([]);
   });
 
   it('shows the clause where the thing is named, not the head of a long sentence', () => {
@@ -31,27 +33,34 @@ describe('the sealed envelope', () => {
     expect(shown).not.toContain('the pen');
   });
 
-  it('hands a chapter back with what it says of the envelope\'s things, at no cost, and seals the envelope when the second chapter is begun', async () => {
-    const desk = newDesk(3); desk.files[ENVELOPE] = 'Claire took the card from the desk drawer on Tuesday; the drawer was not locked.';
-    const asked: string[] = [];
-    const ask = async (kind: string, prompt: string) => { asked.push(kind); return /List the physical things/.test(prompt) ? 'the desk drawer: drawer' : /Answer yes or no/.test(prompt) ? 'yes' : '1'; };
-    const write = (file: string, content: string) => takeStep(desk, { thought: '', tool: 'write', file, name: '', content }, 3, ask as never);
-    const first = await write('chapter-1.md', 'Nora locked the drawer of her desk and put the key in her bag. Then she went home through the rain.');
+  it('keeps only the lines the network marks as a fact, by a mark that code sets; costs nothing; and seals the envelope when the second chapter is begun', async () => {
+    const desk = newDesk(4); desk.files[ENVELOPE] = 'Claire took the card from the desk drawer on Tuesday; the drawer was not locked.\n\nTHINGS:\nthe desk drawer';
+    const asked: LabelRequest[] = [];
+    // The network: a number for each sentence, and nothing else.
+    const ask = async (kind: string, prompt: string) => { expect(kind).toBe('helper'); const request = JSON.parse(prompt) as LabelRequest; asked.push(request); return JSON.stringify(request.inputs.map(line => /like a drawer/.test(line) ? KEEP_AT - 0.3 : KEEP_AT + 0.3)); };
+    const write = (file: string, content: string) => takeStep(desk, { thought: '', tool: 'write', file, name: '', content }, 4, ask as never);
+    const first = await write('chapter-1.md', 'Nora locked the drawer of her desk and put the key in her bag. Her mind slid shut like a drawer in the dark. Then she went home through the rain.');
     expect(first).toContain('the envelope: "Claire took the card from the desk drawer on Tuesday; the drawer was not locked."');
     expect(first).toContain('chapter-1.md, just written: "Nora locked the drawer of her desk and put the key in her bag."');
-    expect(asked.every(kind => kind === 'helper')).toBe(true);
+    expect(first).not.toContain('like a drawer');
+    expect(asked[0].labels).toEqual(labelsFor({ thing: 'the desk drawer', words: ['drawer'] }));
+    expect(desk.spent).toBe(0);
     expect(await write(ENVELOPE, 'Something else happened.')).toContain('is written');
     await write('chapter-2.md', 'The second day came. Nora opened the drawer and found it empty.');
     expect(await write(ENVELOPE, 'Something else again.')).toContain('sealed');
     expect(desk.files[ENVELOPE]).toBe('Something else happened.');
   });
 
-  it('does nothing when the envelope is empty or the helper cannot be reached', async () => {
+  it('does nothing when the envelope is empty, lists no things, or the network cannot be reached', async () => {
     const desk = newDesk(3);
-    const told = await takeStep(desk, { thought: '', tool: 'write', file: 'chapter-1.md', name: '', content: 'Nora locked the drawer and went home.' }, 3, async () => { throw new Error('no helper'); });
-    expect(told).not.toContain('envelope');
-    desk.files[ENVELOPE] = 'The drawer was not locked.';
-    const again = await takeStep(desk, { thought: '', tool: 'write', file: 'chapter-1.md', name: '', content: 'Nora locked the drawer and went home at last.' }, 3, async () => { throw new Error('no helper'); });
-    expect(again).toContain('is written'); expect(again).not.toContain('turns on');
+    const down = async () => { throw new Error('no network'); };
+    const write = (content: string) => takeStep(desk, { thought: '', tool: 'write', file: 'chapter-1.md', name: '', content }, 3, down);
+    expect(await write('Nora locked the drawer and went home.')).not.toContain('envelope');
+    desk.files[ENVELOPE] = 'The drawer was not locked.'; desk.rewrites = { 'chapter-1.md': 0 };
+    expect(await write('Nora locked the drawer and went home at last.')).not.toContain('envelope names');
+    desk.files[ENVELOPE] = 'The drawer was not locked.\n\nTHINGS:\nthe drawer'; desk.rewrites = { 'chapter-1.md': 0 };
+    const told = await write('Nora locked the drawer and went home in the end.');
+    expect(told).toContain('is written'); expect(told).not.toContain('envelope names');
+    expect(desk.journal.filter(line => line.includes('could not be gathered'))).toHaveLength(1);
   });
 });
