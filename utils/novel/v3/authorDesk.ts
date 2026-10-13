@@ -469,7 +469,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     if (places.length > 1) return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" stands in ${places.length} places${file in state.files ? ` in ${file}` : ''}.\n${places.slice(0, 8).map((found, at) => `— PLACE ${at + 1}, ${found.file}: "${found.sentence.slice(0, 220)}${found.sentence.length > 220 ? '…' : ''}"`).join('\n')}\nQuote a little more of the one you mean; or, if the same words stand more than once and you mean one of them, put a first line above them saying which, like PLACE: 2.`;
     if (doing === 'changed') { const passage = nearPassage(state.files, scope, words); if (passage) { loose = true; return passage; } }
     const near = nearestTo(state.files, scope, words);
-    return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'} as you quoted it.${near.length ? ` The lines nearest to it:\n${shown(near)}\nQuote the words as they stand.` : ''}`;
+    return `Nothing was ${doing}: the ${count(words)} words you quoted, beginning "${quoted(words).slice(0, 80)}", do not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'} as you quoted them.${near.length ? ` The lines nearest to it:\n${shown(near)}\nQuote the words as they stand.` : ''}`;
   };
   // Part of the mirror: words just put into the book that now stand in it more than once. One author set the same
   // paragraph into a chapter at two steps running, and a reader later found it printed twice.
@@ -506,7 +506,10 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`) + round;
   }
   if (tool === 'change' || tool === 'edit') {
-    const [was = '', now = ''] = ownWords(content).split(/\n={3,}[ \t]*(?:\n|$)/);
+    const whole = ownWords(content), parted = /(?:^|\n)={3,}[ \t]*(?:\n|$)/.test(content.trimEnd());
+    const [was = '', now = ''] = whole.split(/\n={3,}[ \t]*(?:\n|$)/);
+    // Without the line of === there is no telling the words that stand from the words meant to replace them.
+    if (!parted) { note(`change ${file}: no line of === in it`); return `Nothing was changed: there is no line containing only === in what you sent (${count(whole)} words), so the words as they stand cannot be told from the words that should replace them. Send the words as they stand, then a line containing only ===, then the new words (or nothing, to take them out).`; }
     if (quoted(was).length < 3) { note('change: no words quoted'); return 'change puts other words where words stand now. The content is the words as they stand, then a line containing only ===, then what should stand there instead.'; }
     if (count(now) > 220) { note(`change ${file}: too long`); return `That is ${count(now)} words to put in. change is for a line or a short passage, at most 200 words; what a chapter does is changed by writing it again.`; }
     const found = place(was, 'changed');

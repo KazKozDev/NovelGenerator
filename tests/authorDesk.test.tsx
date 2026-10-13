@@ -255,7 +255,7 @@ describe('the desk', () => {
     expect(desk.files['chapter-2.md']).toContain('She locked the drawer again.');
     // Nowhere: nothing changed, the nearest lines shown.
     const none = await change('chapter-1.md', 'She locked the heavy drawer\n===\nShe left it');
-    expect(none).toContain('does not stand in chapter-1.md'); expect(none).toContain('The lines nearest to it'); expect(none).toContain('She locked the drawer.');
+    expect(none).toContain('do not stand in chapter-1.md'); expect(none).toContain('The lines nearest to it'); expect(none).toContain('She locked the drawer.');
     // Quotation marks and dashes need not be typed as the page has them; nothing after === takes the words out.
     expect(await change('', '"Eleven Thursdays," she said - and laughed.\n===\n')).toContain('Changed in chapter-2.md'); expect(desk.files['chapter-2.md']).toBe('She locked the drawer again.');
     expect(await change('chapter-1.md', `She went to bed\n===\n${Array.from({ length: 300 }, () => 'word').join(' ')}`)).toContain('at most 200 words');
@@ -372,7 +372,7 @@ describe('the desk', () => {
     expect(desk.files['chapter-1.md']).toBe('She locked the drawer and stood a moment.\n\nThe key went into the blue jar on the sill.\n\nShe went to bed.');
     expect(await plant('', 'She went to bed\n===\nA line.')).toContain('stands in 2 places');
     expect(await plant('chapter-1.md', `She locked the drawer\n===\n${Array.from({ length: 200 }, () => 'word').join(' ')}`)).toContain('at most 120 words');
-    expect(await plant('chapter-1.md', 'A paragraph that is not there at all\n===\nA line.')).toContain('does not stand in chapter-1.md');
+    expect(await plant('chapter-1.md', 'A paragraph that is not there at all\n===\nA line.')).toContain('do not stand in chapter-1.md');
   });
   it('looks without touching, exactly, and looking costs no call', async () => {
     const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
