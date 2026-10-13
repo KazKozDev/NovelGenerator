@@ -527,7 +527,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       const request: SimilarRequest = { source: source.replace(/\s+/g, ' ').trim().slice(0, 700), sentences: lines.map(item => item.sentence.slice(0, 400)) };
       const scores = JSON.parse(await ask('similar', JSON.stringify(request), '')) as number[];
       return lines.map((item, at) => ({ ...item, from: 0, to: 0, at, score: Number(scores[at]) || 0 })).filter(item => item.score >= floor).sort((one, other) => other.score - one.score).slice(0, most).sort((one, other) => one.at - other.at);
-    } catch { return undefined; }
+    } catch (error) { if (!state.journal.some(line => line.includes('search by meaning could not be had'))) state.journal.push(`${state.step}. search by meaning could not be had, so the search was by words (${String(error instanceof Error ? error.message : error).slice(0, 100)})`); return undefined; }
   };
   const noted = NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && state.files[name]?.trim());
   /** Everything else the author has said of what it touched: in the chapters and in its own notes, by meaning when that can be had. */
@@ -604,7 +604,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // Found by likeness, not word for word: the author is shown in full what was taken as the place.
     if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
     if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${also}${twice(now, found.file)}`;
-    return `Changed in ${found.file}, at the one place: ${out} words taken out, ${put} put in.\nTaken out: "${ends(text.slice(found.from, found.to).trim())}"\n${put ? `Put in: "${ends(now.trim())}"` : 'Nothing put in.'}${beside()}${twice(now, found.file)}`;
+    return `Changed in ${found.file}, at the one place: ${out} words taken out, ${put} put in.\nTaken out: "${ends(text.slice(found.from, found.to).trim())}"\n${put ? `Put in: "${ends(now.trim())}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
   }
   if (tool === 'plant') {
     const [where = '', what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
