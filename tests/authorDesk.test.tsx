@@ -439,7 +439,7 @@ describe('the desk', () => {
     expect(await plant('chapter-1.md', 'stood a moment\n===\nThe key went into the blue jar on the sill.')).toContain('Set into chapter-1.md after "She locked the drawer');
     expect(desk.files['chapter-1.md']).toBe('She locked the drawer and stood a moment.\n\nThe key went into the blue jar on the sill.\n\nShe went to bed.');
     expect(await plant('', 'She went to bed\n===\nA line.')).toContain('stands in 2 places');
-    expect(await plant('chapter-1.md', `She locked the drawer\n===\n${Array.from({ length: 200 }, () => 'word').join(' ')}`)).toContain('at most 120 words');
+    expect(await plant('chapter-1.md', `She locked the drawer\n===\n${Array.from({ length: 200 }, () => 'word').join(' ')}`)).toContain('at most 50 words');
     expect(await plant('chapter-1.md', 'A paragraph that is not there at all\n===\nA line.')).toContain('do not stand in chapter-1.md');
   });
   it('looks without touching, exactly, and looking costs no call', async () => {

@@ -16,8 +16,9 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *
  * Nothing here tells it what to do next. Its will is free; what is chosen is what it finds in
  * its hands. Every tool is made so that the easy use of it is the good one:
- * - a chapter is changed by writing it again, or at one place the author names: a thing set in after a line (plant),
- *   or other words put where words stand now (change). The place is named by quoting it, and code finds it: every
+ * - a chapter is changed by writing it again, or at one place the author names: a small thing set in after a line
+ *   (plant, fifty words: larger ones left seams, being written apart from the paragraphs on either side), or other
+ *   words put where words stand now (change: a line, or a whole paragraph written again with the new matter in it). The place is named by quoting it, and code finds it: every
  *   such tool searches first. Words that stand in one place are acted on there; words that stand in several places, or
  *   nowhere, change nothing, and the author is shown every place, or the lines nearest to what it quoted. The old tool
  *   for patching guessed at the place, and every seam, lost line and doubled paragraph came from that. The same search
@@ -134,10 +135,10 @@ NAME: the character (for ask_character)
 the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
-- change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line or a short passage; what a chapter does is changed by writing it again.
+- change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line, or for a whole paragraph written again: when a passage needs something new in it — a reason, a memory, an exchange — quote the paragraph and write it again with the new matter inside it, so that the lines around it are written with it and it reads as one piece. What a chapter does is changed by writing the chapter again.
 - find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence, and beside them the lines that say something like it in other words, in the book and in your notes: you can look for a thing by what it means ("where Claire was that afternoon"). The content is the word, phrase or thing; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
 - plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
-- plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
+- plant: sets one small thing into a chapter already written, for another chapter to pay off: a thing on a table, a single line someone says, a glance. It goes in between two paragraphs that were written to follow one another and touches neither, so it is for what can stand alone in a sentence or two, at most 50 words; anything that explains, or that the lines after it must answer, is done with change. The content is a few words of the paragraph it goes after, quoted as they stand, then a line containing only ===, then the new text.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it: a detective told how the thing was done will say what does not hold.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
@@ -609,7 +610,10 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   if (tool === 'plant') {
     const [where = '', what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
     if (!what?.trim() || quoted(where).length < 3) { note(`plant ${file}: nothing to set in`); return 'plant sets one thing into a written chapter. The content is a few words of the paragraph it goes after, quoted as they stand, then a line containing only ===, then the new text.'; }
-    if (count(what) > 150) { note(`plant ${file}: too long`); return `That is ${count(what)} words. A plant is one thing set down in passing, at most 120 words. To change the chapter itself, write it again.`; }
+    // A plant goes between two paragraphs written to follow one another, and touches neither. Larger ones left seams: a
+    // first-person paragraph of explanation in a third-person chapter, with a line of the chapter repeated beside it; a
+    // confession set between a question and its answer, so that the answer answered the line before. Small, it stands.
+    if (count(what) > 60) { note(`plant ${file}: too long`); return `That is ${count(what)} words. A plant is one small thing that stands alone, at most 50 words: it goes in between two paragraphs and touches neither. For this, use change: quote the paragraph it belongs in and write that paragraph again with the new matter inside it.`; }
     if (file in state.files && (!isChapter || !state.files[file]?.trim())) { note(`plant ${file}: not a written chapter`); return `plant sets something into a chapter that is already written. ${file} is not one.`; }
     // A paragraph is named by how it begins; if a long quotation drifts from the page, its first sixty characters are tried.
     let found = place(where, 'set in');
