@@ -61,7 +61,8 @@ describe('the author at its desk', () => {
 
     const idle = new MemoryProjectStore(); let steps = 0;
     const result = await new Orchestrator(idle).runBook(input, async () => { steps++; return step('Still thinking.', 'append', 'notebook.md', 'More.'); });
-    expect(steps).toBe(deskBudget(2));
+    // The budget, and one answer more: told its budget is spent, it may ask for its three more calls or stop, and it does neither.
+    expect(steps).toBe(deskBudget(2) + 1);
     expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
     expect(idle.loadReport()!.findings.map(finding => finding.description)).toEqual(['chapter-1.md was not written before the budget ran out.', 'chapter-2.md was not written before the budget ran out.']);
   });
@@ -336,6 +337,21 @@ describe('the desk', () => {
     expect(told).toContain('Words it leans on that no earlier chapter has: lamp (3).');
     const leak = await takeStep(desk, readStep(step('Three.', 'write', 'chapter-3.md', 'She had never asked the question the reader will ask. She was a careful lip-reader and a patient woman.')), 3, ask);
     expect(leak).toContain('It speaks of "the reader" 1 time, from outside the story: "She had never asked the question the reader will ask."');
+  });
+  it('has a right to three more calls, once, for the asking — even with its budget spent', async () => {
+    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
+    const idle = (n: number) => Array.from({ length: n }, () => step('Thinking.', 'append', 'notebook.md', 'More.'));
+    // Two chapters, then the rest of the budget thought away; told the budget is spent, it asks for its three and uses them.
+    await new Orchestrator(store).runBook(input, scripted([step('One.', 'write', 'chapter-1.md', 'The key lay on the sill.'), step('Two.', 'write', 'chapter-2.md', 'Nobody had a key to that room.'), ...idle(deskBudget(2) - 3),
+      step('The reader named one line.', 'more', '', 'To change the one line the reader named, and close.'), step('Fix.', 'change', 'chapter-1.md', 'the sill\n===\nthe floor'), step('Again?', 'more', '', 'Three more, to be safe.')], seen));
+    const desk = store.loadAuthor()!.desk!, told = seen.map(call => call.prompt.split('YOUR DESK NOW')[0]).join('\n');
+    expect(told).toContain('Your budget is spent. One right is left to you: more');
+    expect(told).toContain('Three more calls are yours: you now have 3. You asked for them for: To change the one line the reader named, and close.');
+    expect(desk.budget).toBe(deskBudget(2) + 3); expect(desk.files['chapter-1.md']).toBe('The key lay on the floor.');
+    expect(told).toContain('You have had your three more calls'); expect(desk.bonus?.why).toContain('one line the reader named');
+    const own = seen.filter(call => call.stage === 'author-step');
+    expect(own[1].prompt).toContain('You have not asked for your three more calls (more)'); expect(own.at(-1)!.prompt).not.toContain('You have not asked for your three more calls');
+    expect(seen[0].system).toContain('- more: once in the book, three calls beyond your budget');
   });
   it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
     const desk = newDesk(6); desk.step = 9; desk.spent = 13;

@@ -58,6 +58,10 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold' | 'change'; at: string; text: string }[];
   /** How many answers that only looked with find have been given free. */
   free_looks?: number;
+  /** The three calls beyond the budget, asked for once: at which step, and what the author said they were for. */
+  bonus?: { step: number; why: string };
+  /** Whether, with the budget spent, the author has been told the one right it has left. */
+  offered?: boolean;
   /** How many answers running have only looked. */
   look_streak?: number;
   /** What each look last showed, so that a look taken again can say what has changed since, or that nothing has. */
@@ -115,7 +119,7 @@ YOUR DESK (files you own and may rewrite at any time): notebook.md for your thin
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
 THOUGHT: one or two sentences on what you are doing and why
-TOOL: write | append | plant | change | find | ask_character | ask_keeper | ask_reader | done
+TOOL: write | append | plant | change | find | ask_character | ask_keeper | ask_reader | more | done
 FILE: the file (for write, append, plant, change, ask_reader; for find and change it may be left out, and the whole book is searched)
 NAME: the character (for ask_character)
 ---
@@ -129,10 +133,11 @@ the content
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it: a detective told how the thing was done will say what does not hold.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
+- more: once in the book, three calls beyond your budget, for the asking. The content says what they are for. Asking costs nothing, and it can be done even when your budget has reached zero.
 - done: you are finished. No content.
 
 
-Every answer costs one call from your budget, however many steps it holds; an answer that only looks with find costs none, twice running; a third such answer in a row costs a call. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
+Every answer costs one call from your budget, however many steps it holds; an answer that only looks with find costs none, twice running; a third such answer in a row costs a call. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are — unless you have not yet asked for your three more — so leave yourself the calls to finish. How you spend it is your decision.`;
 
 const NUMBER = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?';
 const AGE = '(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?|[1-9]\\d)';
@@ -180,7 +185,8 @@ export function whereYouAre(state: DeskState, chapters: number): string {
     ? `${todo.length} chapter${todo.length > 1 ? 's are' : ' is'} still to write, at one call each at the least; you have ${left}${left < todo.length ? ', which is fewer than that' : `, so ${left - todo.length} beyond them`}.`
     : `the book is whole, and you have ${left} call${left === 1 ? '' : 's'}${left <= 1 ? ': enough to say done' : ''}.`;
   const prices = ` What things cost: any answer, 1 call; a question to one of your people or to the keeper, 1 more; looking with find, nothing twice running${read ? `; a reader of the book through ${read}, ${fresh ? `${price} in all now` : 'nothing while the text stands as they read it'}` : ''}.`;
-  return `${where}\nWHAT IS LEFT: ${ahead}${prices}`;
+  const right = state.bonus ? '' : ' You have not asked for your three more calls (more): the right is yours once.';
+  return `${where}\nWHAT IS LEFT: ${ahead}${prices}${right}`;
 }
 
 /** Everything the author sees before it decides its next step. */
@@ -420,6 +426,17 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     state.journal.push(`${state.step}. the book was whole for the first time, and a reader said what it left hanging`);
     return `${lead}\n${said}\n\nThat cost one call; you have ${state.budget - state.spent} left. What you do about any of it is yours to decide.`;
   };
+  // Three calls beyond the budget, once, for the asking. Book after book reached its best reader's report with no
+  // call left: "three real contradictions I could fix with single-line changes", and then done. A larger budget would
+  // be spent the same way and end at the same place; a right that has to be taken is taken when it is needed.
+  if (tool === 'more' || tool === 'bonus' || tool === 'more_calls') {
+    if (state.bonus) { note('more: already had'); return `You have had your three more calls: you asked for them at step ${state.bonus.step}, for: ${state.bonus.why.slice(0, 200)}. There are no others.`; }
+    const why = ownWords(content).replace(/\s+/g, ' ').trim();
+    if (count(why) < 3) { note('more: no reason given'); return 'more gives you three calls beyond your budget, once. The content says what they are for.'; }
+    state.bonus = { step: state.step, why }; state.budget += 3;
+    note(`asked for three more calls: ${why.slice(0, 160)}`);
+    return `Three more calls are yours: you now have ${state.budget - state.spent}. You asked for them for: ${why.slice(0, 300)}. There are no others after these.`;
+  }
   if (tool === 'done') {
     const told = await hanging('Before it goes to the printer, a reader who has just finished the book says what it left in their hands:');
     if (told) return `${told} Say done again and the book is printed as it stands.`;
@@ -573,7 +590,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     state.answers.push({ who: 'a reader', step: state.step, about: target, asked: content.trim(), text: said }); note(`a reader read through ${target}${price > 1 ? ` (reader ${had + 1} of this chapter, ${price} calls)` : ''}`); return `The reader says:\n${said}`;
   }
   note('an answer that used no tool');
-  return `"${tool}" is not one of your tools. Answer in the form given, with one of: write, append, plant, change, find, ask_character, ask_keeper, ask_reader, done.`;
+  return `"${tool}" is not one of your tools. Answer in the form given, with one of: write, append, plant, change, find, ask_character, ask_keeper, ask_reader, more, done.`;
 }
 
 /**
@@ -612,8 +629,11 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
   };
 
   let result = '';
-  while (!desk.finished && desk.spent < desk.budget) {
-    desk.step++; desk.spent++;
+  while (!desk.finished && (desk.spent < desk.budget || (!desk.bonus && !desk.offered))) {
+    // With the budget spent and the three more calls never asked for, the author is told so once, and may ask or stop.
+    const last = desk.spent >= desk.budget;
+    if (last) { desk.offered = true; result = `${result}\n\nYour budget is spent. One right is left to you: more — three calls beyond the budget, once, if you say what they are for. Ask for them now, or say done.`.trim(); }
+    desk.step++; if (!last) desk.spent++;
     let answer = '';
     try { answer = (await llm(deskView(desk, chapters, result), system, { stage: 'author-step', route: 'writer', temperature: 0.8, maxTokens: Math.max(12000, Math.ceil(words * 5)) })).trim(); }
     catch (error) {
@@ -623,7 +643,8 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       result = 'Your last answer was cut off before it ended, so none of it was carried out. It was too long: do less in one answer.';
       desk.journal.push(`${desk.step}. an answer too long to finish; nothing was done`); store.log('author', `[${desk.step}] answer cut off: ${message.slice(0, 160)}`); save(); continue;
     }
-    const steps = readSteps(answer), told: string[] = []; let onlyLooked = false;
+    let steps = readSteps(answer); const told: string[] = []; let onlyLooked = false;
+    if (last) { steps = steps.filter(step => ['more', 'bonus', 'more_calls'].includes(step.tool)).slice(0, 1); if (!steps.length) { desk.journal.push(`${desk.step}. the budget was spent, and the three more calls were not asked for`); save(); break; } }
     for (const [index, step] of steps.entries()) {
       const at = names.indexOf(step.file);
       progress(at >= 0 ? 'chapter' : 'design', at >= 0 ? at + 1 : undefined);
@@ -663,6 +684,8 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
     // and never closed: free, a look had become a way of not deciding. From the third in a row a look costs a call like
     // any other answer, and the author is told how many times running it has only looked.
     // A change or a plant that found no one place did nothing but show where the words stand: it is a look.
+    // Asking for the three more calls costs nothing.
+    if (!last && steps.length > 0 && steps.every(step => ['more', 'bonus', 'more_calls'].includes(step.tool))) desk.spent--;
     const looked = steps.length > 0 && (onlyLooked || steps.every((step, at) => step.tool === 'find' || (['change', 'edit', 'plant'].includes(step.tool) && /^Nothing was (changed|set in)/.test(told[at] || ''))));
     desk.look_streak = looked ? (desk.look_streak || 0) + 1 : 0;
     if (looked && desk.look_streak <= 2 && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
