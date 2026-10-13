@@ -3,7 +3,6 @@
  * Not a log of what happened — the words themselves: what the author asked, and what it was told.
  */
 import type { DeskState } from './authorDesk';
-import { ENVELOPE } from './envelope';
 
 export type DeskTab = { name: string; count: number; text: string };
 
@@ -12,8 +11,7 @@ const quote = (text: string) => text.trim().split('\n').map(line => `> ${line}`)
 export function deskTabs(desk: DeskState): DeskTab[] {
   const readers = desk.answers.filter(answer => /^a (reader|listener)\b/.test(answer.who));
   const keeper = desk.answers.filter(answer => answer.who === 'the keeper');
-  const asked = desk.answers.filter(answer => answer.who.startsWith('an investigator'));
-  const people = desk.answers.filter(answer => !readers.includes(answer) && !keeper.includes(answer) && !asked.includes(answer));
+  const people = desk.answers.filter(answer => !readers.includes(answer) && !keeper.includes(answer));
   const none = (what: string) => `*${what}*`;
   const tabs: DeskTab[] = [
     { name: 'Reader', count: readers.length, text: readers.map(answer => `### Step ${answer.step} · ${answer.who}${answer.about ? `, through ${answer.about}` : ''}\n\n${answer.asked?.trim() ? `**The author asked**\n\n${quote(answer.asked)}\n\n` : ''}**${answer.who.startsWith('a listener') ? 'The listener' : 'The reader'}**\n\n${answer.text.trim()}${answer.stale ? `\n\n*The author has changed ${answer.about} since this was said.*` : ''}`).join('\n\n---\n\n') || none('The author has not asked a reader yet, and nobody has read the book.') },
@@ -22,16 +20,6 @@ export function deskTabs(desk: DeskState): DeskTab[] {
     { name: 'Set in', count: desk.inserts?.length || 0, text: (desk.inserts || []).map(insert => `### Step ${insert.step} · ${insert.kind === 'unfold' ? 'a told passage unfolded into a scene' : 'one thing set down'} in ${insert.file}\n\n**${insert.kind === 'unfold' ? 'In place of' : 'After'}**\n\n${quote(insert.at)}\n\n**${insert.kind === 'unfold' ? 'The scene' : 'What was set down'}**\n\n${insert.text.trim()}`).join('\n\n---\n\n') || none('Nothing has been set into a finished chapter.') },
     { name: 'Notebook', count: ['notebook.md', 'plan.md', 'dossier.md'].filter(name => desk.files[name]?.trim()).length, text: [['notebook.md', 'The notebook'], ['plan.md', 'The plan'], ['dossier.md', 'The dossier']].filter(([name]) => desk.files[name]?.trim()).map(([name, title]) => `## ${title}\n\n${desk.files[name].trim()}`).join('\n\n---\n\n') || none('The author has not written anything down yet.') },
   ];
-  // The envelope: the scene written before the book, and under it the author's own lines about each thing it turns on.
-  if (ENVELOPE in desk.files) {
-    const lines = (desk.things || []).map(thing => {
-      const said = Object.entries(desk.held || {}).flatMap(([file, held]) => held.filter(item => item.thing === thing.thing).map(item => `- **${file === ENVELOPE ? 'the envelope' : file.replace('.md', '').replace('-', ' ')}** — ${item.line.trim()}`));
-      return said.length > 1 ? `### ${thing.thing}\n\n${said.join('\n')}` : '';
-    }).filter(Boolean);
-    tabs.splice(4, 0, { name: 'Envelope', count: lines.length, text: desk.files[ENVELOPE]?.trim()
-      ? `## What really happened\n\n${desk.files[ENVELOPE].trim()}${asked.length ? `\n\n---\n\n## What someone who checks such accounts asked of it\n\n${asked.map(answer => answer.text.trim()).join('\n\n')}` : ''}${lines.length ? `\n\n---\n\n## What the book says of the things it turns on\n\n${lines.join('\n\n')}` : ''}`
-      : none('The author has not written down what really happened.') });
-  }
   return tabs;
 }
 
@@ -57,7 +45,6 @@ export function deskFocus(stage: string, arrived: string, last: string | null): 
   if (tool === 'plant' && target) return { tab: 'Set in', label: `The author is setting one thing into ${target}`, text: body };
   if ((tool === 'write' || tool === 'append') && target) {
     if (/^chapter-\d+/i.test(target)) return { tab: null, label: '', text: '' };
-    if (/^envelope/i.test(target)) return { tab: 'Envelope', label: 'The author is writing down what really happened', text: body };
     return { tab: 'Notebook', label: `The author is writing in ${target}`, text: body };
   }
   return undefined;

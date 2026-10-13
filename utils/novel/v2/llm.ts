@@ -6,8 +6,7 @@
  */
 import { stableJson } from './contracts';
 /** 'writer2' is the second writer, when the author has configured one; a host without one serves it with the first. */
-/** 'helper' is not a model that talks: the prompt is a LabelRequest as JSON and the answer a JSON array of scores, from a small classifier when the host has one. */
-export type NovelLLMRoute = 'writer' | 'validator' | 'writer2' | 'helper';
+export type NovelLLMRoute = 'writer' | 'validator' | 'writer2';
 /**
  * `stage` names what a call is for — design, chapter-plan, scene-write, track —
  * so a run can say where its calls and its characters went. It is a label for
