@@ -35,7 +35,7 @@ describe('the author at its desk', () => {
       step('Chapter two.', 'write', 'chapter-2.md', 'In the morning the notebook was ash.'),
     ], seen));
     expect(result.status, result.stoppedReason || '').toBe('COMPLETE');
-    expect(seen.map(call => call.stage).filter(stage => stage !== 'author-objects' && stage !== 'author-label')).toEqual(['author-step', 'author-step', 'author-character', 'author-step', 'author-reader', 'author-step', 'author-reader', 'author-step', 'author-step', 'author-step']);
+    expect(seen.map(call => call.stage)).toEqual(['author-step', 'author-step', 'author-character', 'author-step', 'author-reader', 'author-step', 'author-reader', 'author-step', 'author-step', 'author-step']);
     // With every chapter but the last written, a reader said what they were holding: once, and before the ending existed.
     expect(seen[4].prompt).toContain('a novel up to its last chapter, which you have not read yet'); expect(seen[4].prompt).toContain('She locked the drawer'); expect(seen[4].prompt).not.toContain('ash');
     expect(seen[5].prompt).toContain('Every chapter but the last now has text. Someone has read the book up to here, and says what they are holding as they turn to the ending:');
@@ -177,7 +177,7 @@ describe('the desk', () => {
   });
   it('hears once, as it turns to the last chapter, what a reader of the book so far is holding', async () => {
     const state = newDesk(3); state.files['chapter-1.md'] = 'A gun on the wall.';
-    let asked = 0, read = ''; const ask = async (kind: string, prompt: string) => { if (kind === 'objects' || kind === 'helper') throw new Error('no small network here'); asked++; state.spent++; read = prompt; return 'The gun in chapter one has not been fired.'; };
+    let asked = 0, read = ''; const ask = async (kind: string, prompt: string) => { asked++; state.spent++; read = prompt; return 'The gun in chapter one has not been fired.'; };
     const first = await takeStep(state, readStep(step('Two.', 'write', 'chapter-2.md', 'They had tea.')), 3, ask);
     expect(first).toContain('Every chapter but the last now has text.'); expect(first).toContain('The gun in chapter one has not been fired.'); expect(first).toContain('That cost one call');
     expect(read).toContain('A gun on the wall.'); expect(read).toContain('up to its last chapter, which you have not read yet');

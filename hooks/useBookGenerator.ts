@@ -10,8 +10,7 @@ import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
 import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
 import { HELPER_MODEL, type LabelRequest } from '../utils/novel/v3/envelope';
-import { labelHuggingFaceBrowser, findObjectsBrowser } from '../services/hfBrowserService';
-import { OBJECTS_MODEL, type ObjectsRequest } from '../utils/novel/v3/newThings';
+import { labelHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
@@ -315,7 +314,6 @@ export default function useBookGenerator() {
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       // The small network that labels sentences for the code, asked quietly. Without a token it fails, and the engine goes on without it.
-      if (options.route === 'helper' && options.stage === 'author-objects') { const request = JSON.parse(prompt) as ObjectsRequest; return JSON.stringify(await findObjectsBrowser(OBJECTS_MODEL, request.texts, request.labels, request.threshold)); }
       if (options.route === 'helper') { const request = JSON.parse(prompt) as LabelRequest; return JSON.stringify(await labelHuggingFaceBrowser(helperModel, request.inputs, request.labels, request.template)); }
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the

@@ -27,9 +27,8 @@ export function deskTabs(desk: DeskState): DeskTab[] {
       const said = Object.entries(desk.held || {}).flatMap(([file, held]) => held.filter(item => item.thing === thing.thing).map(item => `- **${file === ENVELOPE ? 'the envelope' : file.replace('.md', '').replace('-', ' ')}** — ${item.line.trim()}`));
       return said.length > 1 ? `### ${thing.thing}\n\n${said.join('\n')}` : '';
     }).filter(Boolean);
-    const fresh = (desk.arrivals || []).map(item => `- **${item.name}** — ${item.line.trim()}`);
     tabs.splice(4, 0, { name: 'Envelope', count: lines.length, text: desk.files[ENVELOPE]?.trim()
-      ? `## What really happened\n\n${desk.files[ENVELOPE].trim()}${lines.length ? `\n\n---\n\n## What the book says of the things it turns on\n\n${lines.join('\n\n')}` : ''}${fresh.length ? `\n\n---\n\n## Things the last chapter names that no earlier chapter has\n\n${fresh.join('\n')}` : ''}`
+      ? `## What really happened\n\n${desk.files[ENVELOPE].trim()}${lines.length ? `\n\n---\n\n## What the book says of the things it turns on\n\n${lines.join('\n\n')}` : ''}`
       : none('The author has not written down what really happened.') });
   }
   return tabs;

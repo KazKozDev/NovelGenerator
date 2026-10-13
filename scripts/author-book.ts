@@ -11,8 +11,6 @@ import { writeAtDesk } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
 import { labelHuggingFace } from '../services/hfLabelService';
-import { findObjectsLocally } from '../services/localObjectsService';
-import { OBJECTS_MODEL, type ObjectsRequest } from '../utils/novel/v3/newThings';
 import { HELPER_MODEL, type LabelRequest } from '../utils/novel/v3/envelope';
 
 const arg = (name: string, fallback: string) => { const at = process.argv.indexOf(`--${name}`); return at > 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback; };
@@ -44,7 +42,6 @@ const flush = () => {
   writeFileSync(join(out, 'threads.md'), draft.threads || ''); writeFileSync(join(out, 'noticed.md'), draft.noticed.join('\n\n'));
 };
 (arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
-  if (options?.route === 'helper' && options.stage === 'author-objects') { const request = JSON.parse(prompt) as ObjectsRequest; return JSON.stringify(await findObjectsLocally(OBJECTS_MODEL, request.texts, request.labels, request.threshold)); }
   if (options?.route === 'helper') { const request = JSON.parse(prompt) as LabelRequest; return JSON.stringify(await labelHuggingFace(helper, request.inputs, request.labels, request.template)); }
   calls++; sent += prompt.length + system.length; const at = Date.now();
   const other = options?.route === 'validator' && reader;
