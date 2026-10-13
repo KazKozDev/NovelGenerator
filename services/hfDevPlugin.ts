@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite';
 import { generateHuggingFaceText, listHuggingFaceModels } from './hfService';
-import { labelHuggingFace, listHuggingFaceLabelModels } from './hfLabelService';
+import { labelHuggingFace } from './hfLabelService';
 
 /** Development backend for Hugging Face Inference Providers: the token stays on the server. */
 export function hfDevPlugin(): Plugin {
@@ -12,11 +12,6 @@ export function hfDevPlugin(): Plugin {
       res.setHeader('Content-Type', 'application/json');
       if (!local(req)) { res.statusCode = 403; res.end(JSON.stringify({ error: 'Local requests only' })); return; }
       listHuggingFaceModels().then(models => res.end(JSON.stringify({ models })), error => { res.statusCode = 502; res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Model list failed' })); });
-    });
-    server.middlewares.use('/api/hf/label-models', (req, res) => {
-      res.setHeader('Content-Type', 'application/json');
-      if (!local(req)) { res.statusCode = 403; res.end(JSON.stringify({ error: 'Local requests only' })); return; }
-      listHuggingFaceLabelModels().then(models => res.end(JSON.stringify({ models })), error => { res.statusCode = 502; res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Model list failed' })); });
     });
     // A small classifier: sentences in, a score for each out. The token stays here.
     server.middlewares.use('/api/hf/label', (req, res) => {

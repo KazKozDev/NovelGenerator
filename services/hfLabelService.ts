@@ -22,10 +22,3 @@ export async function labelHuggingFace(model: string, inputs: string[], labels: 
     });
   }
 }
-
-/** The classifiers Hugging Face serves itself, from its public list. No token needed. */
-export async function listHuggingFaceLabelModels(): Promise<{ id: string; providers: string[] }[]> {
-  const response = await fetch('https://huggingface.co/api/models?pipeline_tag=zero-shot-classification&inference_provider=hf-inference&limit=60');
-  if (!response.ok) throw new Error(`Hugging Face model list failed [${response.status}].`);
-  return ((await response.json()) as { id: string }[]).map(model => ({ id: model.id, providers: ['hf-inference'] }));
-}

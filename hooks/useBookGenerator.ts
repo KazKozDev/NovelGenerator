@@ -4,7 +4,7 @@ import { allocateThesisWords, renderThesisBook, previousThesisChapter } from '..
 import { inputKey } from '../utils/novel/v2/progressive';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
-import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, getStoredHelperModel } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
 import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
@@ -309,7 +309,7 @@ export default function useBookGenerator() {
     const second = getStoredSecondWriterConfig();
     const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
-    const helperModel = getStoredHelperModel() || HELPER_MODEL;
+    const helperModel = HELPER_MODEL;
     store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`} · small network: huggingface:${helperModel}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();

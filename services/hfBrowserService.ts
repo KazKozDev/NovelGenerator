@@ -60,9 +60,3 @@ export async function labelHuggingFaceBrowser(model: string, inputs: string[], l
   if (!response.ok || !Array.isArray(data.scores)) throw new Error(data.error || 'Labelling failed');
   return data.scores;
 }
-export async function fetchHuggingFaceLabelModels(): Promise<{ id: string; providers: string[] }[]> {
-  const response = await fetch('/api/hf/label-models');
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Model list failed');
-  return Array.isArray(data.models) ? data.models : [];
-}
