@@ -363,9 +363,12 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
         : `No paragraph or long sentence stands twice${file in state.files ? ` in ${file}` : ' in the book'}, word for word.`;
     }
     const places = findPlaces(state.files, scope, words), near = places.length ? [] : nearestTo(state.files, scope, words);
+    // Part of the mirror: the same look taken again and again. Looking is free, and one author looked for "Tuesday" seven times running.
+    const key = `looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}:`, before = state.journal.filter(line => line.includes(key));
+    const round = before.length >= 2 ? `\n\nYou have looked for this ${before.length} times already (at steps ${before.map(stepOf).join(', ')}). The book says what it said then, unless you have changed it since.` : '';
     note(`looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}: ${places.length} place${places.length === 1 ? '' : 's'}`);
-    return places.length ? `"${quoted(words).slice(0, 80)}" stands in ${places.length} place${places.length === 1 ? '' : 's'}${file in state.files ? ` in ${file}` : ''}:\n${shown(places, 20)}`
-      : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`;
+    return (places.length ? `"${quoted(words).slice(0, 80)}" stands in ${places.length} place${places.length === 1 ? '' : 's'}${file in state.files ? ` in ${file}` : ''}:\n${shown(places, 20)}`
+      : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`) + round;
   }
   if (tool === 'change' || tool === 'edit') {
     const [was = '', now = ''] = ownWords(content).split(/\n={3,}[ \t]*(?:\n|$)/);
@@ -478,7 +481,7 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       result = 'Your last answer was cut off before it ended, so none of it was carried out. It was too long: do less in one answer.';
       desk.journal.push(`${desk.step}. an answer too long to finish; nothing was done`); store.log('author', `[${desk.step}] answer cut off: ${message.slice(0, 160)}`); save(); continue;
     }
-    const steps = readSteps(answer), told: string[] = [];
+    const steps = readSteps(answer), told: string[] = []; let onlyLooked = false;
     for (const [index, step] of steps.entries()) {
       const at = names.indexOf(step.file);
       progress(at >= 0 ? 'chapter' : 'design', at >= 0 ? at + 1 : undefined);
@@ -498,6 +501,13 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
         }));
       }
       store.log('author', `[${desk.step}] ${step.tool || 'no tool'} ${step.file || step.name || ''} — ${step.thought.slice(0, 300)}`);
+      // What was written after a look, other than another look, was written without seeing what the look showed. One
+      // author put fourteen looks and three changes into one answer and wrote, between them, what it supposed each had found.
+      if (step.tool === 'find' && steps.slice(index + 1).some(next => next.tool !== 'find')) {
+        const more = steps.slice(index + 1).findIndex(next => next.tool !== 'find');
+        for (const next of steps.slice(index + 1, index + 1 + more)) { told.push(await takeStep(desk, next, chapters, async () => '')); store.log('author', `[${desk.step}] find — ${next.thought.slice(0, 200)}`); }
+        told.push(`You looked, and the ${steps.length - 1 - index - more} step(s) you wrote after looking were not carried out, because you had not seen what the look showed. Looks may share an answer with each other; what you do about them comes in your next.`); onlyLooked = true; break;
+      }
       // What was written after a question was written without its answer: it is not carried out.
       if (/^ask_/.test(step.tool) && index < steps.length - 1) { told.push(`You asked, and the ${steps.length - 1 - index} step(s) you wrote after asking were not carried out, because you had not seen the answer.`); break; }
       // A chapter is the last step of its answer, as a question is: what comes back with it — the days it names,
@@ -508,7 +518,7 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
     }
     // Looking costs nothing: an answer that only looked is given back its call. So that looking cannot go on for ever,
     // as many free looks as the book has calls, and after that a look is an answer like any other.
-    if (steps.length && steps.every(step => step.tool === 'find') && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
+    if (steps.length && (onlyLooked || steps.every(step => step.tool === 'find')) && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
     result = told.filter(Boolean).join('\n\n');
     save();
     if (steps.some(step => names.includes(step.file))) store.checkpoint(`author-step-${desk.step}`);

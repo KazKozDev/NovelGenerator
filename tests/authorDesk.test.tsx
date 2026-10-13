@@ -272,6 +272,14 @@ describe('the desk', () => {
     expect(told).toContain('Standing more than once in the book, word for word'); expect(told).toContain('— 2 times (chapter-1.md), 19 words: "Claire sat on the couch'); expect(told).toContain('PLACE: 2');
     expect(await takeStep(desk, readStep('THOUGHT: And here?\nTOOL: find\nFILE: chapter-2.md\n---\n'), 2, ask)).toContain('No paragraph or long sentence stands twice in chapter-2.md');
   });
+  it('carries out looks that share an answer, and not what was written after them unseen', async () => {
+    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
+    await new Orchestrator(store).runBook(input, scripted([step('One.', 'write', 'chapter-1.md', 'The key lay on the sill.'), step('Two.', 'write', 'chapter-2.md', 'Nobody had a key to that room.'),
+      `${step('Where?', 'find', '', 'the key')}\n${step('And?', 'find', '', 'a key')}\n${step('Fix it.', 'change', 'chapter-1.md', 'the sill\n===\nthe floor')}`], seen));
+    const desk = store.loadAuthor()!.desk!, told = seen.map(call => call.prompt.split('YOUR DESK NOW')[0]).join('\n');
+    expect(told).toContain('"the key" stands in 1 place'); expect(told).toContain('"a key" stands in 1 place'); expect(told).toContain('the 1 step(s) you wrote after looking were not carried out');
+    expect(desk.files['chapter-1.md']).toBe('The key lay on the sill.');
+  });
   it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
     const desk = newDesk(6); desk.step = 9; desk.spent = 13;
     for (const n of [1, 2, 3, 4]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.files['notebook.md'] = 'Notes.';
