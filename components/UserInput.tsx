@@ -380,7 +380,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
             <p className="text-xs text-zinc-500">
-              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters.
+              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters. Among its notes is an envelope: the scene the reader is not shown until the end, written first, so that the author knows what happened before it writes toward it.
             </p>
           </div>
 
@@ -394,7 +394,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
             <p className="text-xs text-zinc-500">
-              Each chapter is written whole and never patched. Nothing is closed to the author: it may go back to any chapter, write it again or set one small thing into it. If it starts going round the same chapter, it is shown its own steps and decides for itself.
+              Nothing is closed to the author: it may go back to any chapter, write it again, change a line at the place it quotes, or set one small thing in. It can look through the book for a word at no cost. After every change it is shown the chapter as it was and as it is, and if it starts going round, its own steps.
             </p>
           </div>
 
