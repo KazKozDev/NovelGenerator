@@ -114,6 +114,18 @@ export function saveStoredSecondWriterConfig(config: (LLMProviderConfig & { enab
   }
 }
 
+const HELPER_STORAGE_KEY = 'novelGenerator_helper_model';
+/** The small Hugging Face model that sorts sentences for the engine; empty means the engine's own default. */
+export function getStoredHelperModel(): string {
+  if (typeof window === 'undefined') return '';
+  try { return (localStorage.getItem(HELPER_STORAGE_KEY) || '').trim(); } catch { return ''; }
+}
+export function saveStoredHelperModel(model: string): void {
+  if (typeof window === 'undefined') return;
+  try { if (model.trim()) localStorage.setItem(HELPER_STORAGE_KEY, model.trim()); else localStorage.removeItem(HELPER_STORAGE_KEY); }
+  catch (err) { console.error('Failed to save the small model to localStorage:', err); }
+}
+
 export function saveStoredProviderConfig(config: LLMProviderConfig): void {
   if (typeof window === 'undefined') return;
   try {

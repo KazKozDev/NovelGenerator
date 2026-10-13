@@ -4,7 +4,7 @@ import { allocateThesisWords, renderThesisBook, previousThesisChapter } from '..
 import { inputKey } from '../utils/novel/v2/progressive';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
-import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, getStoredHelperModel } from '../services/llmService';
 import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
@@ -309,11 +309,12 @@ export default function useBookGenerator() {
     const second = getStoredSecondWriterConfig();
     const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
-    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
+    const helperModel = getStoredHelperModel() || HELPER_MODEL;
+    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`} · small model: huggingface:${helperModel}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       // The small sorter: dozens of one-line questions to a chapter, asked quietly of a small model on Hugging Face. Without a token it fails, and the engine goes on without it.
-      if (options.route === 'helper') return generateHuggingFaceBrowserText(prompt, system, options.maxTokens ?? 600, HELPER_MODEL, options.temperature ?? 0);
+      if (options.route === 'helper') return generateHuggingFaceBrowserText(prompt, system, options.maxTokens ?? 600, helperModel, options.temperature ?? 0);
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the
       // 500-char window: keep the head for context and the tail for the cause.

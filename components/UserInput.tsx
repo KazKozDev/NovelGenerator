@@ -7,7 +7,8 @@ import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CHOICES } from '../utils/genreList';
 import { fetchHuggingFaceModels } from '../services/hfBrowserService';
-import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
+import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, getStoredHelperModel, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig, saveStoredHelperModel } from '../services/llmService';
+import { HELPER_MODEL } from '../utils/novel/v3/envelope';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { fetchProviderModels } from '../services/qwenBrowserService';
 import { LLMProviderConfig, StorySettings } from '../types';
@@ -52,6 +53,7 @@ const UserInput: React.FC<UserInputProps> = ({
     setSecondWriter(next);
     saveStoredSecondWriterConfig(next.enabled ? next : undefined);
   };
+  const [helperModel, setHelperModel] = useState<string>(() => getStoredHelperModel());
   const fieldId = (label: string) => `model-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   // Hugging Face Inference Providers: the router's public list, as suggestions for the model field.
   const [hfModels, setHfModels] = useState<{ id: string; providers: string[] }[]>([]);
@@ -264,6 +266,15 @@ const UserInput: React.FC<UserInputProps> = ({
               )}
             </div>
           )}
+        </div>
+
+        {/* The small model: it only sorts the author's own sentences, dozens of one-line questions to a chapter. */}
+        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
+          <div className="text-sm text-zinc-300 font-medium">Small model</div>
+          <p className="text-xs text-zinc-500">
+            A small, fast model on Hugging Face that helps the engine sort sentences: after each chapter it picks out the lines that say something definite about the things the sealed envelope turns on, and drops the ones that only pass them by. It never writes or judges the book. Empty means <span className="font-mono">{HELPER_MODEL}</span>.
+          </p>
+          {hfField('Small Hugging Face model', helperModel, model => { setHelperModel(model); saveStoredHelperModel(model); })}
         </div>
 
       </div>
