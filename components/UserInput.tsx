@@ -394,7 +394,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
             <p className="text-xs text-zinc-500">
-              The book moves forward. Each chapter is written whole, one at a time, and never patched; once the next is begun it stands as it is. One small thing may be set into an earlier chapter for a later one to pay off.
+              Each chapter is written whole and never patched. Nothing is closed to the author: it may go back to any chapter, write it again or set one small thing into it. If it starts going round the same chapter, it is shown its own steps and decides for itself.
             </p>
           </div>
 

@@ -66,16 +66,14 @@ describe('the author at its desk', () => {
     expect(idle.loadReport()!.findings.map(finding => finding.description)).toEqual(['chapter-1.md was not written before the budget ran out.', 'chapter-2.md was not written before the budget ran out.']);
   });
 
-  it('ends a whole book whose author keeps asking to change what is closed', async () => {
-    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
-    await new Orchestrator(store).runBook(input, scripted([
-      step('One.', 'write', 'chapter-1.md', 'One.'), step('Two.', 'write', 'chapter-2.md', 'Two.'),
-      step('Back.', 'write', 'chapter-1.md', 'One, again.'), step('Back.', 'write', 'chapter-1.md', 'One, once more.'),
-      step('Never reached.', 'write', 'notebook.md', 'More notes.'),
-    ], seen));
-    expect(store.manuscript().map(item => item.text)).toEqual(['One.', 'Two.']);
-    expect(seen.filter(call => call.stage === 'author-step')).toHaveLength(4);
-    expect(author_journal(store)).toContain('nothing more can be changed: the book is done');
+  it('may go back to any chapter of a whole book, and is not ended for it', async () => {
+    const store = new MemoryProjectStore();
+    const result = await new Orchestrator(store).runBook(input, scripted([step('One.', 'write', 'chapter-1.md', 'One.'), step('Two.', 'write', 'chapter-2.md', 'She left by the side door.'),
+      step('One again.', 'write', 'chapter-1.md', 'One, with the drawer.'), step('And a thing.', 'plant', 'chapter-2.md', 'She left by the side door.\n===\nA key lay on the sill.')]));
+    const desk = store.loadAuthor()!.desk!;
+    expect(desk.files['chapter-1.md']).toBe('One, with the drawer.'); expect(desk.files['chapter-2.md']).toContain('A key lay on the sill.');
+    expect(desk.finished).toBe(true); expect(result.status).not.toBe('FAILED');
+    expect(author_journal(store)).not.toContain('typesetter');
   });
   it('goes on from the step it stopped at', async () => {
     const store = new MemoryProjectStore(); let calls = 0;
@@ -114,34 +112,39 @@ describe('who reads the book', () => {
 });
 
 describe('the desk', () => {
-  it('lets a chapter be written again whole, once, and after that it stands', async () => {
-    let state = newDesk(2); state.told_promises = true; const ask = async () => '';
-    const write = (file: string, text: string) => takeStep(state, readStep(step('Write.', 'write', file, text)), 2, ask);
-    await write('chapter-1.md', 'One.'); await write('chapter-2.md', 'The ending.');
-    expect(await write('chapter-2.md', 'The ending, written again.')).toContain('chapter-2.md is written');
-    // The limit is kept across a saved desk, and append is not a way round it.
-    state = JSON.parse(JSON.stringify(state));
-    expect(await write('chapter-2.md', 'A third ending.')).toContain('has been written again once already'); expect(await write('chapter-2.md', 'A fourth.')).toContain('say done');
-    expect(await takeStep(state, readStep(step('More.', 'append', 'chapter-2.md', 'And an afterword.')), 2, ask)).toContain('there is nothing to finish');
-    expect(state.files['chapter-2.md']).toBe('The ending, written again.');
-    // A chapter cut off in the middle of a sentence can be finished.
-    const cut = newDesk(2); cut.told_promises = true;
-    await takeStep(cut, readStep(step('One.', 'write', 'chapter-1.md', 'She opened the drawer and')), 2, ask);
-    expect(await takeStep(cut, readStep(step('Finish.', 'append', 'chapter-1.md', 'found it empty.')), 2, ask)).toContain('chapter-1.md is now');
-    // A desk saved before the limit existed is counted from its journal.
-    const old = newDesk(1); old.told_promises = true; old.files['chapter-1.md'] = 'Second.'; old.journal = ['1. wrote chapter-1.md (1 words)', '2. wrote chapter-1.md (1 words)'];
-    expect(await takeStep(old, readStep(step('Third.', 'write', 'chapter-1.md', 'Third.')), 1, ask)).toContain('has been written again once already');
+  it('shows the author its own steps when it comes round to a chapter a third time, and stops nothing', async () => {
+    const desk = newDesk(2); desk.told_promises = true; desk.budget = 30;
+    const ask = async () => { desk.spent++; return 'DOES NOT ADD UP: the drawer was locked and then open.'; };
+    const write = (text: string) => { desk.step++; return takeStep(desk, readStep(step('The reader is right about the drawer.', 'write', 'chapter-1.md', text)), 2, ask); };
+    expect(await write('She locked the drawer.')).not.toContain('come round');
+    desk.step++; await takeStep(desk, readStep(step('Read it.', 'ask_reader', 'chapter-1.md', '')), 2, ask);
+    expect(await write('She locked the drawer and kept the key.')).not.toContain('come round');
+    const third = await write('She locked the drawer, kept the key and told no one at all.');
+    expect(third).toContain('You have come round to chapter-1.md again: this is time number 3');
+    expect(third).toContain('1. wrote chapter-1.md (4 words) — The reader is right about the drawer.'); expect(third).toContain('a reader said: DOES NOT ADD UP');
+    expect(third).toContain('Its length went 4 → 8 → 13 words.'); expect(third).toContain('chapter-2.md is not written yet'); expect(third).toContain('yours to decide');
+    // Nothing was stopped: the chapter is what it wrote, and it may write it again.
+    expect(desk.files['chapter-1.md']).toBe('She locked the drawer, kept the key and told no one at all.');
+    expect(await write('She burned the drawer.')).toContain('time number 4'); expect(desk.files['chapter-1.md']).toBe('She burned the drawer.');
   });
-  it('plants for a chapter still to be written, and not into a book that is whole', async () => {
-    const state = newDesk(2); state.told_promises = true; state.files['chapter-1.md'] = 'She came in from the rain.\n\nShe sat down.'; const ask = async () => '';
-    const plant = () => takeStep(state, readStep('THOUGHT: Sow it.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in from the rain.\n===\nA phone lay on the sill.'), 2, ask);
-    expect(await plant()).toContain('Set into chapter-1.md');
-    await takeStep(state, readStep(step('Two.', 'write', 'chapter-2.md', 'Two.')), 2, ask);
-    const before = state.files['chapter-1.md'];
-    expect(await plant()).toContain('there is no later chapter to plant for. To change chapter-1.md, write it again whole.');
-    expect(state.files['chapter-1.md']).toBe(before);
-    // Writing the last chapter again whole is still there.
-    expect(await takeStep(state, readStep(step('Again.', 'write', 'chapter-2.md', 'Two, again.')), 2, ask)).toContain('chapter-2.md is written');
+  it('is told when a chapter it wrote again came out as it was, or which few paragraphs changed', async () => {
+    const desk = newDesk(2); desk.told_promises = true; const ask = async () => 'fine';
+    const text = Array.from({ length: 8 }, (_, at) => `Paragraph ${at + 1} of the chapter, about the drawer.`).join('\n\n');
+    const write = (content: string) => takeStep(desk, readStep(step('Fix the one line.', 'write', 'chapter-1.md', content)), 2, ask);
+    expect(await write(text)).not.toContain('nothing in it changed');
+    expect(await write(text)).toContain('paragraph for paragraph, what was already in chapter-1.md: nothing in it changed');
+    const told = await write(text.replace('Paragraph 3 of', 'The third part of'));
+    expect(told).toContain('Of its 8 paragraphs, 1 differ'); expect(told).toContain('"The third part of the chapter');
+  });
+  it('is told when it asks the keeper what it has asked before, with what it was told then', async () => {
+    const desk = newDesk(2); desk.files['chapter-1.md'] = 'He died in the room on Thursday.'; desk.budget = 30;
+    const ask = async () => { desk.spent++; return 'The text does not say how he died.'; };
+    const keeper = (question: string) => { desk.step++; return takeStep(desk, readStep(`THOUGHT: Check.\nTOOL: ask_keeper\nFILE: chapter-1.md\n---\n${question}`), 2, ask); };
+    expect(await keeper('Does the book ever tell the reader how Adam Vance died in the hotel room?')).not.toContain('much the same before');
+    expect(await keeper('What colour is the door of the office on Wentworth Street?')).not.toContain('much the same before');
+    const again = await keeper('Does the book, as written, ever tell the reader how Adam Vance actually died in that hotel room?');
+    expect(again).toContain('You have asked the keeper much the same before'); expect(again).toContain('1. you asked: Does the book ever tell the reader how Adam Vance died');
+    expect(again).toContain('and were told: The text does not say how he died.'); expect(again).toContain('yours to decide');
   });
   it('hands back the ages and spans of time a chapter names, beside those the earlier chapters named', async () => {
     expect(spansOf('He found her when she was sixteen. Twenty-five years of it. Bernadette was ninety-one years old; it had been a year.')).toEqual(['was sixteen', 'twenty-five years', 'ninety-one years old', 'a year']);
@@ -188,23 +191,14 @@ describe('the desk', () => {
     const broke = newDesk(2); broke.spent = broke.budget - 1;
     expect(await takeStep(broke, readStep(step('One.', 'write', 'chapter-1.md', 'One.')), 2, ask)).not.toContain('Someone has read'); expect(asked).toBe(1);
   });
-  it('moves forward: a chapter is open while it is the last one written, and closes when the next is begun', async () => {
-    const state = newDesk(3); state.told_promises = true; const ask = async () => '';
-    const write = (file: string, text: string) => takeStep(state, readStep(step('Write.', 'write', file, text)), 3, ask);
-    await write('chapter-1.md', 'She came in from the rain.');
-    expect(await write('chapter-1.md', 'She came in out of the rain.')).toContain('chapter-1.md is written');
-    await write('chapter-2.md', 'Two.');
-    const closed = await write('chapter-1.md', 'A different first chapter.');
-    expect(closed).toContain('chapter-1.md went to the typesetter when you began chapter-2.md'); expect(closed).toContain('can be answered in chapter-3.md');
-    expect(state.files['chapter-1.md']).toBe('She came in out of the rain.');
-    expect(await takeStep(state, readStep(step('More.', 'append', 'chapter-1.md', 'And more.')), 3, ask)).toContain('went to the typesetter');
-    // A plant still sows into a closed chapter for one not yet written.
-    expect(await takeStep(state, readStep('THOUGHT: Sow.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in out of the rain.\n===\nA phone lay on the sill.'), 3, ask)).toContain('Set into chapter-1.md');
-    await write('chapter-3.md', 'Three.');
-    // In a whole book only the last chapter is open.
-    expect(await write('chapter-2.md', 'Two, again.')).toContain('The one chapter still open is chapter-3.md, the last.');
-    expect(await write('chapter-3.md', 'Three, again.')).toContain('chapter-3.md is written');
-    expect(state.journal.join('\n')).toContain('write chapter-1.md: it went to the typesetter when chapter-2.md was begun');
+  it('closes no chapter: an earlier one may be written again after the next is begun, and a whole book may still be planted in', async () => {
+    const desk = newDesk(2); desk.told_promises = true; const ask = async () => 'fine';
+    await takeStep(desk, readStep(step('One.', 'write', 'chapter-1.md', 'She came in from the rain.')), 2, ask);
+    await takeStep(desk, readStep(step('Two.', 'write', 'chapter-2.md', 'She left by the side door.')), 2, ask);
+    expect(await takeStep(desk, readStep(step('Back.', 'write', 'chapter-1.md', 'She came in from the rain with a key.')), 2, ask)).toContain('chapter-1.md is written');
+    expect(desk.files['chapter-1.md']).toBe('She came in from the rain with a key.');
+    expect(await takeStep(desk, readStep('THOUGHT: Set.\nTOOL: plant\nFILE: chapter-2.md\n---\nShe left by the side door.\n===\nThe door had no lock.'), 2, ask)).toContain('Set into chapter-2.md');
+    expect(await takeStep(desk, readStep(step('More.', 'append', 'chapter-2.md', 'Nobody saw her.')), 2, ask)).toContain('chapter-2.md is now');
   });
   it('reads a step however the model dresses it', () => {
     expect(readStep('**THOUGHT:** Write it.\n**TOOL:** `write`\nFILE: `chapter-1.md`\n---\nText.\n\n---\n\nMore.')).toEqual({ thought: 'Write it.', tool: 'write', file: 'chapter-1.md', name: '', content: 'Text.\n\n---\n\nMore.' });
@@ -251,10 +245,9 @@ describe('the desk', () => {
     expect(await read()).toContain('has already read the book through chapter-1.md as it now stands'); expect(asked).toBe(1); expect(desk.spent).toBe(1);
     await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She left the drawer open.')), 2, ask);
     expect(await read()).toContain('Reader 2'); expect(desk.spent).toBe(4);
-    // The chapter has had its one rewrite: a second is not carried out, so the reader who read it has nothing new to read.
-    expect(await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She burned the drawer.')), 2, ask)).toContain('has been written again once already');
-    expect(desk.files['chapter-1.md']).toBe('She left the drawer open.');
-    expect(await read()).toContain('has already read the book through chapter-1.md'); expect(asked).toBe(2); expect(desk.spent).toBe(4);
+    // A third reader of the chapter, after another rewrite, is dearer still.
+    await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She burned the drawer.')), 2, ask);
+    expect(await read()).toContain('Reader 3'); expect(desk.spent).toBe(9);
   });
   it('hands back with a written chapter what code can count: worn phrases, and the days and hours it names beside the earlier ones', async () => {
     const desk = newDesk(2); const refrain = 'She looked at the middle distance and said nothing at all.';

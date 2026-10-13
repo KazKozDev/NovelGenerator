@@ -25,9 +25,14 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   the ages and spans of time it names beside theirs.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
  * - a reader is another model than the author when one is set: the same head does not see what it wrote past.
- * - the book moves forward: a chapter is open while it is the last one written. And once, as the last chapter is
- *   about to be written, a reader of the book so far says what they are holding — what was promised
- *   and not given yet. One book raised the question of who knew the day of five deaths and never
+ * - nothing is closed to it. It may go back to any chapter, write it again, set a thing into it. Doors were tried —
+ *   chapters that "went to the typesetter", one rewrite and no more, a book declared finished — and each one stopped a
+ *   loop by stopping the author: one found the single real hole in its book, was refused three ways and was ended.
+ *   What it gets instead is a mirror. When it comes round to the same chapter a third time, or asks the keeper what it
+ *   has asked before, it is told so, in its own steps: which ones brought it here, how the chapter changed each time,
+ *   how many calls are left. What it does then is its own decision.
+ * - once, as the last chapter is about to be written, a reader of the book so far says what they are holding — what
+ *   was promised and not given yet. One book raised the question of who knew the day of five deaths and never
  *   came back to it; another forged the heroine's own will and then forgot the threat.
  * Nothing here tells it what to do next. What is kept from the later versions is only what
  * informs it: an answer from a reader or a character stays on the desk until it is no longer
@@ -42,10 +47,8 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold'; at: string; text: string }[];
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
-  /** How many times each chapter has been written again after its first draft: once is allowed, and no more. */
-  rewrites?: Record<string, number>;
-  /** How many times, with the whole book written, the author has tried to change what can no longer be changed. */
-  closed_hits?: number;
+  /** How many times the author has been shown each round it was going: it is shown again only when the round has grown. */
+  shown_rounds?: Record<string, number>;
   /** How many readers each chapter has had: the next one costs more. */
   readings?: Record<string, number>;
   journal: string[];
@@ -88,7 +91,7 @@ const voice = (input: ProjectInput, words: number, files: string[]): string => `
 THE PREMISE YOU WERE GIVEN:
 ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
-YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. The book moves forward: a chapter is yours to write again while it is the last one written, and when you begin the next it goes to the typesetter and stands as it is. What a later chapter needs from an earlier one is sown there with plant. Write the book in English.
+YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. Every chapter is yours for as long as you have calls: you may go back to any of them. Write the book in English.
 
 YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; and one file per chapter. Your files: ${files.join(', ')}.
 
@@ -101,8 +104,8 @@ NAME: the character (for ask_character)
 ---
 the content
 
-- write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole — once: after that it stands. append only finishes a chapter that stopped in the middle of a sentence.
-- plant: sets one thing into a chapter already written, for a later chapter that is not written yet to pay off: a thing on a table, a line someone says. Once every chapter has text there is nothing left to plant for. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
+- write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
+- plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
@@ -146,6 +149,55 @@ export function deskView(state: DeskState, chapters: number, result: string): st
 }
 
 /**
+ * Part of the mirror: a chapter written again that came out as it was. One author meant to change a single line of its
+ * fifth chapter, wrote the whole chapter out four times, and each time the line came back unchanged with the rest.
+ */
+const same = (was: string, now: string, file: string): string => {
+  if (!was.trim() || !/^chapter-/.test(file)) return '';
+  const old = new Set(was.split(/\n\s*\n/).map(part => part.trim())), parts = now.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
+  const changed = parts.filter(part => !old.has(part));
+  if (!changed.length && parts.length === old.size) return `\n\nWhat you have just written is, paragraph for paragraph, what was already in ${file}: nothing in it changed. If you meant to change a line, it stands as it did.`;
+  return changed.length <= 3 && parts.length > 6 ? `\n\nOf its ${parts.length} paragraphs, ${changed.length} differ from what was there before: ${changed.map(part => `"${part.slice(0, 90)}…"`).join('; ')}.` : '';
+};
+const stepOf = (line: string) => Number(line.match(/^(\d+)\./)?.[1] || 0);
+const wordsOf = (text: string) => new Set(text.toLowerCase().match(/[a-z']{4,}/g) || []);
+
+/**
+ * The mirror: whether the author is going round, said in its own steps. Not a rule and not a stop.
+ * - a chapter written a third time or more: the steps that had to do with it, and how its length went;
+ * - the keeper asked what it has been asked before: the earlier questions.
+ * Each round is shown when it has grown since it was last shown, so the same news is not told twice.
+ */
+export function circling(state: DeskState, file: string, chapters: string[]): string {
+  const shown = state.shown_rounds || (state.shown_rounds = {}), left = state.budget - state.spent;
+  const unwritten = chapters.filter(chapter => !state.files[chapter]?.trim());
+  const close = `You have ${left} call${left === 1 ? '' : 's'} left${unwritten.length ? `, and ${unwritten.join(', ')} ${unwritten.length > 1 ? 'are' : 'is'} not written yet` : ''}. Whether to go round again is yours to decide.`;
+  if (chapters.includes(file)) {
+    const about = state.journal.filter(line => line.includes(file) && /^\d+\. (wrote|appended to|planted in|a reader read through)/.test(line));
+    const writes = about.filter(line => /^\d+\. wrote /.test(line));
+    if (writes.length >= 3 && writes.length > (shown[file] || 0)) {
+      shown[file] = writes.length;
+      const sizes = writes.map(line => line.match(/\((\d+) words\)/)?.[1]).filter(Boolean);
+      // What readers said between the passes is what sent it round: their steps are named with its own.
+      const between = state.answers.filter(answer => answer.who.startsWith('a reader') && answer.step >= stepOf(writes[0])).map(answer => `${answer.step}. ${answer.who} said: ${answer.text.replace(/\s+/g, ' ').slice(0, 200)}…`);
+      const steps = [...about.slice(-8).map(line => line.slice(0, 300)), ...between.slice(-3)].sort((one, other) => stepOf(one) - stepOf(other));
+      return `\n\nYou have come round to ${file} again: this is time number ${writes.length} that you have written it. The steps that brought you here, in your own words:\n${steps.join('\n')}\nIts length went ${sizes.join(' → ')} words. ${close}`;
+    }
+    return '';
+  }
+  if (file === 'keeper') {
+    const asked = state.answers.filter(answer => answer.who === 'the keeper' && answer.asked), last = asked.at(-1);
+    if (!last) return '';
+    const now = wordsOf(last.asked!), alike = asked.slice(0, -1).filter(answer => { const then = wordsOf(answer.asked!); const both = [...now].filter(word => then.has(word)).length; return both >= 5 && both / Math.min(now.size, then.size) >= 0.5; });
+    if (alike.length >= 1 && alike.length + 1 > (shown.keeper || 0)) {
+      shown.keeper = alike.length + 1;
+      return `\n\nYou have asked the keeper much the same before:\n${alike.slice(-3).map(answer => `${answer.step}. you asked: ${answer.asked!.replace(/\s+/g, ' ').slice(0, 200)}\n   and were told: ${answer.text.replace(/^Q:[\s\S]*?\nA: /, '').replace(/\s+/g, ' ').slice(0, 220)}…`).join('\n')}\nThe book has not changed what it says since unless you changed it. ${close}`;
+    }
+  }
+  return '';
+}
+
+/**
  * Carry out one step on the desk. Returns what the author is told about it.
  * `ask` is how a second mind is reached; it is counted against the budget by the caller.
  */
@@ -155,17 +207,6 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   const note = (line: string) => { state.journal.push(`${state.step}. ${line}${thought ? ` — ${thought.slice(0, 220)}` : ''}`); };
   const chapterNames = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
   const isChapter = chapterNames.includes(file);
-  {
-    // Forward only: a chapter that has a written chapter after it has gone to the typesetter. Across ten books of one
-    // story, the only one with whole scenes told twice was the one that rewrote its third, fourth and fifth chapters
-    // after the sixth was written; and going back did not leave the books with fewer contradictions than their first drafts.
-    const later = isChapter ? chapterNames.slice(chapterNames.indexOf(file) + 1).find(chapter => state.files[chapter]?.trim()) : undefined;
-    if (later && (tool === 'write' || tool === 'append') && state.files[file]?.trim()) {
-      note(`${tool} ${file}: it went to the typesetter when ${later} was begun`); state.closed_hits = (state.closed_hits || 0) + 1;
-      const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim()), open = chapterNames.filter(chapter => state.files[chapter]?.trim()).at(-1)!;
-      return `${file} went to the typesetter when you began ${later}: the book moves forward, and it stands as it is. ${ahead.length ? `What it got wrong can be answered in ${ahead[0]}, which is still to be written; what a later chapter needs from it can be sown with plant.` : `The one chapter still open is ${open}, the last.`}`;
-    }
-  }
   const changed = () => { if (isChapter) for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(file)) answer.stale = true; };
 
   // Not a check and not advice: what a reader who has just closed the book is still holding.
@@ -209,27 +250,9 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
-  // A chapter may be written again whole, once. One book wrote its last chapter six times running after a reader's
-  // three objections, the objections stood each time, and the budget ran out there. Append finishes a chapter that
-  // stopped in the middle of a sentence; it is not a second way to revise one.
-  if (isChapter && state.files[file]?.trim()) {
-    const complete = /[.!?…"”’')\]—–-]\s*[*_]*$/.test(state.files[file].trim());
-    const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim());
-    const onward = ahead.length ? `What it still lacks, ${ahead[0]} can carry.` : 'Every chapter is written: say done.';
-    if (tool === 'append' && complete) { note(`append ${file}: the chapter is complete`); return `${file} ends on a whole sentence: there is nothing to finish. A chapter is revised by writing it again whole, once. ${onward}`; }
-    if (tool === 'write') {
-      const done = state.rewrites?.[file] ?? Math.max(0, state.journal.filter(line => line.includes(`. wrote ${file} (`)).length - 1);
-      if (done >= 1) { state.closed_hits = (state.closed_hits || 0) + 1; note(`write ${file}: already rewritten once`); return `${file} has been written again once already, and stands as it is now. ${onward}`; }
-      state.rewrites = { ...(state.rewrites || {}), [file]: done + 1 };
-    }
-  }
-  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}`; }
+  if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${same(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
   if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
   if (tool === 'plant') {
-    // A plant sows for a chapter still to be written. One book set four things into its chapters after the last was
-    // written, to answer a reader, and three of them showed: a pen bagged by a detective that lay in her kitchen that
-    // night; three questions answered before the one that was asked. In a whole book there is nothing ahead to sow for.
-    if (isChapter && chapterNames.every(chapter => state.files[chapter]?.trim())) { note(`plant ${file}: the book is whole`); return `plant sets one thing into an earlier chapter for a later chapter to pay off. Every chapter has text now, so there is no later chapter to plant for. To change ${file}, write it again whole.`; }
     if (!isChapter || !state.files[file]?.trim()) { note(`plant ${file}: not a written chapter`); return `plant sets something into a chapter that is already written. ${file} is not one.`; }
     const [where, what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
     const parts = state.files[file].split(/\n\s*\n/), key = (where || '').trim().replace(/^["“]|["”…]+$/g, '').slice(0, 60).toLowerCase();
@@ -245,7 +268,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const book = chapterNames.filter(chapter => state.files[chapter]?.trim()).map(chapter => `[${chapter}]\n${state.files[chapter]}`).join('\n\n');
     if (!book) { note('ask_keeper: nothing written'); return 'There is nothing written yet for the keeper to look in.'; }
     const said = await ask('character', `${book}\n\n---\nQUESTION: ${content.trim()}`, 'You keep the continuity of a novel. You are given the chapters written so far and one question of fact. Answer only from what is on the page, in under 150 words: say what the text says, in which chapter, and quote the line. If the text says two different things, quote both and say so. If it does not say, say that it does not say. Do not judge the writing and do not suggest anything.');
-    state.answers.push({ who: 'the keeper', step: state.step, about: '', asked: content.trim(), text: `Q: ${content.trim().slice(0, 200)}\nA: ${said}` }); note(`asked the keeper: ${content.trim().slice(0, 80)}`); return `The keeper says:\n${said}`;
+    state.answers.push({ who: 'the keeper', step: state.step, about: '', asked: content.trim(), text: `Q: ${content.trim().slice(0, 200)}\nA: ${said}` }); note(`asked the keeper: ${content.trim().slice(0, 80)}`); return `The keeper says:\n${said}${circling(state, 'keeper', chapterNames)}`;
   }
   if (tool === 'ask_character') {
     if (state.budget - state.spent < 1) { note('ask_character: no budget'); return 'There is no budget left for a second call.'; }
@@ -346,11 +369,6 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       // one answer were written blind and cost one call for all of them, which is why the author took to it.
       if ((step.tool === 'write' || step.tool === 'append') && at >= 0 && index < steps.length - 1) { told.push(`A chapter is the last step of an answer: the ${steps.length - 1 - index} step(s) you wrote after ${step.file} were not carried out, because you had not seen what came back with it.`); break; }
       if (desk.finished) break;
-    }
-    // A whole book whose author has twice been told that nothing more can be changed is finished: one such author
-    // spent its last five calls asking to rewrite a chapter that had gone to the typesetter.
-    if (!desk.finished && names.every(name => desk.files[name]?.trim()) && (desk.closed_hits || 0) >= 2) {
-      desk.finished = true; desk.journal.push(`${desk.step}. every chapter is written and nothing more can be changed: the book is done`);
     }
     result = told.filter(Boolean).join('\n\n');
     save();
