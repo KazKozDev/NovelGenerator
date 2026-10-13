@@ -9,10 +9,15 @@ export async function labelHuggingFace(model: string, inputs: string[], labels: 
   if (!token) throw new Error('Set HF_TOKEN in .env.local or the environment.');
   if (!inputs.length) return [];
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs, parameters: { candidate_labels: labels, hypothesis_template: template } }) });
+    const wait = () => new Promise(resolve => setTimeout(resolve, process.env.VITEST ? 0 : 2500 * (attempt + 1)));
+    let response: Response;
+    // A connection that drops is tried again like a network that is still loading: one book lost the lines for its last
+    // chapter to a single "fetch failed".
+    try { response = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs, parameters: { candidate_labels: labels, hypothesis_template: template } }) }); }
+    catch (error) { if (attempt < 3) { await wait(); continue; } throw error; }
     // A network that was asleep answers 503 while it loads.
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3) { await new Promise(resolve => setTimeout(resolve, process.env.VITEST ? 0 : 2500 * (attempt + 1))); continue; }
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3) { await wait(); continue; }
     const text = await response.text();
     if (!response.ok) throw new Error(`Hugging Face labelling failed [${response.status}]. ${text.slice(0, 200)}`);
     const rows = JSON.parse(text) as unknown[];

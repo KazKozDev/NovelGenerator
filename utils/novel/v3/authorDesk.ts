@@ -188,10 +188,13 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const envelope = state.files[ENVELOPE]?.trim();
     if (!isChapter || !envelope) return '';
     try {
+      let failed: unknown;
       const hold = async (text: string): Promise<Held[]> => (await Promise.all((state.things || []).map(async thing => {
         const found = mentions(text, thing); if (!found.length) return [];
         const request: LabelRequest = { inputs: found.map(line => around(line, thing, 260)), labels: labelsFor(thing), template: LABEL_TEMPLATE };
-        const scores = JSON.parse(await ask('helper', JSON.stringify(request), '')) as number[];
+        // One thing the network could not be asked about is left out; the others are still shown.
+        let scores: number[];
+        try { scores = JSON.parse(await ask('helper', JSON.stringify(request), '')) as number[]; } catch (error) { failed = error; return []; }
         return found.map((line, at) => ({ line, score: Number(scores[at]) || 0 })).filter(item => item.score >= KEEP_AT).sort((one, other) => other.score - one.score).slice(0, 3).map(item => ({ thing: thing.thing, line: item.line }));
       }))).flat();
       if (state.things_from !== envelope) {
@@ -203,6 +206,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       state.held = { ...(state.held || {}), [file]: await hold(state.files[file]) };
       const unwritten = chapterNames.filter(chapter => !state.files[chapter]?.trim());
       const turning = unwritten.length === 1 && unwritten[0] === chapterNames.at(-1);
+      if (failed && !state.held[file].length) throw failed;
       const lines = sideBySide(state.things, state.held, file, chapterNames, turning);
       return lines ? `\n${turning ? 'The things your envelope names, as the book has them now that only the ending is left' : 'What this chapter says of the things your envelope names, beside what was said before'} (your own lines; nobody has judged them):\n${lines}` : '';
     } catch (error) { if (!state.journal.some(line => line.includes('could not be gathered'))) state.journal.push(`${state.step}. the lines about the envelope's things could not be gathered: the small network did not answer (${String(error instanceof Error ? error.message : error).slice(0, 100)})`); return ''; }
