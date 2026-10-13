@@ -41,3 +41,6 @@ public/models/
 
 # Local automatic project backups
 autosaves/
+
+# Local networks (GLiNER): python3 -m venv --system-site-packages .venv-nets && .venv-nets/bin/pip install gliner
+.venv-nets

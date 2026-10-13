@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { projectAutosavePlugin } from './services/projectAutosavePlugin';
 import { qwenDevPlugin } from './services/qwenDevPlugin';
 import { hfDevPlugin } from './services/hfDevPlugin';
+import { localNetsDevPlugin } from './services/localNetsDevPlugin';
 import { geminiDevPlugin } from './services/geminiDevPlugin';
 import { anthropicDevPlugin } from './services/anthropicDevPlugin';
 import { keysDevPlugin } from './services/keysDevPlugin';
@@ -102,7 +103,7 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
-      plugins: [react(), terminalLoggerPlugin(), qwenDevPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin()],
+      plugins: [react(), terminalLoggerPlugin(), qwenDevPlugin(), hfDevPlugin(), localNetsDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)

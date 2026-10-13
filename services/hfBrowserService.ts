@@ -66,3 +66,11 @@ export async function fetchHuggingFaceLabelModels(): Promise<{ id: string; provi
   if (!response.ok) throw new Error(data.error || 'Model list failed');
   return Array.isArray(data.models) ? data.models : [];
 }
+
+/** The local network that picks objects out of text, through the local gateway. */
+export async function findObjectsBrowser(model: string, texts: string[], labels: string[], threshold: number): Promise<{ text: string; score: number }[][]> {
+  const response = await fetch('/api/local/objects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, texts, labels, threshold }) });
+  const data = await response.json();
+  if (!response.ok || !Array.isArray(data.found)) throw new Error(data.error || 'The local network failed');
+  return data.found;
+}

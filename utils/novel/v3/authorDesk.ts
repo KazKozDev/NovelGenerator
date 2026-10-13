@@ -1,4 +1,5 @@
 import type { NovelLLM } from '../v2/llm';
+import { firstSeenHere, piecesOf, type FoundObject, type ObjectsRequest } from './newThings';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import type { ProjectStore } from '../v2/store';
 import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author';
@@ -32,6 +33,9 @@ import { ENVELOPE, KEEP_AT, LABEL_TEMPLATE, around, labelsFor, listedThings, men
  *   network labels each one so that code can drop those that only pass a thing by; nothing says whether they agree. Written forward without it, the deed was made up in the last chapter and
  *   tripped on the first: a key that never left her neck opened a drawer for someone else. Eight books on two models all
  *   wrote the envelope first, and their endings were built from things their first chapters had already set down.
+ * - when the last chapter is written, it comes back with the things it names that no earlier chapter has. A small local
+ *   network picks the objects out of the chapter and code looks each one up in the pages before. One book ended on a
+ *   box that had never been in it; another carried in a small paper bag on its last pages to settle the plot.
  * - the book moves forward: a chapter is open while it is the last one written. And once, as the last chapter is
  *   about to be written, a reader of the book so far says what they are holding — what was promised
  *   and not given yet. One book raised the question of who knew the day of five deaths and never
@@ -58,6 +62,8 @@ export interface DeskState {
   things_from?: string;
   /** The author's own lines that fix a fact about one of those things, by file. */
   held?: Record<string, Held[]>;
+  /** What the last chapter names that no earlier chapter has, as the author was told. Kept for the screen. */
+  arrivals?: { name: string; line: string }[];
   /** How many readers each chapter has had: the next one costs more. */
   readings?: Record<string, number>;
   journal: string[];
@@ -162,7 +168,7 @@ export function deskView(state: DeskState, chapters: number, result: string): st
  * `ask` is how a second mind is reached; it is counted against the budget by the caller.
  */
 export async function takeStep(state: DeskState, step: ReturnType<typeof readStep>, chapters: number,
-  ask: (kind: 'character' | 'reader' | 'helper', prompt: string, system: string) => Promise<string>): Promise<string> {
+  ask: (kind: 'character' | 'reader' | 'helper' | 'objects', prompt: string, system: string) => Promise<string>): Promise<string> {
   const { tool, file, name, content, thought } = step;
   const note = (line: string) => { state.journal.push(`${state.step}. ${line}${thought ? ` — ${thought.slice(0, 220)}` : ''}`); };
   const chapterNames = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
@@ -206,6 +212,26 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       const lines = sideBySide(state.things, state.held, file, chapterNames, turning);
       return lines ? `\n${turning ? 'The things your envelope names, as the book has them now that only the ending is left' : 'What this chapter says of the things your envelope names, beside what was said before'} (your own lines; nobody has judged them):\n${lines}` : '';
     } catch (error) { if (!state.journal.some(line => line.includes('could not be gathered'))) state.journal.push(`${state.step}. the lines about the envelope's things could not be gathered: the small network did not answer (${String(error instanceof Error ? error.message : error).slice(0, 100)})`); return ''; }
+  };
+  // What the last chapter names that no earlier chapter has. A small local network picks the objects out of the chapter;
+  // code looks each up in the earlier chapters and names what is new. Nothing says it is wrong, and the chapter may be
+  // written again once.
+  const arrivals = async (): Promise<string> => {
+    if (!isChapter || chapters < 2 || file !== chapterNames.at(-1) || chapterNames.slice(0, -1).some(chapter => !state.files[chapter]?.trim())) return '';
+    try {
+      const texts = piecesOf(state.files[file]); if (!texts.length) return '';
+      const request: ObjectsRequest = { texts, labels: ['object'], threshold: 0.5 };
+      const found = (JSON.parse(await ask('objects', JSON.stringify(request), '')) as FoundObject[][]).flat();
+      let fresh = firstSeenHere(state.files[file], chapterNames.slice(0, -1).map(chapter => state.files[chapter]), found);
+      // "She had built me a noose" names no noose. The network that labels sentences says which are figures of speech,
+      // when it can be reached; code drops those.
+      try {
+        const figures = await Promise.all(fresh.map(async item => { const request: LabelRequest = { inputs: [item.line.slice(0, 400)], labels: ['a figure of speech', `a fact about the ${item.name.split(' ').at(-1)}`, 'something else'], template: LABEL_TEMPLATE }; return (JSON.parse(await ask('helper', JSON.stringify(request), '')) as number[])[0] || 0; }));
+        fresh = fresh.filter((_, at) => figures[at] < KEEP_AT);
+      } catch { /* without that network every new thing is shown */ }
+      state.arrivals = fresh.map(item => ({ name: item.name, line: item.line }));
+      return fresh.length ? `\nThings this chapter names that no earlier chapter has (a reader meets them here for the first time; nobody has judged them):\n${fresh.map(item => `— ${item.name}: "${around(item.line, { thing: item.name, words: [item.name.split(' ').at(-1)!] }, 180)}"`).join('\n')}` : '';
+    } catch (error) { if (!state.journal.some(line => line.includes('could not be looked for'))) state.journal.push(`${state.step}. things new to the last chapter could not be looked for: the local network did not answer (${String(error instanceof Error ? error.message : error).slice(0, 120)})`); return ''; }
   };
   const changed = () => { if (isChapter) for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(file)) answer.stale = true; };
 
@@ -264,8 +290,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       state.rewrites = { ...(state.rewrites || {}), [file]: done + 1 };
     }
   }
-  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
-  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
+  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await beside()}${await arrivals()}${await whole()}`; }
+  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await beside()}${await arrivals()}${await whole()}`; }
   if (tool === 'plant') {
     // A plant sows for a chapter still to be written. One book set four things into its chapters after the last was
     // written, to answer a reader, and three of them showed: a pen bagged by a detective that lay in her kitchen that
@@ -370,12 +396,12 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
         desk.journal.push(`${desk.step}. done — but chapters are still unwritten`);
       } else {
         told.push(await takeStep(desk, step, chapters, async (kind, prompt, persona) => {
-          if (kind !== 'helper') desk.spent++;
+          if (kind !== 'helper' && kind !== 'objects') desk.spent++;
           // A reader is another head: the editor's model when the publisher has set one. A character and the keeper speak from inside the book, in the author's own.
           const call = (route: 'writer' | 'validator') => llm(prompt, persona, { stage: kind === 'reader' ? 'author-reader' : 'author-character', route, temperature: kind === 'reader' ? 0.7 : 0.9, maxTokens: 1200 });
           // The helper is a small network that labels sentences for the code. It costs the author nothing, and a host
           // without one gives nothing back: no model that talks is spent on it.
-          if (kind === 'helper') return llm(prompt, persona, { stage: 'author-label', route: 'helper' });
+          if (kind === 'helper' || kind === 'objects') return llm(prompt, persona, { stage: kind === 'objects' ? 'author-objects' : 'author-label', route: 'helper' });
           if (kind !== 'reader') return (await call('writer')).trim();
           // A reader who will not read the book (some will not read what is on the page) does not stop it: the author's own model reads instead.
           try { const said = (await call('validator')).trim(); if (said) return said; throw new Error('the reader said nothing'); }
