@@ -7,10 +7,9 @@ import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
 import { writeBookOnce } from '../utils/novel/v3/author';
-import { writeAtDesk, keeperRecords } from '../utils/novel/v3/authorDesk';
+import { writeAtDesk } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
-import { generateAnthropicLive } from '../services/anthropicService';
 
 const arg = (name: string, fallback: string) => { const at = process.argv.indexOf(`--${name}`); return at > 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback; };
 const model = arg('model', 'deepseek-v4.1-flash:cloud'), endpoint = arg('endpoint', 'http://127.0.0.1:11434'), out = arg('out', 'runs/book');
@@ -21,7 +20,7 @@ const input = { planning_version: 2 as const, generation_mode: 'author' as const
   target_total_words: chapters * words, author_requirements: arg('settings', 'Voice: third-limited. Tone: serious. Style: descriptive. Audience: adult. Tense: past. Ending: closed. Intimate scenes: on the page, not faded out.') };
 if (!input.premise) throw new Error('--premise is required');
 mkdirSync(out, { recursive: true });
-const started = Date.now(); let calls = 0, sent = 0, got = 0, tokensIn = 0, tokensOut = 0;
+const started = Date.now(); let calls = 0, sent = 0, got = 0;
 const log = (line: string) => { console.log(line); appendFileSync(join(out, 'log.txt'), line + '\n'); };
 const store = new MemoryProjectStore();
 const flush = () => {
@@ -32,7 +31,7 @@ const flush = () => {
     for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, 'first-draft', name), text);
     writeFileSync(join(out, 'first-draft', 'journal.md'), draft.desk.journal.join('\n'));
   }
-  if (draft.desk) { writeFileSync(join(out, 'keeper.md'), keeperRecords(draft.desk)); for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, name), text); writeFileSync(join(out, 'journal.md'), draft.desk.journal.join('\n')); writeFileSync(join(out, 'answers.md'), draft.desk.answers.map(answer => `## ${answer.who}, step ${answer.step} ${answer.about}\n${answer.text}`).join('\n\n')); return; }
+  if (draft.desk) { for (const [name, text] of Object.entries(draft.desk.files)) writeFileSync(join(out, name), text); writeFileSync(join(out, 'journal.md'), draft.desk.journal.join('\n')); writeFileSync(join(out, 'answers.md'), draft.desk.answers.map(answer => `## ${answer.who}, step ${answer.step} ${answer.about}\n${answer.text}`).join('\n\n')); return; }
   writeFileSync(join(out, 'notebook.md'), draft.notebook || ''); writeFileSync(join(out, 'clock.md'), draft.clock); writeFileSync(join(out, 'plan.md'), draft.plan);
   draft.chapters.forEach((chapter, at) => writeFileSync(join(out, `chapter-${at + 1}.md`), chapter.text));
   writeFileSync(join(out, 'readers.md'), draft.chapters.map((chapter, at) => `## After chapter ${at + 1}\n${chapter.reader}`).join('\n\n'));
@@ -41,13 +40,8 @@ const flush = () => {
 (arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
   calls++; sent += prompt.length + system.length; const at = Date.now();
   const other = options?.route === 'validator' && reader;
-  // The author may be a Claude model (--model claude-…); the reader is then another model, deepseek unless --reader says otherwise.
-  const using = other ? reader : options?.route === 'validator' && /^claude/i.test(model) ? 'deepseek-v4.1-flash:cloud' : model;
-  let usage: any;
-  const text = /^claude/i.test(using) ? await generateAnthropicLive(prompt, system, options?.maxTokens, using, value => { usage = value; })
-    : /^qwen/i.test(using) ? await generateQwenText(prompt, system, options?.maxTokens, using)
-    : await generateOllamaText(prompt, system, undefined, options?.temperature ?? 0.8, using, endpoint, options?.maxTokens);
-  if (usage?.usage) { tokensIn += usage.usage.prompt_tokens || 0; tokensOut += usage.usage.completion_tokens || 0; }
+  const text = other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
+    : await generateOllamaText(prompt, system, undefined, options?.temperature ?? 0.8, other ? reader : model, endpoint, options?.maxTokens);
   got += text.length; const did = options?.stage === 'author-step' ? ` ${text.match(/^\**TOOL\**\s*:\**\s*(.*)$/mi)?.[1] || ''} ${text.match(/^\**(?:FILE|NAME)\**\s*:\**\s*(.*)$/mi)?.[1] || ''} — ${(text.match(/^\**THOUGHT\**\s*:\**\s*(.*)$/mi)?.[1] || '').slice(0, 230)}` : '';
   log(`[${calls}] ${options?.stage} ${Math.round((Date.now() - at) / 1000)}s sent ${Math.round(prompt.length / 1000)}K got ${text.split(/\s+/).length} words${did}`);
   if (options?.stage !== 'author-step') log('     ' + text.replace(/\s+/g, ' ').slice(0, 500));
@@ -57,5 +51,4 @@ const flush = () => {
   for (const entry of store.runLog()) if (entry.stage === 'author') appendFileSync(join(out, 'log.txt'), `  ${entry.detail.slice(0, 400)}\n`);
   const draft = store.loadAuthor()!;
   log(`FINISHED in ${Math.round((Date.now() - started) / 1000)}s. ${calls} calls, ${Math.round(sent / 1000)}K sent, ${Math.round(got / 1000)}K received. "${draft.title || 'untitled'}". Chapters: ${draft.chapters.map(chapter => chapter.text.split(/\s+/).length).join(', ')}. Readers noticed something after ${draft.noticed.length} of ${chapters}.`);
-  if (tokensIn || tokensOut) log(`Anthropic tokens: ${tokensIn} in, ${tokensOut} out.`);
 }).catch(error => { flush(); log(`STOPPED: ${error instanceof Error ? error.message : error}`); process.exit(1); });
