@@ -211,30 +211,40 @@ export function anchorsOf(text: string): string[] {
   return [...new Set([...when, ...names])].filter(word => word.length >= 2 && !/^(a|an|one|week|month|year|night)$/.test(word));
 }
 const lineBreaks = /(?<=[.!?…”"])\s+|\n+/;
-/**
- * After a change: the other lines of the book that speak of the same day, hour, number or name as the changed line and
- * the lines beside it. One author changed "found that morning" to "the next morning" and stopped there; two lines away
- * the hotel had telephoned "on a Tuesday morning", and a chapter on a detective asked about "Tuesday afternoon, the
- * afternoon he died". Nobody says they disagree: they are set where the author can see them together.
- */
-export function elsewhere(files: Record<string, string>, names: string[], changed: string, around: string, most = 6): Place[] {
-  const all = names.flatMap(file => (files[file] || '').split(lineBreaks).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
-  const has = (line: string, anchor: string) => new RegExp(`\\b${anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(line);
-  const lines = (anchor: string) => all.filter(item => has(item.sentence, anchor)).length;
-  // A day of the week, a month or an hour of the clock places a thing in the book's calendar: lines that name the same
-  // one come first. A word like "morning", a number or a name tells less; one that stands in a great many lines — the
-  // heroine's name, the Thursday of a book about Thursdays — tells nothing, and is left out.
-  const strong = (anchor: string) => /day$|^(january|february|march|april|may|june|july|august|september|october|november|december)$|^\d{1,2}[:.]\d{2}$/.test(anchor);
-  const anchors = anchorsOf(around).filter(anchor => { const count = lines(anchor); return count >= 1 && count <= (strong(anchor) ? 12 : 8); });
-  if (!anchors.length) return [];
-  const own = new Set(anchorsOf(changed));
-  return all.filter(item => item.sentence !== changed.trim() && !changed.includes(item.sentence))
-    .map((item, at) => { const shared = anchors.filter(anchor => has(item.sentence, anchor)); return { ...item, from: 0, to: 0, at, weight: shared.reduce((sum, anchor) => sum + (strong(anchor) ? 3 : 1) * (own.has(anchor) ? 2 : 1) / Math.sqrt(lines(anchor)), 0) }; })
-    .filter(item => item.weight > 0).sort((one, other) => other.weight - one.weight).slice(0, most).sort((one, other) => one.at - other.at);
-}
-
 const COMMON = new Set(`that this with from have what when were they them their there then than would could should about which while where your been into just only over like back down still even more some very much also after before again never always because through thing things something nothing anything everything every other another these those being himself herself itself myself said says know knew known think thought looked look looking face hand hands eyes door room time times day days way made make came come went going gone want wanted told tell asked left right long little first last next same each both away around between under without against during until since toward towards didn't don't wasn't couldn't wouldn't hadn't isn't it's he's she's you've you're i've i'm that's there's what's can't won't found gave given took taken felt feel seemed turned stood heard kept held began called answered moment minute hour hours morning afternoon evening night week weeks month months year years woman man people person place house`.split(/\s+/));
 const stem = (word: string) => word.replace(/(?:'s|ing|ed|es|s)$/, '');
+/**
+ * Whatever the author has just touched, everything else the book says of it. Not a rule for days and another for
+ * things: what was touched is read off the change itself — the words that came in and went out, the words of the line
+ * they stand in, the day its scene stands in — and every other line of the book that speaks of the same is set where
+ * the author can see them together. Nobody says they disagree.
+ *
+ * One author changed "found that morning" to "the next morning" and stopped; two lines away the hotel had telephoned
+ * "on a Tuesday morning", and a chapter on a detective asked about "Tuesday afternoon, the afternoon he died". Another
+ * spent nineteen steps on a scarf that stood in twenty-eight places in five chapters, changing one line at a time and
+ * never seeing the others: its own, then stolen from her coatrack, then worn by the other woman a page later.
+ */
+export function elsewhere(files: Record<string, string>, names: string[], was: string, is: string, around: string, most = 8): Place[] {
+  const all = names.flatMap(file => (files[file] || '').split(lineBreaks).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
+  const has = (line: string, word: string) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s|s|es|ed|ing)?\\b`, 'i').test(line);
+  const lines = (word: string) => all.filter(item => has(item.sentence, word)).length;
+  const content = (text: string) => new Set((text.toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []).filter(word => !COMMON.has(word) && word.length >= 4).map(stem));
+  const calendar = (word: string) => /day$|^(january|february|march|april|may|june|july|august|september|october|november|december)$|^\d{1,2}[:.]\d{2}$/.test(word);
+  const before = content(was), after = content(is), beside = new Set([...anchorsOf(around), ...content(around)]);
+  // What came in or went out weighs most; what stayed in the touched line next; what stands beside it least. A word
+  // that stands in a great many lines — the heroine's name, the Thursday of a book about Thursdays — tells nothing.
+  const weight = new Map<string, number>();
+  for (const word of beside) weight.set(word, calendar(word) ? 2 : 0.5);
+  for (const word of [...anchorsOf(was), ...anchorsOf(is)]) weight.set(word, calendar(word) ? 3 : 2);
+  for (const word of [...before, ...after]) weight.set(word, Math.max(weight.get(word) || 0, before.has(word) !== after.has(word) ? 3 : 2));
+  const scored = [...weight].map(([word, value]) => ({ word, value, count: lines(word) })).filter(item => item.count >= 1 && item.count <= (item.value >= 2 ? 40 : 10));
+  if (!scored.length) return [];
+  const same = (line: string) => line === is.trim() || is.includes(line) || line.includes(is.trim().slice(0, 60));
+  return all.filter(item => !same(item.sentence))
+    .map((item, at) => ({ ...item, from: 0, to: 0, at, score: scored.reduce((sum, word) => sum + (has(item.sentence, word.word) ? word.value / Math.sqrt(word.count) : 0), 0) }))
+    .filter(item => item.score >= 0.45).sort((one, other) => other.score - one.score).slice(0, most).sort((one, other) => one.at - other.at);
+}
+
 /**
  * The words a chapter leans on that no earlier chapter has: said three times or more here, never before. One book's
  * third chapter turned on a key left "under the lamp, where she always leaves it"; the lamp was named seven times in
@@ -539,8 +549,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const about = next.slice(Math.max(0, found.from - 320), found.from + now.trim().length + 320);
     // The day the scene stands in is the last one named before the place, however far up the chapter that was.
     const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
-    const other = elsewhere(state.files, written, now.trim() ? after : found.sentence, `${found.sentence} ${about} ${day}`);
-    const also = other.length ? `\n\nElsewhere the book speaks of the same day, hour, number or name (your own lines; nobody has judged them):\n${shown(other)}` : '';
+    const other = elsewhere(state.files, written, found.sentence, now.trim() ? after : '', `${about} ${day}`);
+    const also = other.length ? `\n\nElsewhere the book speaks of what you have just touched (your own lines; nobody has judged them):\n${shown(other)}` : '';
     // Found by likeness, not word for word: the author is shown in full what was taken as the place.
     if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
     if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${also}${twice(now, found.file)}`;
@@ -559,7 +569,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
-    note(`planted in ${found.file}`); return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${twice(what, found.file)}`;
+    note(`planted in ${found.file}`); const touched = elsewhere(state.files, written, '', what.trim(), '');
+    return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere the book speaks of what you have just set in (your own lines; nobody has judged them):\n${shown(touched)}` : ''}${twice(what, found.file)}`;
   }
   if (tool === 'ask_keeper') {
     if (state.budget - state.spent < 1) { note('ask_keeper: no budget'); return 'There is no budget left for a second call.'; }

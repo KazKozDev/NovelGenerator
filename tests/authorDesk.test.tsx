@@ -326,9 +326,22 @@ describe('the desk', () => {
     desk.files['chapter-2.md'] = 'The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died. She said she had been at the office with her patients.\n\nIt rained all week on the harbor road and nobody came.';
     const told = await takeStep(desk, readStep(step('Fix.', 'change', 'chapter-1.md', 'found by a housekeeper that morning\n===\nfound by a housekeeper the next morning')), 2, ask);
     expect(told).toContain('It now reads: "He had been found by a housekeeper the next morning."');
-    expect(told).toContain('Elsewhere the book speaks of the same day, hour, number or name');
+    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
     expect(told).toContain('— chapter-1.md: "The hotel called her on a Tuesday morning."'); expect(told).toContain('— chapter-2.md: "The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died."');
     expect(told).not.toContain('It rained all week');
+  });
+  it('shows, after a thing is touched, every other line that speaks of that thing', async () => {
+    const desk = newDesk(3); const ask = async () => '';
+    desk.files['chapter-1.md'] = 'A woman came in first, in a dove-grey scarf, and sat down without being asked. It rained on King Street all that morning and the gutters ran.';
+    desk.files['chapter-2.md'] = 'On the armchair she found a folded scarf, and knew it for the one Claire wore. She put the scarf in her bag and took it home.\n\nThe clock over the door said a quarter to four.';
+    desk.files['chapter-3.md'] = 'Claire came in on Thursday wearing the scarf again, and smoothed it on her lap. Nobody spoke for a while and the fan turned overhead.';
+    const told = await takeStep(desk, readStep(step('Whose it is.', 'change', 'chapter-2.md', 'and knew it for the one Claire wore\n===\nand knew it for her own, taken from the coatrack in her office')), 3, ask);
+    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
+    expect(told).toContain('— chapter-1.md: "A woman came in first, in a dove-grey scarf'); expect(told).toContain('— chapter-2.md: "She put the scarf in her bag and took it home."'); expect(told).toContain('— chapter-3.md: "Claire came in on Thursday wearing the scarf again');
+    expect(told).not.toContain('It rained on King Street'); expect(told).not.toContain('the fan turned');
+    // A thing set in is touched too.
+    const set = await takeStep(desk, readStep(step('Plant.', 'plant', 'chapter-1.md', 'It rained on King Street\n===\nThe coatrack in the corner of her office held one coat and nothing else.')), 3, ask);
+    expect(set).toContain('Elsewhere the book speaks of what you have just set in'); expect(set).toContain('taken from the coatrack in her office');
   });
   it('hands back with a chapter the things it leans on that no earlier chapter has', async () => {
     const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
