@@ -290,7 +290,8 @@ describe('the tabs of the author\'s tools', () => {
     await takeStep(state, readStep('THOUGHT: Day.\nTOOL: ask_keeper\nFILE: chapter-1.md\n---\nQuote the day she came.'), 2, ask);
     await takeStep(state, readStep('THOUGHT: Set.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in from the rain.\n===\nA phone lay on the sill.'), 2, ask);
     const tabs = Object.fromEntries(deskTabs(state).map(tab => [tab.name, tab]));
-    expect(Object.keys(tabs)).toEqual(['Reader', 'Characters', 'Keeper', 'Set in', 'Notebook']);
+    expect(Object.keys(tabs)).toEqual(['Reader', 'Characters', 'Keeper', 'Set in', 'Envelope', 'Notebook']);
+    expect(tabs.Envelope.text).toContain('has not written down what really happened');
     expect(tabs.Characters.text).toContain('the author to Nora'); expect(tabs.Characters.text).toContain('> What do you do with the notebook?'); expect(tabs.Characters.text).toContain('I would burn it.');
     expect(tabs.Reader.text).toContain('> Does the drawer land?'); expect(tabs.Reader.text).toContain('WAITING FOR: the drawer.'); expect(tabs.Reader.count).toBe(1);
     expect(tabs.Keeper.text).toContain('> Quote the day she came.'); expect(tabs.Keeper.text).toContain('It says Tuesday'); expect(tabs.Keeper.text).not.toContain('Q: ');

@@ -380,7 +380,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
             <p className="text-xs text-zinc-500">
-              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters.
+              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters. What really happened is written down as a scene and sealed in an envelope; each chapter is then set beside it, thing by thing.
             </p>
           </div>
 

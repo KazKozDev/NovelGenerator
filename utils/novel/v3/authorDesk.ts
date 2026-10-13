@@ -2,6 +2,7 @@ import type { NovelLLM } from '../v2/llm';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import type { ProjectStore } from '../v2/store';
 import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author';
+import { ENVELOPE, HOLD_SYSTEM, SURE_SYSTEM, THINGS_SYSTEM, holdPrompt, surePrompt, mentions, readNumbers, readThings, sideBySide, thingsPrompt, type Held, type Thing } from './envelope';
 
 /**
  * The author at its desk, working as it sees fit.
@@ -25,6 +26,12 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   the ages and spans of time it names beside theirs.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
  * - a reader is another model than the author when one is set: the same head does not see what it wrote past.
+ * - the deed is written before the book: an envelope holds the scene the reader is not shown until the end, sealed when
+ *   the second chapter is begun, and each chapter comes back with its own lines about the things that scene turns on
+ *   beside the envelope's and the earlier chapters'. Code finds the lines and a small model drops those that only pass a
+ *   thing by; nothing says whether they agree. Written forward without it, the deed was made up in the last chapter and
+ *   tripped on the first: a key that never left her neck opened a drawer for someone else. Eight books on two models all
+ *   wrote the envelope first, and their endings were built from things their first chapters had already set down.
  * - the book moves forward: a chapter is open while it is the last one written. And once, as the last chapter is
  *   about to be written, a reader of the book so far says what they are holding — what was promised
  *   and not given yet. One book raised the question of who knew the day of five deaths and never
@@ -46,6 +53,11 @@ export interface DeskState {
   rewrites?: Record<string, number>;
   /** How many times, with the whole book written, the author has tried to change what can no longer be changed. */
   closed_hits?: number;
+  /** The things the sealed envelope turns on, and the envelope text they were read from. */
+  things?: Thing[];
+  things_from?: string;
+  /** The author's own lines that fix a fact about one of those things, by file. */
+  held?: Record<string, Held[]>;
   /** How many readers each chapter has had: the next one costs more. */
   readings?: Record<string, number>;
   journal: string[];
@@ -90,7 +102,7 @@ ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
 YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. The book moves forward: a chapter is yours to write again while it is the last one written, and when you begin the next it goes to the typesetter and stands as it is. What a later chapter needs from an earlier one is sown there with plant. Write the book in English.
 
-YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; and one file per chapter. Your files: ${files.join(', ')}.
+YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; ${files.includes(ENVELOPE) ? `${ENVELOPE} for the scene the reader is not shown until the end — what was really done, by whose hands, with which things, through which door, at what hour — written as a scene, moment by moment, not as notes; it is sealed when the second chapter is begun, and with each chapter you get back what that chapter says of the things it turns on, beside what the envelope says; ` : ''}and one file per chapter. Your files: ${files.join(', ')}.
 
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
@@ -130,7 +142,7 @@ export function spansOf(text: string): string[] {
  * into the chapter. Anything from the first line of the desk's own furniture on is not the file.
  */
 export function ownWords(content: string): string {
-  const echo = content.search(/^(={3,}\s*[\w.-]+\.md\s*\(\d+ words|RESULT OF YOUR LAST TOOL|YOUR DESK NOW|WHAT READERS AND CHARACTERS HAVE TOLD YOU|YOUR STEPS SO FAR|BUDGET LEFT:)/m);
+  const echo = content.search(/^(<\/?(?:parameter|invoke|function_calls)\b|={3,}\s*[\w.-]+\.md\s*\(\d+ words|RESULT OF YOUR LAST TOOL|YOUR DESK NOW|WHAT READERS AND CHARACTERS HAVE TOLD YOU|YOUR STEPS SO FAR|BUDGET LEFT:)/m);
   return (echo >= 0 ? content.slice(0, echo) : content).replace(/(\n[ \t]*[-=*_~]{3,}[ \t]*)+\s*$/, '').trim();
 }
 
@@ -150,7 +162,7 @@ export function deskView(state: DeskState, chapters: number, result: string): st
  * `ask` is how a second mind is reached; it is counted against the budget by the caller.
  */
 export async function takeStep(state: DeskState, step: ReturnType<typeof readStep>, chapters: number,
-  ask: (kind: 'character' | 'reader', prompt: string, system: string) => Promise<string>): Promise<string> {
+  ask: (kind: 'character' | 'reader' | 'helper', prompt: string, system: string) => Promise<string>): Promise<string> {
   const { tool, file, name, content, thought } = step;
   const note = (line: string) => { state.journal.push(`${state.step}. ${line}${thought ? ` — ${thought.slice(0, 220)}` : ''}`); };
   const chapterNames = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
@@ -166,6 +178,37 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       return `${file} went to the typesetter when you began ${later}: the book moves forward, and it stands as it is. ${ahead.length ? `What it got wrong can be answered in ${ahead[0]}, which is still to be written; what a later chapter needs from it can be sown with plant.` : `The one chapter still open is ${open}, the last.`}`;
     }
   }
+  // The envelope is sealed when the second chapter is begun: what happened has happened, and the book is written to it.
+  if (file === ENVELOPE && (tool === 'write' || tool === 'append') && state.files[chapterNames[Math.min(1, chapters - 1)]]?.trim()) {
+    note(`${tool} ${ENVELOPE}: sealed`); return `The envelope was sealed when ${chapterNames[Math.min(1, chapters - 1)]} was begun: what happened, happened as it says. The chapters still to be written are written to it.`;
+  }
+  // The author's own lines about the things the envelope turns on, side by side. Code finds the sentences; a small
+  // model says which of them fix a fact and which only pass the thing by. Neither says whether they agree.
+  const beside = async (): Promise<string> => {
+    const envelope = state.files[ENVELOPE]?.trim();
+    if (!isChapter || !envelope) return '';
+    try {
+      const hold = async (text: string): Promise<Held[]> => (await Promise.all((state.things || []).map(async thing => {
+        const found = mentions(text, thing); if (!found.length) return [];
+        const secret = (state.held?.[ENVELOPE] || []).filter(item => item.thing === thing.thing).map(item => item.line);
+        const picked = readNumbers(await ask('helper', holdPrompt(thing, secret, found), HOLD_SYSTEM), found.length).map(number => found[number - 1]);
+        // Asked to choose, a small model chooses something even when nothing fits; asked about one sentence, it can say no.
+        const sure = await Promise.all(picked.map(async line => /^\W*yes/i.test(await ask('helper', surePrompt(thing, secret, line), SURE_SYSTEM))));
+        return picked.filter((_, at) => sure[at]).map(line => ({ thing: thing.thing, line }));
+      }))).flat();
+      if (state.things_from !== envelope) {
+        state.things = readThings(await ask('helper', thingsPrompt(envelope), THINGS_SYSTEM)); state.things_from = envelope;
+        state.held = { [ENVELOPE]: state.things.flatMap(thing => mentions(envelope, thing, 2).map(line => ({ thing: thing.thing, line }))) };
+        for (const chapter of chapterNames) if (chapter !== file && state.files[chapter]?.trim()) state.held[chapter] = await hold(state.files[chapter]);
+      }
+      if (!state.things?.length) return '';
+      state.held = { ...(state.held || {}), [file]: await hold(state.files[file]) };
+      const unwritten = chapterNames.filter(chapter => !state.files[chapter]?.trim());
+      const turning = unwritten.length === 1 && unwritten[0] === chapterNames.at(-1);
+      const lines = sideBySide(state.things, state.held, file, chapterNames, turning);
+      return lines ? `\n${turning ? 'The things the envelope turns on, as the book has them now that only the ending is left' : 'What this chapter says of the things the envelope turns on, beside what was said before'} (your own lines; nobody has judged them):\n${lines}` : '';
+    } catch (error) { if (!state.journal.some(line => line.includes('could not be gathered'))) state.journal.push(`${state.step}. the lines about the envelope's things could not be gathered: the small model did not answer (${String(error instanceof Error ? error.message : error).slice(0, 100)})`); return ''; }
+  };
   const changed = () => { if (isChapter) for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(file)) answer.stale = true; };
 
   // Not a check and not advice: what a reader who has just closed the book is still holding.
@@ -223,8 +266,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       state.rewrites = { ...(state.rewrites || {}), [file]: done + 1 };
     }
   }
-  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}`; }
-  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
+  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
+  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
   if (tool === 'plant') {
     // A plant sows for a chapter still to be written. One book set four things into its chapters after the last was
     // written, to answer a reader, and three of them showed: a pen bagged by a detective that lay in her kitchen that
@@ -281,7 +324,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
  */
 export const deskBudget = (chapters: number): number => 6 + chapters * 3;
 
-export const newDesk = (chapters: number): DeskState => ({ files: Object.fromEntries([...NOTES, ...Array.from({ length: chapters }, (_, at) => chapterFile(at + 1))].map(name => [name, ''])),
+export const newDesk = (chapters: number): DeskState => ({ files: Object.fromEntries([...NOTES, ENVELOPE, ...Array.from({ length: chapters }, (_, at) => chapterFile(at + 1))].map(name => [name, ''])),
   answers: [], journal: [], step: 0, budget: deskBudget(chapters), spent: 0, finished: false });
 
 /**
@@ -329,9 +372,12 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
         desk.journal.push(`${desk.step}. done — but chapters are still unwritten`);
       } else {
         told.push(await takeStep(desk, step, chapters, async (kind, prompt, persona) => {
-          desk.spent++;
+          if (kind !== 'helper') desk.spent++;
           // A reader is another head: the editor's model when the publisher has set one. A character and the keeper speak from inside the book, in the author's own.
           const call = (route: 'writer' | 'validator') => llm(prompt, persona, { stage: kind === 'reader' ? 'author-reader' : 'author-character', route, temperature: kind === 'reader' ? 0.7 : 0.9, maxTokens: 1200 });
+          // The helper is a small model that sorts sentences, dozens of them to a chapter. It costs the author nothing, and
+          // a host without one gives nothing back: the author's own model is not spent on sorting.
+          if (kind === 'helper') return (await llm(prompt, persona, { stage: 'author-helper', route: 'helper', temperature: 0, maxTokens: 600 })).trim();
           if (kind !== 'reader') return (await call('writer')).trim();
           // A reader who will not read the book (some will not read what is on the page) does not stop it: the author's own model reads instead.
           try { const said = (await call('validator')).trim(); if (said) return said; throw new Error('the reader said nothing'); }

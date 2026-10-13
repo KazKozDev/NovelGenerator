@@ -9,6 +9,8 @@ import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
 import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
+import { HELPER_MODEL } from '../utils/novel/v3/envelope';
+import { generateHuggingFaceBrowserText } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
@@ -310,6 +312,8 @@ export default function useBookGenerator() {
     store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
+      // The small sorter: dozens of one-line questions to a chapter, asked quietly of a small model on Hugging Face. Without a token it fails, and the engine goes on without it.
+      if (options.route === 'helper') return generateHuggingFaceBrowserText(prompt, system, options.maxTokens ?? 600, HELPER_MODEL, options.temperature ?? 0);
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the
       // 500-char window: keep the head for context and the tail for the cause.
