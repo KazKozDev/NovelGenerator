@@ -280,6 +280,37 @@ export function findPlaces(files: Record<string, string>, names: string[], words
   } }
   return places;
 }
+/**
+ * The passage a long quotation is plainly of, when it does not stand word for word. An author quotes several sentences
+ * from memory to change them, and one pronoun or a dropped clause is off: of every four changes one failed that way,
+ * each time with the right place the first of the "nearest lines". Found by the runs of three words the quotation and
+ * the page share: one stretch of the page must hold most of them and no other stretch more than a few. Its ends are
+ * the quotation's ends where those match, and the ends of its sentences where the quotation's first or last words
+ * are the ones that differ.
+ */
+export function nearPassage(files: Record<string, string>, names: string[], words: string): Place | undefined {
+  const tokens = (text: string) => [...text.matchAll(/[A-Za-z0-9']+/g)].map(found => ({ word: found[0].toLowerCase(), from: found.index!, to: found.index! + found[0].length }));
+  const quote = tokens(quoted(words)); if (quote.length < 8) return undefined;
+  const gram = (list: { word: string }[], at: number) => `${list[at].word} ${list[at + 1].word} ${list[at + 2].word}`;
+  const wanted = new Map<string, number>(); for (let at = 0; at + 2 < quote.length; at++) wanted.set(gram(quote, at), at);
+  const stretches: { file: string; first: number; last: number; hits: Set<string>; page: ReturnType<typeof tokens> }[] = [];
+  for (const file of names) {
+    const page = tokens(files[file] || ''); let open: (typeof stretches)[number] | undefined;
+    for (let at = 0; at + 2 < page.length; at++) {
+      const key = gram(page, at); if (!wanted.has(key)) continue;
+      if (open && at - open.last <= 14) { open.last = at; open.hits.add(key); } else { open = { file, first: at, last: at, hits: new Set([key]), page }; stretches.push(open); }
+    }
+  }
+  stretches.sort((one, other) => other.hits.size - one.hits.size);
+  const best = stretches[0]; if (!best || best.hits.size < wanted.size * 0.6 || (stretches[1]?.hits.size || 0) > best.hits.size * 0.4) return undefined;
+  const text = files[best.file]; let from = best.page[best.first].from, to = best.page[best.last + 2].to;
+  // Where the quotation's first words are not the page's, the place begins with the sentence; likewise its end.
+  const lead = wanted.get(gram(best.page, best.first))!, tail = quote.length - 3 - wanted.get(gram(best.page, best.last))!;
+  if (lead > 0 && lead <= 4) { const start = Math.max(text.lastIndexOf('\n', from - 1) + 1, ...['. ', '! ', '? ', '.” ', '." ', '?” ', '!” '].map(end => { const at = text.lastIndexOf(end, from - 1); return at < 0 ? 0 : at + end.length; })); if (text.slice(start, from).trim().split(/\s+/).filter(Boolean).length <= lead + 2) from = start; }
+  if (tail > 0 && tail <= 4) { const ends = ['. ', '! ', '? ', '.” ', '." ', '?” ', '!” ', '\n'].map(end => { const at = text.indexOf(end, to); return at < 0 ? -1 : at + end.trimEnd().length; }).filter(at => at >= 0); const stop = ends.length ? Math.min(...ends) : text.length; if (text.slice(to, stop).trim().split(/\s+/).filter(Boolean).length <= tail + 2) to = stop; }
+  else if (/[.!?…]["”’]?$/.test(quoted(words)) && /^[.!?…]["”’]?/.test(text.slice(to, to + 2))) to += (text.slice(to).match(/^[.!?…]["”’]?/)?.[0].length || 0);
+  return { file: best.file, from, to, sentence: text.slice(from, to) };
+}
 /** When the words stand nowhere: the sentences that share most with them, so the author can see what the page has instead. */
 export function nearestTo(files: Record<string, string>, names: string[], words: string, most = 3): Place[] {
   const wanted = wordsOf(words); if (wanted.size < 2) return [];
@@ -428,6 +459,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   // chapters, one author asked for a reader three times running and got the old answer each time.
   const stale = (touched: string) => { for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(touched)) answer.stale = true; };
   // The one place the quoted words stand, or what the author is told when there is not exactly one.
+  let loose = false;
   const place = (given: string, doing: string): Place | string => {
     // "PLACE: 2" on a first line picks the second of several places: the same paragraph printed twice can be told apart no other way.
     const which = Number(given.match(/^\s*PLACE\s*:?\s*#?(\d+)\s*\n/i)?.[1] || 0), words = given.replace(/^\s*PLACE\s*:?\s*#?\d+\s*\n/i, '');
@@ -435,6 +467,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     if (places.length === 1) return places[0];
     if (which >= 1 && which <= places.length) return places[which - 1];
     if (places.length > 1) return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" stands in ${places.length} places${file in state.files ? ` in ${file}` : ''}.\n${places.slice(0, 8).map((found, at) => `— PLACE ${at + 1}, ${found.file}: "${found.sentence.slice(0, 220)}${found.sentence.length > 220 ? '…' : ''}"`).join('\n')}\nQuote a little more of the one you mean; or, if the same words stand more than once and you mean one of them, put a first line above them saying which, like PLACE: 2.`;
+    if (doing === 'changed') { const passage = nearPassage(state.files, scope, words); if (passage) { loose = true; return passage; } }
     const near = nearestTo(state.files, scope, words);
     return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'} as you quoted it.${near.length ? ` The lines nearest to it:\n${shown(near)}\nQuote the words as they stand.` : ''}`;
   };
@@ -492,6 +525,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
     const other = elsewhere(state.files, written, now.trim() ? after : found.sentence, `${found.sentence} ${about} ${day}`);
     const also = other.length ? `\n\nElsewhere the book speaks of the same day, hour, number or name (your own lines; nobody has judged them):\n${shown(other)}` : '';
+    // Found by likeness, not word for word: the author is shown in full what was taken as the place.
+    if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
     if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${also}${twice(now, found.file)}`;
     return `Changed in ${found.file}, at the one place: ${out} words taken out, ${put} put in.\nTaken out: "${ends(text.slice(found.from, found.to).trim())}"\n${put ? `Put in: "${ends(now.trim())}"` : 'Nothing put in.'}${beside()}${twice(now, found.file)}`;
   }
@@ -628,7 +663,8 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
     // with its book whole and two calls left, gave twelve answers running that each took "one free look, then I close",
     // and never closed: free, a look had become a way of not deciding. From the third in a row a look costs a call like
     // any other answer, and the author is told how many times running it has only looked.
-    const looked = steps.length > 0 && (onlyLooked || steps.every(step => step.tool === 'find'));
+    // A change or a plant that found no one place did nothing but show where the words stand: it is a look.
+    const looked = steps.length > 0 && (onlyLooked || steps.every((step, at) => step.tool === 'find' || (['change', 'edit', 'plant'].includes(step.tool) && /^Nothing was (changed|set in)/.test(told[at] || ''))));
     desk.look_streak = looked ? (desk.look_streak || 0) + 1 : 0;
     if (looked && desk.look_streak <= 2 && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
     else if (looked) told.push(`This is the ${desk.look_streak}${desk.look_streak === 3 ? 'rd' : 'th'} answer running in which you have only looked. Two looks in a row are free; from the third, an answer that only looks costs a call like any other, and this one did. You have ${desk.budget - desk.spent} left.`);

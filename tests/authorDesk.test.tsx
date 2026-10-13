@@ -350,6 +350,20 @@ describe('the desk', () => {
     desk.files['chapter-6.md'] = ''; desk.files['chapter-5.md'] = ''; desk.spent = 23;
     expect(deskView(desk, 6, '')).toContain('You have 1, which is fewer than the chapters still to write.');
   });
+  it('finds the passage a long quotation is plainly of when a word or a clause of it is off, and shows what it took', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    const page = 'It rained. She had spent the night in the office, on the small couch under the window, with the box at her feet and the notebook on her chest. In the morning she made coffee.\n\nMy hand found the outside pocket, and inside it was the key card for room 412, the one I had used that morning, the one I always carried, and I stood there holding it. Then I left.';
+    desk.files['chapter-1.md'] = page; desk.files['chapter-2.md'] = 'Nobody came on Friday and the office stayed shut all day long.';
+    const change = (content: string) => takeStep(desk, readStep(step('Fix.', 'change', 'chapter-1.md', content)), 2, ask);
+    // A wrong first word: the place begins with its sentence.
+    const one = await change('I had spent the night in the office, on the small couch under the window, with the box at her feet and the notebook on her chest.\n===\nShe had not slept.');
+    expect(one).toContain('The words did not stand exactly as you quoted them'); expect(one).toContain('Taken out: "She had spent the night in the office'); expect(desk.files['chapter-1.md']).toContain('It rained. She had not slept. In the morning she made coffee.');
+    // A clause dropped from the middle of the quotation.
+    const two = await change('inside it was the key card for room 412, the one I always carried, and I stood there holding it\n===\ninside it was nothing at all');
+    expect(two).toContain('Changed in chapter-1.md'); expect(desk.files['chapter-1.md']).toContain('My hand found the outside pocket, and inside it was nothing at all. Then I left.');
+    // Words that are simply not there change nothing, and that answer is a look.
+    expect(await change('A whole sentence about a garden party on the lawn that the page never had at all\n===\nGone.')).toContain('Nothing was changed');
+  });
   it('sets a thing in after the paragraph the author quotes, wherever in it the words stand', async () => {
     const desk = newDesk(2); const ask = async () => '';
     desk.files['chapter-1.md'] = 'She locked the drawer and stood a moment.\n\nShe went to bed.'; desk.files['chapter-2.md'] = 'She went to bed early.';
