@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ENVELOPE, KEEP_AT, around, labelsFor, listedThings, mentions, sceneOf, sideBySide, type LabelRequest } from '../utils/novel/v3/envelope';
 import { newDesk, takeStep } from '../utils/novel/v3/authorDesk';
+import { deskTabs } from '../utils/novel/v3/deskTabs';
 
 describe('the sealed envelope', () => {
   it('reads the things the author listed at the foot of its envelope', () => {
@@ -49,6 +50,20 @@ describe('the sealed envelope', () => {
     await write('chapter-2.md', 'The second day came. Nora opened the drawer and found it empty.');
     expect(await write(ENVELOPE, 'Something else again.')).toContain('sealed');
     expect(desk.files[ENVELOPE]).toBe('Something else happened.');
+  });
+
+  it('is read once, unasked, by someone who asks what it leaves open, before anything is written to it', async () => {
+    const desk = newDesk(4); const scene = `${'Claire came in by the side door and put the card on the nightstand. '.repeat(10)}\n\nTHINGS\nthe card`;
+    let read = '', readers = 0;
+    const ask = async (kind: string, prompt: string) => { if (kind !== 'reader') throw new Error('no network'); readers++; desk.spent++; read = prompt; return 'Who signed for the room that night?'; };
+    const write = (file: string, content: string) => takeStep(desk, { thought: '', tool: 'write', file, name: '', content }, 4, ask as never);
+    const told = await write(ENVELOPE, scene);
+    expect(told).toContain('has read your envelope'); expect(told).toContain('Who signed for the room that night?'); expect(told).toContain('That cost one call');
+    expect(read).toContain('side door'); expect(read).not.toContain('THINGS');
+    // Once: writing the envelope again brings nobody.
+    expect(await write(ENVELOPE, scene + ' She signed as Nora.')).not.toContain('has read your envelope'); expect(readers).toBe(1);
+    const tab = deskTabs(desk).find(item => item.name === 'Envelope')!;
+    expect(tab.text).toContain('Who signed for the room that night?'); expect(deskTabs(desk).find(item => item.name === 'Characters')!.count).toBe(0);
   });
 
   it('does nothing when the envelope is empty, lists no things, or the network cannot be reached', async () => {

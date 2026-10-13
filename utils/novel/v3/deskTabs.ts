@@ -12,7 +12,8 @@ const quote = (text: string) => text.trim().split('\n').map(line => `> ${line}`)
 export function deskTabs(desk: DeskState): DeskTab[] {
   const readers = desk.answers.filter(answer => /^a (reader|listener)\b/.test(answer.who));
   const keeper = desk.answers.filter(answer => answer.who === 'the keeper');
-  const people = desk.answers.filter(answer => !readers.includes(answer) && !keeper.includes(answer));
+  const asked = desk.answers.filter(answer => answer.who.startsWith('an investigator'));
+  const people = desk.answers.filter(answer => !readers.includes(answer) && !keeper.includes(answer) && !asked.includes(answer));
   const none = (what: string) => `*${what}*`;
   const tabs: DeskTab[] = [
     { name: 'Reader', count: readers.length, text: readers.map(answer => `### Step ${answer.step} · ${answer.who}${answer.about ? `, through ${answer.about}` : ''}\n\n${answer.asked?.trim() ? `**The author asked**\n\n${quote(answer.asked)}\n\n` : ''}**${answer.who.startsWith('a listener') ? 'The listener' : 'The reader'}**\n\n${answer.text.trim()}${answer.stale ? `\n\n*The author has changed ${answer.about} since this was said.*` : ''}`).join('\n\n---\n\n') || none('The author has not asked a reader yet, and nobody has read the book.') },
@@ -28,7 +29,7 @@ export function deskTabs(desk: DeskState): DeskTab[] {
       return said.length > 1 ? `### ${thing.thing}\n\n${said.join('\n')}` : '';
     }).filter(Boolean);
     tabs.splice(4, 0, { name: 'Envelope', count: lines.length, text: desk.files[ENVELOPE]?.trim()
-      ? `## What really happened\n\n${desk.files[ENVELOPE].trim()}${lines.length ? `\n\n---\n\n## What the book says of the things it turns on\n\n${lines.join('\n\n')}` : ''}`
+      ? `## What really happened\n\n${desk.files[ENVELOPE].trim()}${asked.length ? `\n\n---\n\n## What someone who checks such accounts asked of it\n\n${asked.map(answer => answer.text.trim()).join('\n\n')}` : ''}${lines.length ? `\n\n---\n\n## What the book says of the things it turns on\n\n${lines.join('\n\n')}` : ''}`
       : none('The author has not written down what really happened.') });
   }
   return tabs;

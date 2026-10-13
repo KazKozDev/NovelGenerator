@@ -49,6 +49,8 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold'; at: string; text: string }[];
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
+  /** Whether the envelope has been read, once, by someone who asked what it leaves open. */
+  told_envelope?: boolean;
   /** How many times each chapter has been written again after its first draft: once is allowed, and no more. */
   rewrites?: Record<string, number>;
   /** How many times, with the whole book written, the author has tried to change what can no longer be changed. */
@@ -102,7 +104,7 @@ ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
 YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. The book moves forward: a chapter is yours to write again while it is the last one written, and when you begin the next it goes to the typesetter and stands as it is. What a later chapter needs from an earlier one is sown there with plant. Write the book in English.
 
-YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; ${files.includes(ENVELOPE) ? `${ENVELOPE} for the scene the reader is not shown until the end — what was really done, by whose hands, with which things, through which door, at what hour — written as a scene, moment by moment, not as notes, and ending with a line that says THINGS and under it, one to a line, the few things the scene hangs on, each by the plain word a page would call it (the key, the side door, the glass); it is sealed when the second chapter is begun, and with each chapter you get back what that chapter says of those things, beside what the envelope says; ` : ''}and one file per chapter. Your files: ${files.join(', ')}.
+YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; ${files.includes(ENVELOPE) ? `${ENVELOPE} for the scene the reader is not shown until the end — what was really done, by whose hands, with which things, through which door, at what hour — written as a scene, moment by moment, not as notes, and ending with a line that says THINGS and under it, one to a line, the few things the scene hangs on, each by the plain word a page would call it (the key, the side door, the glass); when you first write it, someone whose work is to make such an account stand up reads it and asks what it leaves open, at the cost of one call; it is sealed when the second chapter is begun, and with each chapter you get back what that chapter says of those things, beside what the envelope says; ` : ''}and one file per chapter. Your files: ${files.join(', ')}.
 
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
@@ -211,6 +213,19 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       return lines ? `\n${turning ? 'The things your envelope names, as the book has them now that only the ending is left' : 'What this chapter says of the things your envelope names, beside what was said before'} (your own lines; nobody has judged them):\n${lines}` : '';
     } catch (error) { if (!state.journal.some(line => line.includes('could not be gathered'))) state.journal.push(`${state.step}. the lines about the envelope's things could not be gathered: the small network did not answer (${String(error instanceof Error ? error.message : error).slice(0, 100)})`); return ''; }
   };
+  // The envelope is read once, unasked, by someone whose work is to make such an account stand up, while it can still
+  // be written again. One book's envelope said the card was "the one Nora had signed for" on a night Nora was not there,
+  // took it from a pocket it had no way into, and let the man die of being "told the truth"; the chapters were faithful
+  // to it, and a reviewer listed every one of those as a hole. The chapters are set beside the envelope; nobody had read
+  // the envelope itself. Questions only: what is done about them is the author's.
+  const questioned = async (): Promise<string> => {
+    if (file !== ENVELOPE || state.told_envelope || count(sceneOf(state.files[ENVELOPE] || '')) < 80 || state.budget - state.spent < 2) return '';
+    const said = await ask('reader', `${sceneOf(state.files[ENVELOPE]).trim()}\n\n---\nThat is an account of what really happened in a novel: the thing its reader is not shown until the end, set down by the one who knows. Your work is to make such an account stand up. In under 180 words, ask what it does not answer and anyone checking it would ask: who was where, and when; how each thing came to be where it is found; who signed, paid, opened or carried what; what exactly was done and what it did; who knew what beforehand; why suspicion would fall where the account wants it to. Questions only, one to a line, the hardest first. If it leaves nothing open, say so in one sentence.`,
+      'You have spent twenty years finding out what happened in rooms where nobody would say. You ask questions. You never suggest an answer and you never say how a story should go.');
+    state.told_envelope = true; state.answers.push({ who: 'an investigator who read the envelope', step: state.step, about: '', text: said });
+    state.journal.push(`${state.step}. someone who checks such accounts read the envelope and asked what it leaves open`);
+    return `\n\nSomeone whose work is to make such an account stand up has read your envelope, and asks:\n${said}\n\nThat cost one call; you have ${state.budget - state.spent} left. The envelope is yours to write again until ${chapterNames[Math.min(1, chapters - 1)]} is begun, and what you do about any of this is yours to decide.`;
+  };
   const changed = () => { if (isChapter) for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(file)) answer.stale = true; };
 
   // Not a check and not advice: what a reader who has just closed the book is still holding.
@@ -268,8 +283,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       state.rewrites = { ...(state.rewrites || {}), [file]: done + 1 };
     }
   }
-  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
-  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}`; }
+  if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}${await questioned()}`; }
+  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await beside()}${await whole()}${await questioned()}`; }
   if (tool === 'plant') {
     // A plant sows for a chapter still to be written. One book set four things into its chapters after the last was
     // written, to answer a reader, and three of them showed: a pen bagged by a detective that lay in her kitchen that
@@ -393,6 +408,8 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       // the phrases worn thin, whoever speaks unasked — is seen before the next one is written. Several chapters in
       // one answer were written blind and cost one call for all of them, which is why the author took to it.
       if ((step.tool === 'write' || step.tool === 'append') && at >= 0 && index < steps.length - 1) { told.push(`A chapter is the last step of an answer: the ${steps.length - 1 - index} step(s) you wrote after ${step.file} were not carried out, because you had not seen what came back with it.`); break; }
+      // The envelope's questions are seen before anything is written to it.
+      if (step.file === ENVELOPE && told.at(-1)?.includes('has read your envelope') && index < steps.length - 1) { told.push(`The ${steps.length - 1 - index} step(s) you wrote after the envelope were not carried out, because you had not seen what was asked of it.`); break; }
       if (desk.finished) break;
     }
     // A whole book whose author has twice been told that nothing more can be changed is finished: one such author
