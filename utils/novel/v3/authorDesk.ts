@@ -570,8 +570,9 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // The day the scene stands in is the last one named before the place, however far up the chapter that was.
     const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
     // The author's notes are its own words too: what its envelope and dossier say of the thing stands beside what the chapters say.
-    const own = [...written, ...NOTES.filter(name => name !== 'notebook.md' && name !== found.file && state.files[name]?.trim())];
-    const other = elsewhere(state.files, own, found.sentence, now.trim() ? after : '', `${about} ${day}`);
+    // The notes are looked through on their own, so that a book of many lines does not crowd out the few lines of the envelope.
+    const own = NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && name !== found.file && state.files[name]?.trim());
+    const other = [...elsewhere(state.files, written, found.sentence, now.trim() ? after : '', `${about} ${day}`, 6), ...elsewhere(state.files, own, found.sentence, now.trim() ? after : '', `${about} ${day}`, 4)];
     const also = other.length ? `\n\nElsewhere the book speaks of what you have just touched (your own lines; nobody has judged them):\n${shown(other)}` : '';
     // Found by likeness, not word for word: the author is shown in full what was taken as the place.
     if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
@@ -591,7 +592,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
-    note(`planted in ${found.file}`); const touched = elsewhere(state.files, [...written, ...NOTES.filter(name => name !== 'notebook.md' && state.files[name]?.trim())], '', what.trim(), '');
+    note(`planted in ${found.file}`); const touched = [...elsewhere(state.files, written, '', what.trim(), '', 6), ...elsewhere(state.files, NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && state.files[name]?.trim()), '', what.trim(), '', 4)];
     return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere the book speaks of what you have just set in (your own lines; nobody has judged them):\n${shown(touched)}` : ''}${twice(what, found.file)}`;
   }
   if (tool === 'ask_keeper') {
