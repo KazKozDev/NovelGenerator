@@ -194,13 +194,9 @@ describe('ThreeZoneGenerationView', () => {
 });
 
 describe('The agent log', () => {
-  it('names the step instead of quoting its prompt', () => {
-    expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Designing the book');
-    expect(stepName('Prepare a compact book construction. Generate exactly THREE')).toBe('Exploring book plans');
-    expect(stepName('Compare three candidate plans')).toBe('Choosing the book plan');
-    expect(stepName('Prepare a compact book construction. Crystallize the approved short plan')).toBe('Developing the story structure');
-    expect(stepName('Prepare a compact book construction. Crystallize the approved structure')).toBe('Developing the chapter map');
-    expect(stepName('Check whether the provided plan is ready for writing.')).toBe('Reviewing the plan');
+  it('shortens an unlabelled prompt', () => {
+    expect(stepName('Some prompt nobody has mapped yet')).toBe('Some prompt nobody has mapped yet');
+    expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Prepare a compact book construction suitable for subsequent');
   });
 
   it('titles a book by its design, and cuts a fallback premise at a word', () => {
@@ -232,13 +228,6 @@ describe('The agent log', () => {
     expect(elapsedLabel(60 * 60 * 1000)).toBe('1 h');
     expect(elapsedLabel(72 * 60 * 1000)).toBe('1 h 12 min');
     expect(elapsedLabel(-5)).toBe('');
-    expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
-    expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
-    expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');
-    expect(stepName('Refine the forward plan based on the actually written chapter.')).toBe('Closing the chapter');
-    expect(stepName('Check the integrity of the finished book.')).toBe('Auditing the finished book');
-    // Anything unrecognised is shown as itself, shortened, rather than as nothing.
-    expect(stepName('Some prompt nobody has mapped yet')).toBe('Some prompt nobody has mapped yet');
   });
 });
 it('renders saved before/after edits immediately after mounting the workspace', () => {

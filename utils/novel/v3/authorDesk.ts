@@ -3,6 +3,7 @@ import type { SimilarRequest } from './similar';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import type { ProjectStore } from '../v2/store';
 import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author';
+import { dramaticLedger, dueInChapter, missingShape, openDebts, syncDrama, type Held } from './drama';
 
 /**
  * The author at its desk, working as it sees fit.
@@ -30,6 +31,7 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  * - writing a chapter brings back what code can count: the turns of phrase the book has worn
  *   out, and the days and hours this chapter names beside those the earlier ones named, and
  *   the ages and spans of time it names beside theirs.
+ * - drama.md names what the book owes, in lines code can count: the turn of each act, the question and its answer, the stake, the guns, the protagonist's last act. Code divides the chapters into three acts. A gun already on the page stays owed if its line is later deleted. Nothing tells the author when to write the file.
  * - the plan says, for each chapter, what the reader learns in it for the first time. A plan of events let one book
  *   tell its reader everything in the fourth chapter of seven and then spend three chapters on a woman understanding
  *   it, being told it, and being told it again: three different events, and nothing new in any of them.
@@ -38,7 +40,7 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   which thing — and not as prose. It was asked for as a scene, and a scene is what authors wrote: finished pages in a
  *   character's voice, which one of them then set into its fourth chapter and again, the same sentences, into its
  *   seventh, at an hour of the day the chapters around it did not have. The envelopes of the books that held were
- *   clocks already: "4:02 the clerk comes on shift. 4:20 he signs the guarantee. 5:15 he lets himself in." Nothing is
+ *   clocks already: one line to an hour, who is where, with which thing. Nothing is
  *   done with it — no seal, no list, nobody set to read it: with those the author followed a procedure and stopped
  *   asking. The file alone is kept because of what the books say without it. Reader after reader of a finished book
  *   says the same thing: "I still don't know what happened in that room", and the author then writes its last chapter
@@ -52,8 +54,7 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *   has asked before, it is told so, in its own steps: which ones brought it here, how the chapter changed each time,
  *   how many calls are left. What it does then is its own decision.
  * - once, as the last chapter is about to be written, a reader of the book so far says what they are holding — what
- *   was promised and not given yet. One book raised the question of who knew the day of five deaths and never
- *   came back to it; another forged the heroine's own will and then forgot the threat.
+ *   was promised and not given yet. A question raised and never returned to is still open.
  * Nothing here tells it what to do next. What is kept from the later versions is only what
  * informs it: an answer from a reader or a character stays on the desk until it is no longer
  * about the text as it stands, and says so when it is not; the journal of its own steps is
@@ -77,6 +78,14 @@ export interface DeskState {
   looks?: Record<string, { steps: number[]; count: number; sight: string }>;
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
+  /** Whether the clock has been read for lines that cannot both be true. */
+  detective_audited?: boolean;
+  /** Whether the author has been warned on saying done about reader contradictions that do not add up. */
+  done_warned?: boolean;
+  /** Obligations counted from drama.md, including any already on the page and then deleted from the file. */
+  drama?: Held[];
+  /** Whether the author has been shown, once, which of those obligations the finished book has not met. */
+  drama_warned?: boolean;
   /** How many times the author has been shown each round it was going: it is shown again only when the round has grown. */
   shown_rounds?: Record<string, number>;
   /** How many readers each chapter has had: the next one costs more. */
@@ -89,7 +98,7 @@ export interface DeskState {
 }
 
 export const chapterFile = (n: number): string => `chapter-${n}.md`;
-const NOTES = ['notebook.md', 'dossier.md', 'plan.md', 'envelope.md'];
+const NOTES = ['notebook.md', 'dossier.md', 'plan.md', 'envelope.md', 'drama.md'];
 const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const field = (text: string, name: string) => text.match(new RegExp(`^\\**${name}\\**\\s*:\\**\\s*(.*)$`, 'mi'))?.[1].trim() || '';
 
@@ -116,14 +125,16 @@ export function readSteps(answer: string): ReturnType<typeof readStep>[] {
   return begins.map((at, index) => readStep(answer.slice(at, begins[index + 1] ?? answer.length).trim())).filter(step => step.tool);
 }
 
-const voice = (input: ProjectInput, words: number, files: string[]): string => `You are the author of a ${input.genre || 'novel'} that is meant to sell: a book a stranger opens in a shop and cannot put back. It is your book. Nobody will tell you how to work, and nobody will check your work or correct it: what is on your desk when your budget runs out is what gets printed.
+const voice = (input: ProjectInput, words: number, files: string[]): string => `You are the author of a ${input.genre || 'novel'} that is meant to sell: a book a stranger opens in a shop and cannot put back. It is your book. Nobody will tell you how to work. What you name as a debt is counted against the pages: while calls remain, a named debt that is not on the page keeps the book from closing.
 
 THE PREMISE YOU WERE GIVEN:
 ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
 YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. Every chapter is yours for as long as you have calls: you may go back to any of them. Write the book in English.
 
-YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story, chapter by chapter, each with one line that says what the reader learns in it for the first time; envelope.md for what really happened, which the reader is not told until the end, kept as a clock and not as prose — one line to an hour: the time, who is where, what they do and with which thing — and yours to write again like any other file; and one file per chapter. Your files: ${files.join(', ')}.
+YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story, chapter by chapter, and a line LEARN N: for what the reader learns in chapter N for the first time; envelope.md for what really happened, which the reader is not told until the end, kept as a clock and not as prose — one line to an hour: the time, who is where, what they do and with which thing; drama.md for what the book owes the reader, one obligation to a line, which code counts against the chapters and will not forget; and one file per chapter. Your files: ${files.join(', ')}.
+
+drama.md and plan.md are both read for obligations. A line is one debt. The words after the bar are what the chapter has to have on its page. TURN 1, TURN 2, TURN 3: the words of that act's turn, inside the act. STAKE 1, STAKE 2, STAKE 3: what can be lost, a vertical bar, the loss when it has become real, each stake inside its own act and heavier than the one before. QUESTION: the words that ask it, a bar, the words that answer it. GUN: the words that set a thing down, a bar, the words of its use, a bar, the chapter it is set down by, a bar, the chapter it is used by. The use is the second half of the line, in a later chapter. FALSE: the win that will not hold, a bar, the cost that follows it. IRONY: what the reader is shown, a bar, what a character still believes, a bar, the correction, and the correction is the last chapter's ending. WANT: what the protagonist pursues. NEED: what it actually costs, in different words from WANT. DECISIVE: the protagonist's own last act, in the last chapter. LEARN N: what chapter N tells the reader for the first time, in plan.md or here. A clock line in envelope.md is owed by the last chapter alone. That chapter agrees with who was where, at that hour, with that thing. An earlier chapter is not held for it, and copying the line onto the page does not discharge it. A plant set into a chapter is owed until a later chapter uses it. When a debt and the page almost meet, the count names the nearest sentence and the words still missing. A gun whose words are already in a chapter stays owed if you later take its line out of the file. Writing a debt again in other words does not move it: the first wording is what the page owes. A chapter is not stored while any of these lines is missing. done does not close the book while a named debt is still open and calls remain.
 
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
@@ -136,10 +147,10 @@ the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
 - change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line, or for a whole paragraph written again: when a passage needs something new in it — a reason, a memory, an exchange — quote the paragraph and write it again with the new matter inside it, so that the lines around it are written with it and it reads as one piece. What a chapter does is changed by writing the chapter again.
-- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence, and beside them the lines that say something like it in other words, in the book and in your notes: you can look for a thing by what it means ("where Claire was that afternoon"). The content is the word, phrase or thing; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
+- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence, and beside them the lines that say something like it in other words, in the book and in your notes: you can look for a thing by what it means. The content is the word, phrase or thing; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
 - plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
 - plant: sets one small thing into a chapter already written, for another chapter to pay off: a thing on a table, a single line someone says, a glance. It goes in between two paragraphs that were written to follow one another and touches neither, so it is for what can stand alone in a sentence or two, at most 50 words; anything that explains, or that the lines after it must answer, is done with change. The content is a few words of the paragraph it goes after, quoted as they stand, then a line containing only ===, then the new text.
-- ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it: a detective told how the thing was done will say what does not hold.
+- ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
 - more: once in the book, three calls beyond your budget, for the asking. The content says what they are for. Asking costs nothing, and it can be done even when your budget has reached zero.
@@ -198,15 +209,31 @@ export function whereYouAre(state: DeskState, chapters: number): string {
   return `${where}\nWHAT IS LEFT: ${ahead}${prices}${right}`;
 }
 
+const waitingOf = (state: DeskState): { text: string; afterChapter: number } | undefined => {
+  const answer = [...state.answers].reverse().find(item => item.who.startsWith('a reader') && !item.stale && /WAITING FOR:/i.test(item.text));
+  if (!answer) return undefined;
+  const text = (answer.text.split(/SLIPPED:/i)[0] || '').replace(/WAITING FOR:/i, '').trim();
+  const afterChapter = Number(answer.about.match(/chapter-(\d+)/)?.[1] || 0);
+  return text ? { text, afterChapter } : undefined;
+};
+
+/** Recount debts from the files, the plants and the latest reader. */
+export function recount(state: DeskState, chapters: number) {
+  const shape = syncDrama(state.files, chapters, state.drama, { inserts: state.inserts, waiting: waitingOf(state) });
+  state.drama = shape.held;
+  return shape;
+}
+
 /** Everything the author sees before it decides its next step. */
 export function deskView(state: DeskState, chapters: number, result: string): string {
+  const shape = recount(state, chapters);
   const unwritten = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1)).filter(name => !state.files[name]?.trim());
   const left = state.budget - state.spent;
   return (result ? `RESULT OF YOUR LAST TOOL:\n${result}\n\n` : '')
     + `YOUR DESK NOW:\n${Object.entries(state.files).map(([name, text]) => `===== ${name} (${count(text)} words) =====\n${text || '(empty)'}`).join('\n\n')}`
     + `\n\nWHAT READERS AND CHARACTERS HAVE TOLD YOU (latest last):\n${state.answers.length ? state.answers.slice(-6).map(answer => `[${answer.who}, at step ${answer.step}${answer.about ? `, about ${answer.about}` : ''}${answer.stale ? ` — YOU HAVE CHANGED ${answer.about} SINCE: this was said of the text as it was then` : ''}]\n${answer.text}`).join('\n\n') : '(nothing yet)'}`
     + `\n\nYOUR STEPS SO FAR:\n${state.journal.length ? state.journal.slice(-40).join('\n') : '(nothing yet)'}`
-    + `\n\nBUDGET LEFT: ${left} of ${state.budget} calls.${unwritten.length ? ` Not yet written: ${unwritten.join(', ')}.` : ' Every chapter has text.'}\n${whereYouAre(state, chapters)}\nYour next answer, in the form given:`;
+    + `\n\nBUDGET LEFT: ${left} of ${state.budget} calls.${unwritten.length ? ` Not yet written: ${unwritten.join(', ')}.` : ' Every chapter has text.'}\n${whereYouAre(state, chapters)}\n\nWHAT THE BOOK OWES, COUNTED:\n${dramaticLedger(chapters, shape.held, shape.unread)}\nYour next answer, in the form given:`;
 }
 
 /**
@@ -226,18 +253,12 @@ const stem = (word: string) => word.replace(/(?:'s|ing|ed|es|s)$/, '');
  * Whatever the author has just touched, everything else the book says of it. Not a rule for days and another for
  * things: what was touched is read off the change itself — the words that came in and went out, the words of the line
  * they stand in, the day its scene stands in — and every other line of the book that speaks of the same is set where
- * the author can see them together, its notes among them: the envelope and the dossier are its own words too. One
- * author's envelope had the wife enter the hotel at 12:10 and leave by the back stairs at 2:55; in the last chapter it
- * had her say she never went in, and when a reader doubted that, it gave her a neighbour and a camera to prove it.
- * Nobody says the lines disagree.
- *
- * One author changed "found that morning" to "the next morning" and stopped; two lines away the hotel had telephoned
- * "on a Tuesday morning", and a chapter on a detective asked about "Tuesday afternoon, the afternoon he died". Another
- * spent nineteen steps on a scarf that stood in twenty-eight places in five chapters, changing one line at a time and
- * never seeing the others: its own, then stolen from her coatrack, then worn by the other woman a page later.
+ * the author can see them together, its notes among them: the envelope and the dossier are its own words too.
+ * A line in the clock and a later line that denies it are both shown. A day changed in one sentence is shown beside
+ * every other line that names that day. A thing named many times is shown in every place it stands.
  */
 export function elsewhere(files: Record<string, string>, names: string[], was: string, is: string, around: string, most = 8): Place[] {
-  // A chapter is read by the sentence; a note by the line, as it was set down: "2:55 p.m. — she leaves by the back stairs" is one thing.
+  // A chapter is read by the sentence; a note by the line, as it was set down.
   const all = names.flatMap(file => (files[file] || '').split(/^chapter-/.test(file) ? lineBreaks : /\n+/).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
   const has = (line: string, word: string) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s|s|es|ed|ing)?\\b`, 'i').test(line);
   const lines = (word: string) => all.filter(item => has(item.sentence, word)).length;
@@ -245,7 +266,7 @@ export function elsewhere(files: Record<string, string>, names: string[], was: s
   const calendar = (word: string) => /day$|^(january|february|march|april|may|june|july|august|september|october|november|december)$|^\d{1,2}[:.]\d{2}$/.test(word);
   const before = content(was), after = content(is), beside = new Set([...anchorsOf(around), ...content(around)]);
   // What came in or went out weighs most; what stayed in the touched line next; what stands beside it least. A word
-  // that stands in a great many lines — the heroine's name, the Thursday of a book about Thursdays — tells nothing.
+  // that stands in a great many lines tells nothing.
   const weight = new Map<string, number>();
   for (const word of beside) weight.set(word, calendar(word) ? 2 : 0.5);
   for (const word of [...anchorsOf(was), ...anchorsOf(is)]) weight.set(word, calendar(word) ? 3 : 2);
@@ -259,10 +280,8 @@ export function elsewhere(files: Record<string, string>, names: string[], was: s
 }
 
 /**
- * The words a chapter leans on that no earlier chapter has: said three times or more here, never before. One book's
- * third chapter turned on a key left "under the lamp, where she always leaves it"; the lamp was named seven times in
- * that chapter and not once in the two before, and a reviewer said the proof arrived with its explanation. Code
- * counts; a new word is not a fault. People's names are left out: a new person is plain to see.
+ * The words a chapter leans on that no earlier chapter has: said three times or more here, never before.
+ * Code counts; a new word is not a fault. People's names are left out: a new person is plain to see.
  */
 export function newWords(chapter: string, earlier: string[], most = 8): string[] {
   const before = new Set((earlier.join('\n').toLowerCase().match(/[a-z']{4,}/g) || []).map(stem));
@@ -460,7 +479,51 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     note(`asked for three more calls: ${why.slice(0, 160)}`);
     return `Three more calls are yours: you now have ${state.budget - state.spent}. You asked for them for: ${why.slice(0, 300)}. There are no others after these.`;
   }
+  const detectiveReview = async (): Promise<string> => {
+    if (state.detective_audited) return '';
+    const envelope = state.files['envelope.md'] || '';
+    if (count(envelope) < 25) return '';
+    state.detective_audited = true;
+    const dossier = state.files['dossier.md'] || '', plan = state.files['plan.md'] || '';
+    const materials = `=== ENVELOPE (what really happened) ===\n${envelope}${dossier ? `\n\n=== DOSSIER ===\n${dossier}` : ''}${plan ? `\n\n=== PLAN ===\n${plan}` : ''}`;
+    const prompt = `${materials}\n\n---\nRead this clock as the hidden facts of this book, whatever kind of book it is. In under 180 words, name the places where two of its lines cannot both be true: who is where, what they have, what they could know, and whether one hour contradicts another. Quote the lines. Do not add a person, a place, or an event the clock does not contain.`;
+    const persona = 'You check a story\'s hidden facts for contradiction. You do not give writing advice and you do not supply a plot.';
+    try {
+      const said = (await ask('character', prompt, persona)).trim();
+      if (said) {
+        state.answers.push({ who: 'a reading of the clock', step: state.step, about: 'envelope.md', text: said });
+        state.journal.push(`${state.step}. the clock was read for lines that cannot both be true`);
+        return `\n\nThe clock has been read against itself. These lines do not agree:\n${said}`;
+      }
+    } catch {
+      // Continue smoothly if detective call throws
+    }
+    return '';
+  };
+
   if (tool === 'done') {
+    const shape = recount(state, chapters);
+    const missing = missingShape(shape.held, chapters);
+    const open = openDebts(shape.held);
+    if ((missing.length || open.length) && state.budget - state.spent > 0) {
+      note('done: the book still owes');
+      return `The book stays open. Calls remain (${state.budget - state.spent}), and these debts are not on the page yet:\n${[...missing.map(item => `— missing ${item}`), ...open.map(item => `— ${item}`)].join('\n')}\n\nA line that was never set down can be taken out of drama.md or plan.md. A line already on the page stays owed until the page discharges it. When no calls remain, done prints the book with the debts in the report.`;
+    }
+
+    const unaddressedGaps = state.answers
+      .filter(a => a.who.startsWith('a reader') && !a.stale)
+      .map(a => {
+        const gap = (a.text.split(/DOES NOT ADD UP:/i)[1] || '').trim();
+        return gap && !/^\W*nothing\b/i.test(gap) ? { about: a.about || 'earlier', gap } : null;
+      })
+      .filter(Boolean) as { about: string; gap: string }[];
+
+    if (!state.done_warned && unaddressedGaps.length > 0) {
+      state.done_warned = true;
+      note('done: warned of open contradictions');
+      return `Before the book is closed, a reader noticed things that do not add up:\n${unaddressedGaps.map(item => `— In ${item.about}: ${item.gap}`).join('\n')}\n\nYou have ${state.budget - state.spent} calls left. You may fix them now with change or plant. Say done again to print the book as it stands.`;
+    }
+
     const told = await hanging('Before it goes to the printer, a reader who has just finished the book says what it left in their hands:');
     if (told) return `${told} Say done again and the book is printed as it stands.`;
     state.finished = true; note('done'); return '';
@@ -485,17 +548,24 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     for (const chapter of chapterNames.slice(0, chapterNames.indexOf(file))) for (const line of (state.files[chapter] || '').split(lineBreaks)) if (count(line) >= 12) earlierParts.set(flat(line), chapter);
     const again = [...new Map(state.files[file].split(lineBreaks).filter(line => count(line) >= 12).map(line => [flat(line), { part: line.trim(), chapter: earlierParts.get(flat(line)) || '' }] as const)).values()].filter(item => item.chapter);
     const leans = chapterNames.indexOf(file) > 0 ? newWords(state.files[file], chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => state.files[chapter] || '')) : [];
+    const shape = recount(state, chapters);
+    const owed = dueInChapter(shape.held, chapterNames.indexOf(file) + 1);
     return (/[.!?…"”’')\]—–-]\s*[*_]*$/.test(last.trim()) ? '' : ' It stops in the middle of a sentence.')
       + (here.length ? `\nDays, dates and hours it names: ${here.join(', ')}.${earlier.length ? ` Earlier chapters named — ${earlier.join(' | ')}.` : ''}` : '')
       + (spans.length ? `\nAges and spans of time it names: ${spans.join(', ')}.${spansBefore.length ? ` Earlier chapters named — ${spansBefore.join(' | ')}.` : ''}` : '')
       + (again.length ? `\n${again.length} of its sentences (${again.reduce((sum, item) => sum + count(item.part), 0)} words) already stand, word for word, in an earlier chapter: ${again.slice(0, 4).map(item => `${item.chapter}: "${item.part.replace(/\s+/g, ' ').slice(0, 90)}…"`).join('; ')}${again.length > 4 ? `; and ${again.length - 4} more` : ''}.` : '')
       + (leans.length ? `\nWords it leans on that no earlier chapter has: ${leans.join(', ')}.` : '')
       + (outside.length ? `\nIt speaks of "the reader" ${outside.length} time${outside.length === 1 ? '' : 's'}, from outside the story: ${outside.slice(0, 3).map(line => `"${line.length > 150 ? line.slice(0, 150) + '…' : line}"`).join('; ')}.` : '')
+      + (owed.length ? `\nWhat this chapter was due to settle, and has not:\n${owed.map(line => `— ${line}`).join('\n')}` : '')
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
-  if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${reflect(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
-  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
+  if ((tool === 'write' || tool === 'append') && isChapter) {
+    const missing = missingShape(recount(state, chapters).held, chapters);
+    if (missing.length) { note(`${tool} ${file}: the shape is missing`); return `${file} was not written. The shape of the book is not named yet:\n${missing.map(item => `— ${item}`).join('\n')}`; }
+  }
+  if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); const detectiveNote = (file === 'envelope.md' || file === 'chapter-1.md') ? await detectiveReview() : ''; return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${detectiveNote}${reflect(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
+  if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); const detectiveNote = (file === 'envelope.md' || file === 'chapter-1.md') ? await detectiveReview() : ''; return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}${detectiveNote}`; }
   // Every tool that touches the text at a place looks for the place first; and looking is a tool of its own.
   const written = chapterNames.filter(chapter => state.files[chapter]?.trim());
   const scope = file in state.files ? [file] : written;
@@ -518,7 +588,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   };
   // Search by meaning. Words find a word; they do not find the same thing said otherwise. "The clock ran four minutes
   // slow" and "a clock that ran a few minutes fast" share one word of substance; "I was here all afternoon" shares
-  // none with the envelope's "2:55 p.m. — she leaves by the back stairs". A small network measures how near each line
+  // none with a later line that says the same hour in other words. A small network measures how near each line
   // of the book is in meaning to what the author touched or asked for, and code shows the nearest. When the network
   // cannot be reached, undefined comes back and the search is by words, as before.
   const byMeaning = async (source: string, among: string[], most: number, floor: number, least: number, not: (line: string) => boolean = () => false): Promise<Place[] | undefined> => {
@@ -624,7 +694,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
     note(`planted in ${found.file}`); const { lines: touched, how } = await said('', what.trim(), '', '');
-    return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere you have spoken of what you just set in (your own lines, ${how}; nobody has judged them):\n${shown(touched, 10)}` : ''}${twice(what, found.file)}`;
+    const owed = recount(state, chapters).held.filter(item => item.kind === 'plant' && item.planted && !item.fired);
+    return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere you have spoken of what you just set in (your own lines, ${how}; nobody has judged them):\n${shown(touched, 10)}` : ''}${twice(what, found.file)}${owed.length ? `\n\nThat plant is now a debt until a later chapter uses it: ${owed.map(item => item.plant.slice(0, 80)).join('; ')}.` : ''}`;
   }
   if (tool === 'ask_keeper') {
     if (state.budget - state.spent < 1) { note('ask_keeper: no budget'); return 'There is no budget left for a second call.'; }
@@ -765,13 +836,15 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
   const unwritten = names.filter(name => !desk.files[name]?.trim());
   const total = names.reduce((sum, name) => sum + count(desk.files[name] || ''), 0);
   const lastReader = desk.answers.filter(answer => answer.who === 'a reader').at(-1);
+  const shape = recount(desk, chapters);
+  const open = [...missingShape(shape.held, chapters).map(item => `The shape is missing: ${item}`), ...openDebts(shape.held)];
   draft.completed = true; save();
   store.saveReport({
-    coverage: { material_examined: `${chapters - unwritten.length} of ${chapters} chapters, ${total} words, written by the author at its desk in ${desk.step} steps and ${desk.spent} calls.`, limitations: ['Nobody checked the book but the readers the author chose to ask.'] },
-    findings: unwritten.map(name => ({ category: 'completeness', severity: 'major', description: `${name} was not written before the budget ran out.`, evidence_refs: [], reader_impact: 'The book is incomplete.', certainty: 'counted' })),
-    central_resolution: { supported: !unwritten.length, evidence_refs: [], comment: lastReader ? `The last reader the author asked (through ${lastReader.about}): ${lastReader.text.slice(0, 600)}` : 'The author asked no reader.' },
-    unresolved_major_promises: [], need_more_evidence: [],
-    summary: `The book is written: ${chapters - unwritten.length} of ${chapters} chapters, ${total} words, in ${desk.step} steps.${desk.finished ? ' The author said it was done.' : ' The budget ran out.'}`,
-    status: unwritten.length ? 'COMPLETE_WITH_WARNINGS' : 'COMPLETE',
+    coverage: { material_examined: `${chapters - unwritten.length} of ${chapters} chapters, ${total} words, written by the author at its desk in ${desk.step} steps and ${desk.spent} calls.`, limitations: ['Nobody checked the book but the readers the author chose to ask, and the obligations the author named in drama.md.'] },
+    findings: [...unwritten.map(name => ({ category: 'completeness', severity: 'major', description: `${name} was not written before the budget ran out.`, evidence_refs: [], reader_impact: 'The book is incomplete.', certainty: 'counted' })), ...open.map(item => ({ category: 'promise', severity: 'major', description: item, evidence_refs: [], reader_impact: 'The book named this and did not meet it.', certainty: 'counted' }))],
+    central_resolution: { supported: !unwritten.length && !open.length, evidence_refs: [], comment: lastReader ? `The last reader the author asked (through ${lastReader.about}): ${lastReader.text.slice(0, 600)}` : 'The author asked no reader.' },
+    unresolved_major_promises: open, need_more_evidence: [],
+    summary: `The book is written: ${chapters - unwritten.length} of ${chapters} chapters, ${total} words, in ${desk.step} steps.${desk.finished ? ' The author said it was done.' : ' The budget ran out.'}${open.length ? ` ${open.length} named obligation${open.length === 1 ? '' : 's'} still open.` : ''}`,
+    status: unwritten.length || open.length ? 'COMPLETE_WITH_WARNINGS' : 'COMPLETE',
   } as FinalReport);
 }

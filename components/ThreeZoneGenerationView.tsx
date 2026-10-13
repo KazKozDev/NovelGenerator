@@ -1,5 +1,3 @@
-import type {RepairReport} from '../utils/novel/v2/repairPackage';
-import RepairProgressView from './RepairProgressView';
 import type {TokenTotals} from '../utils/tokenUsage';
 import React, { useState, useEffect, useMemo } from 'react';
 import { GenerationStep, ChapterGenerationStage, ChapterData, AgentLogEntry } from '../types';
@@ -39,7 +37,6 @@ export interface ThreeZoneGenerationViewProps {
   /** The prose of the call now in flight, as far as it has arrived. */
   liveDraft?: { label: string; text: string } | null;
   tokenTotals?:TokenTotals;
-  repairProgress?:RepairReport;
   autosaveStatus?: { state: 'saving' | 'saved' | 'error'; error?: string };
   lastSavedAt?: number | null;
   isResumable?: boolean;
@@ -65,7 +62,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   generatedChapters,
   agentLogs,
   liveDraft,
-  tokenTotals, repairProgress,
+  tokenTotals,
   lastSavedAt, autosaveStatus,
   version,
   onReset,
@@ -364,8 +361,6 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                   </div>
                 </div>
               </div>
-
-              {repairProgress && <RepairProgressView report={repairProgress} />}
 
               {/* Full Agent Activity Log */}
               {agentLogs.length > 0 ? (

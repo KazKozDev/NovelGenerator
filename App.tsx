@@ -43,7 +43,7 @@ const App: React.FC = () => {
     isResumable,
     agentLogs,
     liveDraft,
-    tokenTotals, repairProgress,
+    tokenTotals,
     lastSavedAt, autosaveStatus,
     exportProject,
     importProject,
@@ -149,21 +149,11 @@ const App: React.FC = () => {
             <span className="font-mono text-xs text-zinc-500">v4.2</span>
           </div>
           <div className="app-toolbar flex flex-wrap items-center gap-2">
-          <a href="/?live" className="h-7 text-xs px-3 py-1 border border-zinc-800 rounded">Live run</a>
-          <button type="button" disabled={isLoading || !storeReady} className="h-7 text-xs px-3 py-1 border border-zinc-800 rounded disabled:opacity-50" onClick={async () => {
-            try {
-              const response = await fetch('/api/live-book/project');
-              if (!response.ok) throw new Error('No saved CLI run is available');
-              const file = new File([await response.blob()], 'active-run.project.json', { type: 'application/json' });
-              await importProject(file);
-
-            } catch (error) { alert(`Load failed: ${error instanceof Error ? error.message : error}`); }
-          }}>Load active run</button>
           {saveControl}
           <button
             type="button"
             onClick={exportProject}
-            title="Download the whole project slot (§10): design, plans, scenes, memory, manuscript, report"
+            title="Download the project: the author's desk, the manuscript, the report and the log"
             className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Export project
@@ -258,7 +248,6 @@ const App: React.FC = () => {
             agentLogs={agentLogs}
             liveDraft={liveDraft}
             tokenTotals={tokenTotals}
-            repairProgress={repairProgress}
             lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus}
             isResumable={isResumable}
             isLoading={isLoading}

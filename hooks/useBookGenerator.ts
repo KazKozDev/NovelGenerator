@@ -1,11 +1,7 @@
-import type {RepairReport} from '../utils/novel/v2/repairPackage';
 import {addTokenUsage,emptyTokenTotals,savedTokenTotals,type TokenTotals} from '../utils/tokenUsage';
-import { allocateThesisWords, renderThesisBook, previousThesisChapter } from '../utils/novel/v2/theses';
-import { inputKey } from '../utils/novel/v2/progressive';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
-import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
 import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
@@ -13,12 +9,10 @@ import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/v3/similar';
 import { similarHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
-import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
 import { downloadJson, restoreSnapshot, snapshotProject } from '../utils/novel/v2/export';
 import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
-import { browserHabitMemory } from '../utils/novel/v2/habits';
 import { livePreview } from '../utils/livePreview';
 import { readGenerationSettings, saveGenerationSettings, readMainForm, saveMainForm, buildProjectInput, DEFAULT_GENERATION_SETTINGS } from '../utils/generationSettings';
 
@@ -30,105 +24,20 @@ const DEFAULT_SETTINGS = DEFAULT_GENERATION_SETTINGS;
  * system contract — is what gets matched.
  */
 export function stepName(prompt: string): string {
-  const steps: [string, string][] = [
-    ['Build three pressure situations', 'Testing character intentions'],
-    ['Choose an action for this person', 'Choosing a character action'],
-    ['Resolve what follows when independently chosen actions meet', 'Resolving character choices'],
-    ['Generate exactly THREE', 'Exploring book plans'],
-    ['Compare three candidate plans', 'Choosing the book plan'],
-    ['Crystallize the approved short plan', 'Developing the story structure'],
-    ['Crystallize the approved structure', 'Developing the chapter map'],
-    ['Prepare a compact book construction', 'Designing the book'],
-    ['Check whether the provided plan is ready', 'Reviewing the plan'],
-    ['Plan only the current chapter', 'Planning the chapter'],
-    ['Write a full literary scene', 'Writing a scene'],
-    ['Extract the essential changes from the new scene', 'Updating story memory'],
-    ['Refine the forward plan', 'Closing the chapter'],
-    ['Rewrite the listed sentences so each states what the book holds', 'Correcting a stated fact'],
-    ['Write the short passage that goes between the two paragraphs', 'Adding a missing beat'],
-    ['Rewrite the listed paragraphs so they no longer stage', 'Condensing a repeated beat'],
-    ['Rewrite the listed sentences', 'Repairing repeated prose'],
-    ['Check the integrity of the finished book', 'Auditing the finished book'],
-  ];
-  const matched = steps.find(([key]) => prompt.includes(key));
-  return matched ? matched[1] : prompt.slice(0, 60);
+  return prompt.replace(/\s+/g, ' ').trim().slice(0, 60).trim();
 }
 
 const STAGES: Record<string, string> = {
-  'thesis-synopsis': 'Synopsis',
-  'thesis-chapter-development': 'Chapter development · writing',
-  'thesis-chapter-development-review': 'Chapter development · review',
-  'thesis-chapter-development-repair': 'Chapter development · rewriting only the chapters with findings',
-  'thesis-plan': 'Scene plan · writing',
-  'thesis-plan-review': 'Scene plan · review',
-  'thesis-premise-coverage': 'Scene plan · is every premise given played in a scene?',
-  'thesis-plan-stress': 'Scene plan · stress test of the mechanism',
-  'thesis-plan-dryrun': 'Scene plan · dry run: is everything in place before the scene that needs it?',
-  'thesis-plan-repair': 'Scene plan · repair by field edits',
-  'thesis-choice': 'Scene plan · asking one person alone what they would do',
-  'thesis-choice-compare': 'Scene plan · does the outline make people act against themselves?',
-  'thesis-scene-design': 'Scene plan · redesign',
-  'thesis-scene-coverage': 'Scene plan · adding scenes to a short chapter',
-  'thesis-scene-review': 'Scene plan · review of the redesign',
   'author-step': 'The author at its desk',
   'author-character': 'The author asks one of its people',
-  'author-notebook': 'The author thinks the book through in its notebook',
-  'author-clock': 'The author settles the clock: who, where, at what hour, and what the truth comes out by',
-  'author-plan': 'The author plans the book',
-  'author-chapter': 'The author writes the chapter, once',
-  'author-reader': 'A reader reads this far and says what they are waiting for',
-  'thesis-block-write': 'writing',
-  'thesis-draft-choice': 'choosing between two drafts, blind',
-  'thesis-block-review': 'review',
-  'thesis-block-repair': 'repair',
-  'thesis-habits': 'Naming writing habits in the new scene',
-  'thesis-state': 'where things are, and who has learned what',
-  'thesis-impact-review': 're-review after an edit',
-  'thesis-voice-opponent': 'The opponent speaks for themselves: what I want and what I will do',
-  'thesis-voice-protagonist': 'The protagonist speaks for themselves, seeing only what comes before their eyes',
-  'thesis-spine': 'Building the story where the two accounts collide',
-  'thesis-scene-voices': 'the others in the room say what they came for',
-  'thesis-record': 'Taking down what the scene has committed the book to',
-  'thesis-expand': 'expanding to length',
-  'thesis-expand-review': 'review after expanding',
-  'thesis-polish': 'polishing',
-  'thesis-polish-review': 'review after polishing',
-  'thesis-final-recheck-review': 'final re-review',
-  'thesis-seam-review': 'Seam between scenes · review',
-  'thesis-seam-final-review': 'Seam between scenes · final review',
-  'thesis-seam-repair': 'Seam between scenes · repair',
-  'thesis-rough-review': 'Whole book · review',
-  'thesis-rough-reconcile': 'Whole-book repair · correcting the plan',
-  'thesis-causal-review': 'Whole-book repair · checking the corrected plan',
-  'thesis-rough-repair': 'Whole-book repair · patching',
-  'thesis-rough-verify': 'Whole-book repair · were the defects resolved?',
-  'thesis-rough-candidate-review': 'Whole-book repair · review of the patched book',
-  'thesis-expanded-causal-review': 'Whole book · review after expansion',
-  'thesis-audit-causal-review': 'Final audit · locating its findings',
-  'thesis-audit-repair': 'Final audit · repair',
-  'thesis-final-audit': 'Final audit',
+  'author-reader': 'A reader reads this far',
+  'author-similar': 'Looking through the book for a line',
 };
-const SCENE_STAGES = new Set(['thesis-scene-voices', 'thesis-draft-choice', 'thesis-block-write', 'thesis-block-review', 'thesis-block-repair', 'thesis-state', 'thesis-impact-review', 'thesis-expand', 'thesis-expand-review', 'thesis-polish', 'thesis-polish-review', 'thesis-final-recheck-review', 'thesis-rough-repair']);
-const SCENE_PATTERNS = [/THE SCENE BOTH DRAFTS WERE ASKED TO WRITE:\n\{"id":"([^"]+)"/, /THE SCENE TO WRITE, AS ITS POINT-OF-VIEW CHARACTER HAS IT:\n\{"id":"([^"]+)"/, /CURRENT THESIS — WRITE DIRECTLY BENEATH THIS ONE:\n\{"id":"([^"]+)"/, /"thesis":"(\S+) \(whole in the outline/, /Current thesis: \{"id":"([^"]+)"/, /CURRENT SCENE ONLY: \{"id":"([^"]+)"/, /\nSCENE (\S+):\n/, /^SCENE (\S+):\n/, /Writable blocks: \["([^"]+)"\]/];
 
-/**
- * What a call is doing, in words a reader of the run can follow: the step, the scene it
- * concerns, and whether it is a first attempt or the repair of a refused answer. Every
- * entry used to show the first sixty characters of the prompt, which is the author's
- * request and is the same for all of them.
- */
+/** What a call is doing, in words a reader of the run can follow. */
 export function describeCall(stage: string | undefined, prompt: string): { title: string; reason: string } {
-  const evidence = stage?.endsWith('-evidence');
-  const base = evidence ? stage!.slice(0, -'-evidence'.length) : stage || '';
-  const named = STAGES[base];
-  const scene = SCENE_STAGES.has(base) ? SCENE_PATTERNS.map(pattern => prompt.match(pattern)?.[1]).find(Boolean) : undefined;
-  let title = named ? (SCENE_STAGES.has(base) ? `Scene ${scene || '?'} · ${named}` : named) : stage ? stage : stepName(prompt);
-  if (evidence) title += ' · locating the cited passages';
-  const patch = prompt.match(/Validation defect: ([\s\S]{0,400}?)\.\nOriginal task and requirements:/)?.[1];
-  const redo = prompt.match(/\nRepair the previous response: ([\s\S]{0,400})/)?.[1];
-  const reason = (patch || redo || '').replace(/^Error:\s*/, '').split('\n')[0].slice(0, 240);
-  if (patch || redo) title += ' · fixing a refused answer';
-  return { title, reason };
+  const title = (stage && STAGES[stage]) || (stage ? stage : stepName(prompt));
+  return { title, reason: '' };
 }
 const size = (characters: number): string => characters >= 1000 ? `${Math.round(characters / 1000)}K` : String(characters);
 
@@ -176,7 +85,6 @@ export default function useBookGenerator() {
   useEffect(()=>{saveMainForm(storyPremise,numChapters)},[storyPremise,numChapters]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [repairProgress,setRepairProgress]=useState<RepairReport|undefined>();
   const [tokenTotals,setTokenTotals]=useState<TokenTotals>(emptyTokenTotals);
   const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
   // The prose of the call now in flight, as far as it has arrived.
@@ -213,24 +121,8 @@ export default function useBookGenerator() {
     const store = getStore();
     setTokenTotals(savedTokenTotals(store.runLog()));
     const manuscript = store.manuscript();
-    const theses = store.loadTheses();
-    setRepairProgress(theses?.repair_reports?.at(-1));
     const author = store.loadAuthor();
-    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}), ...(theses ? { plan: renderThesisBook(theses, chapter, false), previousContent: previousThesisChapter(theses, chapter) } : {}) })));
-    const progressive = store.loadProgressive();
-    if (progressive) {
-      const pass = progressive.pending?.pass || progressive.versions.at(-1)?.pass;
-      const labels = { story: 'Writing the complete short story', scenes: 'Making choices and consequences clear', prose: 'Bringing the scenes fully into focus', polish: 'Finishing the whole story' };
-      setDevelopmentLabel(progressive.completed ? (store.loadReport() ? undefined : 'Reviewing the complete book') : pass ? labels[pass] : 'Planning the whole book');
-      setCurrentStoryOutline(progressive.plan);
-      setCurrentChapterPlan(`Whole-book draft: ${progressive.pending?.pass || progressive.versions.at(-1)?.pass || 'plan'}`);
-    }
-    if (theses) {
-      setDevelopmentLabel(!theses.plan && theses.chapter_development ? (theses.chapter_development.review?.ready ? 'Dividing chapter development into scenes' : 'Developing and checking chapter progression') : theses.scene_design ? 'Planning scenes and chapter budgets' : theses.rough_gate?.repair ? `Repairing connected story defects · round ${theses.rough_gate.attempts}` : theses.rough_gate && !theses.rough_gate.review?.ready && theses.manifestation?.phase === 'rough' && theses.blocks.length === theses.plan?.theses.length ? 'Checking the complete short book' : theses.completed ? (store.loadReport() ? undefined : 'Reviewing the complete book') : !theses.plan_ready ? 'Clarifying and checking the thesis outline' : theses.manifestation && theses.manifestation.phase !== 'rough' ? `${theses.manifestation.phase}: ${theses.plan!.theses[theses.manifestation.next]?.id || ''}` : `Writing beneath thesis ${theses.plan!.theses[theses.blocks.length]?.id || ''}`);
-      setCurrentStoryOutline(renderThesisBook(theses, undefined, false));
-      const activeChapter = theses.plan?.theses[theses.blocks.length]?.chapter || currentChapterRef.current || 1;
-      setCurrentChapterPlan(renderThesisBook(theses, activeChapter, false));
-    }
+    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}) })));
     setDeskTools(author?.desk ? deskTabs(author.desk) : []);
     if (author) {
       // The left pane shows the author's own desk: the plan it wrote for itself, and its clock.
@@ -240,28 +132,17 @@ export default function useBookGenerator() {
       if (author.desk) setCurrentChapterPlan(`**What the author has done, step by step**\n\n${author.desk.journal.slice(-30).map(line => `- ${line}`).join('\n') || '(nothing yet)'}${author.desk.answers.length ? `\n\n**What it was last told**\n\n*${author.desk.answers.at(-1)!.who}:* ${author.desk.answers.at(-1)!.text}` : ''}`);
       else setCurrentChapterPlan(at ? `**Chapter ${author.chapters.length}, as the author noted it**\n\n${at.card}${author.waiting ? `\n\n**What a reader is waiting for now**\n\n${author.waiting}` : ''}${author.noticed.length ? `\n\n**What readers said did not add up** (carried forward, not rewritten)\n\n${author.noticed.map(item => `- ${item}`).join('\n')}` : ''}` : author.plan || 'The first chapter is not written yet.');
     }
-    const design = store.loadDesign();
-    if (design && !progressive && !theses && !author) {
-      setCurrentStoryOutline(
-        `Central conflict: ${design.dramatic_core.central_conflict}\nStakes: ${design.dramatic_core.stakes}\nResolution: ${design.ending.central_resolution}`
-      );
-      setCurrentChapterPlan(JSON.stringify(design.chapter_map, null, 2));
-    }
-
     const input = store.loadInput();
-    // A book with no chapter written is not work to continue: it is a book that
-    // never started. The form, still holding the premise, is where the author
-    // belongs — a resume card offering "0 of 3 chapters written" is not an offer.
-    setHasUnfinished(!!input && (author ? !author.completed || !store.loadReport() : theses ? !theses.completed || !store.loadReport() : input.generation_mode === 'theses' ? !store.loadReport() : progressive ? !progressive.completed || !store.loadReport() : input.generation_mode === 'progressive' ? !store.loadReport() : manuscript.length > 0 && manuscript.length < input.chapter_count));
+    setHasUnfinished(!!input && !!author && (!author.completed || !store.loadReport()));
   }
 
   function publishFinal() {
     const store = getStore();
     const input = store.loadInput();
-    if (!input || (store.loadAuthor() && (!store.loadAuthor()!.completed || !store.loadReport())) || (store.loadTheses() && (!store.loadTheses()!.completed || !store.loadReport())) || (store.loadProgressive() && (!store.loadProgressive()!.completed || !store.loadReport()))) return;
+    if (!input || (store.loadAuthor() && (!store.loadAuthor()!.completed || !store.loadReport()))) return;
     const manuscript = store.manuscript();
     const report = store.loadReport();
-    const title = bookTitle(store.loadAuthor()?.title || store.loadTheses()?.plan?.title || store.loadDesign()?.contract?.working_title, input.premise);
+    const title = bookTitle(store.loadAuthor()?.title, input.premise);
     const content = `# ${title}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
     setFinalBookContent(content);
     setFinalMetadataJson(JSON.stringify({
@@ -297,7 +178,7 @@ export default function useBookGenerator() {
     setError(null);
     // A fresh book starts with a clean log; a continued run keeps the trail,
     // otherwise two runs glue together and every stage looks doubled.
-    if (fresh) {setAgentLogs([]);setTokenTotals(emptyTokenTotals());setRepairProgress(undefined);}
+    if (fresh) { setAgentLogs([]); setTokenTotals(emptyTokenTotals()); }
     setFinalBookContent(null);
     setFinalMetadataJson(null);
     setGeneratedChapters([]);
@@ -392,11 +273,10 @@ export default function useBookGenerator() {
     };
     const poll = setInterval(() => { if (epoch.current === token) refreshFromStore(); }, 1500);
     try {
-      const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count,input), new ChapterPipelineV2(), (stage, chapter) => {
+      const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count), (stage, chapter) => {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
-      }, browserHabitMemory(modelOf(writer)),
-        second ? { name: modelOf(second), habits: browserHabitMemory(modelOf(second)), record: browserDuelMemory(`${modelOf(writer)}|${modelOf(second)}`) } : undefined);
+      });
       const result = await orchestrator.runBook(input, llm);
       if (epoch.current !== token) return;
       refreshFromStore();
@@ -436,7 +316,7 @@ export default function useBookGenerator() {
         setStoryPremise(input.premise);
         setNumChapters(input.chapter_count);
         refreshFromStore();
-        if (store.manuscript().length >= input.chapter_count && (!store.loadAuthor() || store.loadAuthor()!.completed && !!store.loadReport()) && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
+        if (store.manuscript().length >= input.chapter_count && store.loadAuthor()?.completed && store.loadReport()) publishFinal();
       }
       setStoreReady(true);
     }).catch(error => {
@@ -470,19 +350,12 @@ export default function useBookGenerator() {
       setError('Premise or chapter count changed. Start a new book with the main-page settings.');setCurrentStep(GenerationStep.Error);return;
     }
     const input={...inputRef.current,...configured};
-    if (inputKey(input)!==inputKey(inputRef.current)) {
-      const store=getStore(), theses=store.loadTheses();
-      if (theses) {
-        theses.input_key=inputKey(input);
-        if (theses.plan) { theses.plan=allocateThesisWords(theses.plan,input); theses.plan_ready=false; theses.budget_replan=true; theses.rounds=[{plan:structuredClone(theses.plan),review:null}]; delete theses.rough_gate; delete theses.scene_design; delete theses.tool_session; }
-        store.saveTheses(theses);
-      }
-      const progressive=store.loadProgressive();
-      if(progressive){progressive.input_key=inputKey(input);store.saveProgressive(progressive);}
-      // An author's book goes on under the settings it is resumed with; what is written stays.
-      const authored=store.loadAuthor();
-      if(authored){authored.input_key=authorKey({...input,generation_mode:'author'});store.saveAuthor(authored);}
-      store.clearReport?.(); store.saveInput(input); inputRef.current=input;
+    const store=getStore();
+    const authored=store.loadAuthor();
+    if(authored && authorKey({...input,generation_mode:'author'})!==authored.input_key){
+      authored.input_key=authorKey({...input,generation_mode:'author'});
+      store.saveAuthor(authored);
+      store.clearReport(); store.saveInput(input); inputRef.current=input;
     }
     await run(inputRef.current, false);
   }
@@ -516,7 +389,7 @@ export default function useBookGenerator() {
     setFinalMetadataJson(null);
     setError(null);
     refreshFromStore();
-    if (input && store.manuscript().length >= input.chapter_count && (!store.loadAuthor() || store.loadAuthor()!.completed && !!store.loadReport()) && (!store.loadProgressive() || store.loadProgressive()!.completed && !!store.loadReport()) && (!store.loadTheses() || store.loadTheses()!.completed && !!store.loadReport())) publishFinal();
+    if (input && store.loadAuthor()?.completed && store.loadReport() && store.manuscript().length >= input.chapter_count) publishFinal();
     else setCurrentStep(GenerationStep.Idle);
   }
 
@@ -566,27 +439,20 @@ export default function useBookGenerator() {
     setCurrentStep(GenerationStep.Idle);
     setLastSavedAt(undefined);
     setTokenTotals(emptyTokenTotals());
-    setRepairProgress(undefined);
     setHasUnfinished(false);
   }
 
   // Derive from the durable history even when an in-flight poll was started
   // before a hot update; remounting the text view must not erase its baseline.
-  const workspaceTheses = storeRef.current?.loadTheses();
-  const workspaceReport = storeRef.current?.loadReport();
-  const revisionStatus = workspaceReport?.status === 'COMPLETE' && workspaceTheses?.completed && workspaceTheses.final_checks
-    && Object.values(workspaceTheses.final_checks).every(check=>check.passed)
-    && workspaceTheses.blocks.every(block=>block.review.ready) ? 'Checks passed'
-      : workspaceReport?.status === 'COMPLETE_WITH_WARNINGS' ? 'Reviewed · warnings' : 'Draft · not verified';
-  const workspaceChapters = workspaceTheses ? generatedChapters.map((chapter, index) => ({...chapter,
-    revisionStatus,
-    previousContent: previousThesisChapter(workspaceTheses, index + 1)})) : generatedChapters;
+  const report = storeRef.current?.loadReport();
+  const revisionStatus = report?.status === 'COMPLETE' ? 'Checks passed' : report?.status === 'COMPLETE_WITH_WARNINGS' ? 'Reviewed · warnings' : 'Draft · not verified';
+  const workspaceChapters = generatedChapters.map(chapter => ({ ...chapter, revisionStatus }));
 
   return {
     storyPremise, setStoryPremise, numChapters, setNumChapters, storySettings, setStorySettings,
     isLoading, currentStep, error, developmentLabel,
     isResumable: hasUnfinished && !isLoading,
-    tokenTotals, repairProgress, storeReady, exportProject, importProject,
+    tokenTotals, storeReady, exportProject, importProject,
     startGeneration, continueGeneration, resetGenerator, editSettings,
     finalBookContent,
     finalMetadataJson,

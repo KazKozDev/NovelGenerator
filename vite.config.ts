@@ -91,10 +91,6 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         proxy: {
-          '/api/live-book': {
-            target: 'http://127.0.0.1:4318',
-            rewrite: p => p.replace(/^\/api\/live-book/, ''),
-          },
           '/api/ollama': {
             target: env.OLLAMA_HOST || 'http://127.0.0.1:11434',
             rewrite: (p) => p.replace(/^\/api\/ollama/, ''),

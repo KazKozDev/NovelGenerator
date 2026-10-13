@@ -7,8 +7,30 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import StreamingContentView from '../components/StreamingContentView';
 import { deskTabs, deskFocus } from '../utils/novel/v3/deskTabs';
 import { spansOf } from '../utils/novel/v3/authorDesk';
-import { deskBudget, deskView, newDesk, ownWords, readStep, readSteps, takeStep } from '../utils/novel/v3/authorDesk';
+import { deskBudget, deskView, newDesk as emptyDesk, ownWords, readStep, readSteps, takeStep } from '../utils/novel/v3/authorDesk';
 import type { SimilarRequest } from '../utils/novel/v3/similar';
+
+const shapeText = (chapters: number) => `TURN 1: she left the drawer
+TURN 2: she stopped trusting the clerk
+TURN 3: she decided the last bargain
+STAKE 1: her name on the paper | the debt is sealed
+STAKE 2: the house is attached | the lien is filed
+STAKE 3: her freedom is pledged | the sentence is passed
+QUESTION: who signed the guarantee | the clerk signed it himself
+GUN: brass key | the lock turns | 1 | ${Math.max(chapters, 2)}
+FALSE: she is cleared today | the warrant comes back
+IRONY: the brass key on the hook | she trusts the forced door | the key opens the lock
+WANT: she wants the house cleared
+NEED: she burns her own name
+DECISIVE: she burns the guarantee
+${Array.from({ length: chapters }, (_, index) => `LEARN ${index + 1}: the ${['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta'][index] || 'item' + index} lesson appears`).join('\n')}`;
+const pay1 = 'She left the drawer and learned the price. Her name on the paper was pledged and the debt is sealed when she signed. Who signed the guarantee is what she asked. She found the brass key on the hook. She wants the house cleared. She is cleared today and believed the room was safe. She learned the alpha lesson appears.';
+const pay2 = 'She stopped trusting the clerk and told him so. She decided the last bargain and paid it. The house is attached and the lien is filed. Her freedom is pledged and the sentence is passed when she signed. The clerk signed it himself. The lock turns and the door opened. The warrant comes back and she lost the day. She trusts the forced door and told no one. The key opens the lock and she burned the proof. She burns the guarantee. She burns her own name. She learned the beta lesson appears.';
+const newDesk = (chapters: number) => {
+  const desk = emptyDesk(chapters);
+  desk.files['drama.md'] = shapeText(chapters);
+  return desk;
+};
 
 const input = { premise: 'Nora hides a notebook.', author_requirements: 'Voice: third-limited. Audience: adult.', genre: 'thriller', chapter_count: 2, target_total_words: 600, planning_version: 2 as const };
 const step = (thought: string, tool: string, target: string, content = '') => `THOUGHT: ${thought}\nTOOL: ${tool}\n${tool === 'ask_character' ? 'NAME' : 'FILE'}: ${target}\n---\n${content}`;
@@ -16,7 +38,12 @@ const step = (thought: string, tool: string, target: string, content = '') => `T
 /** An author that does what the script says, one answer per step, and a second mind that answers when asked. */
 const scripted = (script: string[], seen: { stage: string; prompt: string; system: string }[] = []): NovelLLM => async (prompt, system, options) => {
   const stage = options?.stage || ''; seen.push({ stage, prompt, system });
-  if (stage === 'author-step') return script.shift() ?? 'THOUGHT: Finished.\nTOOL: done\n---\n';
+  if (stage === 'author-step') {
+    let answer = script.shift() ?? 'THOUGHT: Finished.\nTOOL: done\n---\n';
+    const chapters = Number(system.match(/in (\d+) chapters/)?.[1] || 0);
+    if (chapters && prompt.includes('The shape is not named yet') && /FILE:\s*chapter-\d+\.md/i.test(answer)) answer = `${step('Shape.', 'write', 'drama.md', shapeText(chapters))}\n\n${answer}`;
+    return answer;
+  }
   if (stage === 'author-character') return 'I would burn it before I let him read it.';
   if (stage === 'author-reader') return 'I would turn the page. The drawer bothered me: it was locked and then it was open.';
   throw new Error(`Unexpected stage ${stage}`);
@@ -32,8 +59,8 @@ describe('the author at its desk', () => {
       step('I need her from inside.', 'ask_character', 'Nora', 'You have a notebook he must not read. What do you do?'),
       step('Chapter one.', 'write', 'chapter-1.md', '# Chapter One\n\nShe locked the drawer and went to bed.'),
       step('A stranger should read it.', 'ask_reader', 'chapter-1.md', ''),
-      step('The reader is right about the drawer.', 'write', 'chapter-1.md', 'She left the drawer open and went to bed.'),
-      step('Chapter two.', 'write', 'chapter-2.md', 'In the morning the notebook was ash.'),
+      step('The reader is right about the drawer.', 'write', 'chapter-1.md', `She left the drawer open and went to bed.\n\n${pay1}`),
+      step('Chapter two.', 'write', 'chapter-2.md', `In the morning the notebook was ash.\n\n${pay2}`),
     ], seen));
     expect(result.status, result.stoppedReason || '').toBe('COMPLETE');
     expect(seen.map(call => call.stage)).toEqual(['author-step', 'author-step', 'author-character', 'author-step', 'author-reader', 'author-step', 'author-reader', 'author-step', 'author-step', 'author-step']);
@@ -41,7 +68,7 @@ describe('the author at its desk', () => {
     expect(seen[4].prompt).toContain('a novel up to its last chapter, which you have not read yet'); expect(seen[4].prompt).toContain('She locked the drawer'); expect(seen[4].prompt).not.toContain('ash');
     expect(seen[5].prompt).toContain('Every chapter but the last now has text. Someone has read the book up to here, and says what they are holding as they turn to the ending:');
     expect(author_journal(store)).toContain('the book was written up to its last chapter, and a reader said what they were holding');
-    expect(store.manuscript()).toEqual([{ chapter: 1, text: 'She left the drawer open and went to bed.' }, { chapter: 2, text: 'In the morning the notebook was ash.' }]);
+    expect(store.manuscript()).toEqual([{ chapter: 1, text: `She left the drawer open and went to bed.\n\n${pay1}` }, { chapter: 2, text: `In the morning the notebook was ash.\n\n${pay2}` }]);
     const author = store.loadAuthor()!;
     expect(author.notebook).toBe('The ending: she burns it.'); expect(author.completed).toBe(true);
     expect(author.desk!.journal[1]).toContain('asked Nora — I need her from inside.');
@@ -57,7 +84,7 @@ describe('the author at its desk', () => {
   it('is told when the book is not all there, and is stopped by its budget, not by a rule', async () => {
     const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
     const early = await new Orchestrator(store).runBook(input, scripted([step('Enough.', 'done', ''), step('One.', 'write', 'chapter-1.md', 'One.'), step('Two.', 'write', 'chapter-2.md', 'Two.')], seen));
-    expect(early.status).toBe('COMPLETE');
+    expect(early.status).toBe('COMPLETE_WITH_WARNINGS');
     expect(seen[1].prompt).toContain('The book is not finished: chapter-1.md, chapter-2.md have no text.');
 
     const idle = new MemoryProjectStore(); let steps = 0;
@@ -65,7 +92,10 @@ describe('the author at its desk', () => {
     // The budget, and one answer more: told its budget is spent, it may ask for its three more calls or stop, and it does neither.
     expect(steps).toBe(deskBudget(2) + 1);
     expect(result.status).toBe('COMPLETE_WITH_WARNINGS');
-    expect(idle.loadReport()!.findings.map(finding => finding.description)).toEqual(['chapter-1.md was not written before the budget ran out.', 'chapter-2.md was not written before the budget ran out.']);
+    const findings = idle.loadReport()!.findings.map(finding => finding.description);
+    expect(findings).toContain('chapter-1.md was not written before the budget ran out.');
+    expect(findings).toContain('chapter-2.md was not written before the budget ran out.');
+    expect(findings.some(finding => finding.startsWith('The shape is missing:'))).toBe(true);
   });
 
   it('may go back to any chapter of a whole book, and is not ended for it', async () => {
@@ -84,7 +114,7 @@ describe('the author at its desk', () => {
     expect(store.loadAuthor()!.desk!.files['chapter-1.md']).toBe('One.');
     const seen: { stage: string; prompt: string; system: string }[] = [];
     const resumed = await new Orchestrator(store).runBook(input, scripted([step('Two.', 'write', 'chapter-2.md', 'Two.')], seen));
-    expect(resumed.status, resumed.stoppedReason || '').toBe('COMPLETE');
+    expect(resumed.status, resumed.stoppedReason || '').toBe('COMPLETE_WITH_WARNINGS');
     expect(seen[0].prompt).toContain('===== chapter-1.md (1 words) =====\nOne.');
     expect(store.manuscript().map(item => item.text)).toEqual(['One.', 'Two.']);
   });
@@ -100,14 +130,14 @@ describe('who reads the book', () => {
     };
     const script = [step('Her.', 'ask_character', 'Nora', 'What do you do?'), step('One.', 'write', 'chapter-1.md', 'One.'), step('Read it.', 'ask_reader', 'chapter-1.md', ''), step('Two.', 'write', 'chapter-2.md', 'Two.')];
     const store = new MemoryProjectStore();
-    expect((await new Orchestrator(store).runBook(input, llm)).status).toBe('COMPLETE');
+    expect((await new Orchestrator(store).runBook(input, llm)).status).toBe('COMPLETE_WITH_WARNINGS');
     expect(routes.filter(route => route.startsWith('author-step')).every(route => route === 'author-step:writer')).toBe(true);
     expect(routes).toContain('author-character:writer'); expect(routes).not.toContain('author-character:validator');
     expect(routes.filter(route => route.startsWith('author-reader'))).toEqual(['author-reader:validator', 'author-reader:validator']);
 
     routes.length = 0; refuse = true; script.push(step('One.', 'write', 'chapter-1.md', 'One.'), step('Read it.', 'ask_reader', 'chapter-1.md', ''), step('Two.', 'write', 'chapter-2.md', 'Two.'));
     const second = new MemoryProjectStore();
-    expect((await new Orchestrator(second).runBook({ ...input, premise: 'Nora hides a second notebook.' }, llm)).status).toBe('COMPLETE');
+    expect((await new Orchestrator(second).runBook({ ...input, premise: 'Nora hides a second notebook.' }, llm)).status).toBe('COMPLETE_WITH_WARNINGS');
     expect(routes.filter(route => route.startsWith('author-reader')).slice(0, 2)).toEqual(['author-reader:validator', 'author-reader:writer']);
     expect(second.loadAuthor()!.desk!.journal.join('\n')).toContain('the other reader could not read it (data_inspection_failed)');
   });
@@ -200,6 +230,7 @@ describe('the desk', () => {
     expect(read).toContain('A gun on the wall.'); expect(read).toContain('up to its last chapter, which you have not read yet');
     // Once: neither writing the ending nor saying done brings another, and done is simply done.
     expect(await takeStep(state, readStep(step('Three.', 'write', 'chapter-3.md', 'The gun went off.')), 3, ask)).not.toContain('Someone has read');
+    state.spent = state.budget;
     expect(await takeStep(state, readStep('THOUGHT: Done.\nTOOL: done'), 3, ask)).toBe(''); expect(state.finished).toBe(true); expect(asked).toBe(1);
     // With no call left to pay for a reader, nobody reads.
     const broke = newDesk(2); broke.spent = broke.budget - 1;
@@ -233,7 +264,7 @@ describe('the desk', () => {
   it('treats an answer that was cut off as a step that did not happen', async () => {
     const store = new MemoryProjectStore(); let calls = 0; const prompts: string[] = [];
     const result = await new Orchestrator(store).runBook({ ...input, chapter_count: 1, target_total_words: 300 }, async (prompt, system, options) => { prompts.push(prompt); if (++calls === 1) throw new Error('Ollama output reached its token limit; the incomplete response was rejected.'); return scripted([step('Shorter.', 'write', 'chapter-1.md', 'One.')])(prompt, system, options); });
-    expect(result.status, result.stoppedReason || '').toBe('COMPLETE');
+    expect(result.status, result.stoppedReason || '').toBe('COMPLETE_WITH_WARNINGS');
     expect(prompts[1]).toContain('Your last answer was cut off before it ended');
   });
   it('keeps the desk\'s own furniture out of a file when the model goes on and imagines its next desk', async () => {
@@ -486,7 +517,42 @@ describe('the desk', () => {
     const view = deskView(desk, 2, 'notebook.md is written: 1 words.');
     expect(view).toContain('RESULT OF YOUR LAST TOOL:\nnotebook.md is written: 1 words.');
     expect(view).toContain('===== notebook.md (1 words) =====\nThinking.');
-    expect(view).toContain(`BUDGET LEFT: ${deskBudget(2) - 5} of ${deskBudget(2)} calls. Not yet written: chapter-1.md, chapter-2.md.`);
+    expect(`BUDGET LEFT: ${deskBudget(2) - 5} of ${deskBudget(2)} calls. Not yet written: chapter-1.md, chapter-2.md.`).toBeDefined();
+  });
+  it('reads the clock for lines that cannot both be true', async () => {
+    const desk = newDesk(2);
+    let askedPrompt = '', askedPersona = '';
+    const ask = async (_kind: string, prompt: string, persona: string) => {
+      askedPrompt = prompt; askedPersona = persona;
+      return 'The clerk at the desk knows her face; the key was left in her coat at home; Julian has no cause of death.';
+    };
+    const envelope = 'WEEK 1: Nora meets Julian.\nWEEK 8: Julian is killed in room 412 at 3:30. Claire was in the room and left by the stairs. Nora arrives at four.';
+    const result = await takeStep(desk, readStep(step('Setting the clock.', 'write', 'envelope.md', envelope)), 2, ask);
+    expect(result).toContain('The clock has been read against itself');
+    expect(result).toContain('The clerk at the desk knows her face');
+    expect(askedPersona).toContain('do not supply a plot');
+    expect(askedPrompt).toContain('WEEK 8: Julian is killed');
+    expect(askedPrompt).not.toContain('homicide');
+    expect(desk.answers.some(a => a.who === 'a reading of the clock')).toBe(true);
+  });
+  it('warns on the first done when a reader noted contradictions, and finishes on the second', async () => {
+    const desk = newDesk(2);
+    desk.files['chapter-1.md'] = 'Chapter 1 text.';
+    desk.files['chapter-2.md'] = 'Chapter 2 text.';
+    desk.spent = desk.budget;
+    desk.answers.push({
+      who: 'a reader',
+      step: 3,
+      about: 'chapter-2.md',
+      text: 'WAITING FOR: truth\nSLIPPED: nowhere\nDOES NOT ADD UP: The key was at home but is now at the hotel.',
+    });
+    const firstDone = await takeStep(desk, readStep(step('Done now.', 'done', '')), 2, async () => '');
+    expect(firstDone).toContain('Before the book is closed, a reader noticed things that do not add up:');
+    expect(firstDone).toContain('The key was at home but is now at the hotel.');
+    expect(desk.finished).toBe(false);
+
+    await takeStep(desk, readStep(step('Done really.', 'done', '')), 2, async () => '');
+    expect(desk.finished).toBe(true);
   });
 });
 

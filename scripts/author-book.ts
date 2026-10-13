@@ -6,7 +6,6 @@
 import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { MemoryProjectStore } from '../utils/novel/v2/store';
-import { writeBookOnce } from '../utils/novel/v3/author';
 import { writeAtDesk } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
@@ -39,7 +38,7 @@ const flush = () => {
   writeFileSync(join(out, 'readers.md'), draft.chapters.map((chapter, at) => `## After chapter ${at + 1}\n${chapter.reader}`).join('\n\n'));
   writeFileSync(join(out, 'threads.md'), draft.threads || ''); writeFileSync(join(out, 'noticed.md'), draft.noticed.join('\n\n'));
 };
-(arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
+writeAtDesk(input, store, async (prompt, system, options) => {
   if (options?.route === 'helper') { const request = JSON.parse(prompt) as SimilarRequest; return JSON.stringify(await similarHuggingFace(SIMILAR_MODEL, request.source, request.sentences)); }
   calls++; sent += prompt.length + system.length; const at = Date.now();
   // What the author was told about its last step, kept beside the book: the journal has what it did, this has what came back.

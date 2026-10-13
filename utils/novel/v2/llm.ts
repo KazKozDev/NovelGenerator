@@ -4,7 +4,13 @@
  * with automatic validation repair while diagnostics progress. Moved verbatim from the old review module so the
  * old pipeline can go away without taking the transport with it.
  */
-import { stableJson } from './contracts';
+/** JSON object-key order is transport formatting; array order and values are story data. */
+function stableJson(value: unknown): string {
+  const ordered = (item: any): any => Array.isArray(item) ? item.map(ordered)
+    : item && typeof item === 'object' ? Object.fromEntries(Object.keys(item).sort().map(key => [key, ordered(item[key])]))
+    : item;
+  return JSON.stringify(ordered(value));
+}
 /** 'writer2' is the second writer, when the author has configured one; a host without one serves it with the first. */
 /** 'helper' is not a model that talks: the prompt is a request as JSON and the answer a JSON array of numbers, from a small network when the host has one. */
 export type NovelLLMRoute = 'writer' | 'validator' | 'writer2' | 'helper';

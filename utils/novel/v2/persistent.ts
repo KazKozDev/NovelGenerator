@@ -1,17 +1,8 @@
-import type { ThesisDraft } from './theses';
-import type { ProgressiveDraft } from './progressive';
 import { restoreSnapshot, snapshotProject } from './export';
 import { idbGet, idbSet } from './idb';
-import { BrowserProjectStore, MemoryProjectStore, type SceneRecord } from './store';
-import type {
-  BookDesign,
-  ChapterPlan,
-  FinalReport,
-  ProjectInput,
-  ReaderThread,
-  StoryState,
-  StyleContract,
-} from './types';
+import { BrowserProjectStore, MemoryProjectStore } from './store';
+import type { AuthorDraft } from '../v3/author';
+import type { FinalReport, ProjectInput } from './types';
 
 /**
  * The durable project slot: memory stays the synchronous source of truth for
@@ -121,22 +112,13 @@ export class PersistentProjectStore extends MemoryProjectStore {
     await write;
   }
 
-  saveTheses(draft: ThesisDraft): void { super.saveTheses(draft); this.persistSoon(); }
-  saveProgressive(draft: ProgressiveDraft): void { super.saveProgressive(draft); this.persistSoon(); }
+  saveAuthor(draft: AuthorDraft): void { super.saveAuthor(draft); this.persistSoon(); }
   saveInput(input: ProjectInput): void { super.saveInput(input); this.persistSoon(); }
-  saveDesign(design: BookDesign): void { super.saveDesign(design); this.persistSoon(); }
-  saveStyleContract(style: StyleContract): void { super.saveStyleContract(style); this.persistSoon(); }
-  saveChapterPlan(plan: ChapterPlan): void { super.saveChapterPlan(plan); this.persistSoon(); }
-  saveScene(record: SceneRecord): void { super.saveScene(record); this.persistSoon(); }
-  saveState(state: StoryState): void { super.saveState(state); this.persistSoon(); }
-  saveThreads(threads: ReaderThread[]): void { super.saveThreads(threads); this.persistSoon(); }
   saveManuscript(chapter: number, text: string): void { super.saveManuscript(chapter, text); this.persistSoon(); }
   saveReport(report: FinalReport): void { super.saveReport(report); this.persistSoon(); }
-  clearReport():void {super.clearReport();this.persistSoon();}
+  clearReport(): void { super.clearReport(); this.persistSoon(); }
   log(stage: string, detail: string): void { super.log(stage, detail); this.persistSoon(); }
   checkpoint(label: string): void { super.checkpoint(label); this.persistSoon(); }
-  saveStateSnapshot(chapter: number, state: StoryState): void { super.saveStateSnapshot(chapter, state); this.persistSoon(); }
-  clearChapterScenes(chapter: number): void { super.clearChapterScenes(chapter); this.persistSoon(); }
   clearAll(): void {
     super.clearAll();
     if (this.timer) {
