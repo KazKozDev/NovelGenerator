@@ -42,6 +42,10 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold'; at: string; text: string }[];
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
+  /** How many times each chapter has been written again after its first draft: once is allowed, and no more. */
+  rewrites?: Record<string, number>;
+  /** How many times, with the whole book written, the author has tried to change what can no longer be changed. */
+  closed_hits?: number;
   /** How many readers each chapter has had: the next one costs more. */
   readings?: Record<string, number>;
   journal: string[];
@@ -97,7 +101,7 @@ NAME: the character (for ask_character)
 ---
 the content
 
-- write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
+- write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole — once: after that it stands. append only finishes a chapter that stopped in the middle of a sentence.
 - plant: sets one thing into a chapter already written, for a later chapter that is not written yet to pay off: a thing on a table, a line someone says. Once every chapter has text there is nothing left to plant for. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
@@ -157,7 +161,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // after the sixth was written; and going back did not leave the books with fewer contradictions than their first drafts.
     const later = isChapter ? chapterNames.slice(chapterNames.indexOf(file) + 1).find(chapter => state.files[chapter]?.trim()) : undefined;
     if (later && (tool === 'write' || tool === 'append') && state.files[file]?.trim()) {
-      note(`${tool} ${file}: it went to the typesetter when ${later} was begun`);
+      note(`${tool} ${file}: it went to the typesetter when ${later} was begun`); state.closed_hits = (state.closed_hits || 0) + 1;
       const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim()), open = chapterNames.filter(chapter => state.files[chapter]?.trim()).at(-1)!;
       return `${file} went to the typesetter when you began ${later}: the book moves forward, and it stands as it is. ${ahead.length ? `What it got wrong can be answered in ${ahead[0]}, which is still to be written; what a later chapter needs from it can be sown with plant.` : `The one chapter still open is ${open}, the last.`}`;
     }
@@ -205,6 +209,20 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
+  // A chapter may be written again whole, once. One book wrote its last chapter six times running after a reader's
+  // three objections, the objections stood each time, and the budget ran out there. Append finishes a chapter that
+  // stopped in the middle of a sentence; it is not a second way to revise one.
+  if (isChapter && state.files[file]?.trim()) {
+    const complete = /[.!?…"”’')\]—–-]\s*[*_]*$/.test(state.files[file].trim());
+    const ahead = chapterNames.filter(chapter => !state.files[chapter]?.trim());
+    const onward = ahead.length ? `What it still lacks, ${ahead[0]} can carry.` : 'Every chapter is written: say done.';
+    if (tool === 'append' && complete) { note(`append ${file}: the chapter is complete`); return `${file} ends on a whole sentence: there is nothing to finish. A chapter is revised by writing it again whole, once. ${onward}`; }
+    if (tool === 'write') {
+      const done = state.rewrites?.[file] ?? Math.max(0, state.journal.filter(line => line.includes(`. wrote ${file} (`)).length - 1);
+      if (done >= 1) { state.closed_hits = (state.closed_hits || 0) + 1; note(`write ${file}: already rewritten once`); return `${file} has been written again once already, and stands as it is now. ${onward}`; }
+      state.rewrites = { ...(state.rewrites || {}), [file]: done + 1 };
+    }
+  }
   if (tool === 'write') { state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}`; }
   if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
   if (tool === 'plant') {
@@ -328,6 +346,11 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       // one answer were written blind and cost one call for all of them, which is why the author took to it.
       if ((step.tool === 'write' || step.tool === 'append') && at >= 0 && index < steps.length - 1) { told.push(`A chapter is the last step of an answer: the ${steps.length - 1 - index} step(s) you wrote after ${step.file} were not carried out, because you had not seen what came back with it.`); break; }
       if (desk.finished) break;
+    }
+    // A whole book whose author has twice been told that nothing more can be changed is finished: one such author
+    // spent its last five calls asking to rewrite a chapter that had gone to the typesetter.
+    if (!desk.finished && names.every(name => desk.files[name]?.trim()) && (desk.closed_hits || 0) >= 2) {
+      desk.finished = true; desk.journal.push(`${desk.step}. every chapter is written and nothing more can be changed: the book is done`);
     }
     result = told.filter(Boolean).join('\n\n');
     save();

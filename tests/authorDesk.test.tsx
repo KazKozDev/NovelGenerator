@@ -66,6 +66,17 @@ describe('the author at its desk', () => {
     expect(idle.loadReport()!.findings.map(finding => finding.description)).toEqual(['chapter-1.md was not written before the budget ran out.', 'chapter-2.md was not written before the budget ran out.']);
   });
 
+  it('ends a whole book whose author keeps asking to change what is closed', async () => {
+    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
+    await new Orchestrator(store).runBook(input, scripted([
+      step('One.', 'write', 'chapter-1.md', 'One.'), step('Two.', 'write', 'chapter-2.md', 'Two.'),
+      step('Back.', 'write', 'chapter-1.md', 'One, again.'), step('Back.', 'write', 'chapter-1.md', 'One, once more.'),
+      step('Never reached.', 'write', 'notebook.md', 'More notes.'),
+    ], seen));
+    expect(store.manuscript().map(item => item.text)).toEqual(['One.', 'Two.']);
+    expect(seen.filter(call => call.stage === 'author-step')).toHaveLength(4);
+    expect(author_journal(store)).toContain('nothing more can be changed: the book is done');
+  });
   it('goes on from the step it stopped at', async () => {
     const store = new MemoryProjectStore(); let calls = 0;
     const stopped = await new Orchestrator(store).runBook(input, async (prompt, system, options) => { if (options?.stage === 'author-step' && ++calls === 3) throw new Error('The connection dropped'); return scripted([calls === 1 ? step('Notes.', 'write', 'notebook.md', 'Notes.') : step('One.', 'write', 'chapter-1.md', 'One.')])(prompt, system, options); });
@@ -103,6 +114,24 @@ describe('who reads the book', () => {
 });
 
 describe('the desk', () => {
+  it('lets a chapter be written again whole, once, and after that it stands', async () => {
+    let state = newDesk(2); state.told_promises = true; const ask = async () => '';
+    const write = (file: string, text: string) => takeStep(state, readStep(step('Write.', 'write', file, text)), 2, ask);
+    await write('chapter-1.md', 'One.'); await write('chapter-2.md', 'The ending.');
+    expect(await write('chapter-2.md', 'The ending, written again.')).toContain('chapter-2.md is written');
+    // The limit is kept across a saved desk, and append is not a way round it.
+    state = JSON.parse(JSON.stringify(state));
+    expect(await write('chapter-2.md', 'A third ending.')).toContain('has been written again once already'); expect(await write('chapter-2.md', 'A fourth.')).toContain('say done');
+    expect(await takeStep(state, readStep(step('More.', 'append', 'chapter-2.md', 'And an afterword.')), 2, ask)).toContain('there is nothing to finish');
+    expect(state.files['chapter-2.md']).toBe('The ending, written again.');
+    // A chapter cut off in the middle of a sentence can be finished.
+    const cut = newDesk(2); cut.told_promises = true;
+    await takeStep(cut, readStep(step('One.', 'write', 'chapter-1.md', 'She opened the drawer and')), 2, ask);
+    expect(await takeStep(cut, readStep(step('Finish.', 'append', 'chapter-1.md', 'found it empty.')), 2, ask)).toContain('chapter-1.md is now');
+    // A desk saved before the limit existed is counted from its journal.
+    const old = newDesk(1); old.told_promises = true; old.files['chapter-1.md'] = 'Second.'; old.journal = ['1. wrote chapter-1.md (1 words)', '2. wrote chapter-1.md (1 words)'];
+    expect(await takeStep(old, readStep(step('Third.', 'write', 'chapter-1.md', 'Third.')), 1, ask)).toContain('has been written again once already');
+  });
   it('plants for a chapter still to be written, and not into a book that is whole', async () => {
     const state = newDesk(2); state.told_promises = true; state.files['chapter-1.md'] = 'She came in from the rain.\n\nShe sat down.'; const ask = async () => '';
     const plant = () => takeStep(state, readStep('THOUGHT: Sow it.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in from the rain.\n===\nA phone lay on the sill.'), 2, ask);
@@ -222,10 +251,10 @@ describe('the desk', () => {
     expect(await read()).toContain('has already read the book through chapter-1.md as it now stands'); expect(asked).toBe(1); expect(desk.spent).toBe(1);
     await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She left the drawer open.')), 2, ask);
     expect(await read()).toContain('Reader 2'); expect(desk.spent).toBe(4);
-    await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She burned the drawer.')), 2, ask);
-    expect(await read()).toContain('Reader 3'); expect(desk.spent).toBe(9);
-    desk.budget = 10; await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She sold the drawer.')), 2, ask);
-    expect(await read()).toContain('costs 5 calls and you have 1'); expect(asked).toBe(3);
+    // The chapter has had its one rewrite: a second is not carried out, so the reader who read it has nothing new to read.
+    expect(await takeStep(desk, readStep(step('Again.', 'write', 'chapter-1.md', 'She burned the drawer.')), 2, ask)).toContain('has been written again once already');
+    expect(desk.files['chapter-1.md']).toBe('She left the drawer open.');
+    expect(await read()).toContain('has already read the book through chapter-1.md'); expect(asked).toBe(2); expect(desk.spent).toBe(4);
   });
   it('hands back with a written chapter what code can count: worn phrases, and the days and hours it names beside the earlier ones', async () => {
     const desk = newDesk(2); const refrain = 'She looked at the middle distance and said nothing at all.';
