@@ -343,6 +343,13 @@ describe('the desk', () => {
     const set = await takeStep(desk, readStep(step('Plant.', 'plant', 'chapter-1.md', 'It rained on King Street\n===\nThe coatrack in the corner of her office held one coat and nothing else.')), 3, ask);
     expect(set).toContain('Elsewhere the book speaks of what you have just set in'); expect(set).toContain('taken from the coatrack in her office');
   });
+  it('says when a chapter has sentences word for word from an earlier one', async () => {
+    const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
+    const scene = 'She took the pen from her bag and uncapped it, and the click of the dial was the only sound in the room, and she sat on the edge of the bed and the mattress gave under her.';
+    desk.files['chapter-1.md'] = `It began on a Thursday.\n\n${scene}\n\nShe went home.`;
+    const told = await takeStep(desk, readStep(step('The ending.', 'write', 'chapter-2.md', `Claire told her how it was done.\n\n${scene}\n\nNora said nothing for a long time.`)), 3, ask);
+    expect(told).toContain('1 of its sentences (38 words) already stand, word for word, in an earlier chapter: chapter-1.md: "She took the pen from her bag');
+  });
   it('hands back with a chapter the things it leans on that no earlier chapter has', async () => {
     const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
     desk.files['chapter-1.md'] = 'Nora kept the notebook in her desk. Claire came on Tuesdays and talked about the room.';

@@ -463,10 +463,19 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const last = state.files[file].split(/\n\s*\n/).at(-1) || '';
     // A reader's question that got into the prose: one book told its own reader, three times, about "the question the reader will ask".
     const outside = state.files[file].split(lineBreaks).map(line => line.trim()).filter(line => /\b(?:the|a|any|every) readers?\b|\breaders? will\b/i.test(line) && !/\b(?:lip|palm|mind|meter|card)[- ]readers?\b/i.test(line));
+    // Paragraphs this chapter has word for word from an earlier one. One book set its murder down in chapter four and
+    // again, the same six hundred words, in chapter seven, with two of the wife's speeches a third time between; its
+    // reader called the repetition the point, and its author was never shown it.
+    // Counted by the sentence: a scene copied with a name changed in every paragraph repeats no paragraph and most of its sentences.
+    const flat = (line: string) => line.replace(/[^a-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    const earlierParts = new Map<string, string>();
+    for (const chapter of chapterNames.slice(0, chapterNames.indexOf(file))) for (const line of (state.files[chapter] || '').split(lineBreaks)) if (count(line) >= 12) earlierParts.set(flat(line), chapter);
+    const again = [...new Map(state.files[file].split(lineBreaks).filter(line => count(line) >= 12).map(line => [flat(line), { part: line.trim(), chapter: earlierParts.get(flat(line)) || '' }] as const)).values()].filter(item => item.chapter);
     const leans = chapterNames.indexOf(file) > 0 ? newWords(state.files[file], chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => state.files[chapter] || '')) : [];
     return (/[.!?…"”’')\]—–-]\s*[*_]*$/.test(last.trim()) ? '' : ' It stops in the middle of a sentence.')
       + (here.length ? `\nDays, dates and hours it names: ${here.join(', ')}.${earlier.length ? ` Earlier chapters named — ${earlier.join(' | ')}.` : ''}` : '')
       + (spans.length ? `\nAges and spans of time it names: ${spans.join(', ')}.${spansBefore.length ? ` Earlier chapters named — ${spansBefore.join(' | ')}.` : ''}` : '')
+      + (again.length ? `\n${again.length} of its sentences (${again.reduce((sum, item) => sum + count(item.part), 0)} words) already stand, word for word, in an earlier chapter: ${again.slice(0, 4).map(item => `${item.chapter}: "${item.part.replace(/\s+/g, ' ').slice(0, 90)}…"`).join('; ')}${again.length > 4 ? `; and ${again.length - 4} more` : ''}.` : '')
       + (leans.length ? `\nWords it leans on that no earlier chapter has: ${leans.join(', ')}.` : '')
       + (outside.length ? `\nIt speaks of "the reader" ${outside.length} time${outside.length === 1 ? '' : 's'}, from outside the story: ${outside.slice(0, 3).map(line => `"${line.length > 150 ? line.slice(0, 150) + '…' : line}"`).join('; ')}.` : '')
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
