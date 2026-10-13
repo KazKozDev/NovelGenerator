@@ -173,7 +173,12 @@ export function whereYouAre(state: DeskState, chapters: number): string {
     ? `the ${todo.length} chapter${todo.length > 1 ? 's' : ''} still to write took other authors about ${need} call${need > 1 ? 's' : ''} (a chapter, and a question or a thing set in beside it), and once the book was whole they spent about ${after} more: a reader of the whole book (2 calls), a chapter or two written again, a few lines changed (1 each; looking with find is free). `
       + (left >= need + after ? `You have ${left}: room for all of that and ${left - need - after} over.` : left >= need ? `You have ${left}: enough for the chapters, and ${left - need} for what comes after.` : left >= todo.length ? `You have ${left}: enough to write each of them once, with ${left - todo.length} to spare, if little else is done.` : `You have ${left}, which is fewer than the chapters still to write.`)
     : `the book is whole. Other authors spent about ${after} calls from here: a reader of the whole book (2), a chapter or two written again, a few lines changed (1 each; looking with find is free). You have ${left}${left <= 2 ? ': about enough for one last thing and to say done' : ''}.`;
-  return `${where}\nWHAT IS LEFT, going by other books written at this desk (a guide, not a rule): ${ahead}`;
+  // What a reader would cost now, and what it would leave to act on what they say: one author spent its last four calls
+  // on a third reader, was told of three real contradictions, and had nothing left to change a line with.
+  const read = done.at(-1), had = read ? state.readings?.[read] || 0 : 0, fresh = read ? !state.answers.some(answer => answer.who === 'a reader' && answer.about === read && !answer.stale) : false;
+  const price = 1 + (had === 0 ? 1 : had === 1 ? 3 : 5);
+  const reader = read && fresh ? ` A reader of the book through ${read} would now take ${price} calls in all (your answer and the reader)${left >= price ? `, and leave ${left - price} to act on what they say` : ', which is more than you have'}.` : '';
+  return `${where}\nWHAT IS LEFT, going by other books written at this desk (a guide, not a rule): ${ahead}${reader}`;
 }
 
 /** Everything the author sees before it decides its next step. */
@@ -240,7 +245,7 @@ export function newWords(chapter: string, earlier: string[], most = 8): string[]
 
 /** A place in the book where the author's quoted words stand: the file, the span, and the whole sentence around it. */
 export interface Place { file: string; from: number; to: number; sentence: string }
-const quoted = (text: string) => text.trim().replace(/^["“‘'…\s]+|["”’'…\s]+$/g, '');
+const quoted = (text: string) => text.trim().replace(/^["“‘'…*_\s]+|["”’'…*_\s]+$/g, '');
 const sentenceAt = (text: string, from: number, to: number): string => {
   const start = Math.max(text.lastIndexOf('\n', from - 1) + 1, ...['. ', '! ', '? ', '." ', '.” ', '?” ', '!” '].map(end => { const at = text.lastIndexOf(end, from - 1); return at < 0 ? 0 : at + end.length; }));
   const ends = ['. ', '! ', '? ', '." ', '.” ', '?” ', '!” ', '\n'].map(end => { const at = text.indexOf(end, Math.max(to - 1, from)); return at < 0 ? -1 : at + end.trimEnd().length; }).filter(at => at >= 0);
@@ -251,10 +256,13 @@ const sentenceAt = (text: string, from: number, to: number): string => {
  * capitals, the shape of quotation marks and dashes, and how the line is broken do not count.
  */
 export function findPlaces(files: Record<string, string>, names: string[], words: string, most = 40): Place[] {
-  const bits = quoted(words).split(/\s+/).filter(Boolean); if (!bits.length || bits.join('').length < 3) return [];
-  const loose = bits.map(bit => bit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/["“”]/g, '["“”]').replace(/['‘’]/g, "['‘’]").replace(/[-–—]/g, '[-–—]')).join('\\s+');
+  // The marks of italics are not words: a line the page has as *Thursday. He comes home late.* is found with or without them.
+  const bits = quoted(words).split(/\s+/).map(bit => bit.replace(/^[*_]+|[*_]+$/g, '')).filter(Boolean); if (!bits.length || bits.join('').length < 3) return [];
+  const loose = bits.map(bit => bit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/["“”]/g, '["“”]').replace(/['‘’]/g, "['‘’]").replace(/[-–—]/g, '[-–—]')).join('[*_]*\\s+[*_]*');
   const edge = (bit: string, side: 'start' | 'end') => /[A-Za-z0-9]/.test(side === 'start' ? bit[0] : bit.at(-1)!) ? '\\b' : '';
-  const pattern = new RegExp(edge(bits[0], 'start') + loose + edge(bits.at(-1)!, 'end'), 'gi'), places: Place[] = [];
+  // Quoted to the middle of a word — "She ha…" for "She has" — the words are still found: the end need not fall on a word's end.
+  const whole = new RegExp(edge(bits[0], 'start') + loose + edge(bits.at(-1)!, 'end'), 'gi'), open = new RegExp(edge(bits[0], 'start') + loose, 'gi');
+  const pattern = names.some(file => whole.test(files[file] || '')) ? whole : open, places: Place[] = []; whole.lastIndex = 0;
   // A quotation mark the author typed at either end belongs to the place when the page has one there.
   const raw = words.trim(), lead = /^["“‘']/.test(raw), tail = /["”’']$/.test(raw);
   for (const file of names) { const text = files[file] || ''; for (const found of text.matchAll(pattern)) {
@@ -276,15 +284,37 @@ export function nearestTo(files: Record<string, string>, names: string[], words:
 const shown = (places: Place[], most = 8) => places.slice(0, most).map(place => `— ${place.file}: "${place.sentence.length > 260 ? place.sentence.slice(0, 260) + '…' : place.sentence}"`).join('\n') + (places.length > most ? `\n— and ${places.length - most} more.` : '');
 
 /**
- * Part of the mirror: a chapter written again that came out as it was. One author meant to change a single line of its
- * fifth chapter, wrote the whole chapter out four times, and each time the line came back unchanged with the rest.
+ * Reflection: what a step did to the text, as it was and as it is. Made by code after every step that changes a
+ * chapter, at no cost, and handed back with the step. It says nothing of whether the change is good.
+ *
+ * An author cannot see its own change. One meant to alter a single line, wrote the chapter out four times, and never
+ * knew the line had changed the first time. Another wrote its last chapter three times to answer a reader, and the
+ * chapter went from 2,900 words to 3,700 while it believed it was tightening. Another set an explanation into a chapter
+ * in the first person, in a book told in the third, with a line of the chapter repeated beside it.
  */
-const same = (was: string, now: string, file: string): string => {
+const begins = (part: string, most = 110) => { const flat = part.replace(/\s+/g, ' ').trim(); return flat.length > most ? flat.slice(0, most).replace(/\s+\S*$/, '') + '…' : flat; };
+export function reflect(was: string, now: string, file: string): string {
   if (!was.trim() || !/^chapter-/.test(file)) return '';
-  const old = new Set(was.split(/\n\s*\n/).map(part => part.trim())), parts = now.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
-  const changed = parts.filter(part => !old.has(part));
-  if (!changed.length && parts.length === old.size) return `\n\nWhat you have just written is, paragraph for paragraph, what was already in ${file}: nothing in it changed. If you meant to change a line, it stands as it did.`;
-  return changed.length <= 3 && parts.length > 6 ? `\n\nOf its ${parts.length} paragraphs, ${changed.length} differ from what was there before: ${changed.map(part => `"${part.slice(0, 90)}…"`).join('; ')}.` : '';
+  const parts = (text: string) => text.split(/\n\s*\n/).map(part => part.trim()).filter(part => part && !/^[-*_]{3,}$/.test(part));
+  const old = parts(was), next = parts(now), before = new Set(old), after = new Set(next);
+  const gone = old.filter(part => !after.has(part)), fresh = next.filter(part => !before.has(part)), kept = next.length - fresh.length;
+  if (!gone.length && !fresh.length) return `\n\nWHAT THIS STEP DID: nothing. What you have just written is, paragraph for paragraph, what was already in ${file}. If you meant to change a line, it stands as it did.`;
+  const size = `${count(was)} → ${count(now)} words`, head = `\n\nWHAT THIS STEP DID to ${file} (as it was → as it is): ${size}; ${kept} of its ${next.length} paragraphs stand as they did, ${gone.length} ${gone.length === 1 ? 'is' : 'are'} gone, ${fresh.length} ${fresh.length === 1 ? 'is' : 'are'} new.`;
+  // A few paragraphs changed in place are shown side by side; a chapter mostly rewritten is shown by what left it and what came in.
+  const pairs = gone.length === fresh.length && gone.length <= 3;
+  const body = pairs ? gone.map((part, at) => `\nWas: "${begins(part, 260)}"\nIs:  "${begins(fresh[at], 260)}"`).join('')
+    : `${gone.length ? `\nGone: ${gone.slice(0, 5).map(part => `"${begins(part)}"`).join('; ')}${gone.length > 5 ? `; and ${gone.length - 5} more` : ''}.` : ''}${fresh.length ? `\nNew: ${fresh.slice(0, 5).map(part => `"${begins(part)}"`).join('; ')}${fresh.length > 5 ? `; and ${fresh.length - 5} more` : ''}.` : ''}`;
+  // What the chapter named and no longer names, and what it names now: days, hours, numbers, people.
+  const named = (text: string) => new Set(anchorsOf(text)), then = named(was), today = named(now);
+  const lost = [...then].filter(word => !today.has(word)).slice(0, 8), found = [...today].filter(word => !then.has(word)).slice(0, 8);
+  const names = lost.length || found.length ? `\n${lost.length ? `It no longer names: ${lost.join(', ')}. ` : ''}${found.length ? `It now names, and did not: ${found.join(', ')}.` : ''}` : '';
+  return head + body + names;
+}
+/** Reflection on a thing set in: how it now stands between the lines on either side of it, where a seam would show. */
+const seam = (text: string, put: string): string => {
+  const at = text.indexOf(put.trim()); if (at < 0) return '';
+  const before = text.slice(0, at).trim().split(lineBreaks).at(-1) || '', behind = text.slice(at + put.trim().length).trim().split(lineBreaks)[0] || '';
+  return `\n\nWHAT THIS STEP DID (as it now reads, with the lines on either side):\n…${before.slice(-220)}\n» ${begins(put, 420)}\n${behind.slice(0, 220) || '(the end of the chapter)'}…`;
 };
 const stepOf = (line: string) => Number(line.match(/^(\d+)\./)?.[1] || 0);
 const wordsOf = (text: string) => new Set(text.toLowerCase().match(/[a-z']{4,}/g) || []);
@@ -371,15 +401,18 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const here = times(state.files[file]), earlier = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => `${chapter}: ${times(state.files[chapter] || '').join(', ') || 'none'}`);
     const spans = spansOf(state.files[file]), spansBefore = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => ({ chapter, named: spansOf(state.files[chapter] || '') })).filter(item => item.named.length).map(item => `${item.chapter}: ${item.named.join(', ')}`);
     const last = state.files[file].split(/\n\s*\n/).at(-1) || '';
+    // A reader's question that got into the prose: one book told its own reader, three times, about "the question the reader will ask".
+    const outside = state.files[file].split(lineBreaks).map(line => line.trim()).filter(line => /\b(?:the|a|any|every) readers?\b|\breaders? will\b/i.test(line) && !/\b(?:lip|palm|mind|meter|card)[- ]readers?\b/i.test(line));
     const leans = chapterNames.indexOf(file) > 0 ? newWords(state.files[file], chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => state.files[chapter] || '')) : [];
     return (/[.!?…"”’')\]—–-]\s*[*_]*$/.test(last.trim()) ? '' : ' It stops in the middle of a sentence.')
       + (here.length ? `\nDays, dates and hours it names: ${here.join(', ')}.${earlier.length ? ` Earlier chapters named — ${earlier.join(' | ')}.` : ''}` : '')
       + (spans.length ? `\nAges and spans of time it names: ${spans.join(', ')}.${spansBefore.length ? ` Earlier chapters named — ${spansBefore.join(' | ')}.` : ''}` : '')
       + (leans.length ? `\nWords it leans on that no earlier chapter has: ${leans.join(', ')}.` : '')
+      + (outside.length ? `\nIt speaks of "the reader" ${outside.length} time${outside.length === 1 ? '' : 's'}, from outside the story: ${outside.slice(0, 3).map(line => `"${line.length > 150 ? line.slice(0, 150) + '…' : line}"`).join('; ')}.` : '')
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
-  if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${same(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
+  if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${reflect(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
   if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
   // Every tool that touches the text at a place looks for the place first; and looking is a tool of its own.
   const written = chapterNames.filter(chapter => state.files[chapter]?.trim());
@@ -469,7 +502,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
-    note(`planted in ${found.file}`); return `Set into ${found.file} after "${before.slice(0, 70)}…".${twice(what, found.file)}`;
+    note(`planted in ${found.file}`); return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${twice(what, found.file)}`;
   }
   if (tool === 'ask_keeper') {
     if (state.budget - state.spent < 1) { note('ask_keeper: no budget'); return 'There is no budget left for a second call.'; }
