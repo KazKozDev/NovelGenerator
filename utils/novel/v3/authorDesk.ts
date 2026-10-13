@@ -28,8 +28,15 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  * - writing a chapter brings back what code can count: the turns of phrase the book has worn
  *   out, and the days and hours this chapter names beside those the earlier ones named, and
  *   the ages and spans of time it names beside theirs.
+ * - the plan says, for each chapter, what the reader learns in it for the first time. A plan of events let one book
+ *   tell its reader everything in the fourth chapter of seven and then spend three chapters on a woman understanding
+ *   it, being told it, and being told it again: three different events, and nothing new in any of them.
  * - there is someone to ask what the book already says, so that a fact is looked up, not guessed.
- * - among its files is an envelope: the scene the reader is not shown until the end, written as a scene. Nothing is
+ * - among its files is an envelope: what really happened, kept as a clock — the hour, who is where, what they do, with
+ *   which thing — and not as prose. It was asked for as a scene, and a scene is what authors wrote: finished pages in a
+ *   character's voice, which one of them then set into its fourth chapter and again, the same sentences, into its
+ *   seventh, at an hour of the day the chapters around it did not have. The envelopes of the books that held were
+ *   clocks already: "4:02 the clerk comes on shift. 4:20 he signs the guarantee. 5:15 he lets himself in." Nothing is
  *   done with it — no seal, no list, nobody set to read it: with those the author followed a procedure and stopped
  *   asking. The file alone is kept because of what the books say without it. Reader after reader of a finished book
  *   says the same thing: "I still don't know what happened in that room", and the author then writes its last chapter
@@ -114,7 +121,7 @@ ${input.premise}
 ${input.author_requirements && input.author_requirements !== '(none)' ? `\nWHAT THE PUBLISHER PUT ON THE FORM:\n${input.author_requirements}\nAudience, tone, the ending and how intimate scenes are written are binding. Voice and tense are a suggestion: tell this story in the voice it is best told in.\n` : ''}
 YOUR JOB: the whole story, complete, in ${input.chapter_count} chapters, in the files ${chapterFile(1)} to ${chapterFile(input.chapter_count)}. The publisher has a book of roughly ${input.target_total_words} words in mind; a chapter is as long as it needs to be, and none is ever padded or cut to a size. It begins, turns, gets worse and ends inside these chapters: the last page of the last chapter is the end of the book. Every chapter is yours for as long as you have calls: you may go back to any of them. Write the book in English.
 
-YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story in whatever form helps you; envelope.md for the scene the reader is not shown until the end — what was really done, by whose hands, with which things, through which door, at what hour — written as a scene, moment by moment, not as notes, and yours to write again like any other file; and one file per chapter. Your files: ${files.join(', ')}.
+YOUR DESK (files you own and may rewrite at any time): notebook.md for your thinking and decisions, with the title of the book on a line beginning TITLE:; dossier.md for people, facts, dates and where things are; plan.md for the story, chapter by chapter, each with one line that says what the reader learns in it for the first time; envelope.md for what really happened, which the reader is not told until the end, kept as a clock and not as prose — one line to an hour: the time, who is where, what they do and with which thing — and yours to write again like any other file; and one file per chapter. Your files: ${files.join(', ')}.
 
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
@@ -217,7 +224,10 @@ const stem = (word: string) => word.replace(/(?:'s|ing|ed|es|s)$/, '');
  * Whatever the author has just touched, everything else the book says of it. Not a rule for days and another for
  * things: what was touched is read off the change itself — the words that came in and went out, the words of the line
  * they stand in, the day its scene stands in — and every other line of the book that speaks of the same is set where
- * the author can see them together. Nobody says they disagree.
+ * the author can see them together, its notes among them: the envelope and the dossier are its own words too. One
+ * author's envelope had the wife enter the hotel at 12:10 and leave by the back stairs at 2:55; in the last chapter it
+ * had her say she never went in, and when a reader doubted that, it gave her a neighbour and a camera to prove it.
+ * Nobody says the lines disagree.
  *
  * One author changed "found that morning" to "the next morning" and stopped; two lines away the hotel had telephoned
  * "on a Tuesday morning", and a chapter on a detective asked about "Tuesday afternoon, the afternoon he died". Another
@@ -225,7 +235,8 @@ const stem = (word: string) => word.replace(/(?:'s|ing|ed|es|s)$/, '');
  * never seeing the others: its own, then stolen from her coatrack, then worn by the other woman a page later.
  */
 export function elsewhere(files: Record<string, string>, names: string[], was: string, is: string, around: string, most = 8): Place[] {
-  const all = names.flatMap(file => (files[file] || '').split(lineBreaks).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
+  // A chapter is read by the sentence; a note by the line, as it was set down: "2:55 p.m. — she leaves by the back stairs" is one thing.
+  const all = names.flatMap(file => (files[file] || '').split(/^chapter-/.test(file) ? lineBreaks : /\n+/).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
   const has = (line: string, word: string) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s|s|es|ed|ing)?\\b`, 'i').test(line);
   const lines = (word: string) => all.filter(item => has(item.sentence, word)).length;
   const content = (text: string) => new Set((text.toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []).filter(word => !COMMON.has(word) && word.length >= 4).map(stem));
@@ -558,7 +569,9 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const about = next.slice(Math.max(0, found.from - 320), found.from + now.trim().length + 320);
     // The day the scene stands in is the last one named before the place, however far up the chapter that was.
     const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
-    const other = elsewhere(state.files, written, found.sentence, now.trim() ? after : '', `${about} ${day}`);
+    // The author's notes are its own words too: what its envelope and dossier say of the thing stands beside what the chapters say.
+    const own = [...written, ...NOTES.filter(name => name !== 'notebook.md' && name !== found.file && state.files[name]?.trim())];
+    const other = elsewhere(state.files, own, found.sentence, now.trim() ? after : '', `${about} ${day}`);
     const also = other.length ? `\n\nElsewhere the book speaks of what you have just touched (your own lines; nobody has judged them):\n${shown(other)}` : '';
     // Found by likeness, not word for word: the author is shown in full what was taken as the place.
     if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
@@ -578,7 +591,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
-    note(`planted in ${found.file}`); const touched = elsewhere(state.files, written, '', what.trim(), '');
+    note(`planted in ${found.file}`); const touched = elsewhere(state.files, [...written, ...NOTES.filter(name => name !== 'notebook.md' && state.files[name]?.trim())], '', what.trim(), '');
     return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere the book speaks of what you have just set in (your own lines; nobody has judged them):\n${shown(touched)}` : ''}${twice(what, found.file)}`;
   }
   if (tool === 'ask_keeper') {

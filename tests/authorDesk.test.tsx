@@ -350,6 +350,16 @@ describe('the desk', () => {
     const told = await takeStep(desk, readStep(step('The ending.', 'write', 'chapter-2.md', `Claire told her how it was done.\n\n${scene}\n\nNora said nothing for a long time.`)), 3, ask);
     expect(told).toContain('1 of its sentences (38 words) already stand, word for word, in an earlier chapter: chapter-1.md: "She took the pen from her bag');
   });
+  it('sets what the envelope says beside a change, because the notes are the author\'s own words too', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    desk.files['envelope.md'] = 'Thu, Oct 17\n12:10 p.m. — Claire enters the hotel by the Meeting Street door and goes up the back stairs.\n2:55 p.m. — Claire leaves by the back stairs and goes home and waters the garden.';
+    desk.files['chapter-1.md'] = 'It rained all week and nobody came to the office on Wentworth Street.';
+    desk.files['chapter-2.md'] = 'Nora asked who went into that room. Claire set the cup down. "I did," she said. Then nobody spoke for a long while.';
+    const told = await takeStep(desk, readStep(step('She was not there.', 'change', 'chapter-2.md', '"I did," she said.\n===\n"I don\'t know," Claire said. "I was here all afternoon. I watered the garden. I never went up those back stairs."')), 2, ask);
+    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
+    expect(told).toContain('— envelope.md: "12:10 p.m. — Claire enters the hotel by the Meeting Street door and goes up the back stairs."');
+    expect(told).toContain('— envelope.md: "2:55 p.m. — Claire leaves by the back stairs and goes home and waters the garden."');
+  });
   it('hands back with a chapter the things it leans on that no earlier chapter has', async () => {
     const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
     desk.files['chapter-1.md'] = 'Nora kept the notebook in her desk. Claire came on Tuesdays and talked about the room.';

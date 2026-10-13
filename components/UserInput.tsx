@@ -380,7 +380,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="space-y-1">
             <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
             <p className="text-xs text-zinc-500">
-              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters. Among its notes is an envelope: the scene the reader is not shown until the end, written first, so that the author knows what happened before it writes toward it.
+              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters. Its plan says what the reader learns in each chapter for the first time. Among its notes is an envelope: what really happened, hour by hour, kept as a clock and not as prose, so that the author knows it before it writes toward it.
             </p>
           </div>
 
