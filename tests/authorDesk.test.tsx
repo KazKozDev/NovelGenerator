@@ -293,6 +293,16 @@ describe('the desk', () => {
     // The same sight a third time, with nothing changed between, is the same look.
     expect(await look()).toContain('You have looked for this 3 times (at steps 3, 4, 5) and it has shown the same each time');
   });
+  it('gives two looks running for nothing, and from the third says so and takes a call', async () => {
+    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
+    const look = (what: string) => step('One free look, then I close.', 'find', '', what);
+    await new Orchestrator(store).runBook(input, scripted([step('One.', 'write', 'chapter-1.md', 'The key lay on the sill.'), step('Two.', 'write', 'chapter-2.md', 'Nobody had a key to that room.'),
+      look('the key'), look('the sill'), look('that room'), look('Nobody'), step('A line.', 'change', 'chapter-1.md', 'the sill\n===\nthe floor'), look('the floor')], seen));
+    const desk = store.loadAuthor()!.desk!, told = seen.map(call => call.prompt.split('YOUR DESK NOW')[0]).join('\n');
+    expect(desk.free_looks).toBe(3); expect(told).toContain('This is the 3rd answer running in which you have only looked'); expect(told).toContain('This is the 4th answer running');
+    // Doing something ends the run of looks: the next look is free again.
+    expect(desk.look_streak).toBe(0); expect(desk.spent).toBe(desk.step - 3 + 1);
+  });
   it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
     const desk = newDesk(6); desk.step = 9; desk.spent = 13;
     for (const n of [1, 2, 3, 4]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.files['notebook.md'] = 'Notes.';

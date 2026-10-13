@@ -52,6 +52,8 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold' | 'change'; at: string; text: string }[];
   /** How many answers that only looked with find have been given free. */
   free_looks?: number;
+  /** How many answers running have only looked. */
+  look_streak?: number;
   /** What each look last showed, so that a look taken again can say what has changed since, or that nothing has. */
   looks?: Record<string, { steps: number[]; count: number; sight: string }>;
   /** Whether the author has been told, on saying done, what the book left hanging. */
@@ -115,7 +117,7 @@ the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
 - change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line or a short passage; what a chapter does is changed by writing it again.
-- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence. The content is the word or phrase; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call.
+- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence. The content is the word or phrase; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
 - plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
 - plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
@@ -124,7 +126,7 @@ the content
 - done: you are finished. No content.
 
 
-Every answer costs one call from your budget, however many steps it holds; an answer that only looks with find costs none. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
+Every answer costs one call from your budget, however many steps it holds; an answer that only looks with find costs none, twice running; a third such answer in a row costs a call. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
 
 const NUMBER = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?';
 const AGE = '(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?|[1-9]\\d)';
@@ -524,9 +526,14 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       if ((step.tool === 'write' || step.tool === 'append') && at >= 0 && index < steps.length - 1) { told.push(`A chapter is the last step of an answer: the ${steps.length - 1 - index} step(s) you wrote after ${step.file} were not carried out, because you had not seen what came back with it.`); break; }
       if (desk.finished) break;
     }
-    // Looking costs nothing: an answer that only looked is given back its call. So that looking cannot go on for ever,
-    // as many free looks as the book has calls, and after that a look is an answer like any other.
-    if (steps.length && (onlyLooked || steps.every(step => step.tool === 'find')) && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
+    // Looking costs nothing: an answer that only looked is given back its call — the first two in a row. One author,
+    // with its book whole and two calls left, gave twelve answers running that each took "one free look, then I close",
+    // and never closed: free, a look had become a way of not deciding. From the third in a row a look costs a call like
+    // any other answer, and the author is told how many times running it has only looked.
+    const looked = steps.length > 0 && (onlyLooked || steps.every(step => step.tool === 'find'));
+    desk.look_streak = looked ? (desk.look_streak || 0) + 1 : 0;
+    if (looked && desk.look_streak <= 2 && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
+    else if (looked) told.push(`This is the ${desk.look_streak}${desk.look_streak === 3 ? 'rd' : 'th'} answer running in which you have only looked. Two looks in a row are free; from the third, an answer that only looks costs a call like any other, and this one did. You have ${desk.budget - desk.spent} left.`);
     result = told.filter(Boolean).join('\n\n');
     save();
     if (steps.some(step => names.includes(step.file))) store.checkpoint(`author-step-${desk.step}`);
