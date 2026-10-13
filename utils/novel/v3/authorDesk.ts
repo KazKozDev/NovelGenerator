@@ -120,7 +120,7 @@ the content
 - find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence. The content is the word or phrase; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
 - plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
 - plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
-- ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
+- ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it: a detective told how the thing was done will say what does not hold.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
 - ask_reader: a stranger reads the book from its first page to the end of the chapter in FILE, knowing nothing else, and tells you what they are waiting for, where their attention slipped and what did not add up. The content is anything you want to ask them, or empty.
 - done: you are finished. No content.
@@ -185,6 +185,57 @@ export function deskView(state: DeskState, chapters: number, result: string): st
     + `\n\nWHAT READERS AND CHARACTERS HAVE TOLD YOU (latest last):\n${state.answers.length ? state.answers.slice(-6).map(answer => `[${answer.who}, at step ${answer.step}${answer.about ? `, about ${answer.about}` : ''}${answer.stale ? ` — YOU HAVE CHANGED ${answer.about} SINCE: this was said of the text as it was then` : ''}]\n${answer.text}`).join('\n\n') : '(nothing yet)'}`
     + `\n\nYOUR STEPS SO FAR:\n${state.journal.length ? state.journal.slice(-40).join('\n') : '(nothing yet)'}`
     + `\n\nBUDGET LEFT: ${left} of ${state.budget} calls.${unwritten.length ? ` Not yet written: ${unwritten.join(', ')}.` : ' Every chapter has text.'}\n${whereYouAre(state, chapters)}\nYour next answer, in the form given:`;
+}
+
+/**
+ * What a line hangs on that another line could contradict: the days, dates and hours it names, its numbers and spans
+ * of time, and the names in it. Code picks these out; it does not know what they mean.
+ */
+const WHEN = /\b(?:(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?|January|February|March|April|May|June|July|August|September|October|November|December|mornings?|afternoons?|evenings?|nights?|noon|midnight|tonight|yesterday|tomorrow|\d{1,2}[:.]\d{2}|\d+(?:st|nd|rd|th)?|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|twenty|thirty|forty|fifty)(?:-\w+)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|weeks?|months?|years?)\b/gi;
+export function anchorsOf(text: string): string[] {
+  const when = (text.match(WHEN) || []).map(word => word.toLowerCase().replace(/s$/, ''));
+  const names = [...text.matchAll(/(?<=[a-z,;:—–-]\s)[A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?/g)].map(found => found[0].toLowerCase());
+  return [...new Set([...when, ...names])].filter(word => word.length >= 2 && !/^(a|an|one|week|month|year|night)$/.test(word));
+}
+const lineBreaks = /(?<=[.!?…”"])\s+|\n+/;
+/**
+ * After a change: the other lines of the book that speak of the same day, hour, number or name as the changed line and
+ * the lines beside it. One author changed "found that morning" to "the next morning" and stopped there; two lines away
+ * the hotel had telephoned "on a Tuesday morning", and a chapter on a detective asked about "Tuesday afternoon, the
+ * afternoon he died". Nobody says they disagree: they are set where the author can see them together.
+ */
+export function elsewhere(files: Record<string, string>, names: string[], changed: string, around: string, most = 6): Place[] {
+  const all = names.flatMap(file => (files[file] || '').split(lineBreaks).map(line => ({ file, sentence: line.trim() })).filter(item => item.sentence.split(/\s+/).length >= 4));
+  const has = (line: string, anchor: string) => new RegExp(`\\b${anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(line);
+  const lines = (anchor: string) => all.filter(item => has(item.sentence, anchor)).length;
+  // A day of the week, a month or an hour of the clock places a thing in the book's calendar: lines that name the same
+  // one come first. A word like "morning", a number or a name tells less; one that stands in a great many lines — the
+  // heroine's name, the Thursday of a book about Thursdays — tells nothing, and is left out.
+  const strong = (anchor: string) => /day$|^(january|february|march|april|may|june|july|august|september|october|november|december)$|^\d{1,2}[:.]\d{2}$/.test(anchor);
+  const anchors = anchorsOf(around).filter(anchor => { const count = lines(anchor); return count >= 1 && count <= (strong(anchor) ? 12 : 8); });
+  if (!anchors.length) return [];
+  const own = new Set(anchorsOf(changed));
+  return all.filter(item => item.sentence !== changed.trim() && !changed.includes(item.sentence))
+    .map((item, at) => { const shared = anchors.filter(anchor => has(item.sentence, anchor)); return { ...item, from: 0, to: 0, at, weight: shared.reduce((sum, anchor) => sum + (strong(anchor) ? 3 : 1) * (own.has(anchor) ? 2 : 1) / Math.sqrt(lines(anchor)), 0) }; })
+    .filter(item => item.weight > 0).sort((one, other) => other.weight - one.weight).slice(0, most).sort((one, other) => one.at - other.at);
+}
+
+const COMMON = new Set(`that this with from have what when were they them their there then than would could should about which while where your been into just only over like back down still even more some very much also after before again never always because through thing things something nothing anything everything every other another these those being himself herself itself myself said says know knew known think thought looked look looking face hand hands eyes door room time times day days way made make came come went going gone want wanted told tell asked left right long little first last next same each both away around between under without against during until since toward towards didn't don't wasn't couldn't wouldn't hadn't isn't it's he's she's you've you're i've i'm that's there's what's can't won't found gave given took taken felt feel seemed turned stood heard kept held began called answered moment minute hour hours morning afternoon evening night week weeks month months year years woman man people person place house`.split(/\s+/));
+const stem = (word: string) => word.replace(/(?:'s|ing|ed|es|s)$/, '');
+/**
+ * The words a chapter leans on that no earlier chapter has: said three times or more here, never before. One book's
+ * third chapter turned on a key left "under the lamp, where she always leaves it"; the lamp was named seven times in
+ * that chapter and not once in the two before, and a reviewer said the proof arrived with its explanation. Code
+ * counts; a new word is not a fault. People's names are left out: a new person is plain to see.
+ */
+export function newWords(chapter: string, earlier: string[], most = 8): string[] {
+  const before = new Set((earlier.join('\n').toLowerCase().match(/[a-z']{4,}/g) || []).map(stem));
+  const counts = new Map<string, number>(), lower = new Map<string, number>();
+  for (const found of chapter.matchAll(/[A-Za-z']{4,}/g)) { const word = found[0].toLowerCase(); counts.set(word, (counts.get(word) || 0) + 1); if (found[0] === word) lower.set(word, (lower.get(word) || 0) + 1); }
+  // A thing, not a turn of speech: the word stands after "the", "a", "her", "his" at least twice.
+  const named = (word: string) => (chapter.match(new RegExp(`\\b(?:the|a|an|his|her|their|my|your|its|that|this)\\s+(?:\\w+\\s+)?${word.replace(/'/g, "'")}\\b`, 'gi')) || []).length >= 2;
+  return [...counts].filter(([word, times]) => times >= 3 && !COMMON.has(word) && !before.has(stem(word)) && (lower.get(word) || 0) > 0 && named(word))
+    .sort((one, other) => other[1] - one[1]).slice(0, most).map(([word, times]) => `${word} (${times})`);
 }
 
 /** A place in the book where the author's quoted words stand: the file, the span, and the whole sentence around it. */
@@ -320,9 +371,11 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const here = times(state.files[file]), earlier = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => `${chapter}: ${times(state.files[chapter] || '').join(', ') || 'none'}`);
     const spans = spansOf(state.files[file]), spansBefore = chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => ({ chapter, named: spansOf(state.files[chapter] || '') })).filter(item => item.named.length).map(item => `${item.chapter}: ${item.named.join(', ')}`);
     const last = state.files[file].split(/\n\s*\n/).at(-1) || '';
+    const leans = chapterNames.indexOf(file) > 0 ? newWords(state.files[file], chapterNames.slice(0, chapterNames.indexOf(file)).map(chapter => state.files[chapter] || '')) : [];
     return (/[.!?…"”’')\]—–-]\s*[*_]*$/.test(last.trim()) ? '' : ' It stops in the middle of a sentence.')
       + (here.length ? `\nDays, dates and hours it names: ${here.join(', ')}.${earlier.length ? ` Earlier chapters named — ${earlier.join(' | ')}.` : ''}` : '')
       + (spans.length ? `\nAges and spans of time it names: ${spans.join(', ')}.${spansBefore.length ? ` Earlier chapters named — ${spansBefore.join(' | ')}.` : ''}` : '')
+      + (leans.length ? `\nWords it leans on that no earlier chapter has: ${leans.join(', ')}.` : '')
       + (worn.length ? `\nTurns of phrase the book has now used three times or more: ${worn.join('; ')}.` : '');
   };
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
@@ -394,7 +447,13 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const beside = () => { const at = Math.min(found.from, next.length), till = Math.min(found.from + now.trim().length, next.length); const before = next.slice(0, at).trim().split(/(?<=[.!?…”"])\s+|\n+/).at(-1) || '', behind = next.slice(till).trim().split(/(?<=[.!?…”"])\s+|\n+/)[0] || ''; return `\nBefore it now stands: "${before.slice(-200) || '(the start of the chapter)'}"\nAfter it now stands: "${behind.slice(0, 200) || '(the end of the chapter)'}"`; };
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'change', at: found.sentence.slice(0, 400), text: after.slice(0, 600) }];
     note(`changed in ${found.file}: "${quoted(was).slice(0, 50)}" → "${now.trim().slice(0, 50) || '(taken out)'}"`);
-    if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${twice(now, found.file)}`;
+    // The lines beside the change, as they now stand, and what the rest of the book says of the same days, hours, numbers and names.
+    const about = next.slice(Math.max(0, found.from - 320), found.from + now.trim().length + 320);
+    // The day the scene stands in is the last one named before the place, however far up the chapter that was.
+    const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
+    const other = elsewhere(state.files, written, now.trim() ? after : found.sentence, `${found.sentence} ${about} ${day}`);
+    const also = other.length ? `\n\nElsewhere the book speaks of the same day, hour, number or name (your own lines; nobody has judged them):\n${shown(other)}` : '';
+    if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${also}${twice(now, found.file)}`;
     return `Changed in ${found.file}, at the one place: ${out} words taken out, ${put} put in.\nTaken out: "${ends(text.slice(found.from, found.to).trim())}"\n${put ? `Put in: "${ends(now.trim())}"` : 'Nothing put in.'}${beside()}${twice(now, found.file)}`;
   }
   if (tool === 'plant') {

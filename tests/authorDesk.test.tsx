@@ -303,6 +303,22 @@ describe('the desk', () => {
     // Doing something ends the run of looks: the next look is free again.
     expect(desk.look_streak).toBe(0); expect(desk.spent).toBe(desk.step - 3 + 1);
   });
+  it('shows, after a change, what the rest of the book says of the same day, hour or name', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    desk.files['chapter-1.md'] = 'The hotel called her on a Tuesday morning. She drove there in the rain and parked on the street.\n\nThe paper had the story within the hour. He had been found by a housekeeper that morning.';
+    desk.files['chapter-2.md'] = 'The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died. She said she had been at the office with her patients.\n\nIt rained all week on the harbor road and nobody came.';
+    const told = await takeStep(desk, readStep(step('Fix.', 'change', 'chapter-1.md', 'found by a housekeeper that morning\n===\nfound by a housekeeper the next morning')), 2, ask);
+    expect(told).toContain('It now reads: "He had been found by a housekeeper the next morning."');
+    expect(told).toContain('Elsewhere the book speaks of the same day, hour, number or name');
+    expect(told).toContain('— chapter-1.md: "The hotel called her on a Tuesday morning."'); expect(told).toContain('— chapter-2.md: "The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died."');
+    expect(told).not.toContain('It rained all week');
+  });
+  it('hands back with a chapter the things it leans on that no earlier chapter has', async () => {
+    const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
+    desk.files['chapter-1.md'] = 'Nora kept the notebook in her desk. Claire came on Tuesdays and talked about the room.';
+    const told = await takeStep(desk, readStep(step('Two.', 'write', 'chapter-2.md', 'The key was under the lamp. She had always left it under the lamp, and the lamp was brass. Almost nobody knew. She almost said so, almost. Ruiz asked about it. Ruiz wrote it down, and Ruiz left. The notebook stayed in her desk.')), 3, ask);
+    expect(told).toContain('Words it leans on that no earlier chapter has: lamp (3).');
+  });
   it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
     const desk = newDesk(6); desk.step = 9; desk.spent = 13;
     for (const n of [1, 2, 3, 4]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.files['notebook.md'] = 'Notes.';
