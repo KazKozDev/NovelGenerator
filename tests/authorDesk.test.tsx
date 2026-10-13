@@ -280,6 +280,19 @@ describe('the desk', () => {
     expect(told).toContain('"the key" stands in 1 place'); expect(told).toContain('"a key" stands in 1 place'); expect(told).toContain('the 1 step(s) you wrote after looking were not carried out');
     expect(desk.files['chapter-1.md']).toBe('The key lay on the sill.');
   });
+  it('looks at the book as it stands after what the author has changed, and tells checking from going round', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    desk.files['chapter-1.md'] = 'It was the only time in twelve weeks she had said it. Twelve weeks of Thursdays lay behind her.';
+    const look = () => { desk.step++; return takeStep(desk, readStep('THOUGHT: Where?\nTOOL: find\n---\ntwelve weeks'), 2, ask); };
+    expect(await look()).toContain('stands in 2 places');
+    desk.step++; await takeStep(desk, readStep(step('Fix.', 'change', 'chapter-1.md', 'the only time in twelve weeks\n===\nthe only time in eleven weeks')), 2, ask);
+    // After a change the look shows the text as it is now, and says what is different since the last look.
+    const after = await look();
+    expect(after).toContain('stands in 1 place'); expect(after).toContain('Since you last looked for this, at step 1, the book has changed here: it stood in 2 places then, and stands in 1 now.');
+    expect(await look()).not.toContain('You have looked for this');
+    // The same sight a third time, with nothing changed between, is the same look.
+    expect(await look()).toContain('You have looked for this 3 times (at steps 3, 4, 5) and it has shown the same each time');
+  });
   it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
     const desk = newDesk(6); desk.step = 9; desk.spent = 13;
     for (const n of [1, 2, 3, 4]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.files['notebook.md'] = 'Notes.';

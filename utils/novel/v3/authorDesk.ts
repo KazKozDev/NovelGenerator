@@ -52,6 +52,8 @@ export interface DeskState {
   inserts?: { step: number; file: string; kind: 'plant' | 'unfold' | 'change'; at: string; text: string }[];
   /** How many answers that only looked with find have been given free. */
   free_looks?: number;
+  /** What each look last showed, so that a look taken again can say what has changed since, or that nothing has. */
+  looks?: Record<string, { steps: number[]; count: number; sight: string }>;
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
   /** How many times the author has been shown each round it was going: it is shown again only when the round has grown. */
@@ -363,9 +365,15 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
         : `No paragraph or long sentence stands twice${file in state.files ? ` in ${file}` : ' in the book'}, word for word.`;
     }
     const places = findPlaces(state.files, scope, words), near = places.length ? [] : nearestTo(state.files, scope, words);
-    // Part of the mirror: the same look taken again and again. Looking is free, and one author looked for "Tuesday" seven times running.
-    const key = `looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}:`, before = state.journal.filter(line => line.includes(key));
-    const round = before.length >= 2 ? `\n\nYou have looked for this ${before.length} times already (at steps ${before.map(stepOf).join(', ')}). The book says what it said then, unless you have changed it since.` : '';
+    // A look knows what the author has changed since it last looked. Looked for again after a change, the words are
+    // shown as they stand now, and it is said what is different: that is checking, not going round. Only a look that
+    // shows the very same thing a third time is said to be the same look: one author looked for "Tuesday" seven times
+    // running with nothing changed between.
+    const key = `${quoted(words).toLowerCase()}|${file in state.files ? file : ''}`, sight = places.map(found => `${found.file}:${found.sentence}`).join('\n');
+    const last = state.looks?.[key], steps = last && last.sight === sight ? [...last.steps, state.step] : [state.step];
+    const round = !last ? '' : last.sight !== sight ? `\n\nSince you last looked for this, at step ${last.steps.at(-1)}, the book has changed here: it stood in ${last.count} place${last.count === 1 ? '' : 's'} then, and stands in ${places.length} now.`
+      : steps.length >= 3 ? `\n\nYou have looked for this ${steps.length} times (at steps ${steps.join(', ')}) and it has shown the same each time: nothing where you are looking has changed since.` : '';
+    state.looks = { ...(state.looks || {}), [key]: { steps, count: places.length, sight } };
     note(`looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}: ${places.length} place${places.length === 1 ? '' : 's'}`);
     return (places.length ? `"${quoted(words).slice(0, 80)}" stands in ${places.length} place${places.length === 1 ? '' : 's'}${file in state.files ? ` in ${file}` : ''}:\n${shown(places, 20)}`
       : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`) + round;
