@@ -158,11 +158,8 @@ export function ownWords(content: string): string {
 }
 
 /**
- * Where the author is, said with its budget: what is done, what is not, and about how many calls what is left has
- * taken other authors at this desk. Code counts it from the journal; the figures are from forty-four books written
- * here (six chapters, twenty-four calls): to the last chapter, a chapter and what went round it — a question, a thing
- * set in — took about two calls; after the last chapter authors spent about six more, on one reader of the whole book
- * (two calls), a chapter or two written again and a few lines. A guide, never a rule: nothing is held back for it.
+ * Where the author is, said with its budget: what is done, what is not, how many calls are left and what each kind
+ * of step costs. Code counts it from the journal. Facts only: it does not say what is usually done next.
  */
 export function whereYouAre(state: DeskState, chapters: number): string {
   const names = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
@@ -174,17 +171,16 @@ export function whereYouAre(state: DeskState, chapters: number): string {
   const notes = NOTES.filter(name => !state.files[name]?.trim());
   const where = `WHERE YOU ARE: ${done.length} of ${chapters} chapters written${todo.length ? ` (${todo.join(', ')} to go)` : ''}${notes.length === NOTES.length ? '; your notes are empty' : ''}.`
     + (state.step ? ` So far: ${state.step} answer${state.step === 1 ? '' : 's'}${asked.length ? `; asked ${asked.join(', ')}` : '; nobody asked yet'}${set.length ? `; ${set.join(', ')}` : ''}${again.length ? `; written more than once: ${again.map(item => `${item.name} (${item.times})`).join(', ')}` : ''}.` : '');
-  const need = todo.length * 2, after = Math.round(state.budget / 4);
-  const ahead = todo.length
-    ? `the ${todo.length} chapter${todo.length > 1 ? 's' : ''} still to write took other authors about ${need} call${need > 1 ? 's' : ''} (a chapter, and a question or a thing set in beside it), and once the book was whole they spent about ${after} more: a reader of the whole book (2 calls), a chapter or two written again, a few lines changed (1 each; looking with find is free). `
-      + (left >= need + after ? `You have ${left}: room for all of that and ${left - need - after} over.` : left >= need ? `You have ${left}: enough for the chapters, and ${left - need} for what comes after.` : left >= todo.length ? `You have ${left}: enough to write each of them once, with ${left - todo.length} to spare, if little else is done.` : `You have ${left}, which is fewer than the chapters still to write.`)
-    : `the book is whole. Other authors spent about ${after} calls from here: a reader of the whole book (2), a chapter or two written again, a few lines changed (1 each; looking with find is free). You have ${left}${left <= 2 ? ': about enough for one last thing and to say done' : ''}.`;
-  // What a reader would cost now, and what it would leave to act on what they say: one author spent its last four calls
-  // on a third reader, was told of three real contradictions, and had nothing left to change a line with.
+  // Facts and prices only. It used to say what other authors had spent their calls on after the last chapter — "a
+  // reader of the whole book, a chapter or two written again" — and authors read that on every step and did as it
+  // said: readers were asked, and their own people never.
   const read = done.at(-1), had = read ? state.readings?.[read] || 0 : 0, fresh = read ? !state.answers.some(answer => answer.who === 'a reader' && answer.about === read && !answer.stale) : false;
   const price = 1 + (had === 0 ? 1 : had === 1 ? 3 : 5);
-  const reader = read && fresh ? ` A reader of the book through ${read} would now take ${price} calls in all (your answer and the reader)${left >= price ? `, and leave ${left - price} to act on what they say` : ', which is more than you have'}.` : '';
-  return `${where}\nWHAT IS LEFT, going by other books written at this desk (a guide, not a rule): ${ahead}${reader}`;
+  const ahead = todo.length
+    ? `${todo.length} chapter${todo.length > 1 ? 's are' : ' is'} still to write, at one call each at the least; you have ${left}${left < todo.length ? ', which is fewer than that' : `, so ${left - todo.length} beyond them`}.`
+    : `the book is whole, and you have ${left} call${left === 1 ? '' : 's'}${left <= 1 ? ': enough to say done' : ''}.`;
+  const prices = ` What things cost: any answer, 1 call; a question to one of your people or to the keeper, 1 more; looking with find, nothing twice running${read ? `; a reader of the book through ${read}, ${fresh ? `${price} in all now` : 'nothing while the text stands as they read it'}` : ''}.`;
+  return `${where}\nWHAT IS LEFT: ${ahead}${prices}`;
 }
 
 /** Everything the author sees before it decides its next step. */

@@ -344,11 +344,13 @@ describe('the desk', () => {
     const view = deskView(desk, 6, '');
     expect(view).toContain('BUDGET LEFT: 11 of 24 calls.');
     expect(view).toContain('WHERE YOU ARE: 4 of 6 chapters written (chapter-5.md, chapter-6.md to go). So far: 9 answers; asked a reader once, the keeper once; 1 set in; written more than once: chapter-3.md (2).');
-    expect(view).toContain('a guide, not a rule'); expect(view).toContain('A reader of the book through chapter-4.md would now take 2 calls in all (your answer and the reader), and leave 9 to act on what they say.'); expect(view).toContain('the 2 chapters still to write took other authors about 4 calls'); expect(view).toContain('You have 11: room for all of that and 1 over.');
-    for (const n of [5, 6]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.spent = 22;
-    expect(deskView(desk, 6, '')).toContain('the book is whole. Other authors spent about 6 calls from here'); expect(deskView(desk, 6, '')).toContain('You have 2: about enough for one last thing and to say done.');
-    desk.files['chapter-6.md'] = ''; desk.files['chapter-5.md'] = ''; desk.spent = 23;
-    expect(deskView(desk, 6, '')).toContain('You have 1, which is fewer than the chapters still to write.');
+    expect(view).toContain('WHAT IS LEFT: 2 chapters are still to write, at one call each at the least; you have 11, so 9 beyond them.');
+    expect(view).toContain('What things cost: any answer, 1 call; a question to one of your people or to the keeper, 1 more; looking with find, nothing twice running; a reader of the book through chapter-4.md, 2 in all now.');
+    expect(view).not.toContain('other authors');
+    for (const n of [5, 6]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.spent = 23;
+    expect(deskView(desk, 6, '')).toContain('the book is whole, and you have 1 call: enough to say done.');
+    desk.files['chapter-6.md'] = ''; desk.files['chapter-5.md'] = '';
+    expect(deskView(desk, 6, '')).toContain('you have 1, which is fewer than that.');
   });
   it('finds the passage a long quotation is plainly of when a word or a clause of it is off, and shows what it took', async () => {
     const desk = newDesk(2); const ask = async () => '';
