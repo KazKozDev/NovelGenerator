@@ -167,7 +167,7 @@ describe('the desk', () => {
     expect(store.manuscript().map(item => item.text)).toEqual(['One.', 'Two.', 'Three.']);
     expect(seen[0].system).toContain('one chapter to an answer');
   });
-  it('sets a thing into a chapter without forbidding a second, and a plant buys no new reader', async () => {
+  it('sets a thing into a chapter without forbidding a second; a reader asked afterwards is a new reader, at the next price', async () => {
     const state = newDesk(2); state.told_promises = true; state.files['chapter-1.md'] = 'She came in from the rain.\n\nShe sat down.'; let readers = 0;
     const ask = async (kind: string) => { state.spent++; if (kind === 'reader') readers++; return `Reader ${readers}.`; };
     const plant = (what: string) => takeStep(state, readStep(`THOUGHT: Set it in.\nTOOL: plant\nFILE: chapter-1.md\n---\nShe came in from the rain.\n===\n${what}`), 2, ask);
@@ -175,8 +175,8 @@ describe('the desk', () => {
     expect(await read()).toContain('Reader 1.');
     expect(await plant('A phone lay face down on the sill.')).toContain('Set into chapter-1.md');
     expect(await plant('It was his.')).toContain('Set into chapter-1.md');
-    // One thing set down in passing is not a new chapter: the reader who read it has nothing new to say, and says so for nothing.
-    expect(await read()).toContain('has already read the book through chapter-1.md'); expect(readers).toBe(1);
+    // The text is not what the first reader read: nobody is told that nothing has changed. The second reader of a chapter costs three calls.
+    const spent = state.spent; expect(await read()).toContain('Reader 2.'); expect(readers).toBe(2); expect(state.spent - spent).toBe(3);
   });
   it('hears once, as it turns to the last chapter, what a reader of the book so far is holding', async () => {
     const state = newDesk(3); state.files['chapter-1.md'] = 'A gun on the wall.';
@@ -228,14 +228,84 @@ describe('the desk', () => {
     expect(desk.files['chapter-1.md']).toBe('She waited.');
     expect(ownWords('Notes.\n\nRESULT OF YOUR LAST TOOL:\nx')).toBe('Notes.');
   });
-  it('has no tool for patching a passage: a chapter is written again, or one thing is set into it', async () => {
-    const desk = newDesk(2); desk.files['chapter-1.md'] = 'She locked the drawer.\n\nShe went to bed.';
-    expect(await takeStep(desk, readStep(step('Fix.', 'edit', 'chapter-1.md', 'She locked\n===\nShe left')), 2, async () => '')).toContain('There is no tool for patching a passage');
-    expect(desk.files['chapter-1.md']).toBe('She locked the drawer.\n\nShe went to bed.');
-    expect(await takeStep(desk, readStep(step('Plant the key.', 'plant', 'chapter-1.md', 'She locked the drawer\n===\nThe key went into the blue jar on the sill.')), 2, async () => '')).toContain('Set into chapter-1.md');
-    expect(desk.files['chapter-1.md']).toBe('She locked the drawer.\n\nThe key went into the blue jar on the sill.\n\nShe went to bed.');
-    expect(await takeStep(desk, readStep(step('Too much.', 'plant', 'chapter-1.md', `She locked the drawer\n===\n${Array.from({ length: 200 }, () => 'word').join(' ')}`)), 2, async () => '')).toContain('at most 120 words');
-    expect(await takeStep(desk, readStep(step('Where?', 'plant', 'chapter-1.md', 'A paragraph that is not there\n===\nA line.')), 2, async () => '')).toContain('was not found');
+  it('changes words at the one place the author quotes, and looks for the place first', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    desk.files['chapter-1.md'] = 'She locked the drawer. It was the only time in twelve weeks she had said it.\n\nShe went to bed.';
+    desk.files['chapter-2.md'] = 'She locked the drawer again.\n\n“Eleven Thursdays,” she said — and laughed.';
+    const change = (file: string, content: string) => takeStep(desk, readStep(step('Fix.', 'change', file, content)), 2, ask);
+    // One place: changed there, and shown as it read and as it reads.
+    const told = await change('chapter-1.md', 'twelve weeks\n===\neleven weeks');
+    expect(told).toContain('Changed in chapter-1.md'); expect(told).toContain('It read: "It was the only time in twelve weeks she had said it."'); expect(told).toContain('It now reads: "It was the only time in eleven weeks she had said it."');
+    expect(desk.files['chapter-1.md']).toBe('She locked the drawer. It was the only time in eleven weeks she had said it.\n\nShe went to bed.');
+    // Several places: nothing changed, every place shown.
+    const many = await change('', 'She locked the drawer\n===\nShe left the drawer open');
+    expect(many).toContain('Nothing was changed'); expect(many).toContain('stands in 2 places'); expect(many).toContain('— PLACE 1, chapter-1.md: "She locked the drawer."'); expect(many).toContain('— PLACE 2, chapter-2.md: "She locked the drawer again."');
+    expect(desk.files['chapter-2.md']).toContain('She locked the drawer again.');
+    // Nowhere: nothing changed, the nearest lines shown.
+    const none = await change('chapter-1.md', 'She locked the heavy drawer\n===\nShe left it');
+    expect(none).toContain('does not stand in chapter-1.md'); expect(none).toContain('The lines nearest to it'); expect(none).toContain('She locked the drawer.');
+    // Quotation marks and dashes need not be typed as the page has them; nothing after === takes the words out.
+    expect(await change('', '"Eleven Thursdays," she said - and laughed.\n===\n')).toContain('Changed in chapter-2.md'); expect(desk.files['chapter-2.md']).toBe('She locked the drawer again.');
+    expect(await change('chapter-1.md', `She went to bed\n===\n${Array.from({ length: 300 }, () => 'word').join(' ')}`)).toContain('at most 200 words');
+    expect(deskTabs(desk).find(tab => tab.name === 'Set in')!.text).toContain('a line changed in chapter-1.md');
+  });
+  it('takes out one of two places where the same words stand, when the author says which, and says when words now stand twice', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    const twin = 'She had come early, it turned out, and stood a long time on the brick path looking in.';
+    desk.files['chapter-1.md'] = `It rained.\n\n${twin}\n\nThe clock ticked.\n\n${twin}\n\nShe left.`;
+    const told = await takeStep(desk, readStep(step('One of them.', 'change', 'chapter-1.md', `PLACE: 2\n${twin}\n===\n`)), 2, ask);
+    expect(told).toContain('Changed in chapter-1.md'); expect(desk.files['chapter-1.md']).toBe(`It rained.\n\n${twin}\n\nThe clock ticked.\n\nShe left.`);
+    // Setting in words that already stand in the book is done, and said.
+    const again = await takeStep(desk, readStep(step('Plant.', 'plant', 'chapter-1.md', `The clock ticked\n===\n${twin}`)), 2, ask);
+    expect(again).toContain('Set into chapter-1.md'); expect(again).toContain('now stands 2 times in the book (chapter-1.md)'); expect(again).toContain('PLACE: 2');
+    // A long change says how much went out and in, and what now stands on either side.
+    const long = Array.from({ length: 40 }, (_, at) => `word${at}`).join(' ');
+    desk.files['chapter-2.md'] = `Before it all. ${long}. After it all.`;
+    const big = await takeStep(desk, readStep(step('Cut.', 'change', 'chapter-2.md', `${long}.\n===\n`)), 2, ask);
+    expect(big).toContain('40 words taken out, 0 put in'); expect(big).toContain('Before it now stands: "Before it all."'); expect(big).toContain('After it now stands: "After it all."');
+  });
+  it('shows, when asked to look for nothing in particular, what stands in the book twice', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    const twin = 'Claire sat on the couch with her ankles crossed and her hands folded, and said nothing for a while.';
+    desk.files['chapter-1.md'] = `It rained all morning on the street.\n\n${twin}\n\nThe clock ticked on the wall above them.\n\n${twin}`; desk.files['chapter-2.md'] = 'She left by the side door and nobody saw her go.';
+    const told = await takeStep(desk, readStep('THOUGHT: Which one?\nTOOL: find\n---\n'), 2, ask);
+    expect(told).toContain('Standing more than once in the book, word for word'); expect(told).toContain('— 2 times (chapter-1.md), 19 words: "Claire sat on the couch'); expect(told).toContain('PLACE: 2');
+    expect(await takeStep(desk, readStep('THOUGHT: And here?\nTOOL: find\nFILE: chapter-2.md\n---\n'), 2, ask)).toContain('No paragraph or long sentence stands twice in chapter-2.md');
+  });
+  it('says with the budget where the author is, what is left and about what it took others, as a guide', () => {
+    const desk = newDesk(6); desk.step = 9; desk.spent = 13;
+    for (const n of [1, 2, 3, 4]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.files['notebook.md'] = 'Notes.';
+    desk.journal = ['2. wrote chapter-1.md (900 words)', '3. a reader read through chapter-1.md', '4. wrote chapter-2.md (900 words)', '5. asked the keeper: where is the key', '6. wrote chapter-3.md (900 words)', '7. planted in chapter-1.md', '8. wrote chapter-3.md (950 words)', '9. wrote chapter-4.md (900 words)'];
+    const view = deskView(desk, 6, '');
+    expect(view).toContain('BUDGET LEFT: 11 of 24 calls.');
+    expect(view).toContain('WHERE YOU ARE: 4 of 6 chapters written (chapter-5.md, chapter-6.md to go). So far: 9 answers; asked a reader once, the keeper once; 1 set in; written more than once: chapter-3.md (2).');
+    expect(view).toContain('a guide, not a rule'); expect(view).toContain('the 2 chapters still to write took other authors about 4 calls'); expect(view).toContain('You have 11: room for all of that and 1 over.');
+    for (const n of [5, 6]) desk.files[`chapter-${n}.md`] = 'Text.'; desk.spent = 22;
+    expect(deskView(desk, 6, '')).toContain('the book is whole. Other authors spent about 6 calls from here'); expect(deskView(desk, 6, '')).toContain('You have 2: about enough for one last thing and to say done.');
+    desk.files['chapter-6.md'] = ''; desk.files['chapter-5.md'] = ''; desk.spent = 23;
+    expect(deskView(desk, 6, '')).toContain('You have 1, which is fewer than the chapters still to write.');
+  });
+  it('sets a thing in after the paragraph the author quotes, wherever in it the words stand', async () => {
+    const desk = newDesk(2); const ask = async () => '';
+    desk.files['chapter-1.md'] = 'She locked the drawer and stood a moment.\n\nShe went to bed.'; desk.files['chapter-2.md'] = 'She went to bed early.';
+    const plant = (file: string, content: string) => takeStep(desk, readStep(step('Plant.', 'plant', file, content)), 2, ask);
+    expect(await plant('chapter-1.md', 'stood a moment\n===\nThe key went into the blue jar on the sill.')).toContain('Set into chapter-1.md after "She locked the drawer');
+    expect(desk.files['chapter-1.md']).toBe('She locked the drawer and stood a moment.\n\nThe key went into the blue jar on the sill.\n\nShe went to bed.');
+    expect(await plant('', 'She went to bed\n===\nA line.')).toContain('stands in 2 places');
+    expect(await plant('chapter-1.md', `She locked the drawer\n===\n${Array.from({ length: 200 }, () => 'word').join(' ')}`)).toContain('at most 120 words');
+    expect(await plant('chapter-1.md', 'A paragraph that is not there at all\n===\nA line.')).toContain('does not stand in chapter-1.md');
+  });
+  it('looks without touching, exactly, and looking costs no call', async () => {
+    const store = new MemoryProjectStore(); const seen: { stage: string; prompt: string; system: string }[] = [];
+    await new Orchestrator(store).runBook(input, scripted([step('One.', 'write', 'chapter-1.md', 'The key lay on the sill. She took the key.'), step('Two.', 'write', 'chapter-2.md', 'Nobody had a key to that room.'),
+      step('Where is it?', 'find', '', 'the key'), step('And this?', 'find', 'chapter-2.md', 'a brass lamp')], seen));
+    const desk = store.loadAuthor()!.desk!;
+    const told = seen.map(call => call.prompt.split('YOUR DESK NOW')[0]).join('\n');
+    expect(told).toContain('"the key" stands in 2 places'); expect(told).toContain('— chapter-1.md: "The key lay on the sill."'); expect(told).toContain('— chapter-1.md: "She took the key."');
+    expect(told).toContain('"a brass lamp" does not stand in chapter-2.md');
+    // Two answers only looked and cost nothing; the reader who spoke unasked before the last chapter cost one.
+    expect(desk.free_looks).toBe(2); expect(desk.spent).toBe(desk.step - 2 + 1);
+    expect(desk.files['chapter-1.md']).toBe('The key lay on the sill. She took the key.');
   });
   it('gives the same answer, free, when a reader is asked again about text they have read, and charges more for each new reader of a chapter', async () => {
     const desk = newDesk(2); desk.files['chapter-1.md'] = 'She locked the drawer.'; desk.told_promises = true; let asked = 0;

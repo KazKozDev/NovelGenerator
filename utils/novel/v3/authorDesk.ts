@@ -15,8 +15,13 @@ import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author
  *
  * Nothing here tells it what to do next. Its will is free; what is chosen is what it finds in
  * its hands. Every tool is made so that the easy use of it is the good one:
- * - a chapter is changed by writing it again, or by setting one thing into it. There is no tool
- *   for patching a passage, because every seam, lost line and doubled paragraph came from one.
+ * - a chapter is changed by writing it again, or at one place the author names: a thing set in after a line (plant),
+ *   or other words put where words stand now (change). The place is named by quoting it, and code finds it: every
+ *   such tool searches first. Words that stand in one place are acted on there; words that stand in several places, or
+ *   nowhere, change nothing, and the author is shown every place, or the lines nearest to what it quoted. The old tool
+ *   for patching guessed at the place, and every seam, lost line and doubled paragraph came from that. The same search
+ *   is a tool of its own (find), for looking without touching, and looking costs nothing: one author wrote a chapter
+ *   out four times to change a line it could not see had already changed.
  * - a reader who has read a chapter has read it: asked again about the same text, the same
  *   answer comes back at no cost. A second reader for a rewritten chapter is dearer than the
  *   first, a third dearer still. It went round a chapter sixty times when readers were cheap.
@@ -44,7 +49,9 @@ export interface DeskState {
   /** What readers and characters answered: who, at which step, about which chapter. */
   answers: { who: string; step: number; about: string; text: string; stale?: boolean; /** What the author asked, in its own words. */ asked?: string }[];
   /** What was set into a written chapter with plant, and where. Kept for the screen; nothing reads it back. */
-  inserts?: { step: number; file: string; kind: 'plant' | 'unfold'; at: string; text: string }[];
+  inserts?: { step: number; file: string; kind: 'plant' | 'unfold' | 'change'; at: string; text: string }[];
+  /** How many answers that only looked with find have been given free. */
+  free_looks?: number;
   /** Whether the author has been told, on saying done, what the book left hanging. */
   told_promises?: boolean;
   /** How many times the author has been shown each round it was going: it is shown again only when the round has grown. */
@@ -98,13 +105,16 @@ YOUR DESK (files you own and may rewrite at any time): notebook.md for your thin
 YOUR TOOLS. An answer is one step, or several steps one after another, each in exactly this form:
 
 THOUGHT: one or two sentences on what you are doing and why
-TOOL: write | append | plant | ask_character | ask_keeper | ask_reader | done
-FILE: the file (for write, append, edit, ask_reader)
+TOOL: write | append | plant | change | find | ask_character | ask_keeper | ask_reader | done
+FILE: the file (for write, append, plant, change, ask_reader; for find and change it may be left out, and the whole book is searched)
 NAME: the character (for ask_character)
 ---
 the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
+- change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line or a short passage; what a chapter does is changed by writing it again.
+- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence. The content is the word or phrase; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call.
+- plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
 - plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience.
 - ask_keeper: someone who has the whole book in front of them answers a question of fact from what is on the page, with the line it stands in: where a thing is, what day it was, who knew what and since when. The content is the question.
@@ -112,7 +122,7 @@ the content
 - done: you are finished. No content.
 
 
-Every answer costs one call from your budget, however many steps it holds. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
+Every answer costs one call from your budget, however many steps it holds; an answer that only looks with find costs none. Asking a character or the keeper costs one more. The first reader of a chapter costs one more; a second reader of the same chapter, after you have rewritten it, costs three, and a third five, because fresh readers are scarce. A reader asked about text they have already read simply tells you again what they said, at no cost. When you ask someone, that is the last step of the answer: you will have their reply before your next one. When you write a chapter, that too is the last step of the answer: one chapter to an answer, and you will see what came back with it before you write the next. Notes — the notebook, the plan, the dossier — may share an answer with each other and come before a chapter. Keep an answer to what fits in about three thousand words. When the budget reaches zero you are stopped where you are, so leave yourself the calls to finish. How you spend it is your decision.`;
 
 const NUMBER = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?';
 const AGE = '(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?|[1-9]\\d)';
@@ -137,6 +147,31 @@ export function ownWords(content: string): string {
   return (echo >= 0 ? content.slice(0, echo) : content).replace(/(\n[ \t]*[-=*_~]{3,}[ \t]*)+\s*$/, '').trim();
 }
 
+/**
+ * Where the author is, said with its budget: what is done, what is not, and about how many calls what is left has
+ * taken other authors at this desk. Code counts it from the journal; the figures are from forty-four books written
+ * here (six chapters, twenty-four calls): to the last chapter, a chapter and what went round it — a question, a thing
+ * set in — took about two calls; after the last chapter authors spent about six more, on one reader of the whole book
+ * (two calls), a chapter or two written again and a few lines. A guide, never a rule: nothing is held back for it.
+ */
+export function whereYouAre(state: DeskState, chapters: number): string {
+  const names = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
+  const done = names.filter(name => state.files[name]?.trim()), todo = names.filter(name => !state.files[name]?.trim()), left = state.budget - state.spent;
+  const lines = (pattern: RegExp) => state.journal.filter(line => pattern.test(line)).length;
+  const again = names.map(name => ({ name, times: lines(new RegExp(`^\\d+\\. wrote ${name.replace('.', '\\.')} `)) })).filter(item => item.times > 1);
+  const asked = [[lines(/^\d+\. a reader read through/), 'a reader'], [lines(/^\d+\. asked the keeper/), 'the keeper'], [lines(/^\d+\. asked (?!the keeper)/), 'your people']].filter(([times]) => times).map(([times, who]) => `${who} ${times === 1 ? 'once' : `${times} times`}`);
+  const set = [[lines(/^\d+\. planted in/), 'set in'], [lines(/^\d+\. changed in/), 'changed'], [lines(/^\d+\. looked for/), 'looked for']].filter(([times]) => times).map(([times, what]) => `${times} ${what}`);
+  const notes = NOTES.filter(name => !state.files[name]?.trim());
+  const where = `WHERE YOU ARE: ${done.length} of ${chapters} chapters written${todo.length ? ` (${todo.join(', ')} to go)` : ''}${notes.length === NOTES.length ? '; your notes are empty' : ''}.`
+    + (state.step ? ` So far: ${state.step} answer${state.step === 1 ? '' : 's'}${asked.length ? `; asked ${asked.join(', ')}` : '; nobody asked yet'}${set.length ? `; ${set.join(', ')}` : ''}${again.length ? `; written more than once: ${again.map(item => `${item.name} (${item.times})`).join(', ')}` : ''}.` : '');
+  const need = todo.length * 2, after = Math.round(state.budget / 4);
+  const ahead = todo.length
+    ? `the ${todo.length} chapter${todo.length > 1 ? 's' : ''} still to write took other authors about ${need} call${need > 1 ? 's' : ''} (a chapter, and a question or a thing set in beside it), and once the book was whole they spent about ${after} more: a reader of the whole book (2 calls), a chapter or two written again, a few lines changed (1 each; looking with find is free). `
+      + (left >= need + after ? `You have ${left}: room for all of that and ${left - need - after} over.` : left >= need ? `You have ${left}: enough for the chapters, and ${left - need} for what comes after.` : left >= todo.length ? `You have ${left}: enough to write each of them once, with ${left - todo.length} to spare, if little else is done.` : `You have ${left}, which is fewer than the chapters still to write.`)
+    : `the book is whole. Other authors spent about ${after} calls from here: a reader of the whole book (2), a chapter or two written again, a few lines changed (1 each; looking with find is free). You have ${left}${left <= 2 ? ': about enough for one last thing and to say done' : ''}.`;
+  return `${where}\nWHAT IS LEFT, going by other books written at this desk (a guide, not a rule): ${ahead}`;
+}
+
 /** Everything the author sees before it decides its next step. */
 export function deskView(state: DeskState, chapters: number, result: string): string {
   const unwritten = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1)).filter(name => !state.files[name]?.trim());
@@ -145,8 +180,45 @@ export function deskView(state: DeskState, chapters: number, result: string): st
     + `YOUR DESK NOW:\n${Object.entries(state.files).map(([name, text]) => `===== ${name} (${count(text)} words) =====\n${text || '(empty)'}`).join('\n\n')}`
     + `\n\nWHAT READERS AND CHARACTERS HAVE TOLD YOU (latest last):\n${state.answers.length ? state.answers.slice(-6).map(answer => `[${answer.who}, at step ${answer.step}${answer.about ? `, about ${answer.about}` : ''}${answer.stale ? ` — YOU HAVE CHANGED ${answer.about} SINCE: this was said of the text as it was then` : ''}]\n${answer.text}`).join('\n\n') : '(nothing yet)'}`
     + `\n\nYOUR STEPS SO FAR:\n${state.journal.length ? state.journal.slice(-40).join('\n') : '(nothing yet)'}`
-    + `\n\nBUDGET LEFT: ${left} of ${state.budget} calls.${unwritten.length ? ` Not yet written: ${unwritten.join(', ')}.` : ' Every chapter has text.'}\nYour next answer, in the form given:`;
+    + `\n\nBUDGET LEFT: ${left} of ${state.budget} calls.${unwritten.length ? ` Not yet written: ${unwritten.join(', ')}.` : ' Every chapter has text.'}\n${whereYouAre(state, chapters)}\nYour next answer, in the form given:`;
 }
+
+/** A place in the book where the author's quoted words stand: the file, the span, and the whole sentence around it. */
+export interface Place { file: string; from: number; to: number; sentence: string }
+const quoted = (text: string) => text.trim().replace(/^["“‘'…\s]+|["”’'…\s]+$/g, '');
+const sentenceAt = (text: string, from: number, to: number): string => {
+  const start = Math.max(text.lastIndexOf('\n', from - 1) + 1, ...['. ', '! ', '? ', '." ', '.” ', '?” ', '!” '].map(end => { const at = text.lastIndexOf(end, from - 1); return at < 0 ? 0 : at + end.length; }));
+  const ends = ['. ', '! ', '? ', '." ', '.” ', '?” ', '!” ', '\n'].map(end => { const at = text.indexOf(end, Math.max(to - 1, from)); return at < 0 ? -1 : at + end.trimEnd().length; }).filter(at => at >= 0);
+  return text.slice(start, ends.length ? Math.min(...ends) : text.length).trim();
+};
+/**
+ * Every place the quoted words stand, in the files named. Code, not a reader: letters and digits must match, while
+ * capitals, the shape of quotation marks and dashes, and how the line is broken do not count.
+ */
+export function findPlaces(files: Record<string, string>, names: string[], words: string, most = 40): Place[] {
+  const bits = quoted(words).split(/\s+/).filter(Boolean); if (!bits.length || bits.join('').length < 3) return [];
+  const loose = bits.map(bit => bit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/["“”]/g, '["“”]').replace(/['‘’]/g, "['‘’]").replace(/[-–—]/g, '[-–—]')).join('\\s+');
+  const edge = (bit: string, side: 'start' | 'end') => /[A-Za-z0-9]/.test(side === 'start' ? bit[0] : bit.at(-1)!) ? '\\b' : '';
+  const pattern = new RegExp(edge(bits[0], 'start') + loose + edge(bits.at(-1)!, 'end'), 'gi'), places: Place[] = [];
+  // A quotation mark the author typed at either end belongs to the place when the page has one there.
+  const raw = words.trim(), lead = /^["“‘']/.test(raw), tail = /["”’']$/.test(raw);
+  for (const file of names) { const text = files[file] || ''; for (const found of text.matchAll(pattern)) {
+    if (places.length >= most) return places;
+    let from = found.index!, to = from + found[0].length;
+    if (lead && /["“‘']/.test(text[from - 1] || '')) from--;
+    if (tail && /["”’']/.test(text[to] || '')) to++;
+    places.push({ file, from, to, sentence: sentenceAt(text, from, to) });
+  } }
+  return places;
+}
+/** When the words stand nowhere: the sentences that share most with them, so the author can see what the page has instead. */
+export function nearestTo(files: Record<string, string>, names: string[], words: string, most = 3): Place[] {
+  const wanted = wordsOf(words); if (wanted.size < 2) return [];
+  const ranked: (Place & { share: number })[] = [];
+  for (const file of names) for (const sentence of (files[file] || '').split(/(?<=[.!?…”"])\s+|\n+/)) { const share = [...wordsOf(sentence)].filter(word => wanted.has(word)).length; if (share >= Math.min(3, Math.ceil(wanted.size / 2))) ranked.push({ file, from: 0, to: 0, sentence: sentence.trim(), share }); }
+  return ranked.sort((one, other) => other.share - one.share).slice(0, most);
+}
+const shown = (places: Place[], most = 8) => places.slice(0, most).map(place => `— ${place.file}: "${place.sentence.length > 260 ? place.sentence.slice(0, 260) + '…' : place.sentence}"`).join('\n') + (places.length > most ? `\n— and ${places.length - most} more.` : '');
 
 /**
  * Part of the mirror: a chapter written again that came out as it was. One author meant to change a single line of its
@@ -173,7 +245,7 @@ export function circling(state: DeskState, file: string, chapters: string[]): st
   const unwritten = chapters.filter(chapter => !state.files[chapter]?.trim());
   const close = `You have ${left} call${left === 1 ? '' : 's'} left${unwritten.length ? `, and ${unwritten.join(', ')} ${unwritten.length > 1 ? 'are' : 'is'} not written yet` : ''}. Whether to go round again is yours to decide.`;
   if (chapters.includes(file)) {
-    const about = state.journal.filter(line => line.includes(file) && /^\d+\. (wrote|appended to|planted in|a reader read through)/.test(line));
+    const about = state.journal.filter(line => line.includes(file) && /^\d+\. (wrote|appended to|planted in|changed in|a reader read through)/.test(line));
     const writes = about.filter(line => /^\d+\. wrote /.test(line));
     if (writes.length >= 3 && writes.length > (shown[file] || 0)) {
       shown[file] = writes.length;
@@ -235,7 +307,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     if (told) return `${told} Say done again and the book is printed as it stands.`;
     state.finished = true; note('done'); return '';
   }
-  if (['write', 'append', 'plant'].includes(tool) && !(file in state.files)) { note(`${tool} ${file}: no such file`); return `There is no file "${file}". Your files: ${Object.keys(state.files).join(', ')}.`; }
+  if ((['write', 'append'].includes(tool) || (['plant', 'change', 'edit', 'find'].includes(tool) && file && !/^(the )?(whole )?(book|all|chapters|everywhere|any)$/i.test(file))) && !(file in state.files)) { note(`${tool} ${file}: no such file`); return `There is no file "${file}". Your files: ${Object.keys(state.files).join(', ')}.`; }
   // What code can count about a chapter that has just been written, handed back with it.
   const counted = (): string => {
     if (!isChapter) return '';
@@ -252,17 +324,81 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
   const whole = async () => { const told = isChapter ? await hanging('Every chapter now has text. Someone has read the book through, and says what it left in their hands:') : ''; return told ? `\n\n${told}` : ''; };
   if (tool === 'write') { const was = state.files[file] || ''; state.files[file] = isChapter ? cleanChapter(ownWords(content)) : ownWords(content); changed(); note(`wrote ${file} (${count(state.files[file])} words)`); return `${file} is written: ${count(state.files[file])} words.${counted()}${await whole()}${same(was, state.files[file], file)}${circling(state, file, chapterNames)}`; }
   if (tool === 'append') { const next = (state.files[file] + '\n\n' + ownWords(content)).trim(); state.files[file] = isChapter ? cleanChapter(next) : next; changed(); note(`appended to ${file} (now ${count(state.files[file])} words)`); return `${file} is now ${count(state.files[file])} words.${counted()}${await whole()}`; }
-  if (tool === 'plant') {
-    if (!isChapter || !state.files[file]?.trim()) { note(`plant ${file}: not a written chapter`); return `plant sets something into a chapter that is already written. ${file} is not one.`; }
-    const [where, what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
-    const parts = state.files[file].split(/\n\s*\n/), key = (where || '').trim().replace(/^["“]|["”…]+$/g, '').slice(0, 60).toLowerCase();
-    const at = key.length >= 8 ? parts.findIndex(part => part.toLowerCase().includes(key)) : -1;
-    if (!what?.trim() || at < 0) { note(`plant ${file}: place not found`); return `The paragraph to plant after was not found in ${file}. Quote the first few words of a paragraph exactly as it stands, then a line containing only ===, then the new text.`; }
-    if (count(what) > 150) { note(`plant ${file}: too long`); return `That is ${count(what)} words. A plant is one thing set down in passing, at most 120 words. To change the chapter itself, write it again.`; }
-    parts.splice(at + 1, 0, what.trim()); state.files[file] = parts.join('\n\n'); state.inserts = [...(state.inserts || []), { step: state.step, file, kind: 'plant', at: parts[at].slice(0, 200), text: what.trim() }];
-    note(`planted in ${file}`); return `Set into ${file} after "${parts[at].slice(0, 70)}…".`;
+  // Every tool that touches the text at a place looks for the place first; and looking is a tool of its own.
+  const written = chapterNames.filter(chapter => state.files[chapter]?.trim());
+  const scope = file in state.files ? [file] : written;
+  // What a reader said was said of the text as it was: after a line is changed or a thing set in, it is marked so, and a
+  // reader asked again is a new reader at the next price. Told that "nothing has changed since" after changing three
+  // chapters, one author asked for a reader three times running and got the old answer each time.
+  const stale = (touched: string) => { for (const answer of state.answers) if (answer.who === 'a reader' && chapterNames.indexOf(answer.about) >= chapterNames.indexOf(touched)) answer.stale = true; };
+  // The one place the quoted words stand, or what the author is told when there is not exactly one.
+  const place = (given: string, doing: string): Place | string => {
+    // "PLACE: 2" on a first line picks the second of several places: the same paragraph printed twice can be told apart no other way.
+    const which = Number(given.match(/^\s*PLACE\s*:?\s*#?(\d+)\s*\n/i)?.[1] || 0), words = given.replace(/^\s*PLACE\s*:?\s*#?\d+\s*\n/i, '');
+    const places = findPlaces(state.files, scope, words);
+    if (places.length === 1) return places[0];
+    if (which >= 1 && which <= places.length) return places[which - 1];
+    if (places.length > 1) return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" stands in ${places.length} places${file in state.files ? ` in ${file}` : ''}.\n${places.slice(0, 8).map((found, at) => `— PLACE ${at + 1}, ${found.file}: "${found.sentence.slice(0, 220)}${found.sentence.length > 220 ? '…' : ''}"`).join('\n')}\nQuote a little more of the one you mean; or, if the same words stand more than once and you mean one of them, put a first line above them saying which, like PLACE: 2.`;
+    const near = nearestTo(state.files, scope, words);
+    return `Nothing was ${doing}: "${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'} as you quoted it.${near.length ? ` The lines nearest to it:\n${shown(near)}\nQuote the words as they stand.` : ''}`;
+  };
+  // Part of the mirror: words just put into the book that now stand in it more than once. One author set the same
+  // paragraph into a chapter at two steps running, and a reader later found it printed twice.
+  const twice = (put: string, into: string): string => {
+    const head = (put.trim().split(/(?<=[.!?…”"])\s+/)[0] || '').trim();
+    if (count(head) < 7) return '';
+    const places = findPlaces(state.files, written, head);
+    return places.length > 1 ? `\n\n"${head.slice(0, 90)}${head.length > 90 ? '…' : ''}" now stands ${places.length} times in the book (${[...new Set(places.map(found => found.file))].join(', ')}). If one of them should go, change can take it out: a first line PLACE: ${places.length} above the words picks the last.` : '';
+  };
+  if (tool === 'find') {
+    const words = ownWords(content);
+    if (quoted(words).length < 3) {
+      // With nothing to look for, find shows what stands in the book more than once: an author told that "a paragraph
+      // is printed twice" cannot quote it until it knows which, and two of them hunted for one through eight answers.
+      const seen = new Map<string, string[]>();
+      for (const chapter of scope.filter(name => chapterNames.includes(name))) for (const part of (state.files[chapter] || '').split(/\n\s*\n/).flatMap(block => [...new Set(count(block) > 60 ? [block.trim(), ...block.trim().split(/(?<=[.!?…”"])\s+/).map(line => line.trim())] : [block.trim()])])) if (count(part) >= 9) seen.set(part, [...(seen.get(part) || []), chapter]);
+      const repeats = [...seen].filter(([, where]) => where.length > 1).sort((one, other) => other[0].length - one[0].length).filter(([part], at, all) => !all.slice(0, at).some(([longer]) => longer.includes(part))).slice(0, 8);
+      note(`looked for what stands twice${file in state.files ? ` in ${file}` : ''}: ${repeats.length}`);
+      return repeats.length ? `Standing more than once${file in state.files ? ` in ${file}` : ' in the book'}, word for word:\n${repeats.map(([part, where]) => `— ${where.length} times (${[...new Set(where)].join(', ')}), ${count(part)} words: "${part.slice(0, 200)}${part.length > 200 ? '…' : ''}"`).join('\n')}\nchange takes one of them out: quote it, with a first line PLACE: 2 above to pick the second.`
+        : `No paragraph or long sentence stands twice${file in state.files ? ` in ${file}` : ' in the book'}, word for word.`;
+    }
+    const places = findPlaces(state.files, scope, words), near = places.length ? [] : nearestTo(state.files, scope, words);
+    note(`looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}: ${places.length} place${places.length === 1 ? '' : 's'}`);
+    return places.length ? `"${quoted(words).slice(0, 80)}" stands in ${places.length} place${places.length === 1 ? '' : 's'}${file in state.files ? ` in ${file}` : ''}:\n${shown(places, 20)}`
+      : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`;
   }
-  if (tool === 'edit') { note(`edit ${file}: no such tool`); return 'There is no tool for patching a passage. To change a chapter, write it again whole; to set one thing into it, use plant.'; }
+  if (tool === 'change' || tool === 'edit') {
+    const [was = '', now = ''] = ownWords(content).split(/\n={3,}[ \t]*(?:\n|$)/);
+    if (quoted(was).length < 3) { note('change: no words quoted'); return 'change puts other words where words stand now. The content is the words as they stand, then a line containing only ===, then what should stand there instead.'; }
+    if (count(now) > 220) { note(`change ${file}: too long`); return `That is ${count(now)} words to put in. change is for a line or a short passage, at most 200 words; what a chapter does is changed by writing it again.`; }
+    const found = place(was, 'changed');
+    if (typeof found === 'string') { note(`change ${file || 'the book'}: ${/stands in \d+ places/.test(found) ? 'the words stand in several places' : 'the words were not found'}`); return found; }
+    const text = state.files[found.file], next = (text.slice(0, found.from) + now.trim() + text.slice(found.to)).replace(/[ \t]{2,}/g, ' ').replace(/ ([.,;!?])/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
+    state.files[found.file] = next; stale(found.file);
+    const after = now.trim() ? sentenceAt(next, found.from, found.from + now.trim().length) : '(taken out)';
+    // What a long change did cannot be seen in a clipped sentence: its size is said, and what now stands on either side of it.
+    const out = count(text.slice(found.from, found.to)), put = count(now), ends = (passage: string) => passage.length > 300 ? `${passage.slice(0, 170)} […] ${passage.slice(-90)}` : passage;
+    const beside = () => { const at = Math.min(found.from, next.length), till = Math.min(found.from + now.trim().length, next.length); const before = next.slice(0, at).trim().split(/(?<=[.!?…”"])\s+|\n+/).at(-1) || '', behind = next.slice(till).trim().split(/(?<=[.!?…”"])\s+|\n+/)[0] || ''; return `\nBefore it now stands: "${before.slice(-200) || '(the start of the chapter)'}"\nAfter it now stands: "${behind.slice(0, 200) || '(the end of the chapter)'}"`; };
+    state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'change', at: found.sentence.slice(0, 400), text: after.slice(0, 600) }];
+    note(`changed in ${found.file}: "${quoted(was).slice(0, 50)}" → "${now.trim().slice(0, 50) || '(taken out)'}"`);
+    if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${twice(now, found.file)}`;
+    return `Changed in ${found.file}, at the one place: ${out} words taken out, ${put} put in.\nTaken out: "${ends(text.slice(found.from, found.to).trim())}"\n${put ? `Put in: "${ends(now.trim())}"` : 'Nothing put in.'}${beside()}${twice(now, found.file)}`;
+  }
+  if (tool === 'plant') {
+    const [where = '', what] = ownWords(content).split(/\n={3,}[ \t]*\n/);
+    if (!what?.trim() || quoted(where).length < 3) { note(`plant ${file}: nothing to set in`); return 'plant sets one thing into a written chapter. The content is a few words of the paragraph it goes after, quoted as they stand, then a line containing only ===, then the new text.'; }
+    if (count(what) > 150) { note(`plant ${file}: too long`); return `That is ${count(what)} words. A plant is one thing set down in passing, at most 120 words. To change the chapter itself, write it again.`; }
+    if (file in state.files && (!isChapter || !state.files[file]?.trim())) { note(`plant ${file}: not a written chapter`); return `plant sets something into a chapter that is already written. ${file} is not one.`; }
+    // A paragraph is named by how it begins; if a long quotation drifts from the page, its first sixty characters are tried.
+    let found = place(where, 'set in');
+    if (typeof found === 'string' && /does not stand/.test(found) && quoted(where).length > 60) { const head = place(quoted(where).slice(0, 60).replace(/\s+\S*$/, ''), 'set in'); if (typeof head !== 'string') found = head; }
+    if (typeof found === 'string') { note(`plant ${file || 'the book'}: ${/stands in \d+ places/.test(found) ? 'the words stand in several places' : 'place not found'}`); return found; }
+    const text = state.files[found.file], end = text.indexOf('\n\n', found.to), cut = end < 0 ? text.length : end;
+    const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
+    state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
+    state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
+    note(`planted in ${found.file}`); return `Set into ${found.file} after "${before.slice(0, 70)}…".${twice(what, found.file)}`;
+  }
   if (tool === 'ask_keeper') {
     if (state.budget - state.spent < 1) { note('ask_keeper: no budget'); return 'There is no budget left for a second call.'; }
     const book = chapterNames.filter(chapter => state.files[chapter]?.trim()).map(chapter => `[${chapter}]\n${state.files[chapter]}`).join('\n\n');
@@ -292,7 +428,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     state.answers.push({ who: 'a reader', step: state.step, about: target, asked: content.trim(), text: said }); note(`a reader read through ${target}${price > 1 ? ` (reader ${had + 1} of this chapter, ${price} calls)` : ''}`); return `The reader says:\n${said}`;
   }
   note('an answer that used no tool');
-  return `"${tool}" is not one of your tools. Answer in the form given, with one of: write, append, plant, ask_character, ask_keeper, ask_reader, done.`;
+  return `"${tool}" is not one of your tools. Answer in the form given, with one of: write, append, plant, change, find, ask_character, ask_keeper, ask_reader, done.`;
 }
 
 /**
@@ -370,6 +506,9 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
       if ((step.tool === 'write' || step.tool === 'append') && at >= 0 && index < steps.length - 1) { told.push(`A chapter is the last step of an answer: the ${steps.length - 1 - index} step(s) you wrote after ${step.file} were not carried out, because you had not seen what came back with it.`); break; }
       if (desk.finished) break;
     }
+    // Looking costs nothing: an answer that only looked is given back its call. So that looking cannot go on for ever,
+    // as many free looks as the book has calls, and after that a look is an answer like any other.
+    if (steps.length && steps.every(step => step.tool === 'find') && (desk.free_looks || 0) < desk.budget) { desk.spent--; desk.free_looks = (desk.free_looks || 0) + 1; }
     result = told.filter(Boolean).join('\n\n');
     save();
     if (steps.some(step => names.includes(step.file))) store.checkpoint(`author-step-${desk.step}`);
