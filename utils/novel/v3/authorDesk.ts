@@ -1,4 +1,5 @@
 import type { NovelLLM } from '../v2/llm';
+import type { SimilarRequest } from './similar';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import type { ProjectStore } from '../v2/store';
 import { authorKey, cleanChapter, wornPhrases, type AuthorDraft } from './author';
@@ -134,7 +135,7 @@ the content
 
 - write replaces the whole file with the content. append adds the content to its end. A chapter is revised by writing it again, whole.
 - change: puts other words where words stand now, at one place. The content is the words as they stand, quoted exactly — a phrase is enough when it stands in one place only — then a line containing only ===, then what should stand there instead (nothing, to take them out). For a line or a short passage; what a chapter does is changed by writing it again.
-- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence. The content is the word or phrase; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
+- find: shows every place in the book where a word or phrase stands, with the chapter and the whole sentence, and beside them the lines that say something like it in other words, in the book and in your notes: you can look for a thing by what it means ("where Claire was that afternoon"). The content is the word, phrase or thing; with no content it shows what stands in the book more than once, word for word. Code looks, not a reader: it is exact, it changes nothing, and an answer that only looks costs no call (the first two in a row).
 - plant and change look for the place before they touch it. If the words you quoted stand in more than one place, or nowhere, nothing is changed: you are shown every place they stand, numbered, or the lines nearest to them, and can quote the one you mean or name it by its number.
 - plant: sets one thing into a chapter already written, for another chapter to pay off: a thing on a table, a line someone says. The content is the paragraph the new text goes after, quoted from its first few words, then a line containing only ===, then the new text, at most 120 words.
 - ask_character: another mind answers as that person, alone, knowing only what you tell it. The content is what that person knows and wants, and the question you put to them. For when you need someone to act from inside rather than for your convenience. It may be the one whose work in this story is to doubt it: a detective told how the thing was done will say what does not hold.
@@ -419,7 +420,7 @@ export function circling(state: DeskState, file: string, chapters: string[]): st
  * `ask` is how a second mind is reached; it is counted against the budget by the caller.
  */
 export async function takeStep(state: DeskState, step: ReturnType<typeof readStep>, chapters: number,
-  ask: (kind: 'character' | 'reader', prompt: string, system: string) => Promise<string>): Promise<string> {
+  ask: (kind: 'character' | 'reader' | 'similar', prompt: string, system: string) => Promise<string>): Promise<string> {
   const { tool, file, name, content, thought } = step;
   const note = (line: string) => { state.journal.push(`${state.step}. ${line}${thought ? ` — ${thought.slice(0, 220)}` : ''}`); };
   const chapterNames = Array.from({ length: chapters }, (_, at) => chapterFile(at + 1));
@@ -514,6 +515,28 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const near = nearestTo(state.files, scope, words);
     return `Nothing was ${doing}: the ${count(words)} words you quoted, beginning "${quoted(words).slice(0, 80)}", do not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'} as you quoted them.${near.length ? ` The lines nearest to it:\n${shown(near)}\nQuote the words as they stand.` : ''}`;
   };
+  // Search by meaning. Words find a word; they do not find the same thing said otherwise. "The clock ran four minutes
+  // slow" and "a clock that ran a few minutes fast" share one word of substance; "I was here all afternoon" shares
+  // none with the envelope's "2:55 p.m. — she leaves by the back stairs". A small network measures how near each line
+  // of the book is in meaning to what the author touched or asked for, and code shows the nearest. When the network
+  // cannot be reached, undefined comes back and the search is by words, as before.
+  const byMeaning = async (source: string, among: string[], most: number, floor: number, least: number, not: (line: string) => boolean = () => false): Promise<Place[] | undefined> => {
+    const lines = among.flatMap(name => (state.files[name] || '').split(/^chapter-/.test(name) ? lineBreaks : /\n+/).map(line => ({ file: name, sentence: line.trim() })).filter(item => count(item.sentence) >= least && !not(item.sentence)));
+    if (!lines.length || count(source) < 2) return [];
+    try {
+      const request: SimilarRequest = { source: source.replace(/\s+/g, ' ').trim().slice(0, 700), sentences: lines.map(item => item.sentence.slice(0, 400)) };
+      const scores = JSON.parse(await ask('similar', JSON.stringify(request), '')) as number[];
+      return lines.map((item, at) => ({ ...item, from: 0, to: 0, at, score: Number(scores[at]) || 0 })).filter(item => item.score >= floor).sort((one, other) => other.score - one.score).slice(0, most).sort((one, other) => one.at - other.at);
+    } catch { return undefined; }
+  };
+  const noted = NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && state.files[name]?.trim());
+  /** Everything else the author has said of what it touched: in the chapters and in its own notes, by meaning when that can be had. */
+  const said = async (was: string, is: string, around: string, skip: string): Promise<{ lines: Place[]; how: string }> => {
+    const subject = (is.trim() || was.trim()), same = (line: string) => line === was.trim() || line === is.trim() || (is.trim().length > 20 && (is.includes(line) || line.includes(is.trim().slice(0, 60)))) || (was.trim().length > 20 && line.includes(was.trim().slice(0, 60)));
+    const inBook = await byMeaning(subject, written, 6, 0.5, 8, same), inNotes = inBook ? await byMeaning(subject, noted.filter(name => name !== skip), 4, 0.42, 4, same) : undefined;
+    if (inBook && inNotes) return { lines: [...inBook, ...inNotes], how: 'found by meaning' };
+    return { lines: [...elsewhere(state.files, written, was, is, around, 6), ...elsewhere(state.files, noted.filter(name => name !== skip), was, is, around, 4)], how: 'found by their words' };
+  };
   // Part of the mirror: words just put into the book that now stand in it more than once. One author set the same
   // paragraph into a chapter at two steps running, and a reader later found it printed twice.
   const twice = (put: string, into: string): string => {
@@ -535,6 +558,12 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
         : `No paragraph or long sentence stands twice${file in state.files ? ` in ${file}` : ' in the book'}, word for word.`;
     }
     const places = findPlaces(state.files, scope, words), near = places.length ? [] : nearestTo(state.files, scope, words);
+    // Beside the places the words stand, the lines that say something like them in other words, in the book and in the notes.
+    const exact = new Set(places.map(found => found.sentence)), known = (line: string) => exact.has(line) || [...exact].some(place => place.includes(line) || line.includes(place));
+    // The notes are measured apart from the chapters: a thousand lines of book would crowd out the forty of the envelope.
+    const inBook = await byMeaning(quoted(words), file in state.files ? [file] : written, 5, 0.5, 5, known), inNotes = inBook && !(file in state.files) ? await byMeaning(quoted(words), noted, 3, 0.4, 4, known) : [];
+    const like = inBook ? [...inBook, ...(inNotes || [])] : undefined;
+    const alike = like?.length ? `\n\nLines that say something like it in other words (found by meaning):\n${shown(like, 8)}` : '';
     // A look knows what the author has changed since it last looked. Looked for again after a change, the words are
     // shown as they stand now, and it is said what is different: that is checking, not going round. Only a look that
     // shows the very same thing a third time is said to be the same look: one author looked for "Tuesday" seven times
@@ -546,7 +575,7 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     state.looks = { ...(state.looks || {}), [key]: { steps, count: places.length, sight } };
     note(`looked for "${quoted(words).slice(0, 60)}"${file in state.files ? ` in ${file}` : ''}: ${places.length} place${places.length === 1 ? '' : 's'}`);
     return (places.length ? `"${quoted(words).slice(0, 80)}" stands in ${places.length} place${places.length === 1 ? '' : 's'}${file in state.files ? ` in ${file}` : ''}:\n${shown(places, 20)}`
-      : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`) + round;
+      : `"${quoted(words).slice(0, 80)}" does not stand ${file in state.files ? `in ${file}` : 'anywhere in the chapters'}.${!alike && near.length ? ` The lines nearest to it:\n${shown(near)}` : ''}`) + alike + round;
   }
   if (tool === 'change' || tool === 'edit') {
     const whole = ownWords(content), parted = /(?:^|\n)={3,}[ \t]*(?:\n|$)/.test(content.trimEnd());
@@ -570,10 +599,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     // The day the scene stands in is the last one named before the place, however far up the chapter that was.
     const day = [...next.slice(0, found.from).matchAll(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b/g)].at(-1)?.[0] || '';
     // The author's notes are its own words too: what its envelope and dossier say of the thing stands beside what the chapters say.
-    // The notes are looked through on their own, so that a book of many lines does not crowd out the few lines of the envelope.
-    const own = NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && name !== found.file && state.files[name]?.trim());
-    const other = [...elsewhere(state.files, written, found.sentence, now.trim() ? after : '', `${about} ${day}`, 6), ...elsewhere(state.files, own, found.sentence, now.trim() ? after : '', `${about} ${day}`, 4)];
-    const also = other.length ? `\n\nElsewhere the book speaks of what you have just touched (your own lines; nobody has judged them):\n${shown(other)}` : '';
+    const { lines: other, how } = await said(found.sentence, now.trim() ? after : '', `${about} ${day}`, found.file);
+    const also = other.length ? `\n\nElsewhere you have spoken of what you just touched (your own lines, ${how}; nobody has judged them):\n${shown(other, 10)}` : '';
     // Found by likeness, not word for word: the author is shown in full what was taken as the place.
     if (loose) return `Changed in ${found.file}. The words did not stand exactly as you quoted them; this passage, which is plainly the one you meant, was taken as the place: ${out} words taken out, ${put} put in.\nTaken out: "${text.slice(found.from, found.to).trim().slice(0, 700)}"\n${put ? `Put in: "${now.trim().slice(0, 700)}"` : 'Nothing put in.'}${beside()}${also}${twice(now, found.file)}`;
     if (out <= 25 && put <= 25) return `Changed in ${found.file}, at the one place.\nIt read: "${found.sentence.slice(0, 400)}"\nIt now reads: "${after.slice(0, 400)}"${also}${twice(now, found.file)}`;
@@ -592,8 +619,8 @@ export async function takeStep(state: DeskState, step: ReturnType<typeof readSte
     const before = text.slice(Math.max(0, text.lastIndexOf('\n\n', found.from)), cut).trim();
     state.files[found.file] = `${text.slice(0, cut)}\n\n${what.trim()}${text.slice(cut)}`; stale(found.file);
     state.inserts = [...(state.inserts || []), { step: state.step, file: found.file, kind: 'plant', at: before.slice(0, 200), text: what.trim() }];
-    note(`planted in ${found.file}`); const touched = [...elsewhere(state.files, written, '', what.trim(), '', 6), ...elsewhere(state.files, NOTES.filter(name => name !== 'notebook.md' && name !== 'plan.md' && state.files[name]?.trim()), '', what.trim(), '', 4)];
-    return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere the book speaks of what you have just set in (your own lines; nobody has judged them):\n${shown(touched)}` : ''}${twice(what, found.file)}`;
+    note(`planted in ${found.file}`); const { lines: touched, how } = await said('', what.trim(), '', '');
+    return `Set into ${found.file} after "${before.slice(0, 70)}…".${seam(state.files[found.file], what)}${touched.length ? `\n\nElsewhere you have spoken of what you just set in (your own lines, ${how}; nobody has judged them):\n${shown(touched, 10)}` : ''}${twice(what, found.file)}`;
   }
   if (tool === 'ask_keeper') {
     if (state.budget - state.spent < 1) { note('ask_keeper: no budget'); return 'There is no budget left for a second call.'; }
@@ -688,6 +715,8 @@ export async function writeAtDesk(input: ProjectInput, store: ProjectStore, llm:
         desk.journal.push(`${desk.step}. done — but chapters are still unwritten`);
       } else {
         told.push(await takeStep(desk, step, chapters, async (kind, prompt, persona) => {
+          // Search by meaning is a small network measuring lines: it costs the author nothing.
+          if (kind === 'similar') return llm(prompt, persona, { stage: 'author-similar', route: 'helper' });
           desk.spent++;
           // A reader is another head: the editor's model when the publisher has set one. A character and the keeper speak from inside the book, in the author's own.
           const call = (route: 'writer' | 'validator') => llm(prompt, persona, { stage: kind === 'reader' ? 'author-reader' : 'author-character', route, temperature: kind === 'reader' ? 0.7 : 0.9, maxTokens: 1200 });

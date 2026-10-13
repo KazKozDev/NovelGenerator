@@ -8,6 +8,7 @@ import StreamingContentView from '../components/StreamingContentView';
 import { deskTabs, deskFocus } from '../utils/novel/v3/deskTabs';
 import { spansOf } from '../utils/novel/v3/authorDesk';
 import { deskBudget, deskView, newDesk, ownWords, readStep, readSteps, takeStep } from '../utils/novel/v3/authorDesk';
+import type { SimilarRequest } from '../utils/novel/v3/similar';
 
 const input = { premise: 'Nora hides a notebook.', author_requirements: 'Voice: third-limited. Audience: adult.', genre: 'thriller', chapter_count: 2, target_total_words: 600, planning_version: 2 as const };
 const step = (thought: string, tool: string, target: string, content = '') => `THOUGHT: ${thought}\nTOOL: ${tool}\n${tool === 'ask_character' ? 'NAME' : 'FILE'}: ${target}\n---\n${content}`;
@@ -326,7 +327,7 @@ describe('the desk', () => {
     desk.files['chapter-2.md'] = 'The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died. She said she had been at the office with her patients.\n\nIt rained all week on the harbor road and nobody came.';
     const told = await takeStep(desk, readStep(step('Fix.', 'change', 'chapter-1.md', 'found by a housekeeper that morning\n===\nfound by a housekeeper the next morning')), 2, ask);
     expect(told).toContain('It now reads: "He had been found by a housekeeper the next morning."');
-    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
+    expect(told).toContain('Elsewhere you have spoken of what you just touched (your own lines, found by their words');
     expect(told).toContain('— chapter-1.md: "The hotel called her on a Tuesday morning."'); expect(told).toContain('— chapter-2.md: "The detective asked where she had been on Tuesday afternoon between two and six, the afternoon he died."');
     expect(told).not.toContain('It rained all week');
   });
@@ -336,12 +337,12 @@ describe('the desk', () => {
     desk.files['chapter-2.md'] = 'On the armchair she found a folded scarf, and knew it for the one Claire wore. She put the scarf in her bag and took it home.\n\nThe clock over the door said a quarter to four.';
     desk.files['chapter-3.md'] = 'Claire came in on Thursday wearing the scarf again, and smoothed it on her lap. Nobody spoke for a while and the fan turned overhead.';
     const told = await takeStep(desk, readStep(step('Whose it is.', 'change', 'chapter-2.md', 'and knew it for the one Claire wore\n===\nand knew it for her own, taken from the coatrack in her office')), 3, ask);
-    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
+    expect(told).toContain('Elsewhere you have spoken of what you just touched (your own lines, found by their words');
     expect(told).toContain('— chapter-1.md: "A woman came in first, in a dove-grey scarf'); expect(told).toContain('— chapter-2.md: "She put the scarf in her bag and took it home."'); expect(told).toContain('— chapter-3.md: "Claire came in on Thursday wearing the scarf again');
     expect(told).not.toContain('It rained on King Street'); expect(told).not.toContain('the fan turned');
     // A thing set in is touched too.
     const set = await takeStep(desk, readStep(step('Plant.', 'plant', 'chapter-1.md', 'It rained on King Street\n===\nThe coatrack in the corner of her office held one coat and nothing else.')), 3, ask);
-    expect(set).toContain('Elsewhere the book speaks of what you have just set in'); expect(set).toContain('taken from the coatrack in her office');
+    expect(set).toContain('Elsewhere you have spoken of what you just set in'); expect(set).toContain('taken from the coatrack in her office');
   });
   it('says when a chapter has sentences word for word from an earlier one', async () => {
     const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';
@@ -356,9 +357,28 @@ describe('the desk', () => {
     desk.files['chapter-1.md'] = 'It rained all week and nobody came to the office on Wentworth Street.';
     desk.files['chapter-2.md'] = 'Nora asked who went into that room. Claire set the cup down. "I did," she said. Then nobody spoke for a long while.';
     const told = await takeStep(desk, readStep(step('She was not there.', 'change', 'chapter-2.md', '"I did," she said.\n===\n"I don\'t know," Claire said. "I was here all afternoon. I watered the garden. I never went up those back stairs."')), 2, ask);
-    expect(told).toContain('Elsewhere the book speaks of what you have just touched');
+    expect(told).toContain('Elsewhere you have spoken of what you just touched (your own lines, found by their words');
     expect(told).toContain('— envelope.md: "12:10 p.m. — Claire enters the hotel by the Meeting Street door and goes up the back stairs."');
     expect(told).toContain('— envelope.md: "2:55 p.m. — Claire leaves by the back stairs and goes home and waters the garden."');
+  });
+  it('searches by meaning when a small network can be asked, at no cost: after a change, and in find', async () => {
+    const desk = newDesk(2); desk.budget = 20;
+    desk.files['envelope.md'] = 'Thu, Oct 17\n12:10 p.m. — Claire enters the hotel by the Meeting Street door.\n2:55 p.m. — Claire leaves by the back stairs and goes home.';
+    desk.files['chapter-1.md'] = 'The clock on the nightstand ran four minutes slow, and she had never corrected it. It rained on Wentworth Street all that week long.';
+    desk.files['chapter-2.md'] = 'In that room the hour was always a little ahead of itself, by her count. "I was at home the whole day," Claire said, "and I never saw him."';
+    const asked: SimilarRequest[] = [];
+    // The network: a number for each line, by what the line means and not by its words.
+    const near: [RegExp, RegExp][] = [[/clock|timepiece/i, /clock|hour was always a little ahead/i], [/at home|where Claire was/i, /Claire enters|Claire leaves|at home the whole day/i]];
+    const ask = async (kind: string, prompt: string) => { if (kind !== 'similar') return 'fine'; const request = JSON.parse(prompt) as SimilarRequest; asked.push(request); return JSON.stringify(request.sentences.map(line => near.some(([about, says]) => about.test(request.source) && says.test(line)) ? 0.8 : 0.1)); };
+    const told = await takeStep(desk, readStep(step('Which way.', 'change', 'chapter-1.md', 'ran four minutes slow\n===\nran four minutes fast')), 2, ask as never);
+    expect(told).toContain('(your own lines, found by meaning; nobody has judged them)');
+    expect(told).toContain('— chapter-2.md: "In that room the hour was always a little ahead of itself, by her count."'); expect(told).not.toContain('It rained on Wentworth');
+    // find takes a thing by what it means, and looks in the notes too.
+    const found = await takeStep(desk, readStep('THOUGHT: Where was she?\nTOOL: find\n---\nwhere Claire was that afternoon'), 2, ask as never);
+    expect(found).toContain('"where Claire was that afternoon" does not stand anywhere in the chapters.');
+    expect(found).toContain('Lines that say something like it in other words (found by meaning):');
+    expect(found).toContain('— envelope.md: "12:10 p.m. — Claire enters the hotel by the Meeting Street door."'); expect(found).toContain('— chapter-2.md: ""I was at home the whole day,');
+    expect(desk.spent).toBe(0); expect(asked.length).toBeGreaterThan(1);
   });
   it('hands back with a chapter the things it leans on that no earlier chapter has', async () => {
     const desk = newDesk(3); desk.told_promises = true; const ask = async () => '';

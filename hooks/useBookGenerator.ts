@@ -9,6 +9,8 @@ import { browserDuelMemory } from '../utils/novel/v2/duel';
 import type { NovelLLM } from '../utils/novel/v2/llm';
 import { authorKey } from '../utils/novel/v3/author';
 import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
+import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/v3/similar';
+import { similarHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
 import { ChapterPipelineV2 } from '../utils/novel/v2/pipeline';
@@ -310,6 +312,8 @@ export default function useBookGenerator() {
     store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
+      // Search by meaning, asked quietly of a small network. Without a token it fails, and the engine searches by words instead.
+      if (options.route === 'helper') { const request = JSON.parse(prompt) as SimilarRequest; return JSON.stringify(await similarHuggingFaceBrowser(SIMILAR_MODEL, request.source, request.sentences)); }
       const start = Date.now();
       // A retry's prompt carries the rejection reason at its tail, past the
       // 500-char window: keep the head for context and the tail for the cause.

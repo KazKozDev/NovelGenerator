@@ -52,3 +52,11 @@ export async function fetchHuggingFaceModels(): Promise<{ id: string; providers:
   if (!response.ok) throw new Error(data.error || 'Model list failed');
   return Array.isArray(data.models) ? data.models : [];
 }
+
+/** Search by meaning through the local gateway: a likeness for each line. */
+export async function similarHuggingFaceBrowser(model: string, source: string, sentences: string[]): Promise<number[]> {
+  const response = await fetch('/api/hf/similar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, source, sentences }) });
+  const data = await response.json();
+  if (!response.ok || !Array.isArray(data.scores)) throw new Error(data.error || 'Search by meaning failed');
+  return data.scores;
+}

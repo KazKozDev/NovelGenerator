@@ -1,5 +1,6 @@
 import type { Plugin } from 'vite';
 import { generateHuggingFaceText, listHuggingFaceModels } from './hfService';
+import { similarHuggingFace } from './hfSimilarService';
 
 /** Development backend for Hugging Face Inference Providers: the token stays on the server. */
 export function hfDevPlugin(): Plugin {
@@ -11,6 +12,25 @@ export function hfDevPlugin(): Plugin {
       res.setHeader('Content-Type', 'application/json');
       if (!local(req)) { res.statusCode = 403; res.end(JSON.stringify({ error: 'Local requests only' })); return; }
       listHuggingFaceModels().then(models => res.end(JSON.stringify({ models })), error => { res.statusCode = 502; res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Model list failed' })); });
+    });
+    // Search by meaning: one text and many lines in, a likeness for each line out. The token stays here.
+    server.middlewares.use('/api/hf/similar', (req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method !== 'POST') { res.statusCode = 405; res.end(JSON.stringify({ error: 'POST required' })); return; }
+      if (!req.headers.origin || !local(req)) { res.statusCode = 403; res.end(JSON.stringify({ error: 'Hugging Face requests must originate from the local application' })); return; }
+      let body = '', oversized = false;
+      req.on('data', chunk => { if (oversized) return; body += chunk; if (Buffer.byteLength(body) > 4_000_000) { oversized = true; res.statusCode = 413; res.end(JSON.stringify({ error: 'Request too large' })); } });
+      req.on('end', async () => {
+        if (oversized) return;
+        let input: any;
+        try {
+          input = JSON.parse(body);
+          if (typeof input.model !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(input.model) || typeof input.source !== 'string' || !input.source.trim() || input.source.length > 4000
+            || !Array.isArray(input.sentences) || input.sentences.length < 1 || input.sentences.length > 6000 || !input.sentences.every((line: unknown) => typeof line === 'string' && line.length <= 2000)) throw Error();
+        } catch { res.statusCode = 400; res.end(JSON.stringify({ error: 'Invalid request' })); return; }
+        try { res.end(JSON.stringify({ scores: await similarHuggingFace(input.model, input.source, input.sentences) })); }
+        catch (error) { res.statusCode = 502; res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Search by meaning failed' })); }
+      });
     });
     server.middlewares.use('/api/hf', (req, res) => {
       res.setHeader('Content-Type', 'application/json');

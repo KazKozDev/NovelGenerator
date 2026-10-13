@@ -10,6 +10,8 @@ import { writeBookOnce } from '../utils/novel/v3/author';
 import { writeAtDesk } from '../utils/novel/v3/authorDesk';
 import { generateOllamaText } from '../services/ollamaService';
 import { generateQwenText } from '../services/qwenService';
+import { similarHuggingFace } from '../services/hfSimilarService';
+import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/v3/similar';
 
 const arg = (name: string, fallback: string) => { const at = process.argv.indexOf(`--${name}`); return at > 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback; };
 const model = arg('model', 'deepseek-v4.1-flash:cloud'), endpoint = arg('endpoint', 'http://127.0.0.1:11434'), out = arg('out', 'runs/book');
@@ -38,6 +40,7 @@ const flush = () => {
   writeFileSync(join(out, 'threads.md'), draft.threads || ''); writeFileSync(join(out, 'noticed.md'), draft.noticed.join('\n\n'));
 };
 (arg('engine', 'desk') === 'once' ? writeBookOnce : writeAtDesk)(input, store, async (prompt, system, options) => {
+  if (options?.route === 'helper') { const request = JSON.parse(prompt) as SimilarRequest; return JSON.stringify(await similarHuggingFace(SIMILAR_MODEL, request.source, request.sentences)); }
   calls++; sent += prompt.length + system.length; const at = Date.now();
   // What the author was told about its last step, kept beside the book: the journal has what it did, this has what came back.
   if (options?.stage === 'author-step' && prompt.startsWith('RESULT OF YOUR LAST TOOL')) appendFileSync(join(out, 'shown.md'), `\n\n## before answer ${calls}\n${prompt.split('\n\nYOUR DESK NOW:')[0].replace('RESULT OF YOUR LAST TOOL:\n', '')}`);
