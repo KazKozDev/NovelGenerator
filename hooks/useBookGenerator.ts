@@ -1,12 +1,12 @@
-import { AUDIT_STAGES } from '../utils/novel/v3/bookAudit';
+import { AUDIT_STAGES } from '../utils/novel/craft/craftOrchestrator';
 import {addTokenUsage,emptyTokenTotals,savedTokenTotals,type TokenTotals} from '../utils/tokenUsage';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig } from '../services/llmService';
 import type { NovelLLM } from '../utils/novel/v2/llm';
-import { authorKey } from '../utils/novel/v3/author';
-import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/v3/deskTabs';
-import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/v3/similar';
+import { authorKey } from '../utils/novel/author';
+import { deskTabs, deskFocus, type DeskTab, type DeskFocus } from '../utils/novel/deskTabs';
+import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/similar';
 import { similarHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';

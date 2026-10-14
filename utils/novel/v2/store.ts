@@ -1,4 +1,4 @@
-import type { AuthorDraft } from '../v3/author';
+import type { AuthorDraft } from '../author';
 import type { FinalReport, ProjectInput } from './types';
 
 /** One book: the author's draft, the manuscript, the report and the run log. */

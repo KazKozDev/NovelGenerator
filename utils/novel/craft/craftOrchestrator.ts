@@ -1,10 +1,11 @@
 import type { NovelLLM } from '../v2/llm';
 import type { ProjectStore } from '../v2/store';
 import type { FinalReport, ProjectInput } from '../v2/types';
-import type { ProgressStage } from '../v2/orchestrator';
-import { wornPhrases, authorKey, type AuthorDraft } from '../v3/author';
-import type { DeskState } from '../v3/authorDesk';
+import { wornPhrases, authorKey, type AuthorDraft, type DeskState } from '../author';
 import { getCraftGuide } from './craftGuide';
+
+export const AUDIT_STAGES = new Set(['craft-dev-review', 'craft-lit-review', 'craft-preflight']);
+export const AUDIT_CALLS = 4;
 
 export function extractTitle(text: string): string | undefined {
   const match = text.match(/(?:^|\n)[#*\s]*(?:BOOK\s+)?TITLE\**\s*:\**\s*([^\n\r]+)/i);

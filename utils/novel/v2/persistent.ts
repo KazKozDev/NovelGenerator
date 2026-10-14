@@ -1,7 +1,7 @@
 import { restoreSnapshot, snapshotProject } from './export';
 import { idbGet, idbSet } from './idb';
 import { BrowserProjectStore, MemoryProjectStore } from './store';
-import type { AuthorDraft } from '../v3/author';
+import type { AuthorDraft } from '../author';
 import type { FinalReport, ProjectInput } from './types';
 
 /**

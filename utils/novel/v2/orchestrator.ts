@@ -1,8 +1,5 @@
-import { authorKey } from '../v3/author';
-import { writeAtDesk } from '../v3/authorDesk';
-import { runCraftBook } from '../craft/craftOrchestrator';
-import { prepareEditorialPass } from '../v3/editorialPass';
-import { AUDIT_CALLS, AUDIT_STAGES } from '../v3/bookAudit';
+import { authorKey } from '../author';
+import { runCraftBook, AUDIT_CALLS, AUDIT_STAGES } from '../craft/craftOrchestrator';
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { MemoryProjectStore, type ProjectStore } from './store';
 import type { FinalReport, ProjectInput } from './types';
@@ -104,8 +101,6 @@ export class Orchestrator {
   }
 
   async runEditorial(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
-    try { prepareEditorialPass(input, this.store); }
-    catch (error) { return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: error instanceof Error ? error.message : String(error) }; }
     return this.runBook(input, llm);
   }
 
@@ -118,15 +113,10 @@ export class Orchestrator {
     if (authored && authored.input_key !== authorKey(input)) {
       return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
     }
-    const mode = input.generation_mode || 'author';
-    this.store.saveInput({ ...input, generation_mode: mode });
-    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. ${mode === 'craft' ? '2-layer craft engine active.' : 'The author is at its desk.'}`);
+    this.store.saveInput({ ...input, generation_mode: 'craft' });
+    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. 2-layer craft engine active.`);
     try {
-      if (mode === 'craft') {
-        await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
-      } else {
-        await writeAtDesk({ ...input, generation_mode: 'author' }, this.store, this.counted(llm), this.onProgress);
-      }
+      await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
       this.flushRetries();
       const report = this.store.loadReport()!;
       this.store.log('audit', report.summary);

@@ -2,7 +2,7 @@
  * What the author's tools hold, as text a person can read: one tab per tool.
  * Craft Architecture 2.0 tabs: Dossier, Scene Cards, Observer, Reader, Reviews.
  */
-import type { DeskState } from './authorDesk';
+import type { DeskState } from './author';
 
 export type DeskTab = { name: string; count: number; text: string };
 
@@ -58,25 +58,40 @@ export function deskTabs(desk: DeskState): DeskTab[] {
     name: 'Reviews',
     count: reviews.length,
     text: reviews.length > 0
-      ? reviews.map(answer => `### ${answer.who}\n\n${answer.text.trim()}`).join('\n\n---\n\n')
-      : none('No dual audits filed yet.')
+      ? reviews.map(answer => `### Step ${answer.step} · ${answer.who}\n\n${answer.text.trim()}`).join('\n\n---\n\n')
+      : none('Dual developmental & literary audits have not run yet.')
   });
 
   return tabs;
 }
 
-export type DeskFocus = { /** The tab the author is working in now; null when it is writing a chapter. */ tab: string | null; label: string; text: string };
+export interface DeskFocus {
+  tab: string | null;
+  label: string;
+  text: string;
+}
 
 /**
- * Where the author is working at this moment, read from the answer as it arrives, so that the screen can
- * follow it: into Dossier, Scene Cards, Observer, Reader, or Reviews — and back to the chapter when it writes prose.
+ * Maps the active pipeline stage to the appropriate inspector tab and live activity text.
  */
-export function deskFocus(stage: string, arrived: string, _last: string | null): DeskFocus | undefined {
-  if (stage === 'craft-preparation') return { tab: 'Dossier', label: 'Drafting 4-layer author dossier', text: arrived };
-  if (stage === 'craft-cards') return { tab: 'Scene Cards', label: 'Projecting scene cards & knowledge', text: arrived };
-  if (stage === 'craft-observe') return { tab: 'Observer', label: 'Observer validating scene enactment', text: arrived };
-  if (stage === 'craft-reader' || stage === 'author-reader') return { tab: 'Reader', label: 'Blind reader reviewing chapter prefix', text: arrived };
-  if (stage === 'craft-dev-review' || stage === 'craft-lit-review') return { tab: 'Reviews', label: 'Craft audit in progress', text: arrived };
-  if (stage === 'craft-write' || stage === 'craft-repair' || stage === 'author-step' || stage === 'author-chapter') return { tab: null, label: '', text: '' };
-  return undefined;
+export function deskFocus(stage: string, arrived: string, activeTab: string | null): DeskFocus | null {
+  if (stage === 'craft-preparation') {
+    return { tab: 'Dossier', label: 'Drafting 4-layer author dossier', text: arrived };
+  }
+  if (stage === 'craft-cards') {
+    return { tab: 'Scene Cards', label: 'Projecting scene cards & knowledge', text: arrived };
+  }
+  if (stage === 'craft-observe') {
+    return { tab: 'Observer', label: 'Observer validating scene enactment', text: arrived };
+  }
+  if (stage === 'craft-reader') {
+    return { tab: 'Reader', label: 'Blind reader reviewing chapter prefix', text: arrived };
+  }
+  if (stage === 'craft-dev-review' || stage === 'craft-lit-review') {
+    return { tab: 'Reviews', label: 'Craft audit in progress', text: arrived };
+  }
+  if (stage === 'craft-write' || stage === 'craft-repair') {
+    return { tab: activeTab, label: '', text: '' };
+  }
+  return null;
 }
