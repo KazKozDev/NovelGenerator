@@ -284,9 +284,13 @@ export function isRecapEnding(content: string): boolean {
 }
 
 export interface AdvisoryFinding {
-  id: 'weak-opening-hook' | 'recap-ending';
+  id: 'weak-opening-hook' | 'recap-ending' | 'page-one-cliche' | 'filter-word-bloat' | 'dialogue-adverb-bloat';
   detail: string;
 }
+
+const PAGE_ONE_CLICHE = /\b(alarm clock|woke up from a (dream|nightmare)|opened (his|her|my|their) eyes to (the sound|find)|looked in the (mirror|reflection)|stared at (his|her|my|their) (own )?reflection)\b/i;
+const FILTER_WORD = /\b(he|she|they|i)\s+(saw|felt|noticed|heard|watched|wondered|realized)\b|\b(it seemed to (him|her|them|me))\b/gi;
+const DIALOGUE_ADVERB = /\b(said|asked|replied|whispered|muttered|answered|shouted)\s+\w+ly\b|\b\w+ly\s+(said|asked|replied|whispered|muttered|answered|shouted)\b/gi;
 
 /**
  * Bestseller surface check, advisory only by design. Never blocks acceptance
@@ -295,12 +299,44 @@ export interface AdvisoryFinding {
 export function bestsellerAdvisory(content: string): AdvisoryFinding[] {
   if (!content.trim()) return [];
   const findings: AdvisoryFinding[] = [];
+  const totalWords = wordsOf(content).length;
+
+  // 1. Weak opening hook
   if (hookScore(content) < 5) {
     findings.push({
       id: 'weak-opening-hook',
       detail: 'The opening ~150 words do not hook through action, conflict or a question.',
     });
   }
+
+  // 2. Page One cliché check (Bestbook Section 11: waking up, mirror gazing, alarm clock)
+  const openingSample = content.slice(0, 1500);
+  if (PAGE_ONE_CLICHE.test(openingSample)) {
+    findings.push({
+      id: 'page-one-cliche',
+      detail: 'The opening uses a prohibited opening cliché (waking from a dream, alarm clock, or looking into a mirror).',
+    });
+  }
+
+  // 3. Filter word density check (Bestbook Section 7.1: Deep POV / burn filter words)
+  const filterMatches = content.match(FILTER_WORD)?.length || 0;
+  if (totalWords >= 100 && (filterMatches / totalWords) * 1000 > 5) {
+    findings.push({
+      id: 'filter-word-bloat',
+      detail: `Heavy filter words (${filterMatches} instances): "he saw", "she felt", etc. distance reader from Deep POV.`,
+    });
+  }
+
+  // 4. Dialogue tag adverb bloat (Bestbook Section 7.3: Dialogue engineering)
+  const adverbMatches = content.match(DIALOGUE_ADVERB)?.length || 0;
+  if (adverbMatches >= 2) {
+    findings.push({
+      id: 'dialogue-adverb-bloat',
+      detail: `Dialogue tags rely on "-ly" adverbs (${adverbMatches} instances) instead of action beats or clean "said".`,
+    });
+  }
+
+  // 5. Recap ending
   if (isRecapEnding(content)) {
     findings.push({
       id: 'recap-ending',

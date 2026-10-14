@@ -6,12 +6,39 @@ import type { AuthorDraft } from '../v3/author';
 import type { DeskState } from '../v3/authorDesk';
 import { getCraftGuide } from './craftGuide';
 
+export interface PropAnchor {
+  name: string;
+  role: 'setup' | 'complication' | 'payoff';
+}
+
+export interface ValueCharge {
+  start: string;
+  end: string;
+  shift: '+ to -' | '- to +';
+}
+
+export interface CardConflict {
+  external: string;
+  interpersonal: string;
+  internal: string;
+}
+
+export interface CardStakes {
+  atRisk: string;
+  costOfChoice: string;
+}
+
 export interface Card {
   id: string;
   chapter: number;
   order: number;
+  sceneType?: 'scene' | 'sequel'; // Swain's pulse: Action (Goal->Conflict->Disaster) vs Reaction (Emotion->Dilemma->Decision)
   time: string;
   location: string;
+  causalLink: 'therefore' | 'but';
+  valueCharge: ValueCharge;
+  conflict?: CardConflict; // 3-layer conflict: external, interpersonal, internal
+  stakes?: CardStakes; // Concrete immediate stakes and cost
   purpose: string;
   action: string;
   choice: string;
@@ -21,10 +48,15 @@ export interface Card {
   rhythm: string;
   readerBefore: string;
   readerAfter: string;
+  endingCadence?: 'cliffhanger' | 'quiet-resonance';
+  endingType?: 'interrupted-action' | 'new-reveal' | 'impossible-choice' | 'arrival-of-threat' | 'loaded-line' | 'pause';
+  openLoopsIntroduced?: string[];
+  openLoopsResolved?: string[];
   dependsOn: string[];
   povKnows: string[];
   newFacts: string[];
   props: string[];
+  propAnchors?: PropAnchor[];
 }
 
 export interface Fact {
@@ -45,6 +77,7 @@ export interface Packet {
 export interface Receipt {
   event: { status: 'enacted' | 'missing' | 'contradicted'; sources: string[]; reason: string };
   tangibleActionEnacted: boolean;
+  valueChargeTurned?: boolean;
   facts: { id: string; text: string; kind: string; knownBy: string[]; source: string }[];
   issues: { reason: string; sources: string[] }[];
   wordCount: number;
@@ -69,14 +102,22 @@ function parseJson<T>(raw: string): T {
 const wc = (text: string): number => (text.trim() ? text.trim().split(/\s+/).length : 0);
 
 export const CRAFT_SYSTEM = `You are a master fiction author writing a published literary novel.
-You follow the rigorous craft principles of "How Books Are Written 2.0":
+You follow the rigorous craft principles of "How Books Are Written" & "Craft Architecture 2.0":
 - Cause-Choice-Action-Consequence: every scene hinges on an active, consequential decision.
+- The "But / Therefore" Law: scenes are causally linked by complication ("but") or direct consequence ("therefore"), never episodic "and then".
+- Value Charge Shift: every scene must turn the protagonist's value charge (+ to - or - to +). No static scenes.
 - 4 Layers of Truth: objective truth vs character POV knowledge vs character false beliefs vs reader evidence.
 - ANTI-METAPHOR DIRECTIVE:
   You must enact actual physical actions, bodily gestures, spoken dialogue, tangible props, and physical contact on the page.
   Do NOT substitute physical action or intimacy with vague cosmic metaphors, dreamlike fade-outs, or repeating poetic figures ("the world turned to ash", "a pulse like frozen fire").
-  In pivotal confrontations or intimate turning points, write exact physical interactions, audible words, and tangible costs.
-- The protagonist may make a disastrous or forbidden choice; the motive must be psychologically intelligible to THEM.
+- PERCEPTUAL ORDER (Immediate Experience):
+  In moments of stress or action, physical sensory impact comes first, involuntary visceral reaction second, and conscious cognitive understanding third. Never put explanation before physical sensation.
+- BURN FILTER WORDS (Deep POV):
+  Eliminate distancing filter words: "he saw", "she felt", "he noticed", "it seemed to her", "she heard". Ground experience directly in the physical reality.
+- OBLIQUE DIALOGUE & STAGE BUSINESS:
+  Dialogue is combat with subtext. Characters deflect, counter with offensive questions, and negotiate over physical props and tasks. Ban fancy speech tags ("he hissed", "she gasped", "he retorted") and "-ly" adverbs; use clean action beats or invisible "said".
+- THE TWO-SENSE RULE:
+  In every key scene, engage at least one non-visual sense (tactile texture/temperature, smell, or specific sound).
 - Output clean, professional fiction prose only. No meta-commentary, chapter headings, or author notes in the manuscript text.`;
 
 export async function runCraftBook(
@@ -146,19 +187,37 @@ Genre: ${input.genre || 'literary fiction'}
 Requirements: ${input.author_requirements || 'none'}
 Scope: ${numChapters} chapters (${totalScenes} scenes total, ~${targetWordsPerScene} words per scene).
 
-Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~1800-2400 words) before writing any prose:
-1. OBJECTIVE TRUTH & PRE-STORY REALITY:
-   - The concrete objective facts that took place before the story begins.
-   - Stable cast, locations, and key physical props.
-2. CHARACTER PSYCHOLOGY, MOTIVES & COSTS:
-   - For protagonist and key counterparts: specific wants, hidden fears, false strategies, boundaries, and price of each choice.
-3. CHRONOLOGICAL TIMELINE & 4 LAYERS OF TRUTH:
-   - Separate: 1) What really happened; 2) What protagonist knows initially; 3) What characters falsely believe; 4) What the reader will see.
-4. CAUSAL PROGRESSION & ANTI-METAPHOR DESIGN:
-   - The chain of cause-choice-action-consequence across ${totalScenes} scenes.
-   - Outline pivotal turning points with concrete physical and dialogue actions, not metaphorical fade-outs.
-5. SCENE MILESTONES (${totalScenes} SCENES):
-   - Outline broad goals for SC1 through SC${totalScenes} (3 scenes per chapter).
+Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~2200-2800 words) before writing any prose:
+1. GENRE CONTRACT & CORE PREMISE:
+   - Identify the explicit genre obligations and fatal tropes to avoid for ${input.genre || 'literary fiction'}.
+   - What is the reader's promised payoff? (e.g. intellectual satisfaction of fair-play puzzle, visceral terror, emotional heartbreak/healing).
+2. CHARACTER ARC ARCHITECTURE (K.M. Weiland Model):
+   - For Protagonist:
+     * THE WANT: Tangible external goal they pursue.
+     * THE NEED: Spiritual / emotional truth they must embrace to heal.
+     * THE LIE: The toxic misconception about themselves or the world they currently believe.
+     * THE GHOST / WOUND: The specific backstory event that created this Lie.
+     * THE CRUCIBLE: The climactic moral dilemma where holding onto the Lie becomes fatal or impossible.
+   - For Supporting Cast & Antagonist:
+     * Steelmanned Antagonist Worldview: The antagonist believes they are entirely justified; what is their logic?
+3. THEME AS AN OPEN QUESTION:
+   - Formulate the core theme as an unresolved dramatic argument/question (e.g. "Can justice exist without cruelty?"), NOT a preachy moral slogan.
+4. SETTING AS PRESSURE & CONSTRAINTS (Sanderson's Law):
+   - Physical setting rules, resource scarcity, and environmental boundaries that trap or pressure characters into tough choices.
+5. THREE-ACT PROPORTIONS & 7 TURNING POINTS (Mapped across the ${totalScenes} scenes):
+   - Hook (0-10%): Status quo disrupted; establishing protagonist flaw and normal world.
+   - Plot Turn 1 (~25%): Door of No Return; protagonist crosses boundary into new world/conflict.
+   - Pinch Point 1 (~37%): Antagonistic force asserts itself; direct demonstration of vulnerability.
+   - Midpoint (~50%): REVERSAL OF APPROACH. Protagonist switches from passive reaction to active initiative (false victory or false defeat).
+   - Pinch Point 2 (~62%): The trap tightens; bridges burn; pressure escalates.
+   - All Is Lost / Dark Night of the Soul (~75%): Absolute failure of the old strategy; death of the Lie.
+   - Climax (~90-95%): Final Crucible; decisive action proving character transformation.
+   - Resolution (95-100%): New equilibrium; contrast with opening image.
+6. 4 LAYERS OF TRUTH & CHRONOLOGY:
+   - Layer 1: Objective truth of what actually happened.
+   - Layer 2: Protagonist POV initial knowledge and blind spots.
+   - Layer 3: Character false beliefs, rumors, and cover stories.
+   - Layer 4: Concrete physical evidence visible to the reader.
 
 Output the author dossier only.`;
 
@@ -179,8 +238,25 @@ Project this exact story into an executable scene projection for ${totalScenes} 
 Separate objective truth from protagonist initial knowledge and newly acquired facts.
 No hidden future information in a scene's POV knowledge.
 Every fact referenced in povKnows must have learnsAt < scene.order.
-Props must be concrete objects with owner and location.
-Enact physical, bodily presence, dialogue aims, and concrete choices.
+
+CRAFT RULES FOR EACH SCENE:
+1. SCENE VS SEQUEL PULSE (Swain's Law):
+   - Designate each scene as "scene" (Action: Goal -> Conflict -> Disaster) or "sequel" (Reaction: Emotion -> Dilemma -> Decision).
+2. CAUSAL LINK (The "But / Therefore" Law):
+   - Every scene (except SC1) must connect to the preceding scene with "therefore" (direct consequence of previous choice) or "but" (unexpected complication). Never episodic "and then".
+3. THREE-LAYER CONFLICT:
+   - "conflict": Define all 3 layers: "external" (physical obstacle/task), "interpersonal" (opposing agendas in the room), and "internal" (moral dilemma or crisis of belief).
+4. CONCRETE STAKES & COSTS:
+   - "stakes": Define "atRisk" (what is immediately lost if protagonist fails) and "costOfChoice" (what price must be paid).
+5. VALUE CHARGE SHIFT:
+   - Every scene must shift the value charge from start to end (e.g. Safety -> Jeopardy, Trust -> Suspect, Hope -> Crisis). The shift must be "+ to -" or "- to +". No static scenes.
+6. CHEKHOV'S PROPS & ANCHORS:
+   - List concrete physical objects in "props". Where applicable, track "propAnchors" with their lifecycle: "setup" (planted in normal life), "complication" (becomes a risk/obstacle), or "payoff" (pivotal weapon/clue in the climax).
+7. OPEN LOOPS:
+   - Track unanswered dramatic questions: "openLoopsIntroduced" (questions that compel reading) and "openLoopsResolved". Ensure 2-3 loops remain active across the middle.
+8. ENDING CADENCE & TYPE:
+   - "endingCadence": "cliffhanger" or "quiet-resonance".
+   - "endingType": "interrupted-action", "new-reveal", "impossible-choice", "arrival-of-threat", "loaded-line", or "pause".
 
 Return JSON matching:
 {
@@ -194,8 +270,24 @@ Return JSON matching:
       "id": "SC1",
       "chapter": 1,
       "order": 1,
+      "sceneType": "scene",
       "time": "precise time",
       "location": "stable place",
+      "causalLink": "therefore",
+      "valueCharge": {
+        "start": "Security (+)",
+        "end": "Disruption (-)",
+        "shift": "+ to -"
+      },
+      "conflict": {
+        "external": "concrete task/danger",
+        "interpersonal": "clash of wills with counterpart",
+        "internal": "fear of exposure vs desire to help"
+      },
+      "stakes": {
+        "atRisk": "freedom / reputation",
+        "costOfChoice": "must betray trust"
+      },
       "purpose": "dramatic purpose",
       "action": "concrete physical action and dialogue to enact",
       "choice": "protagonist specific choice",
@@ -205,10 +297,15 @@ Return JSON matching:
       "rhythm": "action|reaction|quiet tension",
       "readerBefore": "what reader suspects",
       "readerAfter": "what is revealed",
+      "endingCadence": "cliffhanger",
+      "endingType": "new-reveal",
+      "openLoopsIntroduced": ["Why did X happen?"],
+      "openLoopsResolved": [],
       "dependsOn": [],
       "povKnows": ["F1"],
       "newFacts": ["F2"],
-      "props": ["concrete object"]
+      "props": ["concrete object"],
+      "propAnchors": [{"name": "concrete object", "role": "setup"}]
     }
   ]
 }
@@ -218,7 +315,21 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
   const packet = parseJson<Packet>(rawCards);
 
   // Format cards as human-readable markdown plan
-  const cardsMarkdown = packet.scenes.map(s => `### Scene ${s.order} (${s.id}) · Chapter ${s.chapter}\n- **Location & Time:** ${s.location} (${s.time})\n- **Purpose:** ${s.purpose}\n- **Action:** ${s.action}\n- **Choice & Cost:** ${s.choice} *(Cost: ${s.cost})*\n- **Change:** ${s.change}\n- **Props:** ${s.props.join(', ') || 'none'}`).join('\n\n---\n\n');
+  const cardsMarkdown = packet.scenes.map(s => `### Scene ${s.order} (${s.id}) · Chapter ${s.chapter} [${(s.sceneType || 'scene').toUpperCase()}]
+- **Causal Link:** ${s.order === 1 ? 'Opening Scene' : (s.causalLink || 'therefore').toUpperCase()}
+- **Value Charge Shift:** ${s.valueCharge?.start || '?'} → ${s.valueCharge?.end || '?'} (${s.valueCharge?.shift || 'turn'})
+- **Location & Time:** ${s.location} (${s.time})
+- **3-Layer Conflict:**
+  * *External:* ${s.conflict?.external || 'Not specified'}
+  * *Interpersonal:* ${s.conflict?.interpersonal || 'Not specified'}
+  * *Internal:* ${s.conflict?.internal || 'Not specified'}
+- **Stakes & Cost:** At risk: ${s.stakes?.atRisk || 'N/A'} | Cost: ${s.stakes?.costOfChoice || s.cost || 'N/A'}
+- **Purpose:** ${s.purpose}
+- **Action:** ${s.action}
+- **Choice:** ${s.choice}
+- **Ending:** ${s.endingCadence || 'standard'} (${s.endingType || 'resolution'})
+- **Props & Chekhov Anchors:** ${s.propAnchors?.length ? s.propAnchors.map(p => `${p.name} [${p.role}]`).join(', ') : s.props?.join(', ') || 'none'}
+${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsIntroduced.join('; ')}\n` : ''}${s.openLoopsResolved?.length ? `- **Open Loops Resolved:** ${s.openLoopsResolved.join('; ')}\n` : ''}- **Change:** ${s.change}`).join('\n\n---\n\n');
   files['plan.md'] = cardsMarkdown;
   syncAuthorState({ cardsMd: cardsMarkdown });
 
@@ -288,7 +399,18 @@ ${JSON.stringify(newSceneFacts)}
 INSTRUCTIONS FOR WRITER:
 - Write ONE continuous, complete fiction scene of ~${targetWordsPerScene} words (${Math.max(350, targetWordsPerScene - 60)}–${targetWordsPerScene + 80} words).
 - Enact the specific choice, action, and consequence detailed in the scene card.
-- MANDATORY CONCRETE DRAMA: Write tangible physical movements, bodily reactions, audible dialogue with subtext, and concrete physical/environmental details.
+- SCENE PULSE: If this is a "scene", drive Goal -> Conflict -> Disaster. If this is a "sequel", process Emotion -> Dilemma -> Decision.
+- 3-LAYER CONFLICT: Enact the external task (${card.conflict?.external || 'external'}), interpersonal tension (${card.conflict?.interpersonal || 'interpersonal'}), and internal hesitation (${card.conflict?.internal || 'internal'}).
+- VALUE CHARGE TURN: Ensure the scene shifts the emotional/situational polarity from ${card.valueCharge?.start || 'initial state'} to ${card.valueCharge?.end || 'terminal state'}.
+- PERCEPTUAL ORDER: In shock/action moments, depict raw sensory stimulus first, involuntary physical reflex second, conscious cognitive labeling third. Never put explanation before physical sensation.
+- DEEP POV (ZERO FILTER WORDS): Ban phrases like "he saw", "she felt", "he noticed", "she wondered", "it seemed". Present the world directly from inside the character's perception.
+- SYNTACTIC PACING & TIME DILATION:
+  * In moments of high crisis or impact, dilate time by lingering on concrete physical micro-details.
+  * Use staccato, punchy sentence rhythm during high action; expansive, rhythmic phrasing during reflective sequels.
+  * End-Weight Principle: Place the most impactful, resonant word of key sentences immediately before the period.
+- OBLIQUE DIALOGUE & STAGE BUSINESS: Characters speak diagonally with subtext, avoiding on-the-nose answers. Anchor dialogue with physical prop actions (cups, coats, locks, papers). Use clean "said" or physical action beats (no fancy tags like "he hissed" or "-ly" adverbs).
+- TWO-SENSE RULE: Include at least one vivid non-visual sensory detail (tactile texture/temperature, smell, or acoustic detail).
+- ENDING CADENCE: Close the scene with ${card.endingCadence || 'resonance'} (${card.endingType || 'ending beats'}), leaving forward momentum.
 - Do NOT retreat into vague poetic abstraction, cosmic dreaminess, or repetitive metaphors.
 - Current scene only; do not jump ahead to future scenes.
 - Output fiction prose only, no titles, headings, or meta comments.`;
@@ -311,13 +433,16 @@ ${JSON.stringify(paras)}
 Examine this scene draft.
 1. Event status: was the card's required physical action and choice enacted, missing, or contradicted?
 2. Tangibility check: did the prose depict concrete actions and dialogue, or did it evaporate into vague metaphors?
-3. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
-4. Issues: flag any factual contradictions with prior text.
+3. Value charge turn: did the scene execute the required value charge turn (${card.valueCharge?.start || 'start'} -> ${card.valueCharge?.end || 'end'})?
+4. Deep POV check: did the text avoid filter-word distancing ("he saw", "she felt", etc.)?
+5. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
+6. Issues: flag any factual contradictions with prior text.
 
 Return JSON:
 {
   "event": {"status": "enacted|missing|contradicted", "sources": ["${card.id}-p1"], "reason": "..."},
   "tangibleActionEnacted": true,
+  "valueChargeTurned": true,
   "facts": [{"id": "F1 or new_id", "text": "...", "kind": "narrated|claim|belief", "knownBy": ["protagonist"], "source": "${card.id}-p1"}],
   "issues": [{"reason": "...", "sources": ["${card.id}-p1"]}],
   "wordCount": ${wc(sceneText)}
@@ -425,18 +550,29 @@ Return JSON:
 COMPLETE MANUSCRIPT:
 ${fullBookText}
 
-Evaluate the complete manuscript:
-1. Causal arc: Does the story move from setup to turning points, climax, and consequences coherently?
-2. Anti-metaphor audit: Were the pivotal scenes enacted through tangible physical actions, dialogue, and choices, or did they evade into vague poetic abstractions?
-3. Closure: Is the ending consequential and closed through an active choice?
-4. Flag any inconsistencies in time, location, props, or character knowledge.
+Evaluate the complete manuscript against classical storytelling craft and the 18 Diagnostic Manuscript Flaws:
+1. CAUSAL ARC & SWAIN PULSE: Does the story move coherently from setup through 7 key turning points (Hook -> Plot Turn 1 -> Pinch 1 -> Midpoint Shift -> Pinch 2 -> All is Lost -> Climax Crucible -> Resolution)?
+2. CHARACTER ARC: Did the protagonist confront their Lie in the Crucible and change (or test their code), moving from Want to Need?
+3. ANTI-METAPHOR & ACTION: Were pivotal moments enacted through tangible physical bodily action and spoken dialogue, or did they evade into vague poetic abstractions?
+4. DIAGNOSTIC FLAWS AUDIT (Flag if present):
+   - Flaw 1: Aimless Wanderer (passive hero driven only by circumstance).
+   - Flaw 2: The Talking Head Syndrome (endless dialogue without physical movement or prop interaction).
+   - Flaw 3: Infodump / "As You Know, Bob" (exposition disguised as unnatural dialogue).
+   - Flaw 4: Episodic "And Then" Structure (scenes lacking "therefore / but" causal connections).
+   - Flaw 5: The Soft Middle (lack of Midpoint reversal from reactive to proactive).
+   - Flaw 6: Deus Ex Machina (crisis resolved by chance or outside power without protagonist sacrifice).
+   - Flaw 7: Chekhov's Sleeping Dogs (unresolved loaded props/loops).
+   - Flaw 8: Melodramatic Inflation (unearned emotional outbursts).
+5. CLOSURE: Is the ending consequential and closed through an active choice?
+6. Flag any inconsistencies in time, location, props, or character knowledge.
 
 Return JSON:
 {
   "causalArcComplete": true,
   "antiMetaphorStandardMet": true,
   "endingEnacted": true,
-  "issues": [{"category": "causality|action|props|knowledge|closure", "severity": "major|minor", "reason": "...", "quotes": ["..."]}],
+  "diagnosticFlawsDetected": ["none" | "list of flaws"],
+  "issues": [{"category": "causality|action|props|knowledge|closure|flaw", "severity": "major|minor", "reason": "...", "quotes": ["..."]}],
   "summary": "..."
 }`;
 

@@ -50,5 +50,11 @@ The climax enacts the answer to the crisis; the resolution shows what follows fr
 Connect the end to the beginning through changed conduct, relationships or an image whose meaning has changed. A person who began by hiding a message might end by delivering one at a cost. The contrast can be carried by the action; it does not need a paragraph explaining that the person now understands life.
 Leave space for consequences instead of compressing revelation, confrontation, decision and aftermath into a rushed last page. Once the emotional ending has landed, consider whether another explanatory ending strengthens it or only repeats it.
 
+LINE-LEVEL CRAFT: PERCEPTUAL ORDER, DEEP POV, AND DIALOGUE SUBTEXT
+In moments of sudden stress, shock or action, honor perceptual order: raw sensory impact occurs first, involuntary physical reaction second, and cognitive identification third. Do not put an analytical explanation before physical sensation.
+Eliminate distancing filter words ("he saw", "she felt", "he noticed", "it seemed to her", "she heard"). Present the sensory reality directly inside Deep POV.
+Dialogue is combat with subtext. Characters deflect, answer obliquely, or negotiate through physical tasks with props (stage business). Avoid on-the-nose explanations where characters state exactly what they think. Use clean "said" or physical action beats rather than fancy tags ("he hissed", "she gasped") or "-ly" adverbs.
+In every key scene, engage at least one non-visual sense (tactile texture, temperature, smell, or acoustic detail) alongside sight.
+
 USE THIS AS YOUR OWN JUDGMENT
 These are questions to help you work, not obligations to announce in prose or approvals to obtain from a reader. You may reassess any choice, return to earlier chapters, ask for another perspective or finish with unresolved feedback honestly recorded. Let scenes, choices and consequences carry the structure. You retain control of the next action, the plan, the wording and the revisions.`;
