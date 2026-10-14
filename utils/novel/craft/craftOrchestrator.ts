@@ -380,6 +380,7 @@ Output JSON:
       const context = `STORY BACKGROUND:
 Premise: ${input.premise}
 Genre: ${input.genre || 'fiction'}
+Author Directives: ${input.author_requirements || 'Standard literary'}
 
 PROTAGONIST INITIAL KNOWLEDGE:
 ${JSON.stringify(packet.initialProtagonistKnowledge)}
