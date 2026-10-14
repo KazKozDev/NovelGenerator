@@ -17,9 +17,9 @@ import time
 
 MODELS = {'en': 'cross-encoder/nli-deberta-v3-base', 'ru': 'cointegrated/rubert-base-cased-nli-threeway'}
 KNOWN_LABELS = {MODELS['en']: ['contradiction', 'entailment', 'neutral'], MODELS['ru']: ['entailment', 'contradiction', 'neutral']}
-STOP = set('a an the and or but is was were be been being to of in on at for with by from that this it its he she her his they their them i you we as had has have do did does not no all then only said told would could should will just one so into out как и но в на с из к у по это он она они его ее её их я ты мы был была было были есть что не нет уже бы все всё сказал сказала'.split())
-OBJECTS = set('key keys card cards scarf scarves body corpse room door glass watch bag drawer coat phone notebook letter pillow код ключ ключи шарф тело труп комната дверь бокал часы сумка ящик пальто телефон письмо'.split())
-WEEKDAYS = r'monday|tuesday|wednesday|thursday|friday|saturday|sunday|понедельник|вторник|сред[ау]|четверг|пятниц[ау]|суббот[ау]|воскресенье'
+STOP = set('a an the and or but is was were be been being to of in on at for with by from that this it its he she her his they their them i you we as had has have do did does not no all then only said told would could should will just one so into out'.split())
+OBJECTS = set('key keys card cards scarf scarves body corpse room door glass watch bag drawer coat phone notebook letter pillow'.split())
+WEEKDAYS = r'monday|tuesday|wednesday|thursday|friday|saturday|sunday'
 
 
 def sentences(text):
@@ -27,7 +27,7 @@ def sentences(text):
     start = 0
     for match in re.finditer(r'[.!?…]+["”»\')\]]*(?=\s+|$)|;(?=\s+)', text):
         end = match.end()
-        if re.search(r'\b(?:Mr|Mrs|Ms|Dr|Prof|St|т|г|ул|им)\.$', text[:end], re.I):
+        if re.search(r'\b(?:Mr|Mrs|Ms|Dr|Prof|St)\.$', text[:end], re.I):
             continue
         raw = text[start:end]; trimmed = raw.strip()
         if trimmed:
@@ -43,11 +43,11 @@ def sentences(text):
 def source_hint(sentence, paragraph):
     if re.search(r'\?(?:["”»\')\]]*)$', sentence):
         return 'question'
-    if re.search(r'\b(?:said|says|told|asked|claims?|сказал[аи]?|говорит|спросил[аи]?|утверждает)\b', sentence, re.I):
+    if re.search(r'\b(?:said|says|told|asked|claims?)\b', sentence, re.I):
         return 'reported_speech'
-    if re.search(r'\b(?:thought|thinks?|believed?|remembered?|assumed?|думал[аи]?|считает|вспомнил[аи]?|помнил[аи]?|предположил[аи]?)\b', sentence, re.I):
+    if re.search(r'\b(?:thought|thinks?|believed?|remembered?|assumed?)\b', sentence, re.I):
         return 'belief_or_memory'
-    if re.search(r'\b(?:letter|record|report|document|письм[оа]|документ|записк[ае])\b', sentence, re.I):
+    if re.search(r'\b(?:letter|record|report|document)\b', sentence, re.I):
         return 'possible_document'
     # A quote continued across sentences must not turn into objective narration.
     if re.search(r'["“”«»]', paragraph):
@@ -56,12 +56,12 @@ def source_hint(sentence, paragraph):
 
 
 def time_hints(text):
-    return sorted(set(m.group().casefold() for m in re.finditer(r'\b(?:' + WEEKDAYS + r'|\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}|noon|midnight|полдень|полночь)\b', text, re.I)))
+    return sorted(set(m.group().casefold() for m in re.finditer(r'\b(?:' + WEEKDAYS + r'|\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}|noon|midnight)\b', text, re.I)))
 
 
 def facet_hint(text):
-    if re.search(r'\b(?:was|were|is|был[аи]?|находится)\s+(?:not\s+|не\s+)?(?:in|at|в|на)\b', text, re.I): return 'location'
-    if re.search(r'\b(?:had|has|have|owns?|owned|имеет|владеет)\b', text, re.I): return 'possession'
+    if re.search(r'\b(?:was|were|is)\s+(?:not\s+)?(?:in|at)\b', text, re.I): return 'location'
+    if re.search(r'\b(?:had|has|have|owns?|owned)\b', text, re.I): return 'possession'
     return 'unknown'
 
 
@@ -242,22 +242,22 @@ def export_graph(report, out):
 
 def html_view(report):
     data = json.dumps(report, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
-    return '''<!doctype html><meta charset="utf-8"><title>Граф утверждений</title>
+    return '''<!doctype html><meta charset="utf-8"><title>Claim Graph</title>
 <style>body{font:16px system-ui;background:#f4f3ee;color:#202c32;margin:30px auto;max-width:1100px;padding:0 20px}h1{font-size:28px}button,select{font:inherit;padding:8px;max-width:100%}#pairs{width:100%;margin:14px 0}svg{width:100%;height:170px;background:white}article{white-space:pre-wrap;background:white;padding:20px;border-top:3px solid #29646a}#contexts{display:grid;grid-template-columns:1fr 1fr;gap:20px}small{color:#56666e}#scope{margin:14px 0}@media(max-width:700px){#contexts{grid-template-columns:1fr}}</style>
-<h1>Граф утверждений из текста</h1><p>NLI предлагает связи между цитатами. Связь «противоречит» требует проверки времени, личности и источника.</p>
-<small id="stats"></small><p><label>Связи <select id="relation"><option value="contradiction">Кандидаты для проверки согласованности</option><option value="literal">Все буквальные противоречия NLI</option><option value="entailment">Следование</option></select></label></p>
-<select id="pairs" aria-label="Пара утверждений"></select>
-<svg viewBox="0 0 1000 170" role="img" aria-label="Связь двух утверждений"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#29646a"/></marker></defs><rect x="20" y="45" width="370" height="80" rx="5" fill="#e3ece8"/><rect x="610" y="45" width="370" height="80" rx="5" fill="#e3ece8"/><text id="left" x="40" y="80"/><text id="right" x="630" y="80"/><path d="M400 85 L595 85" stroke="#29646a" stroke-width="2" marker-end="url(#arrow)"/><text id="label" x="405" y="65"/></svg>
+<h1>Text Claim Graph</h1><p>NLI proposes relations between excerpts. A "contradiction" link requires verification of timeline, identity, and source context.</p>
+<small id="stats"></small><p><label>Relations <select id="relation"><option value="contradiction">Consistency review candidates</option><option value="literal">All literal NLI contradictions</option><option value="entailment">Entailment</option></select></label></p>
+<select id="pairs" aria-label="Claim pair"></select>
+<svg viewBox="0 0 1000 170" role="img" aria-label="Relation between two claims"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#29646a"/></marker></defs><rect x="20" y="45" width="370" height="80" rx="5" fill="#e3ece8"/><rect x="610" y="45" width="370" height="80" rx="5" fill="#e3ece8"/><text id="left" x="40" y="80"/><text id="right" x="630" y="80"/><path d="M400 85 L595 85" stroke="#29646a" stroke-width="2" marker-end="url(#arrow)"/><text id="label" x="405" y="65"/></svg>
 <p id="scope"></p><div id="contexts"><article id="a"></article><article id="b"></article></div>
-<details><summary>Пределы проверки</summary><p id="limits"></p></details>
+<details><summary>Verification limits</summary><p id="limits"></p></details>
 <script type="application/json" id="data">''' + data + '''</script><script>
 const d=JSON.parse(document.getElementById('data').textContent),claims=new Map(d.claims.map(c=>[c.id,c])),paragraphs=new Map(d.paragraphs.map(p=>[p.id,p]));
 const el=id=>document.getElementById(id);let edges=[];
-el('stats').textContent=`Абзацев: ${d.coverage.paragraphs}; фрагментов: ${d.coverage.candidate_excerpts}; проверено направленных пар: ${d.coverage.directed_pairs_evaluated}; пропущено длинных пар: ${d.coverage.skipped_pairs.length}. Ограничение пар: ${d.coverage.pair_budget_clipped?'достигнуто':'не достигнуто'}.`;
+el('stats').textContent=`Paragraphs: ${d.coverage.paragraphs}; excerpts: ${d.coverage.candidate_excerpts}; directed pairs evaluated: ${d.coverage.directed_pairs_evaluated}; skipped long pairs: ${d.coverage.skipped_pairs.length}. Pair budget: ${d.coverage.pair_budget_clipped?'reached':'not reached'}.`;
 el('limits').textContent=d.limitations.join(' ');
-function display(){const edge=edges[el('pairs').selectedIndex];if(!edge){for(const id of ['a','b','left','right','label','scope'])el(id).textContent='';el('scope').textContent='Нет связей выше порога. Это не доказательство отсутствия ошибок.';return;}
-for(const [target,id] of [['a',edge.source],['b',edge.target]]){const c=claims.get(id),p=paragraphs.get(c.paragraph);el(target).textContent=`${c.file}, строка ${p.line}, ${c.id}\nИсточник (эвристика): ${c.source_hint}\nВремя: ${c.time_hints.join(', ')||'не определено'}\n\nЦитата:\n${c.text}\n\nПолный абзац:\n${p.text}`;}
-el('left').textContent=edge.source+' · '+claims.get(edge.source).text.slice(0,32);el('right').textContent=edge.target+' · '+claims.get(edge.target).text.slice(0,32);el('label').textContent=edge.relation+' '+edge.score.toFixed(3);el('scope').textContent='Тип проверки: '+edge.review_scope+'; ошибка автора не установлена.';}
+function display(){const edge=edges[el('pairs').selectedIndex];if(!edge){for(const id of ['a','b','left','right','label','scope'])el(id).textContent='';el('scope').textContent='No relations above threshold. This does not prove absence of errors.';return;}
+for(const [target,id] of [['a',edge.source],['b',edge.target]]){const c=claims.get(id),p=paragraphs.get(c.paragraph);el(target).textContent=`${c.file}, line ${p.line}, ${c.id}\nSource (heuristic): ${c.source_hint}\nTime: ${c.time_hints.join(', ')||'unspecified'}\n\nQuote:\n${c.text}\n\nFull paragraph:\n${p.text}`;}
+el('left').textContent=edge.source+' · '+claims.get(edge.source).text.slice(0,32);el('right').textContent=edge.target+' · '+claims.get(edge.target).text.slice(0,32);el('label').textContent=edge.relation+' '+edge.score.toFixed(3);el('scope').textContent='Review scope: '+edge.review_scope+'; authorial error not proven.';}
 function refresh(){edges=(el('relation').value==='contradiction'?d.contradiction_candidates:el('relation').value==='literal'?d.literal_contradictions:d.nli_edges.filter(e=>e.relation==='entailment')).slice().sort((a,b)=>b.score-a.score);el('pairs').replaceChildren();for(const e of edges){const o=document.createElement('option');o.textContent=`${e.score.toFixed(3)} · ${e.source} → ${e.target} · ${claims.get(e.source).text.slice(0,65)}`;el('pairs').append(o);}display();}
 el('relation').addEventListener('change',refresh);el('pairs').addEventListener('change',display);refresh();
 </script>'''
@@ -290,7 +290,7 @@ def main():
     text = '\n\n'.join(t for _,t in documents)
     if not text.strip(): parser.error('Empty input.')
     language = args.language
-    if language == 'auto': language = 'ru' if len(re.findall('[А-Яа-яЁё]',text)) > len(re.findall('[A-Za-z]',text)) else 'en'
+    if language == 'auto': language = 'en'
     model_id = args.model or MODELS[language]
     paragraphs, claims = extract_sources(documents,[s.strip() for s in args.entities.split(',') if s.strip()])
     out.mkdir(parents=True, exist_ok=True)

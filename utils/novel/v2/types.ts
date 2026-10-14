@@ -21,6 +21,7 @@ export interface FinalReport {
 export interface ProjectInput {
   planning_version?: 2;
   generation_mode?: 'author' | 'craft';
+  title?: string;
   premise: string;
   chapter_count: number;
   genre: string;

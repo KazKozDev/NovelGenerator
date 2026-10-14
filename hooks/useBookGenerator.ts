@@ -57,7 +57,15 @@ const size = (characters: number): string => characters >= 1000 ? `${Math.round(
  * mid-word, because "...the ships she guides home ha" reads as damage.
  */
 export function bookTitle(declared: string | undefined, premise: string): string {
-  if (typeof declared === 'string' && declared.trim()) return declared.trim();
+  if (typeof declared === 'string' && declared.trim()) {
+    const candidate = declared.trim();
+    // Guard against truncated premise fragments (e.g. legacy slice(0, 60) ending in single letter or dangling word)
+    const isPremiseSlice = premise.startsWith(candidate) && candidate.length < premise.length;
+    const endsWithFragment = /\s+[a-z]{1,2}$/i.test(candidate) || /[,;:\s\-—]+$/.test(candidate) || /\b(is|was|who|which|that|and|or|but|the|a|an|in|on|at|to|for|with|by)\b$/i.test(candidate);
+    if (!isPremiseSlice || !endsWithFragment) {
+      return candidate;
+    }
+  }
   const text = premise.trim();
   if (!text) return 'Untitled book';
   if (text.length <= 80) return text;
@@ -90,9 +98,10 @@ export function splitError(message: string): { headline: string; detail: string 
 export default function useBookGenerator() {
   const [storyPremise, setStoryPremise] = useState(()=>readMainForm().premise);
   const [numChapters, setNumChapters] = useState(()=>readMainForm().chapters);
+  const [bookTitleInput, setBookTitleInput] = useState(()=>readMainForm().title || '');
   const [storySettings, setStorySettings] = useState<StorySettings>(()=>readGenerationSettings(DEFAULT_SETTINGS));
   useEffect(()=>{saveGenerationSettings(storySettings)},[storySettings]);
-  useEffect(()=>{saveMainForm(storyPremise,numChapters)},[storyPremise,numChapters]);
+  useEffect(()=>{saveMainForm(storyPremise,numChapters,bookTitleInput)},[storyPremise,numChapters,bookTitleInput]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenTotals,setTokenTotals]=useState<TokenTotals>(emptyTokenTotals);
@@ -325,6 +334,7 @@ export default function useBookGenerator() {
       const input = store.loadInput();
       if (input) {
         inputRef.current = input;
+        if (input.title) setBookTitleInput(input.title);
         setStoryPremise(input.premise);
         setNumChapters(input.chapter_count);
         refreshFromStore();
@@ -343,11 +353,13 @@ export default function useBookGenerator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function startGeneration(premise: string, count: number) {
+  async function startGeneration(premise: string, count: number, customTitle?: string) {
     if (busy.current || !storeRef.current) return;
-    const input: ProjectInput = { ...buildProjectInput(premise, count, storySettings), generation_mode: 'craft' };
+    const title = customTitle !== undefined ? customTitle : bookTitleInput;
+    const input: ProjectInput = { ...buildProjectInput(premise, count, storySettings, title), generation_mode: 'craft' };
     getStore().clearAll();
     inputRef.current = input;
+    if (title) setBookTitleInput(title);
     setStoryPremise(premise);
     setNumChapters(count);
     await run(input, true);
@@ -361,7 +373,7 @@ export default function useBookGenerator() {
   async function continueGeneration() {
     if (busy.current || !inputRef.current || !storeRef.current) return;
     let configured:ProjectInput;
-    try { configured=buildProjectInput(storyPremise,numChapters,storySettings); }
+    try { configured=buildProjectInput(storyPremise,numChapters,storySettings,bookTitleInput); }
     catch(error){setError(error instanceof Error?error.message:String(error));setCurrentStep(GenerationStep.Error);return;}
     if(configured.premise!==inputRef.current.premise||configured.chapter_count!==inputRef.current.chapter_count) {
       setError('Premise or chapter count changed. Start a new book with the main-page settings.');setCurrentStep(GenerationStep.Error);return;
@@ -467,6 +479,7 @@ export default function useBookGenerator() {
 
   return {
     storyPremise, setStoryPremise, numChapters, setNumChapters, storySettings, setStorySettings,
+    bookTitleInput, setBookTitleInput,
     isLoading, currentStep, error, developmentLabel,
     isResumable: hasUnfinished && !isLoading,
     tokenTotals, storeReady, exportProject, importProject,

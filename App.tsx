@@ -23,6 +23,8 @@ const App: React.FC = () => {
     setNumChapters,
     storySettings,
     setStorySettings,
+    bookTitleInput,
+    setBookTitleInput,
     startGeneration,
     continueGeneration,
     editBook,
@@ -72,7 +74,7 @@ const App: React.FC = () => {
   const handleStartGeneration = () => {
     if (!storeReady) return;
     if (storyPremise && numChapters >= 3) {
-      startGeneration(storyPremise, numChapters);
+      startGeneration(storyPremise, numChapters, bookTitleInput);
     } else {
       // Basic validation feedback, can be improved
       alert("Please provide a story premise and at least 3 chapters.");
@@ -216,6 +218,8 @@ const App: React.FC = () => {
         {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && storeReady && (
           <>
             <UserInput
+              bookTitle={bookTitleInput}
+              setBookTitle={setBookTitleInput}
               storyPremise={storyPremise}
               setStoryPremise={setStoryPremise}
               numChapters={numChapters}

@@ -13,6 +13,8 @@ import { fetchProviderModels } from '../services/qwenBrowserService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
+  bookTitle?: string;
+  setBookTitle?: (value: string) => void;
   storyPremise: string;
   setStoryPremise: (value: string) => void;
   numChapters: number;
@@ -26,6 +28,8 @@ interface UserInputProps {
 }
 
 const UserInput: React.FC<UserInputProps> = ({
+  bookTitle,
+  setBookTitle,
   storyPremise,
   setStoryPremise,
   numChapters,
@@ -303,6 +307,21 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div>
+        <label htmlFor="bookTitle" className="block text-sm font-medium text-zinc-400 mb-1.5">
+          Book title <span className="text-zinc-500 font-normal">(optional)</span>
+        </label>
+        <Input
+          id="bookTitle"
+          type="text"
+          value={bookTitle || ''}
+          onChange={(e) => setBookTitle?.(e.target.value)}
+          placeholder="Leave blank to let the AI author invent an evocative commercial title..."
+          maxLength={100}
+        />
+        <p className="text-xs text-zinc-500 mt-1">If blank, the author model will invent an original commercial title during planning.</p>
+      </div>
+
+      <div>
         <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-400 mb-1.5">
           Story premise
         </label>
@@ -395,7 +414,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
       <div className="pt-2">
         <p className="text-xs text-zinc-500">
-          Архитектура «Книги 2.0»: двухслойное проектирование (Досье 4 слоёв правды + Карточки сцен), слепое по-сценное письмо с барьером от метафор, непрерывная верификация чеками наблюдателя и двойной аудит (сюжетный и литературный).
+          Book Craft 2.0: Two-layer architecture (Author Dossier with 4 truth layers + Scene Projection Cards), blind scene-by-scene writing with an anti-metaphor barrier, continuous observer verification, and dual developmental/literary audits.
         </p>
       </div>
 
@@ -408,36 +427,36 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
           <h2 className="text-xs font-semibold text-zinc-400 uppercase">
-            Архитектура «Как пишутся книги 2.0»
+            Storytelling Craft 2.0 Architecture
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Досье автора и 4 слоя правды</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Author Dossier & 4 Layers of Truth</h3>
             <p className="text-xs text-zinc-500">
-              Мир, предыстория, персонажи и скрытые мотивы формируются до написания прозы. Модель держит 4 нерушимых слоя правды: объективные факты мира, секреты героев, фильтр текущего POV и публичный фасад.
+              Setting, backstory, character psychology, and hidden motives are architected before prose drafting. The engine maintains four unbreakable truth layers: objective world facts, character secrets, current POV boundaries, and public facades.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Карточки сцен и матрица проекции</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Scene Cards & Projection Matrix</h3>
             <p className="text-xs text-zinc-500">
-              Каждая сцена размечается целями, барьерами знания, входом/выходом и вещественными маркерами. Писатель видит только то, что знает персонаж в эту секунду, исключая сюжетную всезнайку.
+              Each scene is budgeted with explicit goals, knowledge boundaries, value charge shifts, and concrete props. The writer only accesses facts the POV character knows at that exact second, preventing unearned omniscience.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Слепое письмо без метафор</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Grounded Prose & Anti-Metaphor Rule</h3>
             <p className="text-xs text-zinc-500">
-              Сцена пишется конкретным предметным действием и точными диалогами. Запрещены клише, абстрактные метафоры и рефлексивная «вода» — драматический конфликт отыгрывается на странице.
+              Scenes are executed through tangible physical action, oblique dialogue, and sensory reality. Stock clichés, cosmic abstractions, and reflective filler are banned—dramatic conflict is enacted directly on the page.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Наблюдатель, Слепой читатель и Аудит</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Observer, Blind Reader & Dual Audit</h3>
             <p className="text-xs text-zinc-500">
-              Внешний наблюдатель сверяет факты и выдаёт вещественный чек сцены. Слепой читатель строит гипотезы по префиксу текста, а финальный двойной аудит оценивает причинность и литературный стиль.
+              An external observer verifies action enactment and issues scene receipts. A blind reader tracks hypotheses across chapter prefixes, and a final dual audit validates causal closure, character arcs, and literary style.
             </p>
           </div>
         </div>

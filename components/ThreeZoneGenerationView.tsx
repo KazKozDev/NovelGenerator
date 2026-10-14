@@ -342,8 +342,25 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 </div>
               </div>
 
+              {/* Quick Agent Status Telemetry */}
+              <div className="shrink-0 flex flex-col gap-1.5 my-2 pt-2 pb-2 border-y border-zinc-800/60">
+                <div className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-zinc-500 uppercase tracking-wider text-[10px]">Pipeline</span>
+                  <div className="text-zinc-300 flex items-center justify-end gap-1.5 text-right text-xs">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isLoading && currentStep !== GenerationStep.Error && currentStep !== GenerationStep.Done ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
+                    {currentStep === GenerationStep.Error ? 'Stopped' : currentStep === GenerationStep.Done ? 'Complete' : isLoading ? 'Active' : 'Idle'}
+                  </div>
+                </div>
+                <div className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-zinc-500 uppercase tracking-wider text-[10px]">Target</span>
+                  <span className="text-zinc-300 font-mono text-right tabular-nums text-xs">
+                    Ch #{currentChapterProcessing || 1}
+                  </span>
+                </div>
+              </div>
+
               {/* Token usage telemetry */}
-              <div className="shrink-0 my-2 pt-2 border-t border-zinc-800/60 flex flex-col gap-1" aria-label="Total token usage" title="Project totals, including writer, editor and reported retries. ~ marks an estimate; older calls without usage may be missing.">
+              <div className="shrink-0 mb-2 flex flex-col gap-1" aria-label="Total token usage" title="Project totals, including writer, editor and reported retries. ~ marks an estimate; older calls without usage may be missing.">
                 {(['input', 'output'] as const).map(direction => (
                   <div key={direction} className="flex items-baseline justify-between gap-2 text-xs">
                     <span className="text-zinc-500 uppercase tracking-wider text-[10px]">{direction} tokens</span>

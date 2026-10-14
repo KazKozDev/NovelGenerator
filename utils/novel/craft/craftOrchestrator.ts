@@ -2,9 +2,33 @@ import type { NovelLLM } from '../v2/llm';
 import type { ProjectStore } from '../v2/store';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import type { ProgressStage } from '../v2/orchestrator';
-import type { AuthorDraft } from '../v3/author';
+import { wornPhrases, authorKey, type AuthorDraft } from '../v3/author';
 import type { DeskState } from '../v3/authorDesk';
 import { getCraftGuide } from './craftGuide';
+
+export function extractTitle(text: string): string | undefined {
+  const match = text.match(/(?:^|\n)[#*\s]*(?:BOOK\s+)?TITLE\**\s*:\**\s*([^\n\r]+)/i);
+  if (match) {
+    const raw = match[1].replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').trim();
+    if (raw && raw.length >= 2 && raw.length <= 100 && !/^(undefined|null|none|n\/a)$/i.test(raw)) {
+      return raw;
+    }
+  }
+  return undefined;
+}
+
+export function cleanFallbackTitle(premise: string): string {
+  const text = premise.replace(/\s+/g, ' ').trim();
+  if (!text) return 'Untitled Book';
+  if (text.length <= 50) return text;
+  const cut = text.slice(0, 50);
+  const lastSpace = cut.lastIndexOf(' ');
+  const safe = (lastSpace > 20 ? cut.slice(0, lastSpace) : cut)
+    .replace(/[,;:\s\-—]+$/, '')
+    .replace(/\b(and|or|but|the|a|an|in|on|at|to|for|with|by|who|which|that|is|was|are|were)\b$/i, '')
+    .trim();
+  return safe || 'Untitled Book';
+}
 
 export interface PropAnchor {
   name: string;
@@ -68,6 +92,7 @@ export interface Fact {
 }
 
 export interface Packet {
+  title?: string;
   names: Record<string, string>;
   initialProtagonistKnowledge: string[];
   facts: Fact[];
@@ -147,9 +172,11 @@ export async function runCraftBook(
   const files: Record<string, string> = {};
   const answers: DeskState['answers'] = [];
   const journal: string[] = [];
+  let activeTitle = input.title?.trim() || '';
 
   // Helper to sync state to store
   function syncAuthorState(options: {
+    title?: string;
     dossier?: string;
     cardsMd?: string;
     timelineMd?: string;
@@ -158,13 +185,15 @@ export async function runCraftBook(
     waiting?: string;
   }) {
     const existing = store.loadAuthor();
+    const resolvedTitle = options.title ?? (activeTitle || existing?.title || cleanFallbackTitle(input.premise));
+    if (resolvedTitle && !activeTitle) activeTitle = resolvedTitle;
     const draft: AuthorDraft = {
       version: 1,
-      input_key: JSON.stringify([input.premise, input.chapter_count, input.target_total_words, input.genre, input.author_requirements]),
+      input_key: authorKey(input),
       notebook: options.dossier ?? existing?.notebook ?? '',
       clock: options.timelineMd ?? existing?.clock ?? '',
       plan: options.cardsMd ?? existing?.plan ?? '',
-      title: input.premise.slice(0, 60),
+      title: resolvedTitle,
       chapters: options.chaptersData ?? existing?.chapters ?? [],
       waiting: options.waiting ?? existing?.waiting ?? '',
       noticed: existing?.noticed ?? [],
@@ -198,6 +227,9 @@ Requirements: ${input.author_requirements || 'none'}
 Scope: ${numChapters} chapters (${totalScenes} scenes total, ~${targetWordsPerScene} words per scene).
 
 Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~2200-2800 words) before writing any prose:
+0. BOOK TITLE:
+   - Invent a striking, original, evocative commercial book title (2 to 5 words) fitting ${input.genre || 'literary fiction'}. Avoid generic cliches.
+   - Format clearly on its own line: TITLE: <Book Title>
 1. GENRE CONTRACT & CORE PREMISE:
    - Identify the explicit genre obligations and fatal tropes to avoid for ${input.genre || 'literary fiction'}.
    - What is the reader's promised payoff? (e.g. intellectual satisfaction of fair-play puzzle, visceral terror, emotional heartbreak/healing).
@@ -233,7 +265,11 @@ Output the author dossier only.`;
 
   const dossier = await llm(prepPrompt, CRAFT_SYSTEM, { stage: 'craft-preparation', temperature: 0.8, maxTokens: 8000 });
   files['dossier.md'] = dossier;
-  syncAuthorState({ dossier });
+  if (!activeTitle) {
+    const found = extractTitle(dossier);
+    if (found) activeTitle = found;
+  }
+  syncAuthorState({ dossier, title: activeTitle });
 
   // =========================================================================
   // STAGE 2: Scene Projection Cards (packet.json)
@@ -267,9 +303,14 @@ CRAFT RULES FOR EACH SCENE:
 8. ENDING CADENCE & TYPE:
    - "endingCadence": "cliffhanger" or "quiet-resonance".
    - "endingType": "interrupted-action", "new-reveal", "impossible-choice", "arrival-of-threat", "loaded-line", or "pause".
+9. SCENIC VARIETY & NON-REPETITIVE ESCALATION:
+   - Every scene MUST occur in a distinct setting or tackle a fundamentally new dramatic dynamic.
+   - BANNED: Repeating identical scene setups (e.g. characters repeatedly meeting in an abandoned ruin/shack to talk softly, touch a wrist/face, and depart).
+   - ESCALATION: Advance the story through diverse narrative arenas—investigations, confrontations with allies, public perils, tactical compromises, and irreversible decisions.
 
 Return JSON matching:
 {
+  "title": "A striking, commercial book title (2 to 5 words)",
   "names": {"protagonist": "Full Name", "counterpart": "Full Name"},
   "initialProtagonistKnowledge": ["initial pre-story facts"],
   "facts": [
@@ -324,8 +365,32 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
   const rawCards = await llm(cardsPrompt, CRAFT_SYSTEM, { stage: 'craft-cards', temperature: 0.7, json: true, maxTokens: 12000 });
   const packet = parseJson<Packet>(rawCards);
 
+  if (!activeTitle && packet.title?.trim()) {
+    const cleaned = packet.title.trim().replace(/^["'`*#\s]+|["'`*#\s]+$/g, '');
+    if (cleaned && cleaned.length >= 2 && cleaned.length <= 100) {
+      activeTitle = cleaned;
+    }
+  }
+
+  // If still no title, quick generation pass
+  if (!activeTitle) {
+    try {
+      const titlePrompt = `Based on this premise and story dossier, provide ONE compelling, evocative commercial book title (2 to 5 words). Output ONLY the title text, nothing else.\n\nPremise: ${input.premise}\nGenre: ${input.genre || 'literary fiction'}\n\nTitle:`;
+      const generated = await llm(titlePrompt, 'You are an acclaimed book editor. Return ONLY the title text.', { stage: 'craft-title', temperature: 0.7, maxTokens: 40 });
+      const cleaned = generated.replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').split('\n')[0].trim();
+      if (cleaned && cleaned.length >= 2 && cleaned.length <= 80) {
+        activeTitle = cleaned;
+      }
+    } catch {
+      // Fallback will be handled by cleanFallbackTitle
+    }
+  }
+  if (!activeTitle) {
+    activeTitle = cleanFallbackTitle(input.premise);
+  }
+
   // Format cards as human-readable markdown plan
-  const cardsMarkdown = packet.scenes.map(s => `### Scene ${s.order} (${s.id}) · Chapter ${s.chapter} [${(s.sceneType || 'scene').toUpperCase()}]
+  const cardsMarkdown = `# ${activeTitle}\n\n` + packet.scenes.map(s => `### Scene ${s.order} (${s.id}) · Chapter ${s.chapter} [${(s.sceneType || 'scene').toUpperCase()}]
 - **Causal Link:** ${s.order === 1 ? 'Opening Scene' : (s.causalLink || 'therefore').toUpperCase()}
 - **Value Charge Shift:** ${s.valueCharge?.start || '?'} → ${s.valueCharge?.end || '?'} (${s.valueCharge?.shift || 'turn'})
 - **Location & Time:** ${s.location} (${s.time})
@@ -341,7 +406,7 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
 - **Props & Chekhov Anchors:** ${s.propAnchors?.length ? s.propAnchors.map(p => `${p.name} [${p.role}]`).join(', ') : s.props?.join(', ') || 'none'}
 ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsIntroduced.join('; ')}\n` : ''}${s.openLoopsResolved?.length ? `- **Open Loops Resolved:** ${s.openLoopsResolved.join('; ')}\n` : ''}- **Change:** ${s.change}`).join('\n\n---\n\n');
   files['plan.md'] = cardsMarkdown;
-  syncAuthorState({ cardsMd: cardsMarkdown });
+  syncAuthorState({ cardsMd: cardsMarkdown, title: activeTitle });
 
   // =========================================================================
   // STAGE 3: Preflight Validation
@@ -387,6 +452,15 @@ Output JSON:
       const availableFacts = packet.facts.filter(f => knownFacts.has(f.id));
       const newSceneFacts = packet.facts.filter(f => card.newFacts?.includes(f.id));
 
+      const worn = wornPhrases(pages);
+      const wornWarning = worn.length > 0 
+        ? `\n- BANNED REPETITIVE PHRASES (already overused in prior scenes; DO NOT USE):\n  ${worn.slice(0, 15).join(', ')}`
+        : '';
+
+      const recentProse = pages.length > 0 
+        ? pages.slice(-2).join('\n\n') 
+        : '(Story begins here.)';
+
       const context = `STORY BACKGROUND:
 Premise: ${input.premise}
 Genre: ${input.genre || 'fiction'}
@@ -395,8 +469,8 @@ Author Directives: ${input.author_requirements || 'Standard literary'}
 PROTAGONIST INITIAL KNOWLEDGE:
 ${JSON.stringify(packet.initialProtagonistKnowledge)}
 
-COMMITTED PREVIOUS PROSE:
-${pages.join('\n\n') || '(Story begins here.)'}
+COMMITTED RECENT PROSE (for immediate narrative continuity):
+${recentProse}
 
 CURRENT SCENE CARD (Intentions to enact NOW):
 ${JSON.stringify(card)}
@@ -410,6 +484,9 @@ ${JSON.stringify(newSceneFacts)}
 INSTRUCTIONS FOR WRITER:
 - Write ONE continuous, complete fiction scene of ~${targetWordsPerScene} words (${Math.max(350, targetWordsPerScene - 60)}–${targetWordsPerScene + 80} words).
 - Enact the specific choice, action, and consequence detailed in the scene card.
+- ANTI-REPETITION & FRESH PROSE DIRECTIVE:
+  * Do NOT repeat the physical actions of previous scenes (e.g. do not write another scene of characters meeting in a quiet ruin to touch and part).
+  * Do NOT repeat stock sensory crutches (e.g. "copper taste", "burnt sage", "cold skin dry as parchment", "hand pressed flat against", "cupped hand"). Invent fresh sensory observations grounded in this specific scene's unique environment.${wornWarning}
 - SCENE PULSE: If this is a "scene", drive Goal -> Conflict -> Disaster. If this is a "sequel", process Emotion -> Dilemma -> Decision.
 - 3-LAYER CONFLICT: Enact the external task (${card.conflict?.external || 'external'}), interpersonal tension (${card.conflict?.interpersonal || 'interpersonal'}), and internal hesitation (${card.conflict?.internal || 'internal'}).
 - VALUE CHARGE TURN: Ensure the scene shifts the emotional/situational polarity from ${card.valueCharge?.start || 'initial state'} to ${card.valueCharge?.end || 'terminal state'}.
@@ -444,26 +521,28 @@ ${JSON.stringify(paras)}
 Examine this scene draft.
 1. Event status: was the card's required physical action and choice enacted, missing, or contradicted?
 2. Tangibility check: did the prose depict concrete actions and dialogue, or did it evaporate into vague metaphors?
-3. Value charge turn: did the scene execute the required value charge turn (${card.valueCharge?.start || 'start'} -> ${card.valueCharge?.end || 'end'})?
-4. Deep POV check: did the text avoid filter-word distancing ("he saw", "she felt", etc.)?
-5. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
-6. Issues: flag any factual contradictions with prior text.
+3. Repetition & Cliché check: did this scene recycle physical actions from earlier scenes, or use tired clichés ("copper taste", "burnt sage", "cold skin dry as parchment")?
+4. Value charge turn: did the scene execute the required value charge turn (${card.valueCharge?.start || 'start'} -> ${card.valueCharge?.end || 'end'})?
+5. Deep POV check: did the text avoid filter-word distancing ("he saw", "she felt", etc.)?
+6. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
+7. Issues: flag any factual contradictions with prior text.
 
 Return JSON:
 {
   "event": {"status": "enacted|missing|contradicted", "sources": ["${card.id}-p1"], "reason": "..."},
   "tangibleActionEnacted": true,
   "valueChargeTurned": true,
+  "isRepetitiveOrClichéd": false,
   "facts": [{"id": "F1 or new_id", "text": "...", "kind": "narrated|claim|belief", "knownBy": ["protagonist"], "source": "${card.id}-p1"}],
   "issues": [{"reason": "...", "sources": ["${card.id}-p1"]}],
   "wordCount": ${wc(sceneText)}
 }`;
 
       let receiptRaw = await llm(obsPrompt, CRAFT_SYSTEM, { stage: 'craft-observe', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-      let receipt = parseJson<Receipt>(receiptRaw);
+      let receipt = parseJson<Receipt & { isRepetitiveOrClichéd?: boolean }>(receiptRaw);
 
       // Check if repair is needed
-      const needsRepair = receipt.event?.status !== 'enacted' || !receipt.tangibleActionEnacted || wc(sceneText) < 280;
+      const needsRepair = receipt.event?.status !== 'enacted' || !receipt.tangibleActionEnacted || receipt.isRepetitiveOrClichéd || wc(sceneText) < 280;
 
       if (needsRepair) {
         journal.push(`Repairing Scene ${card.order} (${card.id})`);
@@ -479,7 +558,7 @@ ${JSON.stringify(receipt)}
 
 Rewrite this scene to fully enact the required choice and physical action.
 Ensure length is ~${targetWordsPerScene} words.
-Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors and elliptical evasions.
+Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors, elliptical evasions, and recycled clichés. Ensure fresh vocabulary and distinct physical staging.
 Output corrected fiction scene only.`;
 
         sceneText = await llm(repairPrompt, CRAFT_SYSTEM, { stage: 'craft-repair', temperature: 0.8, maxTokens: 4000 });
@@ -506,6 +585,7 @@ Output corrected fiction scene only.`;
 
     const fullChapterText = chSceneProse.join('\n\n');
     chaptersText.push(fullChapterText);
+    files[`chapter-${chNum}.md`] = fullChapterText;
     store.saveManuscript(chNum, fullChapterText);
 
     // Blind Reader after chapter
@@ -554,6 +634,7 @@ Return JSON:
   store.log('craft-audit', 'Conducting final developmental and literary reviews...');
 
   const fullBookText = chaptersText.map((t, i) => `## Chapter ${i + 1}\n\n${t}`).join('\n\n\n');
+  files['book.md'] = fullBookText;
 
   // Developmental review
   const devPrompt = `PREMISE: ${input.premise}

@@ -11,7 +11,7 @@ interface BookDisplayProps {
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, onReset }) => {
-  const [activeTab, setActiveTab] = useState<'book' | 'metadata' | 'timeline'>('book');
+  const [activeTab, setActiveTab] = useState<'book' | 'metadata'>('book');
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   const [bookViewMode, setBookViewMode] = useState<'rendered' | 'raw'>('rendered');
 
@@ -23,10 +23,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       return null;
     }
   }, [metadataJson]);
-
-  const timelineData = metadata?.timeline_data_by_chapter;
-  const chapterSummaries = metadata?.chapter_summaries;
-
 
   const handleCopyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -68,13 +64,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             ${activeTab === 'book' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
         >
           Book Content
-        </button>
-        <button
-          onClick={() => setActiveTab('timeline')}
-          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
-            ${activeTab === 'timeline' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
-        >
-          Timeline
         </button>
         <button
           onClick={() => setActiveTab('metadata')}
@@ -125,36 +114,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             <pre className="whitespace-pre-wrap break-words text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto text-left">
               {bookContent}
             </pre>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'timeline' && (
-        <div className="p-4 border border-zinc-800 rounded max-h-[60vh] overflow-y-auto">
-          <h3 className="text-sm font-semibold text-zinc-300 uppercase mb-6 text-center">Narrative Timeline</h3>
-          {timelineData && chapterSummaries ? (
-              <div className="relative pl-8 border-l-2 border-zinc-700">
-                  {Object.entries(timelineData).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([chapterNum, rawTimelineEntry]) => {
-                      const timelineEntry = rawTimelineEntry as any;
-                      const chapterInfo = chapterSummaries[chapterNum];
-
-                      return (
-                          <div key={chapterNum} className="mb-8 relative">
-                              <div className="absolute -left-[39px] top-1 h-4 w-4 bg-zinc-400 rounded-full border-4 border-zinc-950" aria-hidden="true"></div>
-                              <p className="text-xs text-zinc-500">{timelineEntry.endTimeOfChapter}</p>
-                              <h4 className="text-sm font-semibold text-zinc-300 mt-1 uppercase">
-                                  Chapter {chapterNum}: {chapterInfo?.title || 'Untitled'}
-                              </h4>
-                              <div className="mt-2 text-zinc-400 text-xs space-y-1 pl-2 border-l-2 border-zinc-800 ml-1">
-                                  <p><strong className="font-medium text-zinc-300">Time Elapsed:</strong> {timelineEntry.timeElapsed}</p>
-                                  {timelineEntry.specificMarkers && timelineEntry.specificMarkers !== 'None' && <p><strong className="font-medium text-zinc-300">Key Markers:</strong> {timelineEntry.specificMarkers}</p>}
-                              </div>
-                          </div>
-                      );
-                  })}
-              </div>
-          ) : (
-              <p className="text-center text-zinc-500 text-xs">Timeline metadata is not available.</p>
           )}
         </div>
       )}

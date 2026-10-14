@@ -16,7 +16,7 @@ class FakeNLI:
 
 class FactGraphTests(unittest.TestCase):
     def test_every_paragraph_and_offsets(self):
-        text = '  Nora arrived. She took the key.\n\n"Where is it?"\n\n# Heading\n\nНора дома.'
+        text = '  Nora arrived. She took the key.\n\n"Where is it?"\n\n# Heading\n\nNora is home.'
         paragraphs, claims = m.extract_sources([('book',text)])
         self.assertEqual(len(paragraphs),4)
         for item in paragraphs+claims:

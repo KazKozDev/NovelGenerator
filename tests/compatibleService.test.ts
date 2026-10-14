@@ -7,7 +7,7 @@ vi.mock('../services/qwenService', () => ({ qwenSetting: (name: string) => setti
 afterEach(() => { vi.unstubAllGlobals(); settings.COMPATIBLE_BASE_URL = 'http://localhost:1234/v1'; settings.COMPATIBLE_API_KEY = 'test-key'; });
 const sse = (finish = 'stop') => new Response(new ReadableStream({ start(c) {
   const e = new TextEncoder();
-  const data = `data: ${JSON.stringify({ choices: [{ delta: { content: 'Привет' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: ' world' }, finish_reason: finish }], usage: { prompt_tokens: 12, completion_tokens: 4 } })}\n\ndata: [DONE]\n\n`;
+  const data = `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: ' world' }, finish_reason: finish }], usage: { prompt_tokens: 12, completion_tokens: 4 } })}\n\ndata: [DONE]\n\n`;
   const bytes = e.encode(data); for (let i = 0; i < bytes.length; i += 7) c.enqueue(bytes.slice(i, i + 7)); c.close();
 } }), { headers: { 'content-type': 'text/event-stream' } });
 it('streams split UTF-8 events and extracts usage using the configured server and optional key', async () => {
@@ -20,8 +20,8 @@ it('streams split UTF-8 events and extracts usage using the configured server an
     expect(body.enable_thinking).toBeUndefined(); expect(body.reasoning_effort).toBeUndefined();
     return sse();
   }));
-  expect(await generateCompatibleText('write', 'system', 1000, 'my-model', 0.4, { type: 'object' }, t => chunks.push(t), m => { metadata = m; })).toBe('Привет world');
-  expect(chunks).toEqual(['Привет', ' world']);
+  expect(await generateCompatibleText('write', 'system', 1000, 'my-model', 0.4, { type: 'object' }, t => chunks.push(t), m => { metadata = m; })).toBe('Hello world');
+  expect(chunks).toEqual(['Hello', ' world']);
   expect(providerTokenUsage('compatible', metadata)).toEqual({ input: 12, output: 4 });
 });
 it('supports keyless local APIs and nonstream JSON responses', async () => {
@@ -86,7 +86,7 @@ it('runs the browser-to-local-gateway-to-upstream path with streamed output', as
   try {
     const chunks: string[] = [];
     const result = await gatewayText('/api/compatible', 'API', { prompt: 'hello', model: 'custom-model' }, undefined, { onChunk: c => chunks.push(c) });
-    expect(result).toBe('Привет world'); expect(chunks.join('')).toBe(result);
+    expect(result).toBe('Hello world'); expect(chunks.join('')).toBe(result);
     const denied = await actualFetch(root + '/api/compatible', { method: 'POST', headers: { Origin: 'https://elsewhere.test' }, body: '{}' });
     expect(denied.status).toBe(403);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }

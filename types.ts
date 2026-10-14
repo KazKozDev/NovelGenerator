@@ -23,7 +23,7 @@ export interface Character {
   limits?: string[];
   /**
    * What this person hides, as a short noun phrase in the manuscript language
-   * ("делец синдиката", "сын короля"). Nobody speaks it aloud until
+   * ("syndicate dealer", "king's son"). Nobody speaks it aloud until
    * revealChapter; a book planned before the field existed exposes nothing.
    */
   secret?: string;

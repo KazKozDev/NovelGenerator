@@ -18,8 +18,8 @@ describe('Ollama streaming completion contract', () => {
     expect(metadata).toHaveBeenCalledWith(expect.objectContaining({ done_reason: 'length', eval_count: 12, prompt_eval_count: 34 }));
   });
   it('preserves fragmented frames and a final record without a newline', async () => {
-    const response = stream(['{"message":{"content":"Ве', 'ра"},"done":false}\n', '{"message":{"content":" читала."},"done":true,"done_reason":"stop"}']);
-    expect(await readOllamaCompletion(response)).toBe('Вера читала.');
+    const response = stream(['{"message":{"content":"He', 'llo"},"done":false}\n', '{"message":{"content":" world."},"done":true,"done_reason":"stop"}']);
+    expect(await readOllamaCompletion(response)).toBe('Hello world.');
   });
   it('discards separate thinking frames before the final JSON', async () => {
     expect(await readOllamaCompletion(stream([
