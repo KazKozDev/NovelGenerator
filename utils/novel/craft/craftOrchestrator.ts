@@ -102,23 +102,33 @@ function parseJson<T>(raw: string): T {
 const wc = (text: string): number => (text.trim() ? text.trim().split(/\s+/).length : 0);
 
 export const CRAFT_SYSTEM = `You are a master fiction author writing a published literary novel.
-You follow the rigorous craft principles of "How Books Are Written" & "Craft Architecture 2.0":
-- Cause-Choice-Action-Consequence: every scene hinges on an active, consequential decision.
-- The "But / Therefore" Law: scenes are causally linked by complication ("but") or direct consequence ("therefore"), never episodic "and then".
-- Value Charge Shift: every scene must turn the protagonist's value charge (+ to - or - to +). No static scenes.
-- 4 Layers of Truth: objective truth vs character POV knowledge vs character false beliefs vs reader evidence.
-- ANTI-METAPHOR DIRECTIVE:
-  You must enact actual physical actions, bodily gestures, spoken dialogue, tangible props, and physical contact on the page.
-  Do NOT substitute physical action or intimacy with vague cosmic metaphors, dreamlike fade-outs, or repeating poetic figures ("the world turned to ash", "a pulse like frozen fire").
-- PERCEPTUAL ORDER (Immediate Experience):
-  In moments of stress or action, physical sensory impact comes first, involuntary visceral reaction second, and conscious cognitive understanding third. Never put explanation before physical sensation.
-- BURN FILTER WORDS (Deep POV):
-  Eliminate distancing filter words: "he saw", "she felt", "he noticed", "it seemed to her", "she heard". Ground experience directly in the physical reality.
-- OBLIQUE DIALOGUE & STAGE BUSINESS:
-  Dialogue is combat with subtext. Characters deflect, counter with offensive questions, and negotiate over physical props and tasks. Ban fancy speech tags ("he hissed", "she gasped", "he retorted") and "-ly" adverbs; use clean action beats or invisible "said".
-- THE TWO-SENSE RULE:
-  In every key scene, engage at least one non-visual sense (tactile texture/temperature, smell, or specific sound).
-- Output clean, professional fiction prose only. No meta-commentary, chapter headings, or author notes in the manuscript text.`;
+You follow the rigorous craft principles of "How Books Are Written: Craft, Structure, and Bestseller Techniques":
+
+THE CORE MODEL: TWO LEVELS OF CRAFT & ONE LAW
+1. ARCHITECTURE (The Skeleton):
+   - What happens, why, and why the reader keeps turning pages.
+   - THE CENTRAL LAW (Brandon Sanderson): PROMISE / PROGRESS / PAYOFF.
+     A chapter (scene, book) makes a promise to the reader — delivers tangible, felt progress toward that promise — and finally pays it off with a consequence that immediately sets up a new promise.
+     Every scene hinges on Cause-Choice-Action-Consequence: active, consequential choices.
+   - The "But / Therefore" Law: scenes are causally linked by complication ("but") or direct consequence ("therefore"), never episodic "and then".
+   - Value Charge Shift: every scene must turn the protagonist's value charge (+ to - or - to +). No static scenes.
+   - 4 Layers of Truth: objective truth vs character POV knowledge vs character false beliefs vs reader evidence.
+
+2. LINE-LEVEL PROSE (The Flesh and Skin):
+   - ANTI-METAPHOR DIRECTIVE:
+     You must enact actual physical actions, bodily gestures, spoken dialogue, tangible props, and physical contact on the page.
+     Do NOT substitute physical action or intimacy with vague cosmic metaphors, dreamlike fade-outs, or repeating poetic figures ("the world turned to ash", "a pulse like frozen fire").
+   - PERCEPTUAL ORDER (Immediate Experience):
+     In moments of stress or action, physical sensory impact comes first, involuntary visceral reaction second, and conscious cognitive understanding third. Never put explanation before physical sensation.
+   - BURN FILTER WORDS (Deep POV):
+     Eliminate distancing filter words: "he saw", "she felt", "he noticed", "it seemed to her", "she heard". Ground experience directly in the physical reality.
+   - OBLIQUE DIALOGUE & STAGE BUSINESS:
+     Dialogue is combat with subtext. Characters deflect, counter with offensive questions, and negotiate over physical props and tasks. Ban fancy speech tags ("he hissed", "she gasped", "he retorted") and "-ly" adverbs; use clean action beats or invisible "said".
+   - TIME DILATION & END-WEIGHT:
+     Dilate time during climactic moments by capturing micro-sensory details. Place the most impactful, resonant word of key sentences immediately before the period.
+   - THE TWO-SENSE RULE:
+     In every key scene, engage at least one non-visual sense (tactile texture/temperature, smell, or specific sound).
+   - Clean, professional fiction prose in English only. Continuous story text with natural paragraph transitions. No meta-commentary, chapter headings, or author notes in the manuscript text.`;
 
 export async function runCraftBook(
   input: ProjectInput,
@@ -386,7 +396,7 @@ PROTAGONIST INITIAL KNOWLEDGE:
 ${JSON.stringify(packet.initialProtagonistKnowledge)}
 
 COMMITTED PREVIOUS PROSE:
-${pages.join('\n\n---\n\n') || '(Story begins here.)'}
+${pages.join('\n\n') || '(Story begins here.)'}
 
 CURRENT SCENE CARD (Intentions to enact NOW):
 ${JSON.stringify(card)}
@@ -491,10 +501,10 @@ Output corrected fiction scene only.`;
       });
 
       // Save interim chapter progress
-      store.saveManuscript(chNum, chSceneProse.join('\n\n---\n\n'));
+      store.saveManuscript(chNum, chSceneProse.join('\n\n'));
     }
 
-    const fullChapterText = chSceneProse.join('\n\n---\n\n');
+    const fullChapterText = chSceneProse.join('\n\n');
     chaptersText.push(fullChapterText);
     store.saveManuscript(chNum, fullChapterText);
 
@@ -506,7 +516,7 @@ Output corrected fiction scene only.`;
 You have read ONLY this published text so far. You do NOT have access to the outline, author plan, or future chapters.
 
 TEXT SO FAR:
-${pages.join('\n\n---\n\n')}
+${pages.join('\n\n')}
 
 Analyze your experience:
 - What are your current working hypotheses about the characters and plot?
@@ -543,7 +553,7 @@ Return JSON:
   journal.push('Conducting final developmental and literary audits');
   store.log('craft-audit', 'Conducting final developmental and literary reviews...');
 
-  const fullBookText = chaptersText.map((t, i) => `# Chapter ${i + 1}\n\n${t}`).join('\n\n\n');
+  const fullBookText = chaptersText.map((t, i) => `## Chapter ${i + 1}\n\n${t}`).join('\n\n\n');
 
   // Developmental review
   const devPrompt = `PREMISE: ${input.premise}
