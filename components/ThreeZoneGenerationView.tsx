@@ -121,6 +121,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
   // Determine stage description
   const isWritingProse = currentStep === GenerationStep.GeneratingChapters || currentStep === GenerationStep.FinalEditingPass;
+  const isCraftMode = Boolean(tools?.some(t => t.name === 'Observer' || t.name === 'Dossier' || t.name === 'Scene Cards'));
 
   // An inspector with nothing to inspect should not hold a column open beside the manuscript.
   const showInspector = true; // Keep all three workspace columns visible before the first event.
@@ -210,6 +211,11 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {chapter?.content && (
+                        <span className="text-zinc-500 text-[10px] tabular-nums font-mono">
+                          {chapter.content.trim().split(/\s+/).filter(Boolean).length}w
+                        </span>
+                      )}
                       {isProcessing ? (
                         <span className="flex items-center gap-1 text-xs text-zinc-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -231,7 +237,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase text-zinc-500">
-                Plan · Ch {activeChapterNum}
+                {isCraftMode ? 'Scene Cards' : 'Plan'} · Ch {activeChapterNum}
               </span>
             </div>
             <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto">
@@ -249,7 +255,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               className="shrink-0 flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               <div className="flex items-center gap-1.5">
-                <span>Story Outline</span>
+                <span>{isCraftMode ? 'Dossier & Outline' : 'Story Outline'}</span>
                 <span className="text-xs text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
               </div>
               <span className="text-xs">{showOutline ? '[-]' : '[+]'}</span>
@@ -313,58 +319,44 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             <div className="border-t border-zinc-800 mt-2 pt-3 flex flex-col min-h-[8rem] flex-1 overflow-hidden">
               <div className="shrink-0 flex items-baseline justify-between gap-2 pb-2">
                 <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
-                <span className="text-xs text-zinc-500">
-                  {agentLogs.length} events
-                </span>
+                <div className="text-xs text-zinc-400">
+                  {isLoading ? (
+                    <RunClock agentLogs={agentLogs} isLoading={isLoading} className="tabular-nums" />
+                  ) : (
+                    <span className="text-zinc-500">{agentLogs.length} events</span>
+                  )}
+                </div>
               </div>
 
-              <div className="shrink-0 min-w-0">
+              <div className="shrink-0 min-w-0 mb-2">
                 <div className="flex items-start gap-1.5 min-w-0">
                   {isLoading && <LoadingSpinner className="!mx-0 !mb-0 !mt-0.5 !h-3 !w-3 shrink-0" />}
                   <div className="min-w-0 [&>p]:normal-case [&>p]:whitespace-normal [&>p]:break-words [&>p]:leading-relaxed">
-                <ProgressBar
-                  currentStep={currentStep}
-                  developmentLabel={developmentLabel}
-                  currentChapterProcessing={currentChapterProcessing}
-                  totalChaptersToProcess={totalChaptersToProcess}
-                />
+                    <ProgressBar
+                      currentStep={currentStep}
+                      developmentLabel={developmentLabel}
+                      currentChapterProcessing={currentChapterProcessing}
+                      totalChaptersToProcess={totalChaptersToProcess}
+                    />
                   </div>
                 </div>
-
-              {isLoading && (
-                <div className="flex justify-end mt-1.5 text-zinc-400 text-xs leading-relaxed">
-                  <RunClock agentLogs={agentLogs} isLoading={isLoading} className="min-w-0 text-right whitespace-normal tabular-nums" />
-                </div>
-              )}
               </div>
 
-              <div className="shrink-0 mt-2 flex flex-col gap-2" aria-label="Total token usage" title="Project totals, including writer, editor and reported retries. ~ marks an estimate; older calls without usage may be missing.">
-                {(['input','output'] as const).map(direction=><div key={direction} className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="uppercase text-zinc-500">{direction} tokens</span>
-                  <span className="text-zinc-300 tabular-nums text-right">{tokenTotals?.calls ? `${tokenTotals[direction==='input'?'estimatedInput':'estimatedOutput']?'~ ':''}${tokenTotals[direction].toLocaleString('en-US')}`:'—'}</span>
-                </div>)}
-              </div>
-
-              {/* Quick Agent Status Telemetry */}
-              <div className="shrink-0 flex flex-col gap-2 mt-3 pb-3 border-b border-zinc-800">
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-xs font-semibold uppercase text-zinc-500">Pipeline</div>
-                  <div className="text-xs text-zinc-300 flex items-center justify-end gap-1.5 text-right">
-                    <span className={`w-1.5 h-1.5 rounded-full ${isLoading && currentStep !== GenerationStep.Error && currentStep !== GenerationStep.Done ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
-                    {currentStep === GenerationStep.Error ? 'Stopped' : currentStep === GenerationStep.Done ? 'Complete' : isLoading ? 'Active' : 'Idle'}
+              {/* Token usage telemetry */}
+              <div className="shrink-0 my-2 pt-2 border-t border-zinc-800/60 flex flex-col gap-1" aria-label="Total token usage" title="Project totals, including writer, editor and reported retries. ~ marks an estimate; older calls without usage may be missing.">
+                {(['input', 'output'] as const).map(direction => (
+                  <div key={direction} className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className="text-zinc-500 uppercase tracking-wider text-[10px]">{direction} tokens</span>
+                    <span className="text-zinc-300 font-mono tabular-nums text-right">
+                      {tokenTotals?.calls ? `${tokenTotals[direction === 'input' ? 'estimatedInput' : 'estimatedOutput'] ? '~ ' : ''}${tokenTotals[direction].toLocaleString('en-US')}` : '—'}
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-xs font-semibold uppercase text-zinc-500">Target</div>
-                  <div className="text-xs text-zinc-300 text-right tabular-nums">
-                    Ch #{currentChapterProcessing || 1}
-                  </div>
-                </div>
+                ))}
               </div>
 
               {/* Full Agent Activity Log */}
               {agentLogs.length > 0 ? (
-                <div className="flex-1 min-h-0 overflow-y-auto mt-3 pr-1">
+                <div className="flex-1 min-h-0 overflow-y-auto mt-1 pr-1">
                   <AgentActivityLog logs={agentLogs} />
                 </div>
               ) : (

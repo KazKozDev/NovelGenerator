@@ -1,9 +1,11 @@
 import type { NovelLLM } from '../v2/llm';
 
-/** Offline evaluation only. These judgements never reopen or rewrite a chapter. */
+/** Evidence-backed continuity judgments used by offline evaluation and the reserved final book audit. They never rewrite prose themselves. */
 export type ContinuityVerdict = 'error' | 'explained' | 'uncertain';
 export interface Passage { id: string; text: string }
 export interface ContinuityAssessment {
+  status?: import('./findingReview').FindingStatus;
+  check?: import('./findingReview').FindingCheck;
   verdict: ContinuityVerdict;
   evidence: { passage: string; quote: string; source: 'narration' | 'speech' | 'document' | 'thought' }[];
   reason: string;

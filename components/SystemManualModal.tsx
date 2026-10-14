@@ -11,8 +11,8 @@ const sections = [
   ] },
   { id: 'workspace', label: 'Workspace', title: 'Read the book while it develops', intro: 'The three columns show the plan, the manuscript and the work being performed.', cards: [
     { title: 'Left · chapters and the author\'s steps', paragraphs: ['Select a chapter to read it. Under the list is what the author has done, step by step, in its own words: what it wrote, whom it asked and why.', 'Pending means no text has appeared yet. Live identifies the chapter being written. Draft is a chapter with text while the book is still in work.'] },
-    { title: 'Center · manuscript and tools', paragraphs: ['Clean text renders the current manuscript. Raw shows the source. Changes compares the chapter before and after the author wrote it again.', 'To the left of those are the tabs of the author\'s tools. Reader holds what the author asked its readers and what they said. Characters holds its talk with its people. Keeper holds what it looked up in the book. Set in holds what it set into a chapter already written. Notebook holds its notebook, plan and dossier. Each shows the words themselves, not a log. Press a tab again, or any view of the chapter, to return to the text.'] },
-    { title: 'Right · Checks and Agent Inspector', paragraphs: ['Checks describes the selected chapter: its word count, dialogue share, and a few measures of repetition. Agent Inspector shows the current step, elapsed time, calls and recorded events. Resume Generation appears when the saved desk can be continued after a stop.'] },
+    { title: 'Center · manuscript and tools', paragraphs: ['Clean text renders the current manuscript. Raw shows the source. Changes compares the chapter before and after revisions.', 'To the left of those are the Craft tools: Dossier holds the 4 layers of truth (world, backstory, characters, facade). Scene Cards holds the projection matrix with knowledge barriers and scene targets. Observer holds independent validation receipts. Reader holds blind reader expectations. Reviews holds dual developmental and literary audits. Press a tab again to return to the prose.'] },
+    { title: 'Right · Checks and Agent Inspector', paragraphs: ['Checks describes the selected chapter: its word count, dialogue share, and prose texture signals. Agent Inspector shows the current step, elapsed time, calls and recorded events. Resume Generation appears when the saved book can be continued after a stop.'] },
   ] },
   { id: 'metrics', label: 'Metrics explained', title: 'What each indicator means', intro: 'Checks and Measured describe the selected chapter. Agent Inspector describes the current operation, which may concern a different chapter. These indicators update as the manuscript and run change.', cards: [
     { title: 'Checks · review and writing signals', paragraphs: [
@@ -34,7 +34,7 @@ const sections = [
     ] },
     { title: 'Agent Inspector · activity and usage', paragraphs: [
       'Events: The number of entries in the displayed activity log. Entries record requests and other agent activity; they do not count completed scenes or accepted edits.',
-      'Current operation: Describes what the author is doing: writing, asking a reader, asking one of its people, or looking something up.',
+      'Current operation: Describes what the craft pipeline is doing: preparation (dossier), scene cards projection, blind writing, observer validation, blind reading, or dual review.',
       'Activity icon: A rotating icon indicates that generation is running. It does not confirm that new text is arriving or that a review has passed.',
       'Elapsed time: Time since the first entry in the displayed run log. It includes waiting for models and reviews, not just writing time. Reloading can begin a new visible activity history.',
       'Calls: The displayed request count. In the main workspace it is derived from the activity log, so it is not an independent provider billing counter. Writing, reviews and retries can all add calls.',
@@ -47,14 +47,14 @@ const sections = [
       'Target: The chapter assigned to the current operation. Book-wide planning and reviews may still display a chapter target; read the operation label for the actual scope. Target can differ from the chapter selected in Checks because reading and generation proceed independently.',
     ] },
   ] },
-  { id: 'process', label: 'Writing process', title: 'One author, a desk, and a counted shape', intro: 'The author writes the book. Code counts the debts it names and stops the run when the calls are spent.', cards: [
-    { title: '1 · The desk', paragraphs: ['The author has a notebook, a plan, a dossier, an envelope and drama.md, plus one file for each chapter. It chooses what to write. The screen follows that choice.'] },
-    { title: '2 · The pages', paragraphs: ['A chapter is written whole, or changed at a place the author quotes. A reader can be asked about a chapter. A character can be asked what they would do. The keeper answers from what the book already says.'] },
-    { title: '3 · What the book owes', paragraphs: ['drama.md names the turns, the stakes, the question, the guns and the last act, in the author\'s words. Code checks those words against the chapters. The first wording stays. Rewriting the line does not move the debt, and saying the book is done does not close it while a named debt is open and calls remain.'] },
-    { title: '4 · The end of the run', paragraphs: ['When the budget is spent, the book goes out as it stands. The report lists chapters that were not written and debts that were not met. Resume continues the same desk.'] },
+  { id: 'process', label: 'Writing process', title: 'Craft 2.0: Two Layers of Truth & Execution', intro: 'The craft pipeline separates causal architecture from physical prose execution.', cards: [
+    { title: '1 · Dossier & 4 Layers of Truth', paragraphs: ['Before a word of prose is written, the model builds objective world facts, character backstories/secrets, current POV knowledge filters, and the public facade.'] },
+    { title: '2 · Scene Cards & Projection Matrix', paragraphs: ['Each scene receives entry and exit conditions, emotional delta, strict knowledge horizon boundaries, and concrete physical action requirements.'] },
+    { title: '3 · Anti-Metaphor Blind Writing', paragraphs: ['The writer models the scene with concrete physical action and natural dialogue. Self-absorbed metaphors, pseudo-literary filler, and omniscient leaks are strictly barred.'] },
+    { title: '4 · Observer Validation & Dual Audit', paragraphs: ['An independent observer evaluates each scene and outputs a concrete physical receipt. Blind reading checks audience expectations, followed by full developmental and literary reviews.'] },
   ] },
   { id: 'checks', label: 'Quality & repairs', title: 'What is counted', intro: 'The manuscript is the author\'s. Code counts a few things it can count, and reports them.', cards: [
-    { title: 'Named debts', paragraphs: ['The turns, stakes, question, guns and last act are met when their words stand in the chapter that owes them. Open debts are listed when the book is finished.'] },
+    { title: 'Named debts', paragraphs: ['The turns, stakes, question, guns and last act are assessed against cited scenes. Planning words do not have to appear in the prose. Unresolved events and unavailable checks are listed in the final report.'] },
     { title: 'Chapter measures', paragraphs: ['Originality is the share of distinct four-word sequences in the chapter. Hook, Rhythm and Motifs are signals about the opening, sentence length and repeated phrases. They are not a review of the plot.'] },
     { title: 'Stopping', paragraphs: ['The desk has a budget of calls that grows with the number of chapters. When it is spent, the book goes out as it stands and the report names what is still open. A provider failure stops the run; Resume continues the saved desk.'] },
   ] },

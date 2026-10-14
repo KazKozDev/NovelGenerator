@@ -3,8 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { setEnvLine } from '../utils/envFile';
 
 /** What a person may set from the app. A key is never sent back to the page: only whether it is there. */
-export const KEY_SETTINGS = ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'QWEN_API_KEY', 'QWEN_BASE_URL', 'HF_TOKEN'] as const;
-const PUBLIC = ['QWEN_BASE_URL'];
+export const KEY_SETTINGS = ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'QWEN_API_KEY', 'QWEN_BASE_URL', 'HF_TOKEN', 'COMPATIBLE_API_KEY', 'COMPATIBLE_BASE_URL'] as const;
+const PUBLIC = ['QWEN_BASE_URL', 'COMPATIBLE_BASE_URL'];
 const FILE = '.env.local';
 
 const stored = (name: string): string => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
@@ -75,11 +75,41 @@ const UserInput: React.FC<UserInputProps> = ({
     setValidator(next);
     saveStoredValidatorConfig(next.enabled ? next : undefined);
   };
+  const [compatibleUrl, setCompatibleUrl] = useState('');
+  const [compatibleDirty, setCompatibleDirty] = useState(false);
+  const [compatibleNote, setCompatibleNote] = useState('');
+  useEffect(() => {
+    if (providerConfig.provider !== 'compatible' && (!validator.enabled || validator.provider !== 'compatible')) return;
+    let active = true;
+    fetch('/api/keys').then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load API settings');
+      if (active && !compatibleDirty) setCompatibleUrl(current => current || data.keys?.COMPATIBLE_BASE_URL?.value || '');
+    }).catch(error => { if (active) setCompatibleNote(error instanceof Error ? error.message : 'Could not load API settings'); });
+    return () => { active = false; };
+  }, [providerConfig.provider, validator.enabled, validator.provider]);
+  const saveCompatibleUrl = async (): Promise<boolean> => {
+    if (!compatibleDirty) return true;
+    try {
+      const url = new URL(compatibleUrl.trim());
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Enter an HTTP(S) base URL without credentials, query or fragment.');
+      setCompatibleNote('Saving…');
+      const response = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'COMPATIBLE_BASE_URL', value: compatibleUrl.trim() }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not save base URL');
+      setCompatibleDirty(false); setCompatibleNote('Saved'); return true;
+    } catch (error) { setCompatibleNote(error instanceof Error ? error.message : 'Could not save base URL'); return false; }
+  };
+  const compatibleEndpointField = (prefix: string) => <div className="space-y-1.5">
+    <label htmlFor={`${prefix}-api-base-url`} className="block text-sm text-zinc-400">Base URL</label>
+    <Input id={`${prefix}-api-base-url`} value={compatibleUrl} onChange={e => { setCompatibleUrl(e.target.value); setCompatibleDirty(true); setCompatibleNote('Unsaved'); }} placeholder="http://127.0.0.1:8085/v1/" className="font-mono" />
+    <div className="flex items-center justify-between gap-2"><p className="text-xs text-zinc-500">Include /v1 if required. Shared by author and reader. {compatibleNote}</p><button type="button" onClick={() => { void saveCompatibleUrl(); }} className="text-xs underline text-zinc-400">Save URL</button></div>
+  </div>;
   // Gemini, Qwen and Anthropic: the models their own servers report, as suggestions for the same kind of field.
-  const [listed, setListed] = useState<{ gemini: string[]; qwen: string[]; anthropic: string[] }>({ gemini: [], qwen: [], anthropic: [] });
-  const [listNote, setListNote] = useState<{ gemini: string; qwen: string; anthropic: string }>({ gemini: '', qwen: '', anthropic: '' });
-  const loadListed = (provider: 'gemini' | 'qwen' | 'anthropic') => { setListNote(note => ({ ...note, [provider]: 'Loading…' })); fetchProviderModels(provider).then(models => { setListed(all => ({ ...all, [provider]: models })); setListNote(note => ({ ...note, [provider]: `${models.length} models from ${provider === 'gemini' ? 'Gemini' : provider === 'qwen' ? 'Qwen' : 'Anthropic'}` })); }, error => setListNote(note => ({ ...note, [provider]: error instanceof Error ? error.message : 'Model list failed' }))); };
-  const listedField = (provider: 'gemini' | 'qwen' | 'anthropic', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
+  const [listed, setListed] = useState<{ gemini: string[]; qwen: string[]; anthropic: string[]; compatible: string[] }>({ gemini: [], qwen: [], anthropic: [], compatible: [] });
+  const [listNote, setListNote] = useState<{ gemini: string; qwen: string; anthropic: string; compatible: string }>({ gemini: '', qwen: '', anthropic: '', compatible: '' });
+  const loadListed = async (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible') => { if (provider === 'compatible' && !await saveCompatibleUrl()) return; setListNote(note => ({ ...note, [provider]: 'Loading…' })); fetchProviderModels(provider).then(models => { setListed(all => ({ ...all, [provider]: models })); setListNote(note => ({ ...note, [provider]: `${models.length} models from ${provider === 'gemini' ? 'Gemini' : provider === 'qwen' ? 'Qwen' : provider === 'compatible' ? 'Compatible API' : 'Anthropic'}` })); }, error => setListNote(note => ({ ...note, [provider]: error instanceof Error ? error.message : 'Model list failed' }))); };
+  const listedField = (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <label className="block text-sm text-zinc-400">{label}</label>
@@ -104,8 +134,9 @@ const UserInput: React.FC<UserInputProps> = ({
     </div>
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if ((providerConfig.provider === 'compatible' || (validator.enabled && validator.provider === 'compatible')) && !await saveCompatibleUrl()) return;
     if (numChapters >= MIN_CHAPTERS) {
       onSubmit();
     } else {
@@ -160,8 +191,10 @@ const UserInput: React.FC<UserInputProps> = ({
             <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
             <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
             <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>API compatible</button>
           </div>
         </div>
+        {providerConfig.provider==='compatible' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{compatibleEndpointField('author')}{listedField('compatible', 'API model', providerConfig.compatibleModel, model => { const updated = { ...providerConfig, compatibleModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'model-id', 'OpenAI-compatible Chat Completions. Optional key stays in API settings.')}</div>}
         {providerConfig.provider==='anthropic' && <div className="mt-4 pt-3 border-t border-zinc-800">{listedField('anthropic', 'Anthropic model', providerConfig.anthropicModel, model => { const updated = { ...providerConfig, anthropicModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.')}</div>}
         {providerConfig.provider==='huggingface' && <div className="mt-4 pt-3 border-t border-zinc-800">{hfField('Hugging Face model', providerConfig.hfModel, model => {const updated={...providerConfig,hfModel:model||undefined};setProviderConfig(updated);saveStoredProviderConfig(updated);})}</div>}
 
@@ -255,9 +288,10 @@ const UserInput: React.FC<UserInputProps> = ({
                 <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
                 <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
                 <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
+                <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>API compatible</button>
               </div>
 
-              {validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
+              {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
                 listedField('gemini', 'Reader Gemini model', validator.geminiModel, model => updateValidator({ geminiModel: model || undefined }), GEMINI_MODEL_NAME, `Pick a different model than the author. Empty means the default (${GEMINI_MODEL_NAME}).`)
               ) : (
                 ollamaField('Reader Ollama model', validator.ollamaModel, model => updateValidator({ ollamaModel: model }), 'Uses the same Ollama endpoint as the author.')
@@ -360,7 +394,9 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div className="pt-2">
-        <p className="text-xs text-zinc-500">One author writes the whole book at its desk. The chapter length is a rough size for the book: no chapter is cut or padded to it. While it works, the tabs above the text show what it asks its readers and its people, word for word.</p>
+        <p className="text-xs text-zinc-500">
+          Архитектура «Книги 2.0»: двухслойное проектирование (Досье 4 слоёв правды + Карточки сцен), слепое по-сценное письмо с барьером от метафор, непрерывная верификация чеками наблюдателя и двойной аудит (сюжетный и литературный).
+        </p>
       </div>
 
       <div className="flex justify-end pt-2">
@@ -372,36 +408,36 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
         <div>
           <h2 className="text-xs font-semibold text-zinc-400 uppercase">
-            How the book is written
+            Архитектура «Как пишутся книги 2.0»
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. The notebook</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Досье автора и 4 слоя правды</h3>
             <p className="text-xs text-zinc-500">
-              The author thinks the book through before a word of it exists: the ending, the people, the facts that must not drift, a plan of the chapters. Its plan says what the reader learns in each chapter for the first time. Among its notes is an envelope: what really happened, hour by hour, kept as a clock and not as prose, so that the author knows it before it writes toward it.
+              Мир, предыстория, персонажи и скрытые мотивы формируются до написания прозы. Модель держит 4 нерушимых слоя правды: объективные факты мира, секреты героев, фильтр текущего POV и публичный фасад.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Its people</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Карточки сцен и матрица проекции</h3>
             <p className="text-xs text-zinc-500">
-              Before a scene that turns on someone, the author asks that person from the inside what they want and what they would do. Their answers decide the scene, not a template.
+              Каждая сцена размечается целями, барьерами знания, входом/выходом и вещественными маркерами. Писатель видит только то, что знает персонаж в эту секунду, исключая сюжетную всезнайку.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. The chapters</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Слепое письмо без метафор</h3>
             <p className="text-xs text-zinc-500">
-              Nothing is closed to the author: it may go back to any chapter, write it again, change a line at the place it quotes, or set one small thing in. It can look through the book for a word at no cost. After every change it is shown the chapter as it was and as it is, and if it starts going round, its own steps.
+              Сцена пишется конкретным предметным действием и точными диалогами. Запрещены клише, абстрактные метафоры и рефлексивная «вода» — драматический конфликт отыгрывается на странице.
             </p>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. The reader</h3>
+            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Наблюдатель, Слепой читатель и Аудит</h3>
             <p className="text-xs text-zinc-500">
-              A reader, another model if you set one, says what they are waiting for, where their attention slipped and what did not add up. Before the last chapter is written, a reader says what the book still owes them.
+              Внешний наблюдатель сверяет факты и выдаёт вещественный чек сцены. Слепой читатель строит гипотезы по префиксу текста, а финальный двойной аудит оценивает причинность и литературный стиль.
             </p>
           </div>
         </div>

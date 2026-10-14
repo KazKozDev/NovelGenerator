@@ -1,5 +1,8 @@
 import { authorKey } from '../v3/author';
 import { writeAtDesk } from '../v3/authorDesk';
+import { runCraftBook } from '../craft/craftOrchestrator';
+import { prepareEditorialPass } from '../v3/editorialPass';
+import { AUDIT_CALLS, AUDIT_STAGES } from '../v3/bookAudit';
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { MemoryProjectStore, type ProjectStore } from './store';
 import type { FinalReport, ProjectInput } from './types';
@@ -67,13 +70,16 @@ export class Orchestrator {
 
   private counted(llm: NovelLLM): NovelLLM {
     return async (prompt, system, options) => {
-      this.callsUsed++;
-      if (this.callsUsed > this.budget.maxCalls) {
+      if (!AUDIT_STAGES.has(options?.stage || '') && this.callsUsed >= Math.max(0, this.budget.maxCalls - AUDIT_CALLS)) {
+        throw new Error('Writing call budget exhausted; remaining calls are reserved for final book checks.');
+      }
+      if (this.callsUsed >= this.budget.maxCalls) {
         throw new Error(`Call budget of ${this.budget.maxCalls} calls exhausted with ${this.store.manuscript().length} chapter(s) written. Continuing keeps them and starts the count again.`);
       }
       if (Date.now() - this.startedAt > this.budget.maxTimeMs) {
         throw new Error(`Time budget of ${Math.round(this.budget.maxTimeMs / 60000)} minutes exhausted with ${this.store.manuscript().length} chapter(s) written. Continuing keeps them and starts the clock again.`);
       }
+      this.callsUsed++;
       const stage = options?.stage || 'unlabelled';
       const tally = this.stages.get(stage) || { stage, calls: 0, sent: 0, received: 0 };
       tally.calls++;
@@ -97,6 +103,12 @@ export class Orchestrator {
     return { ...result, usage };
   }
 
+  async runEditorial(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
+    try { prepareEditorialPass(input, this.store); }
+    catch (error) { return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: error instanceof Error ? error.message : String(error) }; }
+    return this.runBook(input, llm);
+  }
+
   private async run(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
     this.callsUsed = 0;
     this.tokensUsed = 0;
@@ -106,14 +118,19 @@ export class Orchestrator {
     if (authored && authored.input_key !== authorKey(input)) {
       return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
     }
-    this.store.saveInput({ ...input, generation_mode: 'author' });
-    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. The author is at its desk.`);
+    const mode = input.generation_mode || 'author';
+    this.store.saveInput({ ...input, generation_mode: mode });
+    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. ${mode === 'craft' ? '2-layer craft engine active.' : 'The author is at its desk.'}`);
     try {
-      await writeAtDesk({ ...input, generation_mode: 'author' }, this.store, this.counted(llm), this.onProgress);
+      if (mode === 'craft') {
+        await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
+      } else {
+        await writeAtDesk({ ...input, generation_mode: 'author' }, this.store, this.counted(llm), this.onProgress);
+      }
       this.flushRetries();
       const report = this.store.loadReport()!;
       this.store.log('audit', report.summary);
-      return { status: report.status === 'COMPLETE' ? 'COMPLETE' : 'COMPLETE_WITH_WARNINGS', report, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
+      return { status: report.status, report, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
     } catch (error) {
       this.flushRetries();
       const message = error instanceof Error ? error.message : String(error);
@@ -122,3 +139,4 @@ export class Orchestrator {
     }
   }
 }
+

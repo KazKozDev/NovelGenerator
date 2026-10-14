@@ -314,7 +314,7 @@ export interface AgentLogEntry {
   strategy?: string;
 }
 
-export type LLMProviderType = 'gemini' | 'ollama' | 'qwen' | 'huggingface' | 'anthropic';
+export type LLMProviderType = 'gemini' | 'ollama' | 'qwen' | 'huggingface' | 'anthropic' | 'compatible';
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -327,4 +327,5 @@ export interface LLMProviderConfig {
   hfModel?: string;
   /** Anthropic model id (e.g. claude-opus-5-5). Absent means the server's default. */
   anthropicModel?: string;
+  compatibleModel?: string;
 }

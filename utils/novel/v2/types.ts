@@ -9,6 +9,7 @@ export interface FinalReport {
     evidence_refs: string[];
     reader_impact: string;
     certainty: string;
+    assessment?: unknown;
   }[];
   central_resolution: { supported: boolean; evidence_refs: string[]; comment: string };
   unresolved_major_promises: string[];
@@ -19,7 +20,7 @@ export interface FinalReport {
 
 export interface ProjectInput {
   planning_version?: 2;
-  generation_mode?: 'author';
+  generation_mode?: 'author' | 'craft';
   premise: string;
   chapter_count: number;
   genre: string;

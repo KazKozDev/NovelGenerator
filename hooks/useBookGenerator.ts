@@ -1,3 +1,4 @@
+import { AUDIT_STAGES } from '../utils/novel/v3/bookAudit';
 import {addTokenUsage,emptyTokenTotals,savedTokenTotals,type TokenTotals} from '../utils/tokenUsage';
 import { useState, useRef, useEffect } from 'react';
 import { type StorySettings, type AgentLogEntry, GenerationStep, type ChapterData } from '../types';
@@ -28,6 +29,15 @@ export function stepName(prompt: string): string {
 }
 
 const STAGES: Record<string, string> = {
+  'craft-preparation': 'Author Dossier: 4 Layers of Truth & Backstory',
+  'craft-cards': 'Scene Projection: Scene Cards & Knowledge Registry',
+  'craft-preflight': 'Preflight: Causal Consistency Audit',
+  'craft-write': 'Writing Scene (Anti-Metaphor Directive)',
+  'craft-observe': 'Observer: Validating Scene Enactment',
+  'craft-repair': 'Repair: Enacting Concrete Action',
+  'craft-reader': 'Blind Reader: Chapter Prefix Hypotheses',
+  'craft-dev-review': 'Developmental Review: Causal Arc & Closure',
+  'craft-lit-review': 'Literary Review: Craft, Sensory Detail & Voice',
   'author-step': 'The author at its desk',
   'author-character': 'The author asks one of its people',
   'author-reader': 'A reader reads this far',
@@ -125,8 +135,7 @@ export default function useBookGenerator() {
     setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}) })));
     setDeskTools(author?.desk ? deskTabs(author.desk) : []);
     if (author) {
-      // The left pane shows the author's own desk: the plan it wrote for itself, and its clock.
-      setDevelopmentLabel(author.completed ? undefined : author.desk ? `The author is at its desk · step ${author.desk.step} · ${author.desk.budget - author.desk.spent} calls left` : !author.notebook && !author.clock ? 'The author is thinking the book through' : !author.clock ? 'The author is settling who, where and when' : !author.plan ? 'The author is planning the book' : `The author is writing chapter ${Math.min(author.chapters.length + 1, store.loadInput()?.chapter_count || 1)}`);
+      setDevelopmentLabel(author.completed ? undefined : author.desk ? `${author.desk.editorial?.active ? 'Revising novel' : 'Writing novel'} · step ${author.desk.step} · ${author.desk.budget - author.desk.spent} calls left` : !author.notebook && !author.clock ? 'Developing premise & concept' : !author.clock ? 'Settling characters & world' : !author.plan ? 'Planning chapters' : `Writing chapter ${Math.min(author.chapters.length + 1, store.loadInput()?.chapter_count || 1)}`);
       setCurrentStoryOutline([author.notebook ? `# The author's notebook\n\n${author.notebook}` : '', author.plan ? `# The author's plan\n\n${author.plan}` : '', author.clock ? `# ${author.desk ? 'The dossier' : 'The clock'}\n\n${author.clock}` : ''].filter(Boolean).join('\n\n') || 'The author has not written its plan yet.');
       const at = author.chapters.at(-1);
       if (author.desk) setCurrentChapterPlan(`**What the author has done, step by step**\n\n${author.desk.journal.slice(-30).map(line => `- ${line}`).join('\n') || '(nothing yet)'}${author.desk.answers.length ? `\n\n**What it was last told**\n\n*${author.desk.answers.at(-1)!.who}:* ${author.desk.answers.at(-1)!.text}` : ''}`);
@@ -168,7 +177,7 @@ export default function useBookGenerator() {
     else if (stage === 'done') refreshFromStore();
   }
 
-  async function run(input: ProjectInput, fresh: boolean) {
+  async function run(input: ProjectInput, fresh: boolean, editorial = false) {
     if (busy.current) return;
     busy.current = true;
     const token = epoch.current;
@@ -188,7 +197,7 @@ export default function useBookGenerator() {
     const writer = getStoredProviderConfig();
     const validator = getStoredValidatorConfig();
     const second = getStoredSecondWriterConfig();
-    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
+    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'compatible' ? config.compatibleModel || '?' : config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
     store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
@@ -208,12 +217,12 @@ export default function useBookGenerator() {
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
-      const servingTag = role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
+      const servingTag = role.provider === 'compatible' ? `API:${role.compatibleModel || '?'}` : role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
         ? `Ollama:${role.ollamaModel || '?'}` : `Gemini:${role.geminiModel || 'default'}`;
       setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: currentChapterRef.current, type: 'execution', message: `${call.title} · ${servingTag}`, details, ...(call.reason ? { outcome: `Refused for: ${call.reason}` } : {}) }]);
       // While an answer arrives: the inspector says how much has come and how fast, and a
       // writer's prose is shown as it is written. Both are refreshed a few times a second at most.
-      const writing = /^(author-step|author-chapter|thesis-(block-write|block-repair|expand|polish|seam-repair|rough-repair|audit-repair))$/.test(options.stage || '');
+      const writing = /^(author-step|author-chapter|craft-write|craft-repair|thesis-(block-write|block-repair|expand|polish|seam-repair|rough-repair|audit-repair))$/.test(options.stage || '');
       let arrived = '', shown = 0;
       const progress = (force = false) => {
         if (epoch.current !== token || (!force && Date.now() - shown < 400)) return;
@@ -228,11 +237,14 @@ export default function useBookGenerator() {
           const desk = options.stage === 'author-step';
           // One answer may hold several steps: only the step now arriving counts, and only if it is a chapter.
           const now = desk ? arrived.slice(Math.max(0, ...[...arrived.matchAll(/^\**TOOL\**\s*:/gmi)].map(found => found.index ?? 0))) : '';
-          const body = desk ? (/^\**FILE\**\s*:\**\s*[`"']?chapter-\d+/mi.test(now) && /^\**TOOL\**\s*:\**\s*`?(write|append)/mi.test(now) ? now.split(/\n-{3,}[ \t]*\n/)[1] || '' : '') : livePreview(arrived).split(/\n\s*={3,}\s*CARD/i)[0];
+          const body = desk
+            ? (/^\**FILE\**\s*:\**\s*[`"']?chapter-\d+/mi.test(now) && /^\**TOOL\**\s*:\**\s*`?(write|append)/mi.test(now) ? now.split(/\n-{3,}[ \t]*\n/)[1] || '' : '')
+            : options.stage?.startsWith('craft-') ? arrived : livePreview(arrived).split(/\n\s*={3,}\s*CARD/i)[0];
           if (body || !desk) setLiveDraft({ label: desk ? `The author is writing ${now.match(/^\**FILE\**\s*:\**\s*[`"']?(chapter-\d+)/mi)?.[1].replace('-', ' ') || 'a chapter'}` : call.title, text: body });
         }
       };
-      const live = { onChunk: (chunk: string) => { arrived += chunk; progress(); }, onRestart: (why: string) => { arrived = ''; progress(true); setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.details === details && !entry.finished ? { ...entry, outcome: `Asking again: ${why}` } : entry)); } };
+      const boundedAudit = AUDIT_STAGES.has(options.stage || '');
+      const live = { retryOutputLimit: !boundedAudit, onChunk: (chunk: string) => { arrived += chunk; progress(); }, onRestart: (why: string) => { arrived = ''; progress(true); setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.details === details && !entry.finished ? { ...entry, outcome: `Asking again: ${why}` } : entry)); } };
       const ask = async (maxTokens: number | undefined, retry = false) => {
         checkActive();
         arrived = '';
@@ -251,7 +263,7 @@ export default function useBookGenerator() {
       const seconds = () => `${Math.max(1, Math.round((Date.now() - start) / 1000))}s`;
       let result: string;
       try {
-        result = role.provider === 'ollama'
+        result = boundedAudit ? await ask(options.maxTokens) : role.provider === 'ollama'
           ? await withOllamaOutputRoom(ask, options.maxTokens)
           // A metered provider is asked for what the call asked, and for twice that if the answer
           // was cut off — but not for a scene or an edit of one: a scene that fills eight thousand
@@ -277,7 +289,7 @@ export default function useBookGenerator() {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
       });
-      const result = await orchestrator.runBook(input, llm);
+      const result = editorial ? await orchestrator.runEditorial(input, llm) : await orchestrator.runBook(input, llm);
       if (epoch.current !== token) return;
       refreshFromStore();
       if (result.status === 'FAILED') {
@@ -333,12 +345,17 @@ export default function useBookGenerator() {
 
   async function startGeneration(premise: string, count: number) {
     if (busy.current || !storeRef.current) return;
-    const input = buildProjectInput(premise,count,storySettings);
+    const input: ProjectInput = { ...buildProjectInput(premise, count, storySettings), generation_mode: 'craft' };
     getStore().clearAll();
     inputRef.current = input;
     setStoryPremise(premise);
     setNumChapters(count);
     await run(input, true);
+  }
+
+  async function editBook() {
+    if (busy.current || !storeRef.current || !inputRef.current) return;
+    await run(inputRef.current, false, true);
   }
 
   async function continueGeneration() {
@@ -453,7 +470,7 @@ export default function useBookGenerator() {
     isLoading, currentStep, error, developmentLabel,
     isResumable: hasUnfinished && !isLoading,
     tokenTotals, storeReady, exportProject, importProject,
-    startGeneration, continueGeneration, resetGenerator, editSettings,
+    startGeneration, continueGeneration, editBook, resetGenerator, editSettings,
     finalBookContent,
     finalMetadataJson,
     generatedChapters: workspaceChapters,

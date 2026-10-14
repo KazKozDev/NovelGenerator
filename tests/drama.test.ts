@@ -57,6 +57,21 @@ describe('the shape of a book', () => {
     expect(unread).toEqual(['And then a paragraph of intentions that is not a line.']);
   });
 
+  it('reads chapter annotations and realized stakes from an author plan without rejecting prose', () => {
+    const parsed = readDrama(`TURN 1 (ch.1): Julian arrives as a client.
+STAKE 1 (ch.1): Nora's marriage. Realized: she chooses silence.
+TURN 2 (ch.3): Nora sees the trap.
+STAKE 2 (ch.3): Her freedom. Realized: the frame closes.
+TURN 3 (ch.5): Nora confesses.
+STAKE 3 (ch.5): Her marriage. Realized: she loses it.
+GUN: notebook | torn page | plant ch.2 | payoff ch.4.`, 5);
+    expect(parsed.unread).toEqual([]);
+    expect(parsed.held.filter(d => d.kind === 'turn')).toHaveLength(3);
+    expect(parsed.held.filter(d => d.kind === 'stake')).toHaveLength(3);
+    expect(parsed.held.find(d => d.kind === 'stake')?.pay).toBe('she chooses silence.');
+    expect(parsed.held.find(d => d.kind === 'gun')).toMatchObject({ plantBy: 2, fireBy: 4 });
+  });
+
   it('keeps the first wording of a debt when its line is rewritten to words already on the page', () => {
     const files = { 'drama.md': 'TURN 1: she left the drawer', 'chapter-1.md': 'She understood the morning and stayed.' };
     const first = syncDrama(files, 3);
@@ -161,32 +176,26 @@ describe('the desk and what the book owes', () => {
     expect(view).toContain('act 1 is chapter 1');
     expect(view).toContain('The shape is not named yet');
     const done = await takeStep(desk, readStep('THOUGHT: Done.\nTOOL: done'), 3, async () => '');
-    expect(done).toContain('The book stays open');
-    expect(desk.finished).toBe(false);
-  });
-
-  it('refuses done while a named gun is unfired and calls remain, and prints when the budget is spent', async () => {
-    const desk = newDesk(3);
-    desk.told_promises = true;
-    await takeStep(desk, readStep(step('The debts.', 'write', 'drama.md', shapeText(3))), 3, async () => '');
-    await takeStep(desk, readStep(step('Open.', 'write', 'chapter-1.md', 'A brass key hung on the hook.')), 3, async () => '');
-    const held = await takeStep(desk, readStep(step('Done.', 'done', '')), 3, async () => '');
-    expect(held).toContain('The book stays open');
-    expect(held).toContain('brass key');
-    expect(desk.finished).toBe(false);
-    desk.files['drama.md'] = '';
-    desk.spent = desk.budget;
-    const printed = await takeStep(desk, readStep(step('Print.', 'done', '')), 3, async () => '');
-    expect(printed).toBe('');
+    expect(done).toBe('');
     expect(desk.finished).toBe(true);
-    expect(desk.drama?.some(item => item.plant === 'brass key')).toBe(true);
   });
 
-  it('says so when the chapter that owed a gun did not set it down', async () => {
+  it('does not gate closing on a literal gun phrase; the production loop checks scenes', async () => {
     const desk = newDesk(3);
     desk.told_promises = true;
-    await takeStep(desk, readStep(step('The debts.', 'write', 'drama.md', shapeText(3))), 3, async () => '');
+    desk.files['drama.md'] = shapeText(3);
+    desk.files['chapter-1.md'] = 'She lifted a toothed sliver of metal from the hook.';
+    expect(await takeStep(desk, readStep(step('Done.', 'done', '')), 3, async () => '')).toBe('');
+    expect(desk.finished).toBe(true);
+  });
+
+  it('does not demand missing planning words when storing a scene', async () => {
+    const desk = newDesk(3);
+    desk.told_promises = true;
+    desk.files['drama.md'] = shapeText(3);
     const told = await takeStep(desk, readStep(step('Chapter.', 'write', 'chapter-1.md', 'She came in from the rain and sat down.')), 3, async () => '');
-    expect(told).toContain('brass key');
+    expect(told).not.toContain('brass key');
+    expect(told).not.toContain('Still missing');
+    expect(desk.files['chapter-1.md']).toContain('rain');
   });
 });

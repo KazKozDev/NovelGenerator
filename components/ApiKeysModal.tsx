@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 
 type Status = Record<string, { set: boolean; value?: string }>;
 const ROWS: { name: string; label: string; hint: string; secret: boolean; placeholder: string }[] = [
+  { name: 'COMPATIBLE_API_KEY', label: 'Compatible API key', hint: 'Optional for local servers. Stored only on this computer.', secret: true, placeholder: 'Paste the key' },
+  { name: 'COMPATIBLE_BASE_URL', label: 'Compatible API base URL', hint: 'Shared by author and reader. Include /v1 if your server requires it.', secret: false, placeholder: 'http://localhost:1234/v1' },
   { name: 'GEMINI_API_KEY', label: 'Gemini', hint: 'Google AI Studio → Get API key.', secret: true, placeholder: 'Paste the key' },
   { name: 'ANTHROPIC_API_KEY', label: 'Anthropic', hint: 'Anthropic Console → API keys.', secret: true, placeholder: 'Paste the key' },
   { name: 'HF_TOKEN', label: 'Hugging Face', hint: 'Hugging Face → Settings → Access Tokens, with permission to call Inference Providers.', secret: true, placeholder: 'Paste the token' },

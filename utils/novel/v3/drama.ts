@@ -111,7 +111,7 @@ export function readDrama(text: string, chapters: number): { held: Held[]; unrea
   const unread: string[] = [];
   const parts = (body: string) => body.split('|').map(part => part.trim()).filter(Boolean);
   for (const raw of text.split('\n')) {
-    const line = raw.trim();
+    const line = raw.trim().replace(/^((?:TURN|STAKE)\s*[123])\s*\((?:ch(?:apter)?\.?|chapters?)\s*\d+(?:\s*[-–]\s*\d+)?\)\s*:/i, '$1:');
     if (!line || /^#{1,3}\s/.test(line) || /^title\s*:/i.test(line)) continue;
     const turn = line.match(/^TURN\s*([123])\s*:\s*(.+)$/i);
     const question = line.match(/^QUESTION\s*:\s*(.+)$/i);
@@ -135,7 +135,7 @@ export function readDrama(text: string, chapters: number): { held: Held[]; unrea
       else held.push(blank({ kind: 'question', plant: ask, pay: answer, plantBy: actOf(1).to, fireBy: chapters }));
     } else if (stake) {
       const act = stake[1] ? Number(stake[1]) as 1 | 2 | 3 : undefined;
-      const [risk, loss, at] = parts(stake[2]);
+      const [risk, loss, at] = parts(stake[2].replace(/\bRealized\s*:/i, '|'));
       const span = act ? actOf(act) : undefined;
       const by = span ? span.to : at && /^\d+$/.test(at) ? clamp(Number(at), chapters) : actOf(2).to;
       const from = span ? span.from : actOf(1).to;
@@ -143,8 +143,9 @@ export function readDrama(text: string, chapters: number): { held: Held[]; unrea
       else held.push(blank({ kind: 'stake', act, plant: risk, pay: loss, plantBy: from, fireBy: by }));
     } else if (gun) {
       const [plant, pay, from, to] = parts(gun[1]);
-      const plantBy = from && /^\d+$/.test(from) ? clamp(Number(from), chapters) : actOf(1).to;
-      const fireBy = to && /^\d+$/.test(to) ? clamp(Number(to), chapters) : chapters;
+      const chapterNumber = (value: string | undefined) => value?.match(/^(?:(?:plant|payoff)\s+)?(?:ch(?:apter)?\.?\s*)?(\d+)\.?$/i)?.[1];
+      const plantBy = chapterNumber(from) ? clamp(Number(chapterNumber(from)), chapters) : actOf(1).to;
+      const fireBy = chapterNumber(to) ? clamp(Number(chapterNumber(to)), chapters) : chapters;
       if (!plant || !pay || (fireBy <= plantBy && chapters > 1)) unread.push(line);
       else held.push(blank({ kind: 'gun', plant, pay, plantBy, fireBy }));
     } else if (decisive) {

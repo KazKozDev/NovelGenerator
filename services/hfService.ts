@@ -10,7 +10,7 @@ const base = () => (qwenSetting('HF_BASE_URL') || ROUTER).replace(/\/+$/, '');
 
 const RUNAWAY = 'the model was repeating itself or writing only blank space';
 /** What a caller may watch while the answer is being written. */
-export interface LiveAnswer { onDelta?: (text: string) => void; onRestart?: (why: string) => void }
+export interface LiveAnswer { retryOutputLimit?: boolean; onDelta?: (text: string) => void; onRestart?: (why: string) => void }
 
 export async function generateHuggingFaceText(prompt: string, system?: string, maxTokens = 16384, model = '',
   temperature = 0.2, onMetadata?: (metadata: unknown) => void, schema?: object, live: LiveAnswer = {}): Promise<string> {
@@ -58,7 +58,7 @@ export async function generateHuggingFaceText(prompt: string, system?: string, m
   let answer = await ask();
   // An answer that ran to its limit in JSON mode is the slow form of the same loop: asked
   // again once without JSON mode and with the same room, not with twice the room.
-  if (answer.response?.ok && answer.finish === 'length' && jsonMode) { jsonMode = false; live.onRestart?.('the answer ran to its length limit in JSON mode; asking once more without it'); answer = await ask(); }
+  if (answer.response?.ok && answer.finish === 'length' && jsonMode && live.retryOutputLimit !== false) { jsonMode = false; live.onRestart?.('the answer ran to its length limit in JSON mode; asking once more without it'); answer = await ask(); }
   const refused = async () => answer.response && !answer.response.ok && (answer.response.status === 400 || answer.response.status === 422) ? await answer.response.clone().text().catch(() => '') : '';
   // Providers behind the router differ in what they accept. Each refusal that names its
   // cause is answered once: without usage reporting, without the JSON response format (the

@@ -47,6 +47,7 @@ export function hfDevPlugin(): Plugin {
             || typeof input.model !== 'string' || !/^[\w.-]+\/[\w.-]+(:[\w.-]+)?$/.test(input.model)
             || (input.maxTokens !== undefined && (!Number.isInteger(input.maxTokens) || input.maxTokens < 1 || input.maxTokens > 131072))
             || (input.temperature !== undefined && (!Number.isFinite(input.temperature) || input.temperature < 0 || input.temperature > 2))
+            || (input.retryOutputLimit !== undefined && typeof input.retryOutputLimit !== 'boolean')
             || (input.schema !== undefined && (!input.schema || typeof input.schema !== 'object' || Array.isArray(input.schema)))) throw Error();
         } catch { res.statusCode = 400; res.end(JSON.stringify({ error: 'Invalid Hugging Face request: the model must be org/name or org/name:provider' })); return; }
         // The answer is passed on as it arrives, one JSON object a line: pieces of text, a notice
@@ -56,7 +57,7 @@ export function hfDevPlugin(): Plugin {
         const line = (value: object) => { if (!res.writableEnded) res.write(JSON.stringify(value) + '\n'); };
         try {
           const text = await generateHuggingFaceText(input.prompt, input.system, input.maxTokens, input.model, input.temperature, value => { metadata = value; }, input.schema,
-            { onDelta: delta => line({ delta }), onRestart: why => line({ restart: why }) });
+            { retryOutputLimit: input.retryOutputLimit, onDelta: delta => line({ delta }), onRestart: why => line({ restart: why }) });
           line({ text, metadata });
         } catch (error) { line({ error: error instanceof Error ? error.message : 'Hugging Face request failed', metadata }); }
         res.end();

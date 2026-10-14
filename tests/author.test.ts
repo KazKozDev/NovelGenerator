@@ -24,4 +24,13 @@ describe('the author at the desk', () => {
     expect(cleanChapter('She went in, and closed the door behind her, and said nothing at all.\n\n---\n\n*[Record: see keeper entry for chapter 1.]*')).toBe('She went in, and closed the door behind her, and said nothing at all.');
     expect(cleanChapter('She read the sign.\n\n[CLOSED UNTIL FURTHER NOTICE]')).toBe('She read the sign.\n\n[CLOSED UNTIL FURTHER NOTICE]');
   });
+  it('removes standalone tool delimiters and execution footers without cutting fictional dialogue', () => {
+    const story = 'She closed the door.\n\n"EOF," he said. "That is the password."';
+    expect(cleanChapter(story + '\nEOF\nLEARN 1: she learned the secret\nNote: LEARN 1 is carried here.')).toBe(story);
+    expect(cleanChapter(story + '\n\nResults of this call and what remains:\n- chapter-6.md is missing.')).toBe(story);
+    expect(cleanChapter(story + '\nLEARN 1: the secret')).toBe(story);
+    expect(cleanChapter(story + '\n---\nEND OF CHAPTER FOUR\n\n===== END OF TOOL STEP =====')).toBe(story);
+    expect(cleanChapter(story + '\nTOOL-STEP_END')).toBe(story);
+  });
+
 });

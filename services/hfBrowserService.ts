@@ -1,17 +1,17 @@
 /** What a caller may watch while the answer is being written. */
-export interface LiveText { onChunk?: (text: string) => void; onRestart?: (why: string) => void }
+export interface LiveText { retryOutputLimit?: boolean; onChunk?: (text: string) => void; onRestart?: (why: string) => void }
 
 /** The local server owns the token and the upstream endpoint, and passes the answer on as it arrives. */
 export async function generateHuggingFaceBrowserText(prompt: string, system?: string, maxTokens = 16384,
   model = '', temperature = 0.2, schema?: object, onUsage?: (metadata: unknown) => void, live: LiveText = {}): Promise<string> {
-  return gatewayText('/api/hf', 'Hugging Face', { prompt, system, maxTokens, model, temperature, schema }, onUsage, live);
+  return gatewayText('/api/hf', 'Hugging Face', { prompt, system, maxTokens, model, temperature, schema, ...(live.retryOutputLimit === false ? { retryOutputLimit: false } : {}) }, onUsage, live);
 }
 /** Anthropic through the same kind of local gateway. An empty model means the server's default. */
 export async function generateAnthropicBrowserText(prompt: string, system?: string, maxTokens = 16384,
   model?: string, temperature = 0.2, schema?: object, onUsage?: (metadata: unknown) => void, live: LiveText = {}): Promise<string> {
   return gatewayText('/api/anthropic', 'Anthropic', { prompt, system, maxTokens, ...(model ? { model } : {}), temperature, schema }, onUsage, live);
 }
-async function gatewayText(path: string, name: string, body: object, onUsage?: (metadata: unknown) => void, live: LiveText = {}): Promise<string> {
+export async function gatewayText(path: string, name: string, body: object, onUsage?: (metadata: unknown) => void, live: LiveText = {}): Promise<string> {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!/ndjson/i.test(response.headers.get('content-type') || '') || !response.body) {
     const data = await response.json();

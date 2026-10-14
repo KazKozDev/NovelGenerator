@@ -7,7 +7,7 @@ import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
 import { generateQwenBrowserText } from './qwenBrowserService';
-import { generateHuggingFaceBrowserText, generateAnthropicBrowserText, type LiveText } from './hfBrowserService';
+import { generateHuggingFaceBrowserText, generateAnthropicBrowserText, type LiveText, gatewayText } from './hfBrowserService';
 import { providerTokenUsage, type TokenUsage } from '../utils/tokenUsage';
 import { logToTerminal } from '../utils/terminalLogger';
 
@@ -26,7 +26,8 @@ export function getStoredProviderConfig(): LLMProviderConfig {
     if (!raw) return DEFAULT_LLM_CONFIG;
     const parsed = JSON.parse(raw);
     return {
-      provider: parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
@@ -54,7 +55,8 @@ export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
@@ -91,7 +93,8 @@ export function getStoredSecondWriterConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
@@ -141,7 +144,7 @@ export async function generateText(
   live: LiveText = {},
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -159,7 +162,9 @@ export async function generateText(
       output:usage.output??0,estimatedInput:usage.input===undefined,estimatedOutput:usage.output===undefined});
   };
   let result: string;
-  if (config.provider === 'anthropic') {
+  if (config.provider === 'compatible') {
+    result = await gatewayText('/api/compatible', 'Compatible API', { prompt, system: systemInstruction, maxTokens, model: config.compatibleModel, temperature, schema: schema || (jsonOnly ? { type: 'object' } : undefined) }, recordUsage, live);
+  } else if (config.provider === 'anthropic') {
     result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
   } else if (config.provider === 'huggingface') {
     result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
@@ -208,7 +213,7 @@ export async function generateTextStream(
   maxTokens?: number,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -224,7 +229,9 @@ export async function generateTextStream(
   };
 
   let result: string;
-  if (config.provider === 'anthropic') {
+  if (config.provider === 'compatible') {
+    result = await gatewayText('/api/compatible', 'Compatible API', { prompt, system: systemInstruction, maxTokens, model: config.compatibleModel, temperature, schema }, undefined, { onChunk: wrappedOnChunk });
+  } else if (config.provider === 'anthropic') {
     result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema, undefined, { onChunk: wrappedOnChunk });
   } else if (config.provider === 'huggingface') {
     result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema);

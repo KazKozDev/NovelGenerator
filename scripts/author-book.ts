@@ -1,3 +1,4 @@
+import { generateCompatibleText } from '../services/compatibleService';
 /**
  * Writes a book with the app's own author engine from a terminal, for reading the result.
  *
@@ -44,7 +45,8 @@ writeAtDesk(input, store, async (prompt, system, options) => {
   // What the author was told about its last step, kept beside the book: the journal has what it did, this has what came back.
   if (options?.stage === 'author-step' && prompt.startsWith('RESULT OF YOUR LAST TOOL')) appendFileSync(join(out, 'shown.md'), `\n\n## before answer ${calls}\n${prompt.split('\n\nYOUR DESK NOW:')[0].replace('RESULT OF YOUR LAST TOOL:\n', '')}`);
   const other = options?.route === 'validator' && reader;
-  const text = other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
+  const selected = other ? reader : model;
+  const text = selected.startsWith('api:') ? await generateCompatibleText(prompt, system, options?.maxTokens, selected.slice(4), options?.temperature, options?.schema) : other && /^qwen/i.test(reader) ? await generateQwenText(prompt, system, options?.maxTokens, reader)
     : await generateOllamaText(prompt, system, undefined, options?.temperature ?? 0.8, other ? reader : model, endpoint, options?.maxTokens);
   got += text.length; const did = options?.stage === 'author-step' ? ` ${text.match(/^\**TOOL\**\s*:\**\s*(.*)$/mi)?.[1] || ''} ${text.match(/^\**(?:FILE|NAME)\**\s*:\**\s*(.*)$/mi)?.[1] || ''} — ${(text.match(/^\**THOUGHT\**\s*:\**\s*(.*)$/mi)?.[1] || '').slice(0, 230)}` : '';
   log(`[${calls}] ${options?.stage} ${Math.round((Date.now() - at) / 1000)}s sent ${Math.round(prompt.length / 1000)}K got ${text.split(/\s+/).length} words${did}`);
@@ -52,7 +54,9 @@ writeAtDesk(input, store, async (prompt, system, options) => {
   return text;
 }, () => flush()).then(() => {
   flush();
+  const report = store.loadReport();
+  if (report) { writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2)); log(`REVIEW ${report.status}: ${report.summary}`); }
   for (const entry of store.runLog()) if (entry.stage === 'author') appendFileSync(join(out, 'log.txt'), `  ${entry.detail.slice(0, 400)}\n`);
   const draft = store.loadAuthor()!;
-  log(`FINISHED in ${Math.round((Date.now() - started) / 1000)}s. ${calls} calls, ${Math.round(sent / 1000)}K sent, ${Math.round(got / 1000)}K received. "${draft.title || 'untitled'}". Chapters: ${draft.chapters.map(chapter => chapter.text.split(/\s+/).length).join(', ')}. Readers noticed something after ${draft.noticed.length} of ${chapters}.`);
+  log(`FINISHED in ${Math.round((Date.now() - started) / 1000)}s. ${calls} calls, ${Math.round(sent / 1000)}K sent, ${Math.round(got / 1000)}K received. "${draft.title || 'untitled'}". Chapters: ${draft.chapters.map(chapter => chapter.text.split(/\s+/).length).join(', ')}. Final review: ${report?.status || 'unavailable'}.`);
 }).catch(error => { flush(); log(`STOPPED: ${error instanceof Error ? error.message : error}`); process.exit(1); });

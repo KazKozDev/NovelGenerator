@@ -25,6 +25,7 @@ const App: React.FC = () => {
     setStorySettings,
     startGeneration,
     continueGeneration,
+    editBook,
     isLoading,
     currentStep,
     error,
@@ -150,6 +151,7 @@ const App: React.FC = () => {
           </div>
           <div className="app-toolbar flex flex-wrap items-center gap-2">
           {saveControl}
+          {finalBookContent && <button type="button" onClick={editBook} disabled={isLoading} className="h-7 text-xs px-3 py-1 border border-zinc-700 rounded">Edit book</button>}
           <button
             type="button"
             onClick={exportProject}
@@ -252,7 +254,7 @@ const App: React.FC = () => {
             isResumable={isResumable}
             isLoading={isLoading}
             onResumeGeneration={handleContinue}
-            headerActions={saveControl}
+            headerActions={<>{saveControl}{finalBookContent && <button type="button" onClick={editBook} disabled={isLoading} className="h-7 text-xs px-3 py-1 border border-zinc-700 rounded">Edit book</button>}</>}
             version="v4.2"
             onReset={handleReset}
           />

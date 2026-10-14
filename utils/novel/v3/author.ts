@@ -38,6 +38,10 @@ const rule = (part: string) => /^[-=*_~\s]{3,}$/.test(part);
  * written through the app, six good chapters were refused for it and written again.
  */
 export function cleanChapter(text: string): string {
+  // Tool delimiters and known execution-footer headings mark the end of prose, not story content.
+  // Match standalone protocol lines only; quoted dialogue and ordinary fictional notes remain intact.
+  const footer = text.search(/^[ \t]*(?:EOF[ \t]*$|TOOL[-_]STEP[-_]END[ \t]*$|={3,}[ \t]*END OF TOOL STEP[ \t]*={3,}[ \t]*$|END OF (?:THE )?(?:CHAPTER|BOOK|NOVEL)\b[^\n]*$|(?:#{1,4}[ \t]+)?Results of this call and what remains:[ \t]*$|LEARN[ \t]+\d+[ \t]*:|Note:[ \t]*LEARN[ \t]+\d+\b)/m);
+  if (footer >= 0) text = text.slice(0, footer).trimEnd().replace(/(?:\r?\n)[ \t]*[-*_]{3,}[ \t]*$/, '').trimEnd();
   const seen = new Set<string>();
   const parts = paragraphs(text).filter(part => { if (part.length < 80) return true; if (seen.has(part)) return false; seen.add(part); return true; });
   // "END OF CHAPTER TWO", and after the last chapter the title of the book again: a model's flourish, not the chapter.

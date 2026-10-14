@@ -1,3 +1,4 @@
+import { compatibleDevPlugin } from './services/compatibleDevPlugin';
 import path from 'path';
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -98,7 +99,7 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
-      plugins: [react(), terminalLoggerPlugin(), qwenDevPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin()],
+      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), qwenDevPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)

@@ -17,6 +17,14 @@ describe('Hugging Face Inference Providers', () => {
     expect(JSON.parse(init.body)).toMatchObject({ model: 'org/model:fastest', max_tokens: 100, temperature: 0.3, stream: true, messages: [{ role: 'system', content: 'Be brief' }, { role: 'user', content: 'Hi' }] });
     expect(metadata).toMatchObject({ finish_reason: 'stop', provider: 'novita', usage: { prompt_tokens: 5, completion_tokens: 7 } });
   });
+  it('returns output-limit failure immediately for bounded audits without an internal repeat', async () => {
+    vi.stubEnv('HF_TOKEN', 'test-token');
+    const fetchMock = vi.fn(async () => done('Incomplete JSON', 'length'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(generateHuggingFaceText('Audit', '', 8000, 'org/model', 0, undefined, { type: 'object' }, { retryOutputLimit: false })).rejects.toThrow('token limit');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, any])[1].body).max_tokens).toBe(8000);
+  });
   it('asks for JSON, and repeats the request without the response format when a provider refuses it', async () => {
     vi.stubEnv('HF_TOKEN', 'test-token');
     const bodies: any[] = [];
