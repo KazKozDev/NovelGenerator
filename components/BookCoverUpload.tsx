@@ -121,7 +121,7 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
         )}
       </div>
 
-      <div className="p-4 sm:p-6 flex flex-col items-center">
+      <div className="p-3.5 sm:p-4 flex flex-col items-center">
         <input
           ref={fileInputRef}
           type="file"
@@ -132,8 +132,8 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
         />
 
         {coverUrl ? (
-          <div className="w-full flex flex-col items-center space-y-4">
-            <div className="relative group max-w-[240px] w-full aspect-[2/3] rounded-md overflow-hidden border border-zinc-700/60 shadow-xl shadow-black/60 bg-zinc-950">
+          <div className="w-full flex flex-col items-center space-y-3">
+            <div className="relative group max-w-[200px] w-full aspect-[2/3] rounded-md overflow-hidden border border-zinc-700/60 shadow-xl shadow-black/60 bg-zinc-950">
               <img
                 src={coverUrl}
                 alt={title || 'Book cover'}
@@ -149,7 +149,7 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
 
             {fileInfo && (
               <div className="text-center">
-                <p className="text-xs text-zinc-300 font-medium truncate max-w-[220px]">
+                <p className="text-xs text-zinc-300 font-medium truncate max-w-[190px]">
                   {fileInfo.name}
                 </p>
                 {fileInfo.size && (
@@ -169,14 +169,14 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
             </div>
           </div>
         ) : (
-          <div className="w-full flex flex-col items-center space-y-4">
+          <div className="w-full flex flex-col items-center space-y-3">
             {/* Styled Book Mockup */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`w-full max-w-[240px] aspect-[2/3] rounded-md border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-between p-5 text-center relative overflow-hidden select-none ${
+              className={`w-full max-w-[200px] aspect-[2/3] rounded-md border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-between p-4 text-center relative overflow-hidden select-none ${
                 isDragging
                   ? 'border-zinc-400 bg-zinc-800/60'
                   : 'border-zinc-800 hover:border-zinc-700 bg-zinc-950/60 hover:bg-zinc-900/50'
