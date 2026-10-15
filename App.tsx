@@ -177,7 +177,7 @@ const App: React.FC = () => {
   return (
     <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
-      <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
+      <header className={`w-full ${finalBookContent ? 'max-w-[1700px]' : 'max-w-4xl'} mb-6 px-4 md:px-8 transition-all duration-300`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col">
             <h1 className="text-xl font-semibold wordmark">
@@ -216,7 +216,7 @@ const App: React.FC = () => {
       </header>
       )}
 
-      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
+      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : (finalBookContent ? 'max-w-[1700px] p-4 md:p-6' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
         {!showProgress && errorPanel}
 
         {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && !showProgress && (
@@ -336,7 +336,7 @@ const App: React.FC = () => {
         )}
 
       </main>
-      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
+      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : (finalBookContent ? 'max-w-[1700px] mt-8' : 'max-w-4xl mt-8')} transition-all duration-300`}>
         <div className="text-center text-zinc-500 text-xs">
           <p>
             &copy; {new Date().getFullYear()}{' '}
