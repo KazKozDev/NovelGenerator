@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { buildGenerationModelsString } from '../utils/modelNames';
 
 export interface ImprintData {
   enabled: boolean;
@@ -17,11 +18,9 @@ export function getDefaultImprint(customModels?: string): ImprintData {
     try {
       const prov = getStoredProviderConfig();
       const val = getStoredValidatorConfig();
-      const authorModel = prov.provider === 'ollama' ? `Ollama (${prov.ollamaModel})` : prov.provider === 'gemini' ? (prov.geminiModel || 'Gemini') : prov.provider;
-      const readerModel = val ? (val.provider === 'ollama' ? `Ollama (${val.ollamaModel})` : val.provider === 'gemini' ? (val.geminiModel || 'Gemini') : val.provider) : null;
-      modelsStr = readerModel ? `${authorModel} (Author), ${readerModel} (Reader)` : `${authorModel} (Author)`;
+      modelsStr = buildGenerationModelsString(prov, val);
     } catch {
-      modelsStr = 'AI Author Model';
+      modelsStr = 'Google Gemini 3.6 Flash (gemini-3.6-flash)';
     }
   }
 
@@ -57,7 +56,13 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
     if (controlledImprint) return controlledImprint;
     try {
       const saved = localStorage.getItem(`novel_imprint_${cleanTitle}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.models || /^(gemini|ai author model|ollama)$/i.test(parsed.models.trim())) {
+          parsed.models = getDefaultImprint().models;
+        }
+        return parsed;
+      }
     } catch {}
     return getDefaultImprint();
   });
@@ -406,7 +411,7 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
                   type="text"
                   value={imprint.models}
                   onChange={(e) => updateImprintField('models', e.target.value)}
-                  placeholder="e.g. Gemini 2.5 Flash (Author)"
+                  placeholder="e.g. Author: Google Gemini 3.6 Flash (gemini-3.6-flash); Editor: Anthropic Claude 3.5 Sonnet"
                   className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
                 />
               </div>
