@@ -23,13 +23,13 @@ describe('SaveBook author validation and colophon', () => {
 
     expect(colophon.copyright).toBe('Copyright © 2026 Иван Иванов');
     expect(colophon.rights).toBe('All rights reserved.');
-    expect(colophon.reproduction).toContain('No part of this book may be reproduced, distributed');
-    expect(colophon.aiDisclaimer).toContain('NovelGenerator tool and other artificial intelligence tools');
-    expect(colophon.aiDisclaimer).toContain('The author who generated and published this book is solely and fully responsible for the entire content');
-    expect(colophon.liabilityDisclaimer).toContain('infringe upon any copyright, trademark, patent');
-    expect(colophon.liabilityDisclaimer).toContain('sole, exclusive, and unreserved legal and financial liability');
-    expect(colophon.liabilityDisclaimer).toContain('compliance with all applicable local, regional, national, and international laws');
-    expect(colophon.liabilityDisclaimer).toContain('defend, indemnify, and hold harmless NovelGenerator');
+    expect(colophon.reproduction).toContain('No part of this book may be reproduced, distributed, or transmitted in any form');
+    expect(colophon.aiDisclaimer).toBe(
+      'This book was created with the assistance of the NovelGenerator tool and other artificial intelligence tools. The author who generated and published this book is solely and fully responsible for the entire content, including any inaccuracies, errors, intellectual property issues, or any other consequences arising from the use of AI tools or the final work.'
+    );
+    expect(colophon.liabilityDisclaimer).toBe(
+      'The author is exclusively responsible for ensuring that the content does not infringe any third-party rights and for compliance with all applicable laws. NovelGenerator and its creators act solely as providers of software tools and disclaim all liability for the creation, publication, distribution, or content of this book.'
+    );
     expect(colophon.fictionDisclaimer).toContain('This is a work of fiction.');
     expect(colophon.isbns).toEqual([
       'ISBN 978-1-234567-89-0 (paperback)',
@@ -72,8 +72,8 @@ describe('SaveBook author validation and colophon', () => {
     expect(md).toContain('### Publishing Imprint');
     expect(md).toContain('Copyright © 2026 Иван Иванов');
     expect(md).toContain('Published by NG Press');
-    expect(md).toContain('The author takes complete and exclusive responsibility for all aspects of this book.');
-    expect(md).toContain('defend, indemnify, and hold harmless NovelGenerator');
+    expect(md).toContain('The author who generated and published this book is solely and fully responsible for the entire content');
+    expect(md).toContain('NovelGenerator and its creators act solely as providers of software tools and disclaim all liability');
   });
 
   it('formats Plain Text with author and mandatory publishing imprint colophon', () => {
@@ -86,8 +86,8 @@ describe('SaveBook author validation and colophon', () => {
     expect(txt.startsWith('My Mystery Novel\nby Иван Иванов')).toBe(true);
     expect(txt).toContain('Copyright © 2026 Иван Иванов');
     expect(txt).toContain('Published by NG Press');
-    expect(txt).toContain('The author takes complete and exclusive responsibility for all aspects of this book.');
-    expect(txt).toContain('defend, indemnify, and hold harmless NovelGenerator');
+    expect(txt).toContain('The author who generated and published this book is solely and fully responsible for the entire content');
+    expect(txt).toContain('NovelGenerator and its creators act solely as providers of software tools and disclaim all liability');
     expect(txt).toContain('Chapter 1');
   });
 });
