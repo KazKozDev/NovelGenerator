@@ -73,7 +73,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('id="imprint-isbn-ebook-input"');
   });
 
-  it('renders author field with required indicator and neutral styling', () => {
+  it('renders author field with neutral styling and without Required badge', () => {
     const emptyAuthorHtml = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -81,7 +81,7 @@ describe('BookCoverUpload and three-zone layout', () => {
         author=""
       />
     );
-    expect(emptyAuthorHtml).toContain('Required');
+    expect(emptyAuthorHtml).not.toContain('Required');
     expect(emptyAuthorHtml).not.toContain('border-amber-600');
     expect(emptyAuthorHtml).not.toContain('Saved in copyright, PDF, EPUB, and project metadata');
 
@@ -92,7 +92,7 @@ describe('BookCoverUpload and three-zone layout', () => {
         author="Arthur Conan"
       />
     );
-    expect(filledAuthorHtml).toContain('Required');
+    expect(filledAuthorHtml).not.toContain('Required');
     expect(filledAuthorHtml).not.toContain('Saved in copyright, PDF, EPUB, and project metadata');
   });
 

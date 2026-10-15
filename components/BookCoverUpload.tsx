@@ -336,17 +336,13 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
 
         {/* Author Input Field under the book cover */}
         <div className="w-full mt-4 pt-3.5 border-t border-zinc-800 text-left space-y-1.5">
-          <div className="flex items-center justify-between">
+          <div>
             <label
               htmlFor="book-author-input"
               className="block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
             >
               Author
             </label>
-            <span className="text-[10px] text-red-400 font-medium tracking-wide flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>
-              Required
-            </span>
           </div>
           <input
             id="book-author-input"
