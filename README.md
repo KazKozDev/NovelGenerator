@@ -13,6 +13,11 @@ NovelGenerator turns a premise into a manuscript using the 2-layer Craft 2.0 Eng
 - **Strict POV Barrier**: Scene prompts are strictly isolated from future narrative facts (`povKnows`, `learnsAt < order`), blocking omniscience leaks.
 - **Anti-Metaphorical Directive**: Eliminates abstract clichés and filler prose in favor of concrete physical sensory action, verified by an independent Observer.
 - **Embedded Continuous Checks**: A Blind Reader generates forward-looking hypotheses before each scene, while Dual Reviewers verify causal integrity throughout.
+- **Author Desk & Publishing Studio**:
+  - **In-Place Editorial Review**: Real-time continuity & POV analysis with autonomous "Apply Review" revision passes.
+  - **Manuscript Editor**: Instant in-place editing with keyboard shortcuts (`Cmd+S` / `Ctrl+S`).
+  - **Cover Artwork & Imprint**: Drag-and-drop cover uploads with automatic persistence, ISBNs, and publishing colophon metadata.
+  - **Publishing-Grade Exports**: Fully validated EPUB 3.0 (with embedded cover and semantic TOC) and print-ready PDF (full-bleed cover, flush-left colophon, automatic TOC with dot leaders, and repeating `thead`/`tfoot` page margin spacers).
 
 ## Run it
 
@@ -23,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Open the local address printed by Vite. Enter a premise, select chapter count and providers, and start generation. Gemini requires `GEMINI_API_KEY`. Ollama requires a local running server. The completed book exports as EPUB, PDF, TXT, or Markdown. The project exports and restores from portable JSON.
+Open the local address printed by Vite. Enter a premise, select chapter count and providers, and start generation. Gemini requires `GEMINI_API_KEY`. Ollama requires a local running server. The completed book exports as EPUB 3.0, print-ready PDF, TXT, or Markdown. The project exports and restores from portable JSON snapshots.
 
 To run a headless generation via terminal:
 
