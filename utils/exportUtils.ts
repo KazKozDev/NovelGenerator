@@ -70,7 +70,7 @@ export function extractBookTitle(content: string): string {
 export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   const title = extractBookTitle(content);
-  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author : 'Unknown Author';
+  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
   const uuid = `urn:uuid:${crypto.randomUUID()}`;
   
   const chapters = parseBookChapters(content);
@@ -255,7 +255,7 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
  */
 export function exportAsPdf(content: string, metadata: any): void {
   const title = extractBookTitle(content);
-  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author : 'Unknown Author';
+  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
   
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
@@ -273,7 +273,7 @@ export function exportAsPdf(content: string, metadata: any): void {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>${escape(title)} - ${escape(author)}</title>
+      <title>${escape(title)}${author ? ` - ${escape(author)}` : ''}</title>
       <style>
         @page {
           size: A4;
@@ -335,7 +335,7 @@ export function exportAsPdf(content: string, metadata: any): void {
     </head>
     <body>
       <h1>${escape(title)}</h1>
-      <div class="author">by ${escape(author)}</div>
+      ${author ? `<div class="author">by ${escape(author)}</div>` : ''}
       ${htmlContent}
       <script>
         window.onload = function() {

@@ -13,6 +13,8 @@ interface BookDisplayProps {
   isEditorialRunning?: boolean;
   editorialStatus?: string;
   onManualSave?: (newContent: string) => boolean;
+  author?: string;
+  onAuthorChange?: (author: string) => void;
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({
@@ -23,8 +25,34 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   isEditorialRunning,
   editorialStatus,
   onManualSave,
+  author,
+  onAuthorChange,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
+
+  const [currentAuthor, setCurrentAuthor] = useState<string>(() => {
+    if (author) return author;
+    try {
+      const parsed = JSON.parse(metadataJson);
+      if (parsed?.author) return parsed.author;
+    } catch {}
+    try {
+      return localStorage.getItem('novel_author_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    if (author !== undefined) {
+      setCurrentAuthor(author);
+    }
+  }, [author]);
+
+  const handleAuthorChange = (newAuthor: string) => {
+    setCurrentAuthor(newAuthor);
+    onAuthorChange?.(newAuthor);
+  };
 
   const metadata = useMemo(() => {
     try {
@@ -320,12 +348,13 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           </div>
         </div>
 
-        {/* Column 3 (~30% / rest): Book Cover */}
+        {/* Column 3 (~20%): Book Cover */}
         <div className="flex flex-col">
           <BookCoverUpload
             title={displayTitle}
             genre={metadata?.genre}
-            author={metadata?.author}
+            author={currentAuthor}
+            onAuthorChange={handleAuthorChange}
           />
         </div>
       </div>

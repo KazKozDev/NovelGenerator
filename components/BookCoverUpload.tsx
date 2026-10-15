@@ -4,20 +4,59 @@ interface BookCoverUploadProps {
   title: string;
   genre?: string;
   author?: string;
+  onAuthorChange?: (author: string) => void;
 }
 
 export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
   title,
   genre,
-  author,
+  author: controlledAuthor,
+  onAuthorChange,
 }) => {
+  const [author, setAuthor] = useState<string>(controlledAuthor ?? '');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<{ name: string; size: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const storageKey = `novel_cover_${title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_')}`;
+  const cleanTitle = title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_');
+  const storageKey = `novel_cover_${cleanTitle}`;
+  const authorStorageKey = `novel_author_${cleanTitle}`;
+
+  useEffect(() => {
+    if (controlledAuthor !== undefined) {
+      setAuthor(controlledAuthor);
+    }
+  }, [controlledAuthor]);
+
+  useEffect(() => {
+    if (controlledAuthor === undefined || controlledAuthor === '') {
+      try {
+        const savedAuthor = localStorage.getItem(authorStorageKey) || localStorage.getItem('novel_author_name');
+        if (savedAuthor) {
+          setAuthor(savedAuthor);
+          onAuthorChange?.(savedAuthor);
+        }
+      } catch {
+        // localStorage unavailable
+      }
+    }
+  }, [authorStorageKey, controlledAuthor, onAuthorChange]);
+
+  const handleAuthorInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setAuthor(val);
+    onAuthorChange?.(val);
+    try {
+      localStorage.setItem('novel_author_name', val);
+      if (cleanTitle) {
+        localStorage.setItem(authorStorageKey, val);
+      }
+    } catch {
+      // localStorage restricted
+    }
+  };
 
   useEffect(() => {
     try {
@@ -152,6 +191,11 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
                 <p className="text-xs text-zinc-300 font-medium truncate max-w-[190px]">
                   {fileInfo.name}
                 </p>
+                {author && (
+                  <p className="text-[11px] text-zinc-400 font-medium truncate max-w-[190px] mt-0.5">
+                    by {author}
+                  </p>
+                )}
                 {fileInfo.size && (
                   <p className="text-[11px] text-zinc-500 mt-0.5">{fileInfo.size}</p>
                 )}
@@ -199,8 +243,10 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
                 <h3 className="text-xs font-semibold text-zinc-200 line-clamp-3 leading-snug">
                   {title || 'Untitled Book'}
                 </h3>
-                {author && (
-                  <p className="text-[11px] text-zinc-500">{author}</p>
+                {author ? (
+                  <p className="text-[11px] text-zinc-400 font-medium truncate max-w-[170px]">{author}</p>
+                ) : (
+                  <p className="text-[10px] text-zinc-600 italic">Author name</p>
                 )}
               </div>
 
@@ -222,6 +268,28 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
         {error && (
           <p className="mt-3 text-xs text-red-400 text-center">{error}</p>
         )}
+
+        {/* Author Input Field under the book cover */}
+        <div className="w-full mt-4 pt-3.5 border-t border-zinc-800 text-left space-y-1.5">
+          <label
+            htmlFor="book-author-input"
+            className="block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
+          >
+            Author
+          </label>
+          <input
+            id="book-author-input"
+            type="text"
+            value={author}
+            onChange={handleAuthorInputChange}
+            placeholder="Author name"
+            aria-label="Book author"
+            className="w-full h-8 px-2.5 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
+          />
+          <p className="text-[11px] text-zinc-500">
+            Saved in PDF, EPUB, and project metadata
+          </p>
+        </div>
       </div>
     </div>
   );

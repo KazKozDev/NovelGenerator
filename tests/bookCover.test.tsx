@@ -21,6 +21,19 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('Click or drag image here');
   });
 
+  it('renders the author input field under the book cover and reflects author name', () => {
+    const html = renderToStaticMarkup(
+      <BookCoverUpload
+        title="Shadows of the City"
+        genre="noir"
+        author="Arthur Conan"
+      />
+    );
+    expect(html).toContain('id="book-author-input"');
+    expect(html).toContain('value="Arthur Conan"');
+    expect(html).toContain('Saved in PDF, EPUB, and project metadata');
+  });
+
   it('renders BookDisplay with 3-column layout containing Editorial Review, Manuscript and Book Cover', () => {
     const html = renderToStaticMarkup(
       <BookDisplay
@@ -28,6 +41,7 @@ describe('BookCoverUpload and three-zone layout', () => {
         metadataJson={JSON.stringify({
           title: 'My Novel',
           genre: 'thriller',
+          author: 'Jane Austen',
           audit: { findings: [] },
         })}
         onReset={() => {}}
@@ -39,5 +53,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('Editorial Review');
     expect(html).toContain('Manuscript');
     expect(html).toContain('Book Cover');
+    expect(html).toContain('id="book-author-input"');
+    expect(html).toContain('value="Jane Austen"');
   });
 });

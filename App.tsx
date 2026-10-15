@@ -101,12 +101,37 @@ const App: React.FC = () => {
 
   const isStudioLayout = showProgress;
 
+  const [authorName, setAuthorName] = React.useState<string>(() => {
+    try {
+      return localStorage.getItem('novel_author_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const handleAuthorChange = React.useCallback((newAuthor: string) => {
+    setAuthorName(newAuthor);
+    try {
+      localStorage.setItem('novel_author_name', newAuthor);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // The metadata document runs to hundreds of kilobytes on a finished book, and this parsed it on every
   // render — twice over, since BookDisplay parses it too and its memo missed on a string rebuilt each
   // time. Parsed once per document now.
   const savedMetadata = React.useMemo(() => {
-    try { return finalMetadataJson ? JSON.parse(finalMetadataJson) : {}; } catch { return {}; }
-  }, [finalMetadataJson]);
+    try {
+      const parsed = finalMetadataJson ? JSON.parse(finalMetadataJson) : {};
+      if (authorName.trim()) {
+        parsed.author = authorName.trim();
+      }
+      return parsed;
+    } catch {
+      return authorName.trim() ? { author: authorName.trim() } : {};
+    }
+  }, [finalMetadataJson, authorName]);
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
@@ -326,6 +351,8 @@ const App: React.FC = () => {
               isEditorialRunning={isEditorialRunning}
               editorialStatus={developmentLabel}
               onManualSave={updateManualManuscript}
+              author={authorName}
+              onAuthorChange={handleAuthorChange}
             />
             
             {/* Show agent logs after completion too */}
