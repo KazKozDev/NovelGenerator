@@ -14,8 +14,7 @@ import { downloadJson, restoreSnapshot, snapshotProject } from '../utils/novel/v
 import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
-import { livePreview } from '../utils/livePreview';
-import { assembleManuscript, normalizeChapterBody } from '../utils/novel/manuscript';
+import { assembleManuscript, normalizeChapterBody, parseBookChapters } from '../utils/novel/manuscript';
 import { readGenerationSettings, saveGenerationSettings, readMainForm, saveMainForm, buildProjectInput, DEFAULT_GENERATION_SETTINGS } from '../utils/generationSettings';
 
 const DEFAULT_SETTINGS = DEFAULT_GENERATION_SETTINGS;
@@ -131,6 +130,8 @@ export default function useBookGenerator() {
   const [developmentLabel, setDevelopmentLabel] = useState<string | undefined>();
   const [hasUnfinished, setHasUnfinished] = useState(false);
   const [storeReady, setStoreReady] = useState(false);
+  const [isEditorialRunning, setIsEditorialRunning] = useState(false);
+  const editorialRunningRef = useRef(false);
 
   function getStore(): PersistentProjectStore {
     if (!storeRef.current) throw new Error('Project storage is still opening.');
@@ -161,6 +162,10 @@ export default function useBookGenerator() {
     }
     const input = store.loadInput();
     setHasUnfinished(!!input && !!author && (!author.completed || !store.loadReport()));
+    if (editorialRunningRef.current && input && manuscript.length > 0) {
+      const title = bookTitle(author?.title, input.premise);
+      setFinalBookContent(assembleManuscript(manuscript, title));
+    }
   }
 
   function publishFinal() {
@@ -209,15 +214,22 @@ export default function useBookGenerator() {
     const token = epoch.current;
     const checkActive = () => { if (epoch.current !== token) throw new Error('This run was cancelled.'); };
     setIsLoading(true);
+    if (editorial) {
+      editorialRunningRef.current = true;
+      setIsEditorialRunning(true);
+    } else {
+      editorialRunningRef.current = false;
+      setIsEditorialRunning(false);
+      setFinalBookContent(null);
+      setFinalMetadataJson(null);
+      setGeneratedChapters([]);
+      setCurrentChapterProcessing(0);
+    }
     setCurrentStep(GenerationStep.GeneratingOutline);
     setError(null);
     // A fresh book starts with a clean log; a continued run keeps the trail,
     // otherwise two runs glue together and every stage looks doubled.
     if (fresh) { setAgentLogs([]); setTokenTotals(emptyTokenTotals()); }
-    setFinalBookContent(null);
-    setFinalMetadataJson(null);
-    setGeneratedChapters([]);
-    setCurrentChapterProcessing(0);
     // The same slot continues: finished chapters are skipped, partial ones restart.
     const store = getStore();
     const writer = getStoredProviderConfig();
@@ -332,7 +344,13 @@ export default function useBookGenerator() {
       }
     } finally {
       clearInterval(poll);
-      if (epoch.current === token) { busy.current = false; setIsLoading(false); refreshFromStore(); }
+      if (epoch.current === token) {
+        busy.current = false;
+        editorialRunningRef.current = false;
+        setIsEditorialRunning(false);
+        setIsLoading(false);
+        refreshFromStore();
+      }
     }
   }
 
@@ -385,6 +403,49 @@ export default function useBookGenerator() {
   async function editBook() {
     if (busy.current || !storeRef.current || !inputRef.current) return;
     await run(inputRef.current, false, true);
+  }
+
+  function updateManualManuscript(newContent: string): boolean {
+    if (busy.current || !storeRef.current) return false;
+    const store = getStore();
+    const parsed = parseBookChapters(newContent);
+    if (!parsed.length) return false;
+    const draft = store.loadAuthor();
+    for (const c of parsed) {
+      store.saveManuscript(c.num, c.content);
+      if (draft?.chapters[c.num - 1]) {
+        draft.chapters[c.num - 1].text = c.content;
+      }
+      if (draft?.desk) {
+        draft.desk.files[`chapter-${c.num}.md`] = c.content;
+      }
+    }
+    if (draft?.desk) {
+      draft.desk.files['book.md'] = newContent;
+      store.saveAuthor(draft);
+    }
+    const input = store.loadInput();
+    const title = input ? bookTitle(draft?.title, input.premise) : undefined;
+    const finalContent = assembleManuscript(store.manuscript(), title);
+    setFinalBookContent(finalContent);
+    const report = store.loadReport();
+    const desk = draft?.desk;
+    const latestReview = (focus: string) => {
+      for (const answer of [...(desk?.answers || [])].reverse()) {
+        try { const review = JSON.parse(answer.text); if (review.focus === focus) return review; } catch { /* prose feedback */ }
+      }
+      return undefined;
+    };
+    setFinalMetadataJson(JSON.stringify({
+      title,
+      chapters: store.manuscript().map(({ chapter, text }) => ({ chapter, words: text.split(/\s+/).filter(Boolean).length })),
+      audit: report,
+      craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
+      premise: input?.premise,
+      genre: input?.genre,
+    }));
+    refreshFromStore();
+    return true;
   }
 
   async function continueGeneration() {
@@ -501,6 +562,7 @@ export default function useBookGenerator() {
     isResumable: hasUnfinished && !isLoading,
     tokenTotals, storeReady, exportProject, importProject,
     startGeneration, continueGeneration, editBook, resetGenerator, editSettings,
+    isEditorialRunning, updateManualManuscript,
     finalBookContent,
     finalMetadataJson,
     generatedChapters: workspaceChapters,
