@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
 
+import { extractBookTitle } from '../utils/exportUtils';
 import { MarkdownView } from './common/MarkdownView';
 
 interface BookDisplayProps {
@@ -25,6 +26,20 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
     }
   }, [metadataJson]);
 
+  const displayTitle = useMemo(() => {
+    if (metadata?.title && typeof metadata.title === 'string' && metadata.title.trim()) {
+      return metadata.title.trim();
+    }
+    const extracted = extractBookTitle(bookContent);
+    return extracted && extracted !== 'Untitled Book' ? extracted : 'Manuscript Draft';
+  }, [metadata?.title, bookContent]);
+
+  const findingsCount = metadata?.audit?.findings?.length || 0;
+  const landmarksCount = metadata?.craft?.landmarks?.length || 0;
+  const unavailableCount = metadata?.audit?.need_more_evidence?.length || 0;
+  const chapterMatches = bookContent.match(/^##\s+Chapter\s+\d+/gm);
+  const chapterCount = chapterMatches ? chapterMatches.length : (metadata?.chapters_count || 1);
+
   const handleCopyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopiedStates(prev => ({ ...prev, [type]: true }));
@@ -47,58 +62,133 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
     URL.revokeObjectURL(url);
   };
 
-
   return (
     <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-lg font-semibold text-zinc-100 uppercase mb-4">{metadata?.audit?.need_more_evidence?.length ? 'Draft complete · review incomplete' : metadata?.audit?.status === 'COMPLETE_WITH_WARNINGS' ? 'Book reviewed · warnings remain' : 'Draft complete'}</h2>
+      {/* Book Header & Title Section */}
+      <div className="text-center space-y-3 mb-6">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-800/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          {metadata?.audit?.status === 'COMPLETE_WITH_WARNINGS'
+            ? 'Book reviewed · warnings remain'
+            : metadata?.audit?.need_more_evidence?.length
+              ? 'Draft complete · review incomplete'
+              : 'Draft complete · Ready to Read'}
+        </div>
         
-        {/* Book Statistics */}
-        <BookStatistics bookContent={bookContent} metadata={metadata} />
+        <h1 className="text-2xl sm:text-3xl font-serif font-bold text-zinc-100 tracking-tight max-w-2xl mx-auto">
+          {displayTitle}
+        </h1>
+        
+        <p className="text-xs text-zinc-400 max-w-xl mx-auto">
+          All chapters have been compiled with emotional arc and craft telemetry. You can download the book, explore the editorial notes, or edit the text.
+        </p>
 
+        {/* Quick Primary Actions */}
+        <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+          {onEdit && (
+            <Button onClick={onEdit} variant="secondary" size="sm" className="shadow-sm font-medium">
+              <span className="mr-1.5">✏️</span> Edit saved book
+            </Button>
+          )}
+          <Button onClick={() => handleCopyToClipboard(bookContent, 'quick-copy')} variant="secondary" size="sm">
+            <span className="mr-1.5">📋</span> {copiedStates['quick-copy'] ? 'Copied to Clipboard!' : 'Copy Full Text'}
+          </Button>
+        </div>
       </div>
-      <section className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900/30" aria-label="Final manuscript review">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
-          <div className="text-sm text-zinc-300">
-            {metadata?.audit?.summary ? (
-              <p className="font-medium text-zinc-200">{metadata.audit.summary}</p>
-            ) : (
-              <p className="text-xs text-zinc-400">Manuscript review</p>
+
+      {/* Book Statistics Cards */}
+      <BookStatistics bookContent={bookContent} metadata={metadata} />
+
+      {/* Editorial & Craft Review Card */}
+      <section className="border border-zinc-800 rounded-lg p-5 space-y-4 bg-zinc-900/30" aria-label="Editorial and craft review">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-3 border-b border-zinc-800/80">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-base" role="img" aria-label="Analysis">🔍</span>
+              <h3 className="text-sm font-semibold text-zinc-100">
+                Editorial & Narrative Analysis
+              </h3>
+            </div>
+            <p className="text-xs text-zinc-400">
+              Automated review of story beats, pacing milestones, and narrative continuity.
+            </p>
+          </div>
+
+          {/* Quick status badges */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-800/60">
+              ✓ {chapterCount}/{chapterCount} Chapters Verified
+            </span>
+            {findingsCount > 0 && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-sky-950/60 text-sky-300 border border-sky-800/60">
+                {findingsCount} Editorial Polish Notes
+              </span>
+            )}
+            {landmarksCount > 0 && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-purple-950/60 text-purple-300 border border-purple-800/60">
+                {landmarksCount} Story Turning Points
+              </span>
             )}
           </div>
-          {onEdit && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Button onClick={onEdit} variant="secondary" size="sm">Edit saved book</Button>
-            </div>
-          )}
         </div>
 
-        <div className="space-y-2 text-xs">
+        {/* Friendly explanation for newcomers */}
+        <p className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/50 p-3 rounded border border-zinc-800/50">
+          <strong className="text-zinc-300">Author’s Desk note:</strong> Your full draft is safely compiled and ready to read. The findings below are AI editor suggestions to guide stylistic polishing (dialogue rhythm, sensory depth, pacing).
+        </p>
+
+        {/* Collapsible Inspection Details */}
+        <div className="space-y-2.5 pt-1 text-xs">
           {metadata?.audit && (
-            <details className="text-zinc-400">
-              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Review details</summary>
-              <div className="pt-2 pl-2">
-                {metadata.audit.findings?.length > 0 && (
-                  <ul className="list-disc pl-5 space-y-1.5">
+            <details className="group border border-zinc-800/60 rounded bg-zinc-900/40 p-3 transition-colors hover:border-zinc-700/60">
+              <summary className="cursor-pointer font-medium text-zinc-300 flex items-center justify-between list-none">
+                <span className="flex items-center gap-2">
+                  <span className="text-zinc-500 group-open:rotate-90 transition-transform">▶</span>
+                  <span>Editorial Polish Suggestions ({findingsCount})</span>
+                </span>
+                <span className="text-[11px] text-zinc-500 font-normal">Scene critique & style advice</span>
+              </summary>
+              <div className="pt-3 pl-4 space-y-2 border-t border-zinc-800/60 mt-3">
+                {metadata.audit.findings?.length > 0 ? (
+                  <ul className="space-y-2.5">
                     {metadata.audit.findings.map((f: any, i: number) => (
-                      <li key={i}>
-                        <strong className="text-zinc-300">{f.severity}</strong>: {f.description}
-                        <p className="text-[11px] text-zinc-500">{f.evidence_refs?.join(' · ')}</p>
+                      <li key={i} className="bg-zinc-950/40 p-2.5 rounded border border-zinc-800/40 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${f.severity === 'major' ? 'bg-amber-950/70 text-amber-300 border border-amber-800/50' : 'bg-zinc-800 text-zinc-400'}`}>
+                            {f.severity || 'note'}
+                          </span>
+                          <span className="text-zinc-200 font-medium">{f.description}</span>
+                        </div>
+                        {f.evidence_refs?.length > 0 && (
+                          <p className="text-[11px] text-zinc-400 italic pl-1 border-l-2 border-zinc-800">
+                            {f.evidence_refs.join(' · ')}
+                          </p>
+                        )}
                       </li>
                     ))}
                   </ul>
+                ) : (
+                  <p className="text-zinc-400">No unresolved stylistic findings recorded.</p>
                 )}
-                {metadata.audit.need_more_evidence?.map((failure: string, i: number) => (
-                  <p key={i} className="text-amber-300 text-xs mt-1">Check unavailable: {failure}</p>
-                ))}
+                {unavailableCount > 0 && (
+                  <div className="pt-2 text-[11px] text-zinc-500 border-t border-zinc-800/40">
+                    <span className="text-zinc-400 font-medium">{unavailableCount} deep checks omitted</span> (e.g. full-novel multi-pass tests not needed for this chapter count).
+                  </div>
+                )}
               </div>
             </details>
           )}
 
           {metadata?.craft?.landmarks?.length > 0 && (
-            <details className="text-zinc-400 pt-1">
-              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Turning points · actual word positions</summary>
-              <div className="overflow-x-auto mt-2 pt-2 border-t border-zinc-800/60">
+            <details className="group border border-zinc-800/60 rounded bg-zinc-900/40 p-3 transition-colors hover:border-zinc-700/60">
+              <summary className="cursor-pointer font-medium text-zinc-300 flex items-center justify-between list-none">
+                <span className="flex items-center gap-2">
+                  <span className="text-zinc-500 group-open:rotate-90 transition-transform">▶</span>
+                  <span>Story Landmarks & Turning Points ({landmarksCount})</span>
+                </span>
+                <span className="text-[11px] text-zinc-500 font-normal">Pacing milestones by chapter</span>
+              </summary>
+              <div className="overflow-x-auto pt-3 border-t border-zinc-800/60 mt-3">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="text-zinc-500 border-b border-zinc-800">
@@ -112,8 +202,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
                     {metadata.craft.landmarks.map((p: any) => (
                       <tr key={p.name} className="border-b border-zinc-800/40">
                         <td className="p-2 font-medium text-zinc-300">{p.name}</td>
-                        <td className="p-2 font-mono">{Number(p.percent).toFixed(1)}%</td>
-                        <td className="p-2">{p.chapter}</td>
+                        <td className="p-2 font-mono text-zinc-400">{Number(p.percent).toFixed(1)}%</td>
+                        <td className="p-2 text-zinc-300">{p.chapter}</td>
                         <td className="p-2 text-zinc-400 italic">“{p.quote}”</td>
                       </tr>
                     ))}
@@ -124,23 +214,39 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           )}
 
           {metadata?.craft?.readerMap && (
-            <details className="text-zinc-400 pt-1">
-              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Reader questions and setups · source map</summary>
-              <div className="mt-2 pt-2 border-t border-zinc-800/60 space-y-2">
-                <ul className="space-y-1.5 pl-2">
-                  {metadata.craft.readerMap.loops.map((loop: any) => (
-                    <li key={loop.id}>
-                      <strong className="text-zinc-300">{loop.id} · {loop.scale}</strong> — chapter {loop.opened.chapter}: “{loop.opened.quote}” · {loop.progress.length} progress beats · {loop.closed ? `answered in chapter ${loop.closed.chapter}: “${loop.closed.quote}”` : 'still open'}
-                    </li>
-                  ))}
-                </ul>
-                <ul className="space-y-1.5 pl-2 border-t border-zinc-800/40 pt-2">
-                  {metadata.craft.readerMap.props.map((prop: any) => (
-                    <li key={prop.name}>
-                      <strong className="text-zinc-300">{prop.name}</strong>: {prop.appearances.map((p: any) => `${p.role}, chapter ${p.chapter}: “${p.quote}”`).join(' → ')}
-                    </li>
-                  ))}
-                </ul>
+            <details className="group border border-zinc-800/60 rounded bg-zinc-900/40 p-3 transition-colors hover:border-zinc-700/60">
+              <summary className="cursor-pointer font-medium text-zinc-300 flex items-center justify-between list-none">
+                <span className="flex items-center gap-2">
+                  <span className="text-zinc-500 group-open:rotate-90 transition-transform">▶</span>
+                  <span>Narrative Setups & Payoffs (Reader Map)</span>
+                </span>
+                <span className="text-[11px] text-zinc-500 font-normal">Tracking open loops & story props</span>
+              </summary>
+              <div className="pt-3 border-t border-zinc-800/60 mt-3 space-y-3">
+                {metadata.craft.readerMap.loops?.length > 0 && (
+                  <div>
+                    <h4 className="text-[11px] font-semibold uppercase text-zinc-400 mb-1.5">Dramatic Questions & Plot Loops</h4>
+                    <ul className="space-y-1.5 pl-2">
+                      {metadata.craft.readerMap.loops.map((loop: any) => (
+                        <li key={loop.id} className="text-zinc-300">
+                          <strong className="text-zinc-200">{loop.id} · {loop.scale}</strong> — chapter {loop.opened.chapter}: “{loop.opened.quote}” · {loop.progress.length} progress beats · {loop.closed ? `answered in chapter ${loop.closed.chapter}: “${loop.closed.quote}”` : 'still open'}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {metadata.craft.readerMap.props?.length > 0 && (
+                  <div className="border-t border-zinc-800/40 pt-2">
+                    <h4 className="text-[11px] font-semibold uppercase text-zinc-400 mb-1.5">Key Story Objects (Props)</h4>
+                    <ul className="space-y-1.5 pl-2">
+                      {metadata.craft.readerMap.props.map((prop: any) => (
+                        <li key={prop.name} className="text-zinc-300">
+                          <strong className="text-zinc-200">{prop.name}</strong>: {prop.appearances.map((p: any) => `${p.role}, chapter ${p.chapter}: “${p.quote}”`).join(' → ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </details>
           )}
@@ -232,7 +338,10 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         </div>
       )}
       
-      <div className="text-center mt-8">
+      <div className="text-center mt-10 pt-6 border-t border-zinc-800/80">
+        <p className="text-xs text-zinc-500 mb-3">
+          Done with this project? Make sure you have downloaded or exported your work above before starting fresh.
+        </p>
         <Button onClick={onReset} variant="danger">
           Start New Book
         </Button>

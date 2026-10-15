@@ -159,25 +159,29 @@ const App: React.FC = () => {
         </div>
         <div className="app-toolbar flex flex-wrap items-center gap-2 py-1 mb-1.5" aria-label="Project and appearance controls">
           {saveControl}
-          <button
-            type="button"
-            onClick={exportProject}
-            title="Download the project: the author's desk, the manuscript, the report and the log"
-            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
-          >
-            Export project
-          </button>
-          <label
-            title="Restore a project from an exported .project.json file"
-            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
-          >
-            Import project
-            <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-            }} />
-          </label>
+          {saveControl && <span className="hidden sm:inline-block w-px h-4 bg-zinc-800 mx-1" aria-hidden="true" />}
+          <div className="inline-flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={exportProject}
+              title="Download project backup (.project.json) containing the author's desk, manuscript, report, and full logs"
+              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+            >
+              Export project
+            </button>
+            <label
+              title="Restore a project from a previously exported .project.json file"
+              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
+            >
+              Import project
+              <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
+              }} />
+            </label>
+          </div>
+          <span className="hidden sm:inline-block w-px h-4 bg-zinc-800 mx-1" aria-hidden="true" />
           <button
             type="button"
             onClick={handleReset}
