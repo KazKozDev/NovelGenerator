@@ -226,11 +226,11 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     let currentManuscript = bookContent;
 
     try {
-      // Top-to-bottom processing across prioritized tasks ("сверху вниз")
+      // Top-to-bottom processing across prioritized tasks
       for (let i = 0; i < clusteredTasks.length; i++) {
         const task = clusteredTasks[i];
         setActiveTaskId(task.id);
-        setLocalStatus(`Задача ${i + 1}/${clusteredTasks.length}: ${task.title}…`);
+        setLocalStatus(`Task ${i + 1}/${clusteredTasks.length}: ${task.title}…`);
 
         const result = await repairSurgicalTask(
           task,
@@ -261,13 +261,13 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           setFixedTaskIds(prev => new Set(prev).add(task.id));
           setTaskExplanations(prev => ({
             ...prev,
-            [task.id]: result.explanation || 'Точечная правка внесена',
+            [task.id]: result.explanation || 'Targeted edit applied',
           }));
         } else {
           setFixedTaskIds(prev => new Set(prev).add(task.id));
           setTaskExplanations(prev => ({
             ...prev,
-            [task.id]: result.explanation || 'Проверено по канону (правка не требуется)',
+            [task.id]: result.explanation || 'Verified: compliant with canon (no edit needed)',
           }));
         }
 
@@ -275,11 +275,11 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         await new Promise(r => setTimeout(r, 600));
       }
 
-      setLocalStatus('Все задачи редактуры отработаны!');
+      setLocalStatus('All editorial tasks applied.');
       setTimeout(() => setLocalStatus(null), 4000);
     } catch (err: any) {
       console.error('Targeted review failed:', err);
-      setLocalStatus(`Ошибка: ${err?.message || 'Не удалось применить правки'}`);
+      setLocalStatus(`Error: ${err?.message || 'Failed to apply review'}`);
       setTimeout(() => setLocalStatus(null), 5000);
     } finally {
       setActiveTaskId(null);
@@ -300,9 +300,9 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               <h2 className="text-sm font-medium text-zinc-200">Editorial Review</h2>
               <span
                 className="text-[11px] font-mono text-zinc-300 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 inline-flex items-center gap-1.5"
-                title={`Модель для правок: ${formatModelDisplayLabel(editorialModel)}`}
+                title={`Editorial model: ${formatModelDisplayLabel(editorialModel)}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
                 <span>{formatModelDisplayLabel(editorialModel)}</span>
               </span>
             </div>
@@ -328,7 +328,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               <details className="text-zinc-400" open>
                 <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1 select-none flex items-center justify-between">
                   <span>
-                    Задачи редактуры ({clusteredTasks.length} {clusteredTasks.length === 1 ? 'задача' : 'задач'} · {findingsCount} замеч.)
+                    Editorial Tasks ({clusteredTasks.length} {clusteredTasks.length === 1 ? 'task' : 'tasks'} · {findingsCount} notes)
                   </span>
                 </summary>
                 <div className="pt-2 pl-2 space-y-2 border-t border-zinc-800/60 mt-1">
@@ -345,41 +345,31 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                             ref={isActive ? activeTaskRef : undefined}
                             className={`p-2.5 rounded transition-all ${
                               isActive
-                                ? 'border border-amber-500/80 bg-amber-950/30 ring-1 ring-amber-500/50 shadow-sm'
+                                ? 'border border-zinc-600 bg-zinc-800/60 shadow-sm'
                                 : isFixed
-                                ? 'border border-emerald-600/40 bg-emerald-950/20'
+                                ? 'border border-zinc-800/70 bg-zinc-950/50'
                                 : 'border border-zinc-800/50 hover:border-zinc-700/70 bg-zinc-950/40 text-zinc-400'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1.5 mb-1.5 flex-wrap">
                               <div className="flex items-center gap-1.5">
-                                {task.priority === 'high' ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/60 uppercase">
-                                    Высокий
-                                  </span>
-                                ) : task.priority === 'medium' ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/60 uppercase">
-                                    Средний
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800/60 uppercase">
-                                    Стиль
-                                  </span>
-                                )}
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-300 bg-zinc-800/70 border border-zinc-700/50">
-                                  Гл. {task.chapterNumber}
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-400 bg-zinc-800/70 border border-zinc-700/50 uppercase">
+                                  {task.priority}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-400 bg-zinc-800/70 border border-zinc-700/50">
+                                  Ch. {task.chapterNumber}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-1">
                                 {isActive && (
-                                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium animate-pulse">
-                                    ⚡ В работе…
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-zinc-300 font-medium">
+                                    Working…
                                   </span>
                                 )}
                                 {isFixed && (
-                                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                                    ✓ Готово
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400 font-medium">
+                                    ✓ Done
                                   </span>
                                 )}
                               </div>
@@ -391,21 +381,21 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                               </span>
                               {task.rawFindingIndices.length > 1 && (
                                 <span className="text-[10px] font-mono text-zinc-500 whitespace-nowrap shrink-0">
-                                  ({task.rawFindingIndices.length} замеч.)
+                                  ({task.rawFindingIndices.length} notes)
                                 </span>
                               )}
                             </div>
 
                             <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">
-                              <span className="text-zinc-500">Проблема:</span> {task.problemSummary}
+                              <span className="text-zinc-500">Issue:</span> {task.problemSummary}
                             </p>
 
-                            <p className="text-[11px] text-emerald-400/90 mt-0.5 line-clamp-2">
-                              <span className="text-zinc-500">Канон:</span> {task.canonicalDirective}
+                            <p className="text-[11px] text-zinc-400 mt-0.5 line-clamp-2">
+                              <span className="text-zinc-500">Guideline:</span> {task.canonicalDirective}
                             </p>
 
                             {isFixed && explanation && (
-                              <p className="text-[11px] text-emerald-300 mt-1.5 pl-2 border-l-2 border-emerald-500/70 font-mono">
+                              <p className="text-[11px] text-zinc-400 mt-1.5 pl-2 border-l border-zinc-700 font-mono">
                                 {explanation}
                               </p>
                             )}
@@ -414,7 +404,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                       })}
                     </ul>
                   ) : (
-                    <p className="text-zinc-500">Замечания к рукописи отсутствуют.</p>
+                    <p className="text-zinc-500">No editorial findings.</p>
                   )}
                   {unavailableCount > 0 && (
                     <p className="text-[11px] text-zinc-500 pt-1 border-t border-zinc-800/40">
@@ -508,24 +498,24 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                         : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    Чистый текст
+                    Clean text
                   </button>
                   <button
                     type="button"
                     onClick={() => setViewMode('changes')}
                     className={`px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
                       viewMode === 'changes'
-                        ? 'bg-amber-950/60 text-amber-300 font-medium border border-amber-800/60'
+                        ? 'bg-zinc-800 text-zinc-100 font-medium border border-zinc-700'
                         : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    <span>Изменения</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Changes</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
                   </button>
                 </div>
               )}
               {saveSuccess && !isEditing && (
-                <span className="text-xs text-emerald-400 font-medium">Saved ✓</span>
+                <span className="text-xs text-zinc-400 font-medium">Saved ✓</span>
               )}
               {onManualSave && !isEditing && (
                 <button
@@ -605,16 +595,16 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               </div>
             ) : viewMode === 'changes' && lastDiff ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between text-xs px-3 py-1.5 bg-amber-950/20 border border-amber-900/40 rounded text-amber-300/90">
+                <div className="flex items-center justify-between text-xs px-3 py-1.5 bg-zinc-950/70 border border-zinc-800 rounded text-zinc-400">
                   <span>
-                    Подсветка изменений: <ins className="revision-added px-1 rounded text-emerald-300 bg-emerald-950/60 font-sans">+добавлено</ins> <del className="revision-removed px-1 rounded text-red-300 bg-red-950/60 font-sans line-through">-удалено</del>
+                    Revision changes: <span className="font-mono text-zinc-200">+added</span> · <span className="font-mono text-zinc-500 line-through">-removed</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => setViewMode('clean')}
                     className="text-zinc-400 hover:text-zinc-200 underline"
                   >
-                    Скрыть диф
+                    Hide diff
                   </button>
                 </div>
                 <MarkdownChangesView before={lastDiff.before} after={lastDiff.after} />

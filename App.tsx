@@ -396,11 +396,6 @@ const App: React.FC = () => {
               coverImage={coverImageUrl}
               onCoverChange={setCoverImageUrl}
             />
-            
-            {/* Show agent logs after completion too */}
-            {agentLogs.length > 0 && (
-              <AgentActivityLog logs={agentLogs} />
-            )}
           </>
         )}
 

@@ -146,14 +146,14 @@ describe('targetedEditorial', () => {
       expect(teleportTask).toBeDefined();
       expect(teleportTask?.rawFindingIndices.length).toBe(3);
       expect(teleportTask?.priority).toBe('high');
-      expect(teleportTask?.canonicalDirective).toContain('суперскорости');
+      expect(teleportTask?.canonicalDirective).toContain('super-speed');
 
       // Verify wound task grouped 2 findings
       const woundTask = tasks.find(t => t.id === 'clark-wound-logic');
       expect(woundTask).toBeDefined();
       expect(woundTask?.rawFindingIndices.length).toBe(2);
       expect(woundTask?.priority).toBe('high');
-      expect(woundTask?.canonicalDirective).toContain('криптонит');
+      expect(woundTask?.canonicalDirective).toContain('kryptonite');
 
       // Verify crystal task has medium priority
       const crystalTask = tasks.find(t => t.id === 'crystal-payoff');
@@ -191,7 +191,7 @@ describe('targetedEditorial', () => {
       expect(tasks.length).toBe(1);
       expect(tasks[0].id).toBe('genre-pacing-preservation');
       expect(tasks[0].isDismissed).toBe(true);
-      expect(tasks[0].dismissReason).toContain('Отклонено в соответствии с каноном');
+      expect(tasks[0].dismissReason).toContain('Dismissed per authorial canon');
     });
   });
 

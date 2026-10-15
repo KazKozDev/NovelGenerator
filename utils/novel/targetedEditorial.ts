@@ -294,115 +294,115 @@ interface CanonicalClusterDef {
 const CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
   {
     id: 'prop-teleportation',
-    title: 'Причинность перемещения журнала и ключа',
+    title: 'Log and key relocation causality',
     priority: 'high',
-    category: 'Сюжетная причинность',
+    category: 'Plot Causality',
     defaultChapter: 1,
     matchPattern: /(?:teleport|log.*key|key.*log|coat pocket|left.*log|relocation.*log|impossible.*relocation|how.*got here|перемещен.*журнал|телепортаци)/i,
-    problemSummary: 'Перемещение журнала из кармана пальто в квартире на стол в кабинете особняка выглядит как необъяснённая телепортация или сюжетная дыра.',
-    canonicalDirective: 'Указать в тексте, что Кларк на суперскорости забрал журнал и ключ из пустой квартиры на Бликер-стрит и перенёс их в кабинет особняка, опередив Брюса, пока тот ехал через ночной дождь.',
+    problemSummary: 'The log moving from the coat pocket in the apartment to the mansion study desk appears ungrounded without movement beats.',
+    canonicalDirective: 'Clarify in the prose that Clark retrieved the log and key from the empty Bleecker Street apartment at super-speed and placed them on the study desk ahead of Bruce arriving through the rain.',
     fallbackKeywords: ['coat pocket', 'apartment', 'log', 'key', 'study', 'desk', 'far side of the city'],
   },
   {
     id: 'clark-wound-logic',
-    title: 'Логика заживления раны предплечья Кларка',
+    title: 'Clark forearm wound healing logic',
     priority: 'high',
-    category: 'Физическая логика мира',
+    category: 'World Logic',
     defaultChapter: 2,
     matchPattern: /(?:wound|forearm.*suture|gash|center holds open|needle|suture|thread.*skin|kryptonite.*wound|рана|предплеч|шов|затягива)/i,
-    problemSummary: 'Края раны на предплечье затягиваются сами, а центр держится открытым без объяснения причин; нить шва оставлена в руке.',
-    canonicalDirective: 'В бетонной пыли на стальной арматуре осталась микроскопическая взвесь криптонита из обрушенного подвала доков Левиафана, которая локально блокирует клеточную регенерацию криптонца. Брюс удаляет частицу и аккуратно закрепляет шов.',
+    problemSummary: 'Edges of forearm wound close while center remains open with suture thread left unanchored.',
+    canonicalDirective: 'Trace resistance to microscopic kryptonite residue from warehouse rebar locally slowing cellular regeneration until Bruce extracts the particulate and knots the stitch.',
     fallbackKeywords: ['gash', 'four inches', 'wrist to elbow', 'drawing closed', 'center holds open', 'rebar', 'suture', 'thread'],
   },
   {
     id: 'apartment-acoustics',
-    title: 'Акустика квартиры на Бликер-стрит',
+    title: 'Bleecker apartment acoustic logic',
     priority: 'high',
-    category: 'Физическая логика мира',
+    category: 'World Logic',
     defaultChapter: 1,
     matchPattern: /(?:acoustic|echo|drywall|basement.*phone|heard.*room|акустик|эхо|гипсокартон)/i,
-    problemSummary: 'Непонятно, каким образом Кларк по телефону услышал особенности комнаты или слово «подвал».',
-    canonicalDirective: 'Объяснить эхом голых стен из неокрашенного гипсокартона в пустой нежилой квартире, усиливающим звук трубки, вкупе с обострённым слухом Кларка при открытой линии связи.',
+    problemSummary: 'Unclear how room acoustics and specific words were perceived over the open phone line.',
+    canonicalDirective: 'Attribute acoustic clarity to bare unpainted drywall resonance in the unfurnished room combined with acute Kryptonian auditory sensitivity over open frequency.',
     fallbackKeywords: ['bare floor', 'drywall', 'phone', 'kitchen', 'whisper', 'acoustics'],
   },
   {
     id: 'glasses-continuity',
-    title: 'Непрерывность реквизита: очки Кларка',
+    title: 'Clark glasses prop continuity',
     priority: 'high',
-    category: 'Непрерывность реквизита',
+    category: 'Prop Continuity',
     defaultChapter: 3,
     matchPattern: /(?:glasses|spectacle|loose hinge|frames|no glasses|очк|оправ)/i,
-    problemSummary: 'Кларк сначала описан на крыше без очков, а затем достаёт и складывает их, создавая противоречие реквизита.',
-    canonicalDirective: 'Уточнить, что Кларк достаёт очки из нагрудного кармана пальто, куда он убрал их после обрушения склада, символически снимая маску репортёра перед Брюсом.',
+    problemSummary: 'Clark appears on the roof without glasses, then retrieves and folds them, creating a prop continuity hitch.',
+    canonicalDirective: 'Specify that Clark draws the folded frames from his inner coat pocket where he stowed them after the collapse, deliberately shedding the reporter mask before Bruce.',
     fallbackKeywords: ['glasses', 'black frames', 'loose hinge', 'coat pocket', 'folds them', 'no glasses'],
   },
   {
     id: 'crystal-payoff',
-    title: 'Тайна криптонического кристалла',
+    title: 'Kryptonian beacon crystal payoff',
     priority: 'medium',
-    category: 'Нарративные ружья',
+    category: 'Narrative Payoff',
     defaultChapter: 3,
     matchPattern: /(?:crystal|token.*pillow|luminous.*crystal|chekhov.*crystal|кристалл)/i,
-    problemSummary: 'Светящийся кристалл появляется в квартире и на подушке как декоративный реквизит без раскрытия назначения.',
-    canonicalDirective: 'Раскрыть природу кристалла: это криптонский кристалл маяка/связи Дома Эл, который Кларк передал Брюсу как знак абсолютного доверия и негласного союза.',
+    problemSummary: 'The luminous crystal rests on the pillow without clarifying its narrative significance.',
+    canonicalDirective: 'Establish the crystal as an El beacon artifact left as a token of quiet trust and mutual pact.',
     fallbackKeywords: ['crystal', 'luminous', 'shelf', 'pillow', 'warm when he lifts it', 'House of El'],
   },
   {
     id: 'phone-caller-lois',
-    title: 'Звонок Лоис Лейн и цена выбора',
+    title: 'Incoming call disclosure and choice',
     priority: 'medium',
-    category: 'Нарративное раскрытие',
+    category: 'Dramatic Irony',
     defaultChapter: 3,
     matchPattern: /(?:lois|caller|phone.*ring|six letters|dramatic irony.*lois|звонок.*лоис|экран.*телефон)/i,
-    problemSummary: 'Шестибуквенное имя звонящего на экране телефона скрыто от читателя, ослабляя драматическую иронию выбора.',
-    canonicalDirective: 'На экране звонящего телефона отчётливо высвечивается «LOIS» (Лоис Лейн). Кларк видит вызов и сознательно гасит экран, подтверждая выбор остаться с Брюсом.',
+    problemSummary: 'Six-letter caller name remains unrevealed on screen, blunting the dramatic irony of the choice.',
+    canonicalDirective: 'Clearly show LOIS on the illuminated screen as Clark silences the call, cementing his decision to remain.',
     fallbackKeywords: ['six letters', 'name fills the glass', 'phone', 'buzzes', 'does not read it'],
   },
   {
     id: 'log-entries-meaning',
-    title: 'Значение 41 записи и надпись «Сорок два»',
+    title: 'Meaning of the 41 log entries and Forty-two',
     priority: 'medium',
-    category: 'Нарративный смысл',
+    category: 'Thematic Meaning',
     defaultChapter: 3,
     matchPattern: /(?:forty-one|forty-two|41|42|i counted|meaning.*log|сорок один|сорок два)/i,
-    problemSummary: 'Смысл диалога «Я считал / Я перестал» и число 41 остаются туманными для читателя.',
-    canonicalDirective: 'Раскрыть, что 41 запись в журнале — это сорок один вечер тайного учёта Брюсом часов ожидания за восемь месяцев после доков, а приписанное Кларком «Сорок два» знаменует его готовность продолжить путь вместе.',
+    problemSummary: 'The dialogue about counting and the number 41 remain opaque to the reader.',
+    canonicalDirective: 'Ground the 41 entries as Bruce counting vigil nights over eight months, and Clark penciling "Forty-two" as an affirmation to continue together.',
     fallbackKeywords: ['forty-one entries', 'Forty-two', 'I counted', 'I stopped', 'hours', 'downstrokes'],
   },
   {
     id: 'tremor-source',
-    title: 'Происхождение тремора руки Брюса',
+    title: 'Origin of Bruce left hand tremor',
     priority: 'medium',
-    category: 'Детализация персонажа',
+    category: 'Character Detail',
     defaultChapter: 2,
     matchPattern: /(?:tremor|broken hand|wrist|dock.*collapse|тремор|перелом.*кист)/i,
-    problemSummary: 'Тремор левой руки Брюса повторяется как физический дефект без упоминания его происхождения.',
-    canonicalDirective: 'Источником тремора является старый недиагностированный перелом ладьевидной кости левой кисти, полученный восемь месяцев назад во время девятичасового спасения выживших при обрушении подвала в доках Готэма.',
+    problemSummary: 'Bruce left wrist tremor recurs without grounding its physical origin.',
+    canonicalDirective: 'Attribute tremor to an uncasted scaphoid fracture sustained eight months prior during the nine-hour collapse recovery at Gotham docks.',
     fallbackKeywords: ['tremor', 'left hand', 'wrist', 'scaphoid', 'fingers', 'docks'],
   },
   {
     id: 'counting-tic-moderation',
-    title: 'Умеренность механического счёта секунд',
+    title: 'Second-counting cadence moderation',
     priority: 'low',
-    category: 'Стилистическая умеренность',
+    category: 'Stylistic Moderation',
     defaultChapter: 1,
     matchPattern: /(?:counting seconds|repeated tic|count.*second|counts it|eleven seconds|счет секунд|повтор.*секунд)/i,
-    problemSummary: 'Чрезмерно частый механический счёт секунд («три секунды», «один, два, три») рискует стать однообразным тиком.',
-    canonicalDirective: 'Умерить механические повторы счета в бытовых переходных действиях, оставив счёт только в моментах наивысшего психологического напряжения и самоконтроля.',
+    problemSummary: 'Mechanical second-counting recurs too frequently during mundane transitions.',
+    canonicalDirective: 'Moderate counting cadence in routine transitional beats, preserving it for moments of acute psychological strain and self-regulation.',
     fallbackKeywords: ['counts it', 'seconds', 'elevator takes', 'one, two, three'],
   },
   {
     id: 'genre-pacing-preservation',
-    title: 'Сохранение авторского нуарного ритма экспозиции',
+    title: 'Preservation of opening atmospheric pacing',
     priority: 'low',
-    category: 'Авторский стиль',
+    category: 'Authorial Style',
     defaultChapter: 1,
     matchPattern: /(?:atmospheric inventory|throat-clearing|cut.*chair.*window.*tap|cut.*first 250 words|вырезать.*экспозици)/i,
-    problemSummary: 'Рецензент предлагает вырезать первые 250 слов описания пустой квартиры ради динамики.',
-    canonicalDirective: 'Отклонить сокращение: детальная экспозиция пустой квартиры и тестирование замков принципиально необходимы для построения психологического портрета обсессивного контроля Брюса и нуарной атмосферы.',
+    problemSummary: 'Reviewer suggests cutting opening 250 words of apartment description for immediate action.',
+    canonicalDirective: 'Reject proposed cuts: detailed inventory of locks and empty room establishes Bruce obsessive vigilance and core noir atmosphere.',
     fallbackKeywords: ['straight-backed chair', 'window lock', 'tap in the kitchen', 'cupboard door'],
     isDismissed: true,
-    dismissReason: 'Отклонено в соответствии с каноном: авторский медленный ритм и детальная экспозиция пустой квартиры намеренно создают психологическое напряжение нуара.',
+    dismissReason: 'Dismissed per authorial canon: deliberate methodical pacing and empty room inventory establish essential noir tension.',
   },
 ];
 
@@ -498,7 +498,7 @@ export function clusterEditorialFindings(
     const chapterCategoryGroups: Map<string, { chapter: number; category: string; indices: number[]; quotes: Set<string>; descs: string[]; severity: string }> = new Map();
 
     for (const item of unclassifiedFindings) {
-      const cat = item.finding.category || 'Общие замечания';
+      const cat = item.finding.category || 'General';
       const key = `${item.targetChapter}_${cat}`;
       if (!chapterCategoryGroups.has(key)) {
         chapterCategoryGroups.set(key, {
@@ -520,20 +520,21 @@ export function clusterEditorialFindings(
 
     for (const [key, grp] of chapterCategoryGroups.entries()) {
       let priority: EditorialPriority = 'medium';
-      if (/causality|логик|сюжет|plot|contradiction|continuity/i.test(grp.category) || grp.severity === 'major') {
+      if (/causality|logic|plot|contradiction|continuity/i.test(grp.category) || grp.severity === 'major') {
         priority = 'high';
-      } else if (/style|word|rhythm|стиль|ритм/i.test(grp.category)) {
+      } else if (/style|word|rhythm/i.test(grp.category)) {
         priority = 'low';
       }
 
+      const noteCount = grp.indices.length;
       resultTasks.push({
         id: `unclassified-${key}`,
-        title: `Гл. ${grp.chapter}: ${grp.category} (${grp.indices.length} замеч.)`,
+        title: `Ch. ${grp.chapter}: ${grp.category} (${noteCount} ${noteCount === 1 ? 'note' : 'notes'})`,
         chapterNumber: grp.chapter,
         priority,
         category: grp.category,
         problemSummary: grp.descs.slice(0, 2).join('; '),
-        canonicalDirective: 'Внести точечную стилистическую и фактологическую правку с сохранением авторского голоса.',
+        canonicalDirective: 'Apply targeted stylistic and factual correction while preserving authorial voice.',
         targetQuotes: Array.from(grp.quotes),
         rawFindingIndices: grp.indices,
       });
@@ -660,7 +661,7 @@ export async function repairSurgicalTask(
     return {
       changed: false,
       chapterNumber: task.chapterNumber,
-      explanation: task.dismissReason || 'Каноническое сохранение авторского стиля (правка не требуется)',
+      explanation: task.dismissReason || 'Preserved per authorial canon (no edit required)',
       beforeChapterText: parsedChapters.find(c => c.num === task.chapterNumber)?.content || '',
       afterChapterText: parsedChapters.find(c => c.num === task.chapterNumber)?.content || '',
       updatedManuscript: manuscriptContent,
@@ -685,7 +686,7 @@ export async function repairSurgicalTask(
     return {
       changed: false,
       chapterNumber: targetChapter.num,
-      explanation: parsed?.explanation || 'Проверено: текст соответствует канону',
+      explanation: parsed?.explanation || 'Verified: text conforms to canon',
       beforeChapterText,
       afterChapterText: beforeChapterText,
       updatedManuscript: manuscriptContent,
@@ -721,7 +722,7 @@ export async function repairSurgicalTask(
     return {
       changed: false,
       chapterNumber: targetChapter.num,
-      explanation: parsed.explanation || 'Проверено: точечная замена не изменила контекст',
+      explanation: parsed.explanation || 'Verified: targeted revision unchanged',
       beforeChapterText,
       afterChapterText: beforeChapterText,
       updatedManuscript: manuscriptContent,
@@ -739,7 +740,7 @@ export async function repairSurgicalTask(
   return {
     changed: true,
     chapterNumber: targetChapter.num,
-    explanation: parsed.explanation || `Внесена точечная правка в главу ${targetChapter.num}`,
+    explanation: parsed.explanation || `Applied targeted revision in chapter ${targetChapter.num}`,
     beforeChapterText,
     afterChapterText,
     updatedManuscript,
@@ -913,7 +914,7 @@ export function formatModelDisplayLabel(config: {
   hfModel?: string;
   compatibleModel?: string;
 }): string {
-  if (!config) return 'Не выбрана';
+  if (!config) return 'None';
   if (config.provider === 'ollama') {
     const name = config.ollamaModel || 'llama3.1';
     if (/deepseek/i.test(name)) return `DeepSeek (${name})`;
