@@ -3,70 +3,87 @@ import React, { useState, useEffect } from 'react';
 interface SystemManualModalProps { isOpen: boolean; onClose: () => void }
 
 const sections = [
-  { id: 'start', label: 'Getting started', title: 'Define the book you want to write', intro: 'The main form supplies the story and its requirements. One author writes the book at its desk: it thinks, asks its people, writes each chapter whole and asks a reader.', cards: [
-    { title: 'Premise and reading experience', paragraphs: ['Describe the central conflict, named characters, setting and desired resolution. State important constraints in the premise. Genre, audience, narrative voice, tone, style, tense and ending are also sent as author requirements.'] },
-    { title: 'Chapter count and rough size', paragraphs: ['Rough words per chapter tells the author how large a book you have in mind. It is not a target: no chapter is cut or padded to a size, and a chapter is as long as it needs to be.', 'The author works within a budget of calls that grows with the number of chapters. When the budget is spent, the book goes out as it stands.'] },
-    { title: 'Author model and reader model', paragraphs: ['The author model writes the book: the notebook, the plan, the voices of its people and every chapter. Choose Gemini, Ollama, Qwen or Hugging Face.', 'Enable Reader model to have another model read what the author writes: the reader of a chapter, and the reader who says, before the ending is written, what the book still owes. Without it, the author\'s own model reads its own text. If the reader model will not read a passage, the author\'s model reads it instead and the journal says so.'] },
-    { title: 'Start or continue', paragraphs: ['Start Generation creates a new project from the main form. Resume Generation continues the saved desk with the models selected now. Changing the premise or the chapter count starts a different book. Changing the style updates the requirements the author resumes with; the pages already written stay.'] },
+  { id: 'start', label: 'Getting started', title: 'Define the book you want to write', intro: 'The main form supplies the premise and style parameters. The Craft 2.0 engine drafts the dossier, projects the relational scene matrix, and enacts each scene under strict POV barriers.', cards: [
+    { title: 'Premise and reading experience', paragraphs: ['Describe the central conflict, named characters, setting, and desired resolution. State important constraints in the premise. Genre, audience, narrative voice, tone, style, tense, and ending are also sent as author requirements.'] },
+    { title: 'Chapter count and rough size', paragraphs: ['Rough words per chapter tells the engine how large a book you have in mind. It is not an arbitrary word-chopper: scenes expand or contract according to dramatic necessity.', 'The generation pipeline works within a call and time budget that scales with the number of chapters. When the budget is reached, the book completes with a detailed audit report.'] },
+    { title: 'Author model and reader model', paragraphs: ['The Author model handles the strategic layer (dossier, scene cards) and enacts the prose. Choose Gemini, Ollama, Qwen, Hugging Face, or API Compatible.', 'Enable Reader model to have a dedicated model handle the Observer, Blind Reader, and Dual Audit. Without it, the primary model handles validation. If the reader model encounters issues, the primary model provides automatic fallback.'] },
+    { title: 'Start or continue', paragraphs: ['Start Generation creates a new project from the main form. Resume Generation continues the saved state with the models selected now. Changing the premise or chapter count starts a fresh book; changing style options updates constraints for subsequent scenes.'] },
   ] },
-  { id: 'workspace', label: 'Workspace', title: 'Read the book while it develops', intro: 'The three columns show the plan, the manuscript and the work being performed.', cards: [
-    { title: 'Left · chapters and the author\'s steps', paragraphs: ['Select a chapter to read it. Under the list is what the author has done, step by step, in its own words: what it wrote, whom it asked and why.', 'Pending means no text has appeared yet. Live identifies the chapter being written. Draft is a chapter with text while the book is still in work.'] },
-    { title: 'Center · manuscript and tools', paragraphs: ['Clean text renders the current manuscript. Raw shows the source. Changes compares the chapter before and after revisions.', 'To the left of those are the Craft tools: Dossier holds the 4 layers of truth (world, backstory, characters, facade). Scene Cards holds the projection matrix with knowledge barriers and scene targets. Observer holds independent validation receipts. Reader holds blind reader expectations. Reviews holds dual developmental and literary audits. Press a tab again to return to the prose.'] },
-    { title: 'Right · Checks and Agent Inspector', paragraphs: ['Checks describes the selected chapter: its word count, dialogue share, and prose texture signals. Agent Inspector shows the current step, elapsed time, calls and recorded events. Resume Generation appears when the saved book can be continued after a stop.'] },
+  { id: 'workspace', label: 'Workspace', title: 'Read the book while it develops', intro: 'The three columns show the plan, the manuscript, and the active inspection tools.', cards: [
+    { title: 'Left · chapters and pipeline progress', paragraphs: ['Select a chapter to read its text. Beneath the chapter list is the live pipeline log: preparation, scene card projection, scene enactment, observer checks, and audits.', 'Pending means generation has not reached this chapter yet. Live identifies the chapter currently being enacted. Draft indicates a chapter with written text.'] },
+    { title: 'Center · manuscript and craft tools', paragraphs: ['Clean text renders the formatted prose. Raw shows the source markdown. Changes compares chapter revisions.', 'To the left of those are the Craft 2.0 Inspector tabs: Dossier (4 Layers of Truth), Scene Cards (Relational Projection Matrix), Observer (Sensory Validation Receipts), Reader (Blind Hypotheses), and Reviews (Dual Developmental & Literary Audits). Press an active tab again to return to the manuscript.'] },
+    { title: 'Right · Checks and Agent Inspector', paragraphs: ['Checks describes the selected chapter: word count, dialogue share, and prose texture signals. Agent Inspector shows the current stage, elapsed time, model calls, and token usage. Resume Generation appears if a run was stopped.'] },
   ] },
-  { id: 'metrics', label: 'Metrics explained', title: 'What each indicator means', intro: 'Checks and Measured describe the selected chapter. Agent Inspector describes the current operation, which may concern a different chapter. These indicators update as the manuscript and run change.', cards: [
+  { id: 'metrics', label: 'Metrics explained', title: 'What each indicator means', intro: 'Checks and Measured describe the selected chapter. Agent Inspector describes the current operation, which may concern a different chapter. These indicators update as the manuscript develops.', cards: [
     { title: 'Checks · review and writing signals', paragraphs: [
       'Ch #: The chapter selected for reading. All Checks and Measured values belong to its current text.',
-      'Review: The verification status of the manuscript. Draft · not verified means the required completion checks are still pending or unresolved; local reviews may already have taken place. Checks passed means the required completion conditions were met. Reviewed · warnings means the completed review retains warnings.',
-      'Originality: The percentage of distinct four-word sequences within the chapter after normalization. A higher value means less repeated wording. It does not measure the originality of the plot or compare the text with published books.',
-      'Motifs: Repeated four-word phrases detected across distinct sentences. The display gives the number of qualifying phrases and a sample phrase. None circling means this detector found none; it does not rule out repeated ideas, short verbal tics or deliberate refrains.',
-      'Rhythm: A comparison of sentence lengths at the beginning and end of the chapter. Held means the detector found no abrupt shortening pattern; drifted shows the change between the two medians. The w suffix means words, and the displayed length is the median sentence length in the closing section. Short samples use the whole text. This is a sentence-length signal, not an assessment of narrative pacing.',
-      'Hook: A score on a ten-point scale for action, conflict, questions and dialogue attribution in the opening. It uses English wording patterns and is an advisory signal, not a reader rating. Any accompanying label identifies a detected concern, such as a weak opening or a recap ending.',
+      'Review: The verification status of the manuscript. Draft · not verified means the required completion checks are still pending; Checks passed means all completion conditions were met; Reviewed · warnings means the completed review retains advisory flags.',
+      'Originality: The percentage of distinct four-word sequences within the chapter after normalization. A higher value means less repeated wording.',
+      'Motifs: Repeated four-word phrases detected across distinct sentences. The display gives the number of qualifying phrases and a sample phrase.',
+      'Rhythm: A comparison of sentence lengths at the beginning and end of the chapter. Held means no abrupt shortening pattern; drifted shows the difference between the two medians.',
+      'Hook: A score on a ten-point scale for action, conflict, questions, and dialogue attribution in the opening scenes.',
     ] },
     { title: 'Measured · length and prose texture', paragraphs: [
-      'Words: Current chapter word count followed by the requested chapter target. The target comes from the author settings; it is not the total for the book. Words are counted as whitespace-separated text. The short draft can be below target before expansion.',
-      'Dialogue: The share of words inside straight or curly double quotes. It approximates how much of the text is dialogue. Quoted thoughts and documents may count too, while dialogue written with dashes may be missed. There is no required ideal percentage.',
-      'Median paragraph: The middle paragraph length after all paragraph lengths are sorted. The w suffix means words. Blank lines separate paragraphs. A higher value indicates longer typical paragraphs; the median is not an average.',
-      'Comparisons/1k: Detected comparison markers per thousand words. English expressions such as like a, as if and as though are counted. The rate helps spot repeated figurative phrasing, but can include literal comparisons and miss other forms.',
-      'Lines with a beat: The share of paragraphs containing quoted text that also contain a recognized English speech tag, such as said, asked or whispered. The current implementation measures dialogue attribution rather than all gestures or physical action beats.',
-      'Additional findings: Labels beneath Measured identify detected prose patterns. Their descriptions explain the concern. These are editing suggestions, not proof that the story is inconsistent.',
-      'Interpretation: Use these indicators to notice changes and repetition, rather than to maximize every score. English keyword detectors are less reliable for other languages. Story causality and completion are checked separately.',
+      'Words: Current chapter word count followed by the requested target. Target comes from generation settings.',
+      'Dialogue: The percentage of words inside dialogue quotes. It measures conversational pacing versus narrative exposition.',
+      'Median paragraph: The median paragraph length in words. Blank lines separate paragraphs.',
+      'Comparisons/1k: Detected comparison markers per thousand words (such as like a, as if, as though). Helps spot excessive figurative language.',
+      'Lines with a beat: The share of dialogue paragraphs containing a speech tag or physical action beat.',
+      'Additional findings: Labels beneath Measured identify detected prose patterns with contextual suggestions.',
+      'Interpretation: Use these indicators to notice stylistic shifts and repetition. Story causality and completion are audited separately.',
     ] },
     { title: 'Agent Inspector · activity and usage', paragraphs: [
-      'Events: The number of entries in the displayed activity log. Entries record requests and other agent activity; they do not count completed scenes or accepted edits.',
+      'Events: The number of entries in the displayed activity log recording agent operations.',
       'Current operation: Describes what the craft pipeline is doing: preparation (dossier), scene cards projection, blind writing, observer validation, blind reading, or dual review.',
-      'Activity icon: A rotating icon indicates that generation is running. It does not confirm that new text is arriving or that a review has passed.',
-      'Elapsed time: Time since the first entry in the displayed run log. It includes waiting for models and reviews, not just writing time. Reloading can begin a new visible activity history.',
-      'Calls: The displayed request count. In the main workspace it is derived from the activity log, so it is not an independent provider billing counter. Writing, reviews and retries can all add calls.',
-      'Input tokens: Total model input recorded for the project, including instructions, prompts and supplied context. Sending a passage again adds input usage again. Tokens are model units, not manuscript words.',
-      'Output tokens: Total recorded model output, including plans, reviews, tool commands and prose. Reported retries, rejected responses and reasoning usage can also contribute. This total is not the size of the finished book.',
-      'Approximation marker (~): Some usage was estimated because provider counts were unavailable or older summaries were restored. Available provider counts take precedence. Totals persist across continuation, but historical usage without retained records cannot be reconstructed. Token totals are usage information, not a monetary bill.',
+      'Activity icon: A rotating icon indicates active generation and network requests.',
+      'Elapsed time: Time since the start of the current run, including model thinking and validation latency.',
+      'Calls: The total request count for this project across generation and validation stages.',
+      'Input tokens: Total model input tokens recorded, including prompts, system instructions, and supplied context.',
+      'Output tokens: Total model output tokens recorded, including scene plans, reviews, and prose.',
+      'Approximation marker (~): Indicates estimated token counts when exact provider metrics were unavailable.',
     ] },
     { title: 'Pipeline and Target · execution state', paragraphs: [
-      'Pipeline: Active means the generation routine is running. Stopped means an error interrupted it. Complete means the run finished. Idle means no generation is currently running.',
-      'Target: The chapter assigned to the current operation. Book-wide planning and reviews may still display a chapter target; read the operation label for the actual scope. Target can differ from the chapter selected in Checks because reading and generation proceed independently.',
+      'Pipeline: Active means generation is running. Stopped means an error interrupted it. Complete means the run finished. Idle means waiting for user input.',
+      'Target: The chapter assigned to the current operation. May differ from the chapter selected in Checks because reading and generation proceed independently.',
     ] },
   ] },
-  { id: 'process', label: 'Writing process', title: 'Craft 2.0: Two Layers of Truth & Execution', intro: 'The craft pipeline separates causal architecture from physical prose execution.', cards: [
-    { title: '1 · Dossier & 4 Layers of Truth', paragraphs: ['Before a word of prose is written, the model builds objective world facts, character backstories/secrets, current POV knowledge filters, and the public facade.'] },
-    { title: '2 · Scene Cards & Projection Matrix', paragraphs: ['Each scene receives entry and exit conditions, emotional delta, strict knowledge horizon boundaries, and concrete physical action requirements.'] },
-    { title: '3 · Anti-Metaphor Blind Writing', paragraphs: ['The writer models the scene with concrete physical action and natural dialogue. Self-absorbed metaphors, pseudo-literary filler, and omniscient leaks are strictly barred.'] },
-    { title: '4 · Observer Validation & Dual Audit', paragraphs: ['An independent observer evaluates each scene and outputs a concrete physical receipt. Blind reading checks audience expectations, followed by full developmental and literary reviews.'] },
+  { id: 'process', label: 'Craft 2.0 Engine', title: 'Two Layers of Truth & Deterministic Pipeline', intro: 'Craft 2.0 separates strategic causal architecture from physical scene enactment through five core principles.', cards: [
+    { title: '1 · Deterministic Phased Pipeline', paragraphs: [
+      'Strictly separated sequential stages: Dossier → Scene Cards → Preflight → Blind Write → Observer → Dual Review.',
+      'Each stage executes independently with explicit schema contracts, preventing cascading hallucinations and maintaining high context purity.',
+    ] },
+    { title: '2 · Strict Relational Scene Matrix (packet.json)', paragraphs: [
+      '3 scenes per chapter governed by the "Therefore / But" causal momentum law (action leads to reaction, reaction forces dilemma).',
+      'Tracks 3 layers of conflict (internal, interpersonal, external) and enforces value charge shifts (+ to - or - to +) in every scene.',
+    ] },
+    { title: '3 · Strict POV Barrier', paragraphs: [
+      'Scene generation prompts are strictly isolated from future narrative facts (povKnows, learnsAt < order).',
+      'Omniscience leaks and narrative spoilers are blocked at prompt assembly time, ensuring characters only act on what they currently know.',
+    ] },
+    { title: '4 · Anti-Metaphorical Directive', paragraphs: [
+      'Strict prohibition of abstract clichés and pseudo-literary filler prose. Focuses on concrete physical sensory actions, spatial grounding, and authentic dialogue.',
+      'Every scene enactment is independently checked and verified by the Observer agent.',
+    ] },
+    { title: '5 · Embedded Continuous Checks', paragraphs: [
+      'A Blind Reader builds narrative hypotheses and anticipations before each scene without knowledge of future secrets.',
+      'Dual Reviewers (developmental and literary) audit causal continuity, pacing rhythm, and thematic coherence across the full manuscript.',
+    ] },
   ] },
-  { id: 'checks', label: 'Quality & repairs', title: 'What is counted', intro: 'The manuscript is the author\'s. Code counts a few things it can count, and reports them.', cards: [
-    { title: 'Named debts', paragraphs: ['The turns, stakes, question, guns and last act are assessed against cited scenes. Planning words do not have to appear in the prose. Unresolved events and unavailable checks are listed in the final report.'] },
-    { title: 'Chapter measures', paragraphs: ['Originality is the share of distinct four-word sequences in the chapter. Hook, Rhythm and Motifs are signals about the opening, sentence length and repeated phrases. They are not a review of the plot.'] },
-    { title: 'Stopping', paragraphs: ['The desk has a budget of calls that grows with the number of chapters. When it is spent, the book goes out as it stands and the report names what is still open. A provider failure stops the run; Resume continues the saved desk.'] },
+  { id: 'checks', label: 'Quality & Audits', title: 'Independent Validation & Dual Reviews', intro: 'Every chapter undergoes multi-perspective verification before final completion.', cards: [
+    { title: 'Observer Sensory Receipts', paragraphs: ['The Observer analyzes every written scene against its Scene Card specification. It outputs physical receipts validating sensory details, prop continuity, character positions, and dialogue subtext.'] },
+    { title: 'Blind Reader Hypothesis Tracking', paragraphs: ['The Blind Reader simulates reader expectations with zero forward knowledge. It records hypotheses, questions, and emotional reactions, verifying narrative suspense and clarity.'] },
+    { title: 'Dual Review: Developmental & Literary', paragraphs: ['Developmental Audit: Evaluates plot causality, setup/payoff balance, premise fidelity, and character arc resolution.', 'Literary Review: Inspects prose texture, voice consistency, pacing cadence, and sensory immersion.'] },
+    { title: 'Causal Integrity & Repair Pass', paragraphs: ['If the Observer or Dual Reviewers flag severe causal inconsistencies or POV breaches, the engine executes a targeted repair pass to resolve the discrepancy before advancing.'] },
   ] },
-  { id: 'models', label: 'Models & data', title: 'Know which model is doing the work', intro: 'The author and the reader use the providers you select. The event log names the model that served each request.', cards: [
-    { title: 'Gemini, Ollama and Qwen', paragraphs: ['Gemini uses the configured Google model. Ollama uses your endpoint and model name; a model ending in :cloud is served through Ollama cloud, not necessarily on your computer. Qwen uses the application server proxy; its upstream endpoint and credentials are configured on the server.', 'Provider configuration determines where prompts and manuscript excerpts are processed. Cloud routes send that material to the selected service. The browser’s local autosave does not make cloud generation local.'] },
-    { title: 'Context and output limits', paragraphs: ['Context is what a model can read in a request; output is what it can return. An incomplete response at the output limit is rejected and the step is not kept. The author is told the answer was cut off and can try a smaller one.', 'A tool call or a reader counts toward the run allowance.'] },
+  { id: 'models', label: 'Models & data', title: 'Know which model is doing the work', intro: 'The author and reader use the providers you select. The event log records the model that served each request.', cards: [
+    { title: 'Gemini, Ollama, Qwen, and API Compatible', paragraphs: ['Gemini uses the configured Google model. Ollama connects to your local endpoint and models. Qwen uses the application server proxy. API Compatible connects to any standard OpenAI-compatible Chat Completions endpoint.', 'Provider settings determine where prompts and manuscript excerpts are processed. Cloud routes send data to their respective services.'] },
+    { title: 'Context and output limits', paragraphs: ['Context is what a model can read in a request; output is what it can generate. Incomplete responses at token limits are caught and retried cleanly.', 'Observer checks and Dual Audits run under dedicated token allocations to ensure thorough reviews without truncating the prose.'] },
   ] },
-  { id: 'saving', label: 'Saving & recovery', title: 'Keep a project backup as well as a reading copy', intro: 'Autosave, manuscript export and project export serve different purposes.', cards: [
-    { title: 'Autosaved to repo', paragraphs: ['Project changes save an atomic snapshot to autosaves/latest.project.json in the repository. The browser also keeps a secondary IndexedDB copy. Reloading restores the saved project, but generation does not continue while the page is closed. Resume Generation starts a new execution from retained state.', 'The local application server writes the file and reloads it on startup, including from another browser. Replacing or resetting a book keeps a recovery copy in autosaves/. The indicator confirms the file write; if writing fails, it reports the failure and retries. Export the project to keep a portable recovery copy. An unfinished model response is not saved manuscript text.'] },
-    { title: 'Save draft / Save book', paragraphs: ['Choose EPUB, PDF, TXT or Markdown to export the available manuscript. Report (JSON) exports available metadata and audit information. EPUB and PDF ask for an author name. Save draft can include incomplete or unreviewed chapters; the file is a reading copy, not an executable project checkpoint.'] },
-    { title: 'Export project / Import project', paragraphs: ['Project export saves a JSON snapshot of the stored input, plan, manuscript, reviews, edits and execution checkpoints. Import restores that project into the current project slot. It does not include a separate backup of your provider credentials.', 'The main form keeps its own preferences, so inspect author settings and selected models before continuing an imported project. Import is unavailable while generation is active.'] },
-    { title: 'Recover or start over', paragraphs: ['A model response can take time before text appears. When the run has stopped, the log shows the cause. Resume continues the saved desk with a fresh allowance. It does not close a debt the pages have not met.', 'Start a new book and Clean Slate clear the project. Export it first if you want to keep it.'] },
+  { id: 'saving', label: 'Saving & recovery', title: 'Keep a project backup as well as a reading copy', intro: 'Autosave, manuscript export, and project export serve different purposes.', cards: [
+    { title: 'Autosaved to repo & browser', paragraphs: ['Project changes save an atomic snapshot to autosaves/latest.project.json in the repository, complemented by browser IndexedDB storage. Reloading restores the project state. Resume Generation restarts execution from the exact stage reached.', 'Replacing or resetting a project preserves a dated recovery snapshot in autosaves/. Export the project file for an independent portable backup.'] },
+    { title: 'Save draft / Save book', paragraphs: ['Export the manuscript at any time as EPUB, PDF, TXT, or Markdown. Report (JSON) exports complete audit results and scene card metadata. EPUB and PDF include formatted title pages and author attribution.'] },
+    { title: 'Export project / Import project', paragraphs: ['Project export produces a portable JSON snapshot containing input settings, dossier, scene matrix, manuscript chapters, and review receipts. Import restores that state into the active workspace.', 'Import is disabled while generation is active to prevent state collisions.'] },
+    { title: 'Recover or start over', paragraphs: ['If a generation run is stopped or interrupted by network errors, the run log displays the exact error message. Resume Generation continues from the last validated stage.', 'Clean Slate wipes temporary state to begin a new project from scratch.'] },
   ] },
 ] as const;
 
@@ -96,16 +113,16 @@ const sectionIcons: Record<string, GuideIconName> = {
 function cardIcon(title: string): GuideIconName {
   if (/chapter count|budget|target/i.test(title)) return 'target';
   if (/start or continue/i.test(title)) return 'play';
-  if (/center|premise/i.test(title)) return 'pen';
-  if (/left/i.test(title)) return 'layers';
+  if (/center|premise|writing/i.test(title)) return 'pen';
+  if (/left|matrix|pipeline/i.test(title)) return 'layers';
   if (/measured|checks ·/i.test(title)) return 'chart';
-  if (/inspector|progress|limits/i.test(title)) return 'clock';
-  if (/search|tools|evidence/i.test(title)) return 'search';
-  if (/recover|over/i.test(title)) return 'restore';
+  if (/inspector|progress|limits|continuous/i.test(title)) return 'clock';
+  if (/search|tools|evidence|observer/i.test(title)) return 'search';
+  if (/recover|over|repair/i.test(title)) return 'restore';
   if (/export|save draft/i.test(title)) return 'file';
   if (/autosave/i.test(title)) return 'save';
   if (/model|gemini|local ml|editor/i.test(title)) return 'models';
-  if (/review|check|repair|audit/i.test(title)) return 'check';
+  if (/review|check|audit|barrier|directive/i.test(title)) return 'check';
   return 'layers';
 }
 
@@ -128,7 +145,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
       <header className="flex items-start gap-3 justify-between px-5 py-4 border-b border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 shrink-0">
         <div className="min-w-0">
           <h2 id="guide-title" className="text-base font-semibold text-zinc-100 light:text-zinc-900">NovelGenerator Guide</h2>
-          <p className="mt-1 text-xs text-zinc-400 light:text-zinc-500">One author writes the book at its desk.</p>
+          <p className="mt-1 text-xs text-zinc-400 light:text-zinc-500">Craft 2.0: Two Layers of Truth & Execution.</p>
         </div>
         <button type="button" onClick={onClose} aria-label="Close guide" title="Close (Esc)" className="shrink-0 p-1.5 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-800 hover:bg-zinc-800 light:hover:bg-zinc-200 rounded-md transition-colors">
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -145,7 +162,7 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
         </section>)}</div>
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-zinc-800 light:border-zinc-200 shrink-0 text-xs text-zinc-500">
-        <span>NovelGenerator · the author's desk</span>
+        <span>NovelGenerator · Craft 2.0 Engine</span>
         <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 light:bg-zinc-200 light:hover:bg-zinc-300 text-zinc-200 light:text-zinc-800 rounded-md font-medium">Got it</button>
       </footer>
     </div>
@@ -165,8 +182,6 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
         aria-label="Open NovelGenerator Guide"
         className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-900 border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-zinc-700 light:border-zinc-300 light:border-zinc-200/80 light:bg-white light:hover:bg-zinc-100 shadow-sm ${className}`}
       >
-        {/* The ring is gone, so the mark carries the button on its own: drawn against the glyph's
-            bounds rather than the circle's, it fills the frame the circle used to occupy. */}
         <svg
           className="w-4 h-4 transition-transform duration-200 hover:scale-110"
           viewBox="7 4 10 16"
