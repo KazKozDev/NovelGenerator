@@ -5,7 +5,11 @@ import { extractBookTitle } from '../utils/exportUtils';
 import { MarkdownView } from './common/MarkdownView';
 import MarkdownChangesView from './MarkdownChangesView';
 import BookCoverUpload, { ImprintData } from './BookCoverUpload';
-import { repairSingleFinding } from '../utils/novel/targetedEditorial';
+import {
+  repairSingleFinding,
+  parseModelConfigFromTag,
+  formatModelDisplayLabel,
+} from '../utils/novel/targetedEditorial';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 
 interface BookDisplayProps {
@@ -120,6 +124,40 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const activeFindingRef = React.useRef<HTMLLIElement | null>(null);
 
+  // Author model detection: use the model that wrote this manuscript (e.g. DeepSeek v4.1 flash)
+  const [editorialModel, setEditorialModel] = useState<any>(() => {
+    if (metadata?.models) {
+      if (typeof metadata.models === 'string') {
+        const parsed = parseModelConfigFromTag(metadata.models);
+        if (parsed) return parsed;
+      } else if (typeof metadata.models === 'object' && metadata.models.author) {
+        return metadata.models.author;
+      }
+    }
+    const valCfg = getStoredValidatorConfig();
+    if (valCfg && (valCfg as any).enabled !== false) return valCfg;
+    return getStoredProviderConfig();
+  });
+
+  useEffect(() => {
+    // If not already resolved from metadata, check the project run_log to pick up the author's original model (e.g. DeepSeek)
+    fetch('/api/project-autosave')
+      .then(res => res.json())
+      .then(data => {
+        const runLog = data?.snapshot?.files?.run_log;
+        if (Array.isArray(runLog)) {
+          const modelEntry = runLog.find((e: any) => e.stage === 'models');
+          if (modelEntry?.detail) {
+            const parsed = parseModelConfigFromTag(modelEntry.detail);
+            if (parsed) {
+              setEditorialModel(parsed);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [metadataJson]);
+
   useEffect(() => {
     if (activeFindingIndex !== null && activeFindingRef.current) {
       activeFindingRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -167,9 +205,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       return;
     }
 
-    // Use previously chosen model
-    const validatorCfg = getStoredValidatorConfig();
-    const modelConfig = (validatorCfg && validatorCfg.enabled) ? validatorCfg : getStoredProviderConfig();
+    // Use the author model that wrote the manuscript (e.g. DeepSeek v4.1 flash)
+    const modelConfig = editorialModel;
 
     setLocalRunning(true);
     setFixedFindingIndices(new Set());
@@ -247,8 +284,17 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-[33%_47%_1fr] gap-6 items-start">
         {/* Column 1 (~35%): Editorial Review */}
         <section className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-280px)] min-h-[460px]" aria-label="Editorial review">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
-            <h2 className="text-sm font-medium text-zinc-200">Editorial Review</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-zinc-200">Editorial Review</h2>
+              <span
+                className="text-[11px] font-mono text-zinc-300 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 inline-flex items-center gap-1.5"
+                title={`Модель для правок: ${formatModelDisplayLabel(editorialModel)}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>{formatModelDisplayLabel(editorialModel)}</span>
+              </span>
+            </div>
             {(onEdit || findingsCount > 0) && (
               <button
                 type="button"

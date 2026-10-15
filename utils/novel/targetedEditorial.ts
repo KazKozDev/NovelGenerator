@@ -190,3 +190,100 @@ export async function repairSingleFinding(
     updatedManuscript,
   };
 }
+
+/**
+ * Parses a model tag (e.g. from run_log or metadata) into a valid LLMProviderConfig.
+ * Example tag: "author: ollama:deepseek-v4.1-flash:cloud · reader: huggingface:..."
+ */
+export function parseModelConfigFromTag(tag: string): {
+  provider: 'gemini' | 'ollama' | 'qwen' | 'anthropic' | 'huggingface' | 'compatible';
+  ollamaEndpoint?: string;
+  ollamaModel?: string;
+  geminiModel?: string;
+  qwenModel?: string;
+  anthropicModel?: string;
+  hfModel?: string;
+  compatibleModel?: string;
+} | null {
+  if (!tag || typeof tag !== 'string') return null;
+  const match = tag.match(/author:\s*([a-z0-9_-]+):([^\s·]+)/i) || tag.match(/^([a-z0-9_-]+):([^\s·]+)/i);
+  if (!match) return null;
+  const provider = match[1].toLowerCase();
+  const model = match[2].trim();
+
+  if (provider === 'ollama') {
+    return {
+      provider: 'ollama',
+      ollamaModel: model,
+      ollamaEndpoint: '/api/ollama',
+    };
+  }
+  if (provider === 'qwen') {
+    return {
+      provider: 'qwen',
+      qwenModel: model,
+    };
+  }
+  if (provider === 'gemini') {
+    return {
+      provider: 'gemini',
+      geminiModel: model,
+    };
+  }
+  if (provider === 'anthropic') {
+    return {
+      provider: 'anthropic',
+      anthropicModel: model,
+    };
+  }
+  if (provider === 'compatible') {
+    return {
+      provider: 'compatible',
+      compatibleModel: model,
+    };
+  }
+  if (provider === 'huggingface') {
+    return {
+      provider: 'huggingface',
+      hfModel: model,
+    };
+  }
+  return null;
+}
+
+/**
+ * Returns a clean, human-readable display label for the active LLM provider configuration.
+ */
+export function formatModelDisplayLabel(config: {
+  provider: string;
+  ollamaModel?: string;
+  geminiModel?: string;
+  qwenModel?: string;
+  anthropicModel?: string;
+  hfModel?: string;
+  compatibleModel?: string;
+}): string {
+  if (!config) return 'Не выбрана';
+  if (config.provider === 'ollama') {
+    const name = config.ollamaModel || 'llama3.1';
+    if (/deepseek/i.test(name)) return `DeepSeek (${name})`;
+    return `Ollama: ${name}`;
+  }
+  if (config.provider === 'anthropic') {
+    return `Anthropic: ${config.anthropicModel || 'Claude'}`;
+  }
+  if (config.provider === 'qwen') {
+    return `Qwen: ${config.qwenModel || 'qwen3.8-flash'}`;
+  }
+  if (config.provider === 'gemini') {
+    return `Gemini: ${config.geminiModel || 'gemini-3.6-flash'}`;
+  }
+  if (config.provider === 'compatible') {
+    return `API: ${config.compatibleModel || 'auto'}`;
+  }
+  if (config.provider === 'huggingface') {
+    return `HF: ${config.hfModel || 'custom'}`;
+  }
+  return String(config.provider);
+}
+

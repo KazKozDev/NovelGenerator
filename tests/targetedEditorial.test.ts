@@ -89,4 +89,26 @@ describe('targetedEditorial', () => {
     expect(result.updatedManuscript).toContain('Clark looked at the desk, then held the log');
     expect(result.updatedManuscript).toContain('Bruce was wearing a green coat');
   });
+
+  it('parses author model tag from run_log or metadata', async () => {
+    const { parseModelConfigFromTag, formatModelDisplayLabel } = await import('../utils/novel/targetedEditorial');
+
+    const deepseekTag = 'author: ollama:deepseek-v4.1-flash:cloud · reader: huggingface:XiaomiMiMo/MiMo-V2.5-Pro';
+    const parsed = parseModelConfigFromTag(deepseekTag);
+    expect(parsed).toEqual({
+      provider: 'ollama',
+      ollamaModel: 'deepseek-v4.1-flash:cloud',
+      ollamaEndpoint: '/api/ollama',
+    });
+    expect(formatModelDisplayLabel(parsed!)).toBe('DeepSeek (deepseek-v4.1-flash:cloud)');
+
+    const qwenTag = 'author: qwen:qwen3.8-flash · reader: the author\'s own';
+    const parsedQwen = parseModelConfigFromTag(qwenTag);
+    expect(parsedQwen).toEqual({
+      provider: 'qwen',
+      qwenModel: 'qwen3.8-flash',
+    });
+    expect(formatModelDisplayLabel(parsedQwen!)).toBe('Qwen: qwen3.8-flash');
+  });
 });
+

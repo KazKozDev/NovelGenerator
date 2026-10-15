@@ -184,6 +184,7 @@ export default function useBookGenerator() {
     const title = bookTitle(store.loadAuthor()?.title, input.premise);
     const content = assembleManuscript(manuscript, title);
     setFinalBookContent(content);
+    const modelDetail = store.runLog().find(e => e.stage === 'models')?.detail;
     setFinalMetadataJson(JSON.stringify({
       title,
       chapters: manuscript.map(({ chapter, text }) => ({ chapter, words: text.split(/\s+/).filter(Boolean).length })),
@@ -191,6 +192,7 @@ export default function useBookGenerator() {
       craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
       premise: input.premise,
       genre: input.genre,
+      models: modelDetail || undefined,
     }));
     setCurrentStep(GenerationStep.Done);
   }
@@ -459,6 +461,7 @@ export default function useBookGenerator() {
       }
       return undefined;
     };
+    const modelDetail = store.runLog().find(e => e.stage === 'models')?.detail;
     setFinalMetadataJson(JSON.stringify({
       title,
       chapters: store.manuscript().map(({ chapter, text }) => ({ chapter, words: text.split(/\s+/).filter(Boolean).length })),
@@ -466,6 +469,7 @@ export default function useBookGenerator() {
       craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
       premise: input?.premise,
       genre: input?.genre,
+      models: modelDetail || undefined,
     }));
     refreshFromStore();
     void store.flush().catch(err => console.error('Failed to flush manual edit to store:', err));
