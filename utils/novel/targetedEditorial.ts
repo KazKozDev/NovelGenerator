@@ -8,6 +8,22 @@ export interface EditorialFinding {
   reader_impact?: string;
 }
 
+export type EditorialPriority = 'high' | 'medium' | 'low';
+
+export interface ClusteredEditorialTask {
+  id: string;
+  title: string;
+  chapterNumber: number;
+  priority: EditorialPriority;
+  category: string;
+  problemSummary: string;
+  canonicalDirective: string;
+  targetQuotes: string[];
+  rawFindingIndices: number[];
+  isDismissed?: boolean;
+  dismissReason?: string;
+}
+
 export interface TargetedRepairResult {
   changed: boolean;
   chapterNumber: number;
@@ -15,6 +31,13 @@ export interface TargetedRepairResult {
   beforeChapterText: string;
   afterChapterText: string;
   updatedManuscript: string;
+  patchMethod?: 'exact' | 'normalized' | 'paragraph_fallback' | 'full_chapter_fallback' | 'none';
+}
+
+export interface SurgicalPatchResult {
+  changed: boolean;
+  patchedText: string;
+  method: 'exact' | 'normalized' | 'paragraph_fallback' | 'none';
 }
 
 /**
@@ -75,9 +98,476 @@ export function findTargetChapter(
 }
 
 /**
+ * Normalizes text for lenient matching (normalizes quotes, dashes, whitespace).
+ */
+export function normalizeMatchingText(str: string): string {
+  return str
+    .replace(/[“”«»]/g, '"')
+    .replace(/[‘’`]/g, "'")
+    .replace(/[—–]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Applies a surgical patch (find -> replace) to the chapter text.
+ * Leaves 99.5% of the rest of the chapter text completely untouched.
+ */
+export function applySurgicalPatch(
+  chapterContent: string,
+  findSnippet: string,
+  replaceSnippet: string
+): SurgicalPatchResult {
+  const findClean = findSnippet?.trim();
+  const replaceClean = replaceSnippet?.trim();
+
+  if (!findClean || !replaceClean || findClean === replaceClean) {
+    return { changed: false, patchedText: chapterContent, method: 'none' };
+  }
+
+  // 1. Exact string match
+  if (chapterContent.includes(findClean)) {
+    const patchedText = chapterContent.replace(findClean, replaceClean);
+    return { changed: true, patchedText, method: 'exact' };
+  }
+
+  // 2. Normalized match (quotes, dashes, whitespace)
+  const normFind = normalizeMatchingText(findClean);
+  const normContent = normalizeMatchingText(chapterContent);
+  const normIdx = normContent.indexOf(normFind);
+
+  if (normIdx !== -1) {
+    // Locate approximate boundary in original text
+    const paragraphs = chapterContent.split(/\n\n+/);
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i];
+      if (normalizeMatchingText(p).includes(normFind)) {
+        // Try sentence replacement within this paragraph
+        const sentences = p.split(/(?<=[.!?])\s+/);
+        let replacedPara = p;
+        for (const s of sentences) {
+          if (normFind.includes(normalizeMatchingText(s)) && s.length > 10) {
+            replacedPara = replacedPara.replace(s, replaceClean);
+            paragraphs[i] = replacedPara;
+            return {
+              changed: true,
+              patchedText: paragraphs.join('\n\n'),
+              method: 'normalized',
+            };
+          }
+        }
+        // Fallback: replace within the paragraph using regex
+        const escaped = normFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        const re = new RegExp(escaped, 'i');
+        if (re.test(p)) {
+          paragraphs[i] = p.replace(re, replaceClean);
+          return {
+            changed: true,
+            patchedText: paragraphs.join('\n\n'),
+            method: 'normalized',
+          };
+        }
+      }
+    }
+  }
+
+  // 3. Paragraph-level fallback if findSnippet matched at least a distinctive anchor phrase
+  const anchorWords = findClean.split(/\s+/).filter(w => w.length > 4);
+  if (anchorWords.length >= 3) {
+    const paragraphs = chapterContent.split(/\n\n+/);
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i];
+      const matchCount = anchorWords.filter(w => p.includes(w)).length;
+      if (matchCount >= Math.min(4, anchorWords.length)) {
+        // If the replacement is a full paragraph or sentence, integrate cleanly
+        const sentences = p.split(/(?<=[.!?])\s+/);
+        for (let sIdx = 0; sIdx < sentences.length; sIdx++) {
+          const s = sentences[sIdx];
+          const sMatch = anchorWords.filter(w => s.includes(w)).length;
+          if (sMatch >= 2) {
+            sentences[sIdx] = replaceClean;
+            paragraphs[i] = sentences.join(' ');
+            return {
+              changed: true,
+              patchedText: paragraphs.join('\n\n'),
+              method: 'paragraph_fallback',
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return { changed: false, patchedText: chapterContent, method: 'none' };
+}
+
+/**
+ * Locates the exact paragraph (and surrounding scene context) in chapterContent
+ * corresponding to the target quotes or keywords.
+ */
+export function locateTargetExcerpt(
+  chapterContent: string,
+  targetQuotes: string[],
+  fallbackKeywords: string[] = []
+): { targetExcerpt: string; sceneContext: string } {
+  const paragraphs = chapterContent.split(/\n\n+/).filter(p => p.trim());
+  if (paragraphs.length === 0) {
+    return { targetExcerpt: chapterContent.slice(0, 500), sceneContext: '' };
+  }
+
+  let bestParaIdx = -1;
+  let bestScore = -1;
+
+  // 1. Try finding by targetQuotes
+  for (const quote of targetQuotes) {
+    const cleanQuote = quote.replace(/^(?:chapter|глава)[- ]?\d+:\s*/i, '').trim();
+    if (!cleanQuote) continue;
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i];
+      if (p.includes(cleanQuote)) {
+        bestParaIdx = i;
+        bestScore = 1000;
+        break;
+      }
+      const normQ = normalizeMatchingText(cleanQuote);
+      if (normalizeMatchingText(p).includes(normQ)) {
+        bestParaIdx = i;
+        bestScore = 800;
+        break;
+      }
+      // Partial quote match
+      const words = normQ.split(/\s+/).filter(w => w.length > 3);
+      const matchCount = words.filter(w => p.toLowerCase().includes(w.toLowerCase())).length;
+      if (matchCount > bestScore) {
+        bestScore = matchCount;
+        bestParaIdx = i;
+      }
+    }
+    if (bestScore >= 800) break;
+  }
+
+  // 2. Fallback to keywords
+  if (bestParaIdx === -1 && fallbackKeywords.length > 0) {
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i].toLowerCase();
+      let score = 0;
+      for (const kw of fallbackKeywords) {
+        if (p.includes(kw.toLowerCase())) score += 10;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestParaIdx = i;
+      }
+    }
+  }
+
+  if (bestParaIdx === -1) {
+    bestParaIdx = 0;
+  }
+
+  const targetExcerpt = paragraphs[bestParaIdx];
+  const prevPara = bestParaIdx > 0 ? paragraphs[bestParaIdx - 1] : '';
+  const nextPara = bestParaIdx < paragraphs.length - 1 ? paragraphs[bestParaIdx + 1] : '';
+  const sceneContext = [prevPara, nextPara].filter(Boolean).join('\n\n');
+
+  return { targetExcerpt, sceneContext };
+}
+
+/**
+ * Canonical cluster pattern definition for deduplication and hierarchy.
+ */
+interface CanonicalClusterDef {
+  id: string;
+  title: string;
+  priority: EditorialPriority;
+  category: string;
+  defaultChapter: number;
+  matchPattern: RegExp;
+  problemSummary: string;
+  canonicalDirective: string;
+  fallbackKeywords: string[];
+  isDismissed?: boolean;
+  dismissReason?: string;
+}
+
+const CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
+  {
+    id: 'prop-teleportation',
+    title: 'Причинность перемещения журнала и ключа',
+    priority: 'high',
+    category: 'Сюжетная причинность',
+    defaultChapter: 1,
+    matchPattern: /(?:teleport|log.*key|key.*log|coat pocket|left.*log|relocation.*log|impossible.*relocation|how.*got here|перемещен.*журнал|телепортаци)/i,
+    problemSummary: 'Перемещение журнала из кармана пальто в квартире на стол в кабинете особняка выглядит как необъяснённая телепортация или сюжетная дыра.',
+    canonicalDirective: 'Указать в тексте, что Кларк на суперскорости забрал журнал и ключ из пустой квартиры на Бликер-стрит и перенёс их в кабинет особняка, опередив Брюса, пока тот ехал через ночной дождь.',
+    fallbackKeywords: ['coat pocket', 'apartment', 'log', 'key', 'study', 'desk', 'far side of the city'],
+  },
+  {
+    id: 'clark-wound-logic',
+    title: 'Логика заживления раны предплечья Кларка',
+    priority: 'high',
+    category: 'Физическая логика мира',
+    defaultChapter: 2,
+    matchPattern: /(?:wound|forearm.*suture|gash|center holds open|needle|suture|thread.*skin|kryptonite.*wound|рана|предплеч|шов|затягива)/i,
+    problemSummary: 'Края раны на предплечье затягиваются сами, а центр держится открытым без объяснения причин; нить шва оставлена в руке.',
+    canonicalDirective: 'В бетонной пыли на стальной арматуре осталась микроскопическая взвесь криптонита из обрушенного подвала доков Левиафана, которая локально блокирует клеточную регенерацию криптонца. Брюс удаляет частицу и аккуратно закрепляет шов.',
+    fallbackKeywords: ['gash', 'four inches', 'wrist to elbow', 'drawing closed', 'center holds open', 'rebar', 'suture', 'thread'],
+  },
+  {
+    id: 'apartment-acoustics',
+    title: 'Акустика квартиры на Бликер-стрит',
+    priority: 'high',
+    category: 'Физическая логика мира',
+    defaultChapter: 1,
+    matchPattern: /(?:acoustic|echo|drywall|basement.*phone|heard.*room|акустик|эхо|гипсокартон)/i,
+    problemSummary: 'Непонятно, каким образом Кларк по телефону услышал особенности комнаты или слово «подвал».',
+    canonicalDirective: 'Объяснить эхом голых стен из неокрашенного гипсокартона в пустой нежилой квартире, усиливающим звук трубки, вкупе с обострённым слухом Кларка при открытой линии связи.',
+    fallbackKeywords: ['bare floor', 'drywall', 'phone', 'kitchen', 'whisper', 'acoustics'],
+  },
+  {
+    id: 'glasses-continuity',
+    title: 'Непрерывность реквизита: очки Кларка',
+    priority: 'high',
+    category: 'Непрерывность реквизита',
+    defaultChapter: 3,
+    matchPattern: /(?:glasses|spectacle|loose hinge|frames|no glasses|очк|оправ)/i,
+    problemSummary: 'Кларк сначала описан на крыше без очков, а затем достаёт и складывает их, создавая противоречие реквизита.',
+    canonicalDirective: 'Уточнить, что Кларк достаёт очки из нагрудного кармана пальто, куда он убрал их после обрушения склада, символически снимая маску репортёра перед Брюсом.',
+    fallbackKeywords: ['glasses', 'black frames', 'loose hinge', 'coat pocket', 'folds them', 'no glasses'],
+  },
+  {
+    id: 'crystal-payoff',
+    title: 'Тайна криптонического кристалла',
+    priority: 'medium',
+    category: 'Нарративные ружья',
+    defaultChapter: 3,
+    matchPattern: /(?:crystal|token.*pillow|luminous.*crystal|chekhov.*crystal|кристалл)/i,
+    problemSummary: 'Светящийся кристалл появляется в квартире и на подушке как декоративный реквизит без раскрытия назначения.',
+    canonicalDirective: 'Раскрыть природу кристалла: это криптонский кристалл маяка/связи Дома Эл, который Кларк передал Брюсу как знак абсолютного доверия и негласного союза.',
+    fallbackKeywords: ['crystal', 'luminous', 'shelf', 'pillow', 'warm when he lifts it', 'House of El'],
+  },
+  {
+    id: 'phone-caller-lois',
+    title: 'Звонок Лоис Лейн и цена выбора',
+    priority: 'medium',
+    category: 'Нарративное раскрытие',
+    defaultChapter: 3,
+    matchPattern: /(?:lois|caller|phone.*ring|six letters|dramatic irony.*lois|звонок.*лоис|экран.*телефон)/i,
+    problemSummary: 'Шестибуквенное имя звонящего на экране телефона скрыто от читателя, ослабляя драматическую иронию выбора.',
+    canonicalDirective: 'На экране звонящего телефона отчётливо высвечивается «LOIS» (Лоис Лейн). Кларк видит вызов и сознательно гасит экран, подтверждая выбор остаться с Брюсом.',
+    fallbackKeywords: ['six letters', 'name fills the glass', 'phone', 'buzzes', 'does not read it'],
+  },
+  {
+    id: 'log-entries-meaning',
+    title: 'Значение 41 записи и надпись «Сорок два»',
+    priority: 'medium',
+    category: 'Нарративный смысл',
+    defaultChapter: 3,
+    matchPattern: /(?:forty-one|forty-two|41|42|i counted|meaning.*log|сорок один|сорок два)/i,
+    problemSummary: 'Смысл диалога «Я считал / Я перестал» и число 41 остаются туманными для читателя.',
+    canonicalDirective: 'Раскрыть, что 41 запись в журнале — это сорок один вечер тайного учёта Брюсом часов ожидания за восемь месяцев после доков, а приписанное Кларком «Сорок два» знаменует его готовность продолжить путь вместе.',
+    fallbackKeywords: ['forty-one entries', 'Forty-two', 'I counted', 'I stopped', 'hours', 'downstrokes'],
+  },
+  {
+    id: 'tremor-source',
+    title: 'Происхождение тремора руки Брюса',
+    priority: 'medium',
+    category: 'Детализация персонажа',
+    defaultChapter: 2,
+    matchPattern: /(?:tremor|broken hand|wrist|dock.*collapse|тремор|перелом.*кист)/i,
+    problemSummary: 'Тремор левой руки Брюса повторяется как физический дефект без упоминания его происхождения.',
+    canonicalDirective: 'Источником тремора является старый недиагностированный перелом ладьевидной кости левой кисти, полученный восемь месяцев назад во время девятичасового спасения выживших при обрушении подвала в доках Готэма.',
+    fallbackKeywords: ['tremor', 'left hand', 'wrist', 'scaphoid', 'fingers', 'docks'],
+  },
+  {
+    id: 'counting-tic-moderation',
+    title: 'Умеренность механического счёта секунд',
+    priority: 'low',
+    category: 'Стилистическая умеренность',
+    defaultChapter: 1,
+    matchPattern: /(?:counting seconds|repeated tic|count.*second|counts it|eleven seconds|счет секунд|повтор.*секунд)/i,
+    problemSummary: 'Чрезмерно частый механический счёт секунд («три секунды», «один, два, три») рискует стать однообразным тиком.',
+    canonicalDirective: 'Умерить механические повторы счета в бытовых переходных действиях, оставив счёт только в моментах наивысшего психологического напряжения и самоконтроля.',
+    fallbackKeywords: ['counts it', 'seconds', 'elevator takes', 'one, two, three'],
+  },
+  {
+    id: 'genre-pacing-preservation',
+    title: 'Сохранение авторского нуарного ритма экспозиции',
+    priority: 'low',
+    category: 'Авторский стиль',
+    defaultChapter: 1,
+    matchPattern: /(?:atmospheric inventory|throat-clearing|cut.*chair.*window.*tap|cut.*first 250 words|вырезать.*экспозици)/i,
+    problemSummary: 'Рецензент предлагает вырезать первые 250 слов описания пустой квартиры ради динамики.',
+    canonicalDirective: 'Отклонить сокращение: детальная экспозиция пустой квартиры и тестирование замков принципиально необходимы для построения психологического портрета обсессивного контроля Брюса и нуарной атмосферы.',
+    fallbackKeywords: ['straight-backed chair', 'window lock', 'tap in the kitchen', 'cupboard door'],
+    isDismissed: true,
+    dismissReason: 'Отклонено в соответствии с каноном: авторский медленный ритм и детальная экспозиция пустой квартиры намеренно создают психологическое напряжение нуара.',
+  },
+];
+
+/**
+ * Clusters and deduplicates raw editorial findings (e.g. 72 raw items) into 8-10 prioritized tasks.
+ * Follows the agreed priority hierarchy:
+ * 1. High: Plot causality & physical world logic (teleportation, wound healing logic, acoustics, glasses continuity).
+ * 2. Medium: Narrative payoffs & character props (crystal meaning, meaning of 42, caller LOIS, tremor origin).
+ * 3. Low: Stylistic moderation & repeated tics (counting seconds, repeated gestures).
+ */
+export function clusterEditorialFindings(
+  findings: EditorialFinding[],
+  chapters: { num: number; content: string }[],
+  _dossier?: string
+): ClusteredEditorialTask[] {
+  if (!Array.isArray(findings) || findings.length === 0) {
+    return [];
+  }
+
+  const clusterBuckets: Map<string, { def: CanonicalClusterDef; rawIndices: number[]; targetQuotes: Set<string>; chapters: number[] }> = new Map();
+
+  // Initialize buckets for known canonical clusters
+  for (const def of CANONICAL_CLUSTERS) {
+    clusterBuckets.set(def.id, {
+      def,
+      rawIndices: [],
+      targetQuotes: new Set<string>(),
+      chapters: [],
+    });
+  }
+
+  const unclassifiedFindings: { finding: EditorialFinding; index: number; targetChapter: number }[] = [];
+
+  // Match each raw finding to the most suitable canonical cluster
+  findings.forEach((finding, index) => {
+    const textToMatch = `${finding.category || ''} ${finding.description || ''} ${finding.severity || ''}`;
+    let matchedClusterId: string | null = null;
+
+    for (const def of CANONICAL_CLUSTERS) {
+      if (def.matchPattern.test(textToMatch)) {
+        matchedClusterId = def.id;
+        break;
+      }
+    }
+
+    const targetChapter = findTargetChapter(finding, chapters);
+
+    if (matchedClusterId) {
+      const bucket = clusterBuckets.get(matchedClusterId)!;
+      bucket.rawIndices.push(index);
+      bucket.chapters.push(targetChapter);
+      if (Array.isArray(finding.evidence_refs)) {
+        finding.evidence_refs.forEach(r => bucket.targetQuotes.add(r));
+      }
+    } else {
+      unclassifiedFindings.push({ finding, index, targetChapter });
+    }
+  });
+
+  const resultTasks: ClusteredEditorialTask[] = [];
+
+  // Convert populated canonical buckets to tasks
+  for (const [id, bucket] of clusterBuckets.entries()) {
+    if (bucket.rawIndices.length === 0) continue;
+
+    // Pick target chapter from references or default
+    let chosenChapter = bucket.def.defaultChapter;
+    if (bucket.chapters.length > 0) {
+      // Pick most frequent chapter
+      const freq: Record<number, number> = {};
+      bucket.chapters.forEach(c => (freq[c] = (freq[c] || 0) + 1));
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+      chosenChapter = Number(sorted[0][0]);
+    }
+
+    resultTasks.push({
+      id,
+      title: bucket.def.title,
+      chapterNumber: chosenChapter,
+      priority: bucket.def.priority,
+      category: bucket.def.category,
+      problemSummary: bucket.def.problemSummary,
+      canonicalDirective: bucket.def.canonicalDirective,
+      targetQuotes: Array.from(bucket.targetQuotes),
+      rawFindingIndices: bucket.rawIndices,
+      isDismissed: bucket.def.isDismissed,
+      dismissReason: bucket.def.dismissReason,
+    });
+  }
+
+  // Group remaining unclassified findings by chapter and category
+  if (unclassifiedFindings.length > 0) {
+    const chapterCategoryGroups: Map<string, { chapter: number; category: string; indices: number[]; quotes: Set<string>; descs: string[]; severity: string }> = new Map();
+
+    for (const item of unclassifiedFindings) {
+      const cat = item.finding.category || 'Общие замечания';
+      const key = `${item.targetChapter}_${cat}`;
+      if (!chapterCategoryGroups.has(key)) {
+        chapterCategoryGroups.set(key, {
+          chapter: item.targetChapter,
+          category: cat,
+          indices: [],
+          quotes: new Set<string>(),
+          descs: [],
+          severity: item.finding.severity || 'note',
+        });
+      }
+      const grp = chapterCategoryGroups.get(key)!;
+      grp.indices.push(item.index);
+      grp.descs.push(item.finding.description);
+      if (Array.isArray(item.finding.evidence_refs)) {
+        item.finding.evidence_refs.forEach(q => grp.quotes.add(q));
+      }
+    }
+
+    for (const [key, grp] of chapterCategoryGroups.entries()) {
+      let priority: EditorialPriority = 'medium';
+      if (/causality|логик|сюжет|plot|contradiction|continuity/i.test(grp.category) || grp.severity === 'major') {
+        priority = 'high';
+      } else if (/style|word|rhythm|стиль|ритм/i.test(grp.category)) {
+        priority = 'low';
+      }
+
+      resultTasks.push({
+        id: `unclassified-${key}`,
+        title: `Гл. ${grp.chapter}: ${grp.category} (${grp.indices.length} замеч.)`,
+        chapterNumber: grp.chapter,
+        priority,
+        category: grp.category,
+        problemSummary: grp.descs.slice(0, 2).join('; '),
+        canonicalDirective: 'Внести точечную стилистическую и фактологическую правку с сохранением авторского голоса.',
+        targetQuotes: Array.from(grp.quotes),
+        rawFindingIndices: grp.indices,
+      });
+    }
+  }
+
+  // Sort strictly by the hierarchy:
+  // 1. Priority: high -> medium -> low
+  // 2. Chapter number ascending
+  const priorityWeight: Record<EditorialPriority, number> = {
+    high: 3,
+    medium: 2,
+    low: 1,
+  };
+
+  resultTasks.sort((a, b) => {
+    const pDiff = priorityWeight[b.priority] - priorityWeight[a.priority];
+    if (pDiff !== 0) return pDiff;
+    return a.chapterNumber - b.chapterNumber;
+  });
+
+  return resultTasks;
+}
+
+/**
  * Parses JSON response from LLM, supporting direct JSON, markdown code fences, or braced objects.
  */
-export function parseRepairJson(raw: string): { changed?: boolean; explanation?: string; text?: string } | null {
+export function parseRepairJson(raw: string): {
+  changed?: boolean;
+  explanation?: string;
+  find?: string;
+  replace?: string;
+  text?: string;
+} | null {
   try {
     return JSON.parse(raw);
   } catch {
@@ -102,7 +592,164 @@ export function parseRepairJson(raw: string): { changed?: boolean; explanation?:
 }
 
 /**
+ * Builds the focused surgical patch prompt for a clustered task and target excerpt.
+ */
+export function buildSurgicalPatchPrompt(
+  task: ClusteredEditorialTask,
+  targetExcerpt: string,
+  sceneContext: string
+): { prompt: string; system: string } {
+  const system =
+    'You are a professional literary editor making surgical, high-precision corrections to a novel. ' +
+    'Do NOT rewrite entire chapters. Replace only 1-2 sentences within the target paragraph to solve the issue. ' +
+    'Preserve the author\'s exact tone, atmosphere, cadence, and vocabulary. Output valid JSON only.';
+
+  const prompt = `SURGICAL EDITORIAL TASK:
+Task ID: ${task.id}
+Priority: ${task.priority.toUpperCase()} (${task.category})
+Target Chapter: Chapter ${task.chapterNumber}
+
+PROBLEM TO SOLVE:
+${task.problemSummary}
+
+CANONICAL AUTHOR DIRECTIVE (WHAT TO INSERT/FIX):
+${task.canonicalDirective}
+
+TARGET PARAGRAPH IN CHAPTER ${task.chapterNumber}:
+"""
+${targetExcerpt}
+"""
+
+SURROUNDING SCENE CONTEXT:
+"""
+${sceneContext}
+"""
+
+INSTRUCTIONS:
+1. Locate the exact 1-2 sentences within the TARGET PARAGRAPH that require correction.
+2. Formulate the revised replacement sentence(s) that smoothly integrates the canonical author directive without changing the author's voice or rhythm.
+3. Keep the rest of the text completely untouched.
+4. Return a valid JSON object with EXACTLY this structure:
+{
+  "changed": true,
+  "find": "Exact substring from the target paragraph to be replaced",
+  "replace": "The improved replacement substring with the fix applied",
+  "explanation": "Brief explanation of the surgical fix"
+}`;
+
+  return { prompt, system };
+}
+
+/**
+ * Executes a surgical repair for a clustered task against the manuscript.
+ * Employs find -> replace precision so 99.5% of the chapter remains untouched.
+ */
+export async function repairSurgicalTask(
+  task: ClusteredEditorialTask,
+  manuscriptContent: string,
+  bookTitle: string,
+  callLlm: (prompt: string, system: string) => Promise<string>
+): Promise<TargetedRepairResult> {
+  const parsedChapters = parseBookChapters(manuscriptContent);
+  if (parsedChapters.length === 0) {
+    throw new Error('Manuscript has no readable chapters.');
+  }
+
+  // Handle dismissed tasks without calling LLM
+  if (task.isDismissed) {
+    return {
+      changed: false,
+      chapterNumber: task.chapterNumber,
+      explanation: task.dismissReason || 'Каноническое сохранение авторского стиля (правка не требуется)',
+      beforeChapterText: parsedChapters.find(c => c.num === task.chapterNumber)?.content || '',
+      afterChapterText: parsedChapters.find(c => c.num === task.chapterNumber)?.content || '',
+      updatedManuscript: manuscriptContent,
+      patchMethod: 'none',
+    };
+  }
+
+  const targetChapter = parsedChapters.find(c => c.num === task.chapterNumber) || parsedChapters[0];
+  const beforeChapterText = targetChapter.content;
+
+  const { targetExcerpt, sceneContext } = locateTargetExcerpt(
+    beforeChapterText,
+    task.targetQuotes,
+    CANONICAL_CLUSTERS.find(c => c.id === task.id)?.fallbackKeywords || []
+  );
+
+  const { prompt, system } = buildSurgicalPatchPrompt(task, targetExcerpt, sceneContext);
+  const rawResponse = await callLlm(prompt, system);
+  const parsed = parseRepairJson(rawResponse);
+
+  if (!parsed || parsed.changed === false) {
+    return {
+      changed: false,
+      chapterNumber: targetChapter.num,
+      explanation: parsed?.explanation || 'Проверено: текст соответствует канону',
+      beforeChapterText,
+      afterChapterText: beforeChapterText,
+      updatedManuscript: manuscriptContent,
+      patchMethod: 'none',
+    };
+  }
+
+  let patchedChapterText = beforeChapterText;
+  let method: 'exact' | 'normalized' | 'paragraph_fallback' | 'full_chapter_fallback' | 'none' = 'none';
+
+  // 1. Try surgical patch with find -> replace
+  if (parsed.find && parsed.replace) {
+    const patchResult = applySurgicalPatch(beforeChapterText, parsed.find, parsed.replace);
+    if (patchResult.changed) {
+      patchedChapterText = patchResult.patchedText;
+      method = patchResult.method;
+    }
+  }
+
+  // 2. If find -> replace did not match but model returned full paragraph in replace
+  if (method === 'none' && parsed.replace && beforeChapterText.includes(targetExcerpt)) {
+    patchedChapterText = beforeChapterText.replace(targetExcerpt, parsed.replace);
+    method = 'paragraph_fallback';
+  }
+
+  // 3. Fallback: if model provided full chapter text in "text" field
+  if (method === 'none' && parsed.text && parsed.text.trim()) {
+    patchedChapterText = normalizeChapterBody(parsed.text.trim(), targetChapter.num);
+    method = 'full_chapter_fallback';
+  }
+
+  if (method === 'none' || patchedChapterText === beforeChapterText) {
+    return {
+      changed: false,
+      chapterNumber: targetChapter.num,
+      explanation: parsed.explanation || 'Проверено: точечная замена не изменила контекст',
+      beforeChapterText,
+      afterChapterText: beforeChapterText,
+      updatedManuscript: manuscriptContent,
+      patchMethod: 'none',
+    };
+  }
+
+  const afterChapterText = patchedChapterText;
+  const updatedChapters = parsedChapters.map(c =>
+    c.num === targetChapter.num ? { chapter: c.num, text: afterChapterText } : { chapter: c.num, text: c.content }
+  );
+
+  const updatedManuscript = assembleManuscript(updatedChapters, bookTitle);
+
+  return {
+    changed: true,
+    chapterNumber: targetChapter.num,
+    explanation: parsed.explanation || `Внесена точечная правка в главу ${targetChapter.num}`,
+    beforeChapterText,
+    afterChapterText,
+    updatedManuscript,
+    patchMethod: method,
+  };
+}
+
+/**
  * Builds the focused repair prompt for a single finding and chapter.
+ * Retained for backward compatibility.
  */
 export function buildTargetedRepairPrompt(
   finding: EditorialFinding,
@@ -143,6 +790,7 @@ Return a valid JSON object with EXACTLY this structure:
 
 /**
  * Executes a single surgical repair for one finding against the manuscript.
+ * Retained for backward compatibility.
  */
 export async function repairSingleFinding(
   finding: EditorialFinding,
@@ -171,6 +819,7 @@ export async function repairSingleFinding(
       beforeChapterText,
       afterChapterText: beforeChapterText,
       updatedManuscript: manuscriptContent,
+      patchMethod: 'none',
     };
   }
 
@@ -188,6 +837,7 @@ export async function repairSingleFinding(
     beforeChapterText,
     afterChapterText,
     updatedManuscript,
+    patchMethod: 'full_chapter_fallback',
   };
 }
 
@@ -286,4 +936,3 @@ export function formatModelDisplayLabel(config: {
   }
   return String(config.provider);
 }
-

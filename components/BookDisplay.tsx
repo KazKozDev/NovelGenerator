@@ -7,9 +7,13 @@ import MarkdownChangesView from './MarkdownChangesView';
 import BookCoverUpload, { ImprintData } from './BookCoverUpload';
 import {
   repairSingleFinding,
+  repairSurgicalTask,
+  clusterEditorialFindings,
+  ClusteredEditorialTask,
   parseModelConfigFromTag,
   formatModelDisplayLabel,
 } from '../utils/novel/targetedEditorial';
+import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 
 interface BookDisplayProps {
@@ -115,14 +119,20 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Targeted editorial execution state
-  const [activeFindingIndex, setActiveFindingIndex] = useState<number | null>(null);
-  const [fixedFindingIndices, setFixedFindingIndices] = useState<Set<number>>(new Set());
-  const [findingExplanations, setFindingExplanations] = useState<Record<number, string>>({});
+  const rawFindings = useMemo(() => metadata?.audit?.findings || [], [metadata]);
+  const parsedChapters = useMemo(() => parseBookChapters(bookContent), [bookContent]);
+  const clusteredTasks = useMemo(() => {
+    return clusterEditorialFindings(rawFindings, parsedChapters, metadata?.dossier);
+  }, [rawFindings, parsedChapters, metadata?.dossier]);
+
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [fixedTaskIds, setFixedTaskIds] = useState<Set<string>>(new Set());
+  const [taskExplanations, setTaskExplanations] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'clean' | 'changes'>('clean');
   const [lastDiff, setLastDiff] = useState<{ before: string; after: string } | null>(null);
   const [localRunning, setLocalRunning] = useState(false);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
-  const activeFindingRef = React.useRef<HTMLLIElement | null>(null);
+  const activeTaskRef = React.useRef<HTMLLIElement | null>(null);
 
   // Author model detection: use the model that wrote this manuscript (e.g. DeepSeek v4.1 flash)
   const [editorialModel, setEditorialModel] = useState<any>(() => {
@@ -159,10 +169,10 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   }, [metadataJson]);
 
   useEffect(() => {
-    if (activeFindingIndex !== null && activeFindingRef.current) {
-      activeFindingRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (activeTaskId !== null && activeTaskRef.current) {
+      activeTaskRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [activeFindingIndex]);
+  }, [activeTaskId]);
 
   useEffect(() => {
     if (!isEditing) {
@@ -199,30 +209,31 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const currentStatus = localStatus || editorialStatus;
 
   const handleApplyReview = async () => {
-    const rawFindings = metadata?.audit?.findings;
-    if (!rawFindings || !Array.isArray(rawFindings) || rawFindings.length === 0) {
-      onEdit?.();
-      return;
+    if (clusteredTasks.length === 0) {
+      if (rawFindings.length === 0) {
+        onEdit?.();
+        return;
+      }
     }
 
     // Use the author model that wrote the manuscript (e.g. DeepSeek v4.1 flash)
     const modelConfig = editorialModel;
 
     setLocalRunning(true);
-    setFixedFindingIndices(new Set());
-    setFindingExplanations({});
+    setFixedTaskIds(new Set());
+    setTaskExplanations({});
 
     let currentManuscript = bookContent;
 
     try {
-      // Top-to-bottom processing ("сверху вниз")
-      for (let i = 0; i < rawFindings.length; i++) {
-        const finding = rawFindings[i];
-        setActiveFindingIndex(i);
-        setLocalStatus(`Правка ${i + 1}/${rawFindings.length}…`);
+      // Top-to-bottom processing across prioritized tasks ("сверху вниз")
+      for (let i = 0; i < clusteredTasks.length; i++) {
+        const task = clusteredTasks[i];
+        setActiveTaskId(task.id);
+        setLocalStatus(`Задача ${i + 1}/${clusteredTasks.length}: ${task.title}…`);
 
-        const result = await repairSingleFinding(
-          finding,
+        const result = await repairSurgicalTask(
+          task,
           currentManuscript,
           displayTitle,
           async (prompt, system) => {
@@ -230,7 +241,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               prompt,
               system,
               undefined,
-              0.3,
+              0.2,
               undefined,
               undefined,
               modelConfig,
@@ -247,31 +258,31 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           setEditableContent(result.updatedManuscript);
           setLastDiff({ before: beforeText, after: result.updatedManuscript });
           setViewMode('changes');
-          setFixedFindingIndices(prev => new Set(prev).add(i));
-          setFindingExplanations(prev => ({
+          setFixedTaskIds(prev => new Set(prev).add(task.id));
+          setTaskExplanations(prev => ({
             ...prev,
-            [i]: result.explanation || 'Правка внесена',
+            [task.id]: result.explanation || 'Точечная правка внесена',
           }));
         } else {
-          setFixedFindingIndices(prev => new Set(prev).add(i));
-          setFindingExplanations(prev => ({
+          setFixedTaskIds(prev => new Set(prev).add(task.id));
+          setTaskExplanations(prev => ({
             ...prev,
-            [i]: result.explanation || 'Проверено (правка не потребовалась)',
+            [task.id]: result.explanation || 'Проверено по канону (правка не требуется)',
           }));
         }
 
-        // Pacing delay so author can see the active item highlighted and text changes
+        // Pacing delay so author can visually follow the active item highlighted and text changes
         await new Promise(r => setTimeout(r, 600));
       }
 
-      setLocalStatus('Все замечания отработаны!');
+      setLocalStatus('Все задачи редактуры отработаны!');
       setTimeout(() => setLocalStatus(null), 4000);
     } catch (err: any) {
       console.error('Targeted review failed:', err);
       setLocalStatus(`Ошибка: ${err?.message || 'Не удалось применить правки'}`);
       setTimeout(() => setLocalStatus(null), 5000);
     } finally {
-      setActiveFindingIndex(null);
+      setActiveTaskId(null);
       setLocalRunning(false);
     }
   };
@@ -315,54 +326,86 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           <div className="p-4 space-y-3 text-xs flex-1 overflow-y-auto">
             {metadata?.audit && (
               <details className="text-zinc-400" open>
-                <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1 select-none">
-                  Editorial notes ({findingsCount})
+                <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1 select-none flex items-center justify-between">
+                  <span>
+                    Задачи редактуры ({clusteredTasks.length} {clusteredTasks.length === 1 ? 'задача' : 'задач'} · {findingsCount} замеч.)
+                  </span>
                 </summary>
                 <div className="pt-2 pl-2 space-y-2 border-t border-zinc-800/60 mt-1">
-                  {metadata.audit.findings?.length > 0 ? (
+                  {clusteredTasks.length > 0 ? (
                     <ul className="space-y-2">
-                      {metadata.audit.findings.map((f: any, i: number) => {
-                        const isActive = activeFindingIndex === i;
-                        const isFixed = fixedFindingIndices.has(i);
-                        const explanation = findingExplanations[i];
+                      {clusteredTasks.map((task) => {
+                        const isActive = activeTaskId === task.id;
+                        const isFixed = fixedTaskIds.has(task.id);
+                        const explanation = taskExplanations[task.id];
 
                         return (
                           <li
-                            key={i}
-                            ref={isActive ? activeFindingRef : undefined}
-                            className={`p-2 rounded transition-all ${
+                            key={task.id}
+                            ref={isActive ? activeTaskRef : undefined}
+                            className={`p-2.5 rounded transition-all ${
                               isActive
                                 ? 'border border-amber-500/80 bg-amber-950/30 ring-1 ring-amber-500/50 shadow-sm'
                                 : isFixed
                                 ? 'border border-emerald-600/40 bg-emerald-950/20'
-                                : 'border border-zinc-800/40 hover:border-zinc-700/60 text-zinc-400'
+                                : 'border border-zinc-800/50 hover:border-zinc-700/70 bg-zinc-950/40 text-zinc-400'
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="font-mono text-[11px] uppercase text-zinc-500">
-                                [{f.severity || 'note'}]
-                              </span>
-                              {isActive && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium animate-pulse">
-                                  ⚡ Правка в процессе…
+                            <div className="flex items-center justify-between gap-1.5 mb-1.5 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                {task.priority === 'high' ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/60 uppercase">
+                                    Высокий
+                                  </span>
+                                ) : task.priority === 'medium' ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/60 uppercase">
+                                    Средний
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800/60 uppercase">
+                                    Стиль
+                                  </span>
+                                )}
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-300 bg-zinc-800/70 border border-zinc-700/50">
+                                  Гл. {task.chapterNumber}
                                 </span>
-                              )}
-                              {isFixed && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                                  ✓ Готово
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                {isActive && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium animate-pulse">
+                                    ⚡ В работе…
+                                  </span>
+                                )}
+                                {isFixed && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                                    ✓ Готово
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={isActive ? 'text-zinc-100 font-medium text-xs' : 'text-zinc-200 text-xs font-medium'}>
+                                {task.title}
+                              </span>
+                              {task.rawFindingIndices.length > 1 && (
+                                <span className="text-[10px] font-mono text-zinc-500 whitespace-nowrap shrink-0">
+                                  ({task.rawFindingIndices.length} замеч.)
                                 </span>
                               )}
                             </div>
-                            <span className={isActive ? 'text-zinc-100 font-medium' : 'text-zinc-300'}>
-                              {f.description}
-                            </span>
-                            {f.evidence_refs?.length > 0 && (
-                              <p className="text-[11px] text-zinc-500 mt-1 italic pl-2 border-l border-zinc-800">
-                                {f.evidence_refs.join(' · ')}
-                              </p>
-                            )}
+
+                            <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">
+                              <span className="text-zinc-500">Проблема:</span> {task.problemSummary}
+                            </p>
+
+                            <p className="text-[11px] text-emerald-400/90 mt-0.5 line-clamp-2">
+                              <span className="text-zinc-500">Канон:</span> {task.canonicalDirective}
+                            </p>
+
                             {isFixed && explanation && (
-                              <p className="text-[11px] text-emerald-400/90 mt-1.5 pl-2 border-l border-emerald-500/50">
+                              <p className="text-[11px] text-emerald-300 mt-1.5 pl-2 border-l-2 border-emerald-500/70 font-mono">
                                 {explanation}
                               </p>
                             )}
@@ -371,7 +414,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                       })}
                     </ul>
                   ) : (
-                    <p className="text-zinc-500">No stylistic notes recorded.</p>
+                    <p className="text-zinc-500">Замечания к рукописи отсутствуют.</p>
                   )}
                   {unavailableCount > 0 && (
                     <p className="text-[11px] text-zinc-500 pt-1 border-t border-zinc-800/40">
