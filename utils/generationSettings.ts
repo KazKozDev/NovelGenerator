@@ -10,8 +10,20 @@ export function getWordsPerChapter():number {
   }catch{return DEFAULT_WORDS_PER_CHAPTER;}
 }
 export function readGenerationSettings(fallback:StorySettings):StorySettings {
-  try { return {...fallback,...JSON.parse(localStorage.getItem(GENERATION_SETTINGS_KEY)||'{}'),targetWordsPerChapter:getWordsPerChapter()}; }
-  catch{return fallback;}
+  const mergedFallback = { ...DEFAULT_GENERATION_SETTINGS, ...fallback };
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GENERATION_SETTINGS_KEY)||'{}');
+    return {
+      ...mergedFallback,
+      ...parsed,
+      narrativeVoice: parsed.narrativeVoice || mergedFallback.narrativeVoice || 'third-limited',
+      tense: parsed.tense || mergedFallback.tense || 'past',
+      targetWordsPerChapter: getWordsPerChapter(),
+    };
+  }
+  catch {
+    return mergedFallback;
+  }
 }
 export function saveGenerationSettings(settings:StorySettings){try{localStorage.setItem(GENERATION_SETTINGS_KEY,JSON.stringify(settings))}catch{}}
 export function readMainForm():{premise:string;chapters:number;title?:string} {
@@ -38,10 +50,12 @@ export function buildProjectInput(premise:string,chapters:number,settings:StoryS
   if(!premise.trim())throw new Error('Fill in Story premise on the main page.');
   if(!Number.isSafeInteger(chapters)||chapters<3||chapters>100)throw new Error('Set Number of Chapters between 3 and 100.');
   if(!Number.isSafeInteger(words)||words<1)throw new Error('Set a positive Target words per chapter.');
+  const voice = settings.narrativeVoice || 'third-limited';
+  const tense = settings.tense || 'past';
   return {planning_version:2,...(settings.sceneLayout?{scene_layout:settings.sceneLayout}:{}),...(settings.writingMethod?{writing_method:settings.writingMethod}:{}),...(settings.storyStructure?.trim()?{story_structure:settings.storyStructure.trim()}:{}),premise,chapter_count:chapters,genre:settings.genre||'fantasy',target_total_words:words*chapters,...(title?.trim()?{title:title.trim()}:{}),...(settings.seriesContext?.trim()?{series_context:settings.seriesContext.trim()}:{}),...(settings.comparableBooks?.trim()?{comparable_books:settings.comparableBooks.trim()}:{}),author_requirements:[
-    settings.narrativeVoice?`Voice: ${settings.narrativeVoice}.`:'',settings.tone?`Tone: ${settings.tone}.`:'',
+    `Voice: ${voice}.`,settings.tone?`Tone: ${settings.tone}.`:'',
     settings.writingStyle?`Style: ${settings.writingStyle}.`:'',settings.targetAudience?`Audience: ${settings.targetAudience}.`:'',
-    settings.tense?`Tense: ${settings.tense}.`:'',settings.ending?`Ending: ${settings.ending}.`:'',
+    `Tense: ${tense}.`,settings.ending?`Ending: ${settings.ending}.`:'',
     settings.intimacy?`Intimate scenes: ${settings.intimacy}.`:'',
   ].filter(Boolean).join(' ')||'(none)'};
 }

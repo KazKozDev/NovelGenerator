@@ -21,3 +21,12 @@ it('includes every narrative field from the form and persists the premise and co
 it('rejects an empty premise instead of replacing it with the previous story',()=>{
  expect(()=>buildProjectInput('',4,{targetWordsPerChapter:2100})).toThrow('Story premise');
 });
+it('enforces third-limited and past tense as absolute standard defaults when omitted',()=>{
+ const input = buildProjectInput('A stranger arrives', 3, {});
+ expect(input.author_requirements).toContain('Voice: third-limited.');
+ expect(input.author_requirements).toContain('Tense: past.');
+ const settings = readGenerationSettings({});
+ expect(settings.narrativeVoice).toBe('third-limited');
+ expect(settings.tense).toBe('past');
+});
+
