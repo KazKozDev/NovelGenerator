@@ -229,7 +229,7 @@ const App: React.FC = () => {
                     setStorySettings({ ...storySettings, targetWordsPerChapter: value });
                   }
                 }}
-                className="block mt-1.5 h-9 px-3 rounded border border-zinc-800 bg-zinc-900/90 text-xs text-zinc-200 hover:border-zinc-700 focus:border-zinc-500 focus:outline-none transition-colors"
+                className="block mt-1.5 h-9 px-3 rounded border border-zinc-800 bg-zinc-950 text-xs text-zinc-200 hover:border-zinc-700 focus:border-zinc-500 focus:outline-none transition-colors"
               />
             </label>
             <div className="pt-1 flex flex-wrap items-center gap-2.5">

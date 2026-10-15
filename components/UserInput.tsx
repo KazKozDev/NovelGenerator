@@ -27,8 +27,8 @@ interface UserInputProps {
 }
 
 const UserInput: React.FC<UserInputProps> = ({
-  bookTitle,
-  setBookTitle,
+  bookTitle: _bookTitle,
+  setBookTitle: _setBookTitle,
   storyPremise,
   setStoryPremise,
   numChapters,
@@ -150,287 +150,240 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="border border-zinc-800 rounded bg-zinc-900/40 p-4 md:p-5 space-y-4">
-        <div className="space-y-3">
-          <div>
-            <h2 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" aria-hidden="true" />
-              <span>Author model</span>
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">The model that writes the book: keeps the notebook, plans, speaks as its characters and writes every chapter.</p>
-          </div>
-          
-          <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Author provider selection">
-            <button
-              type="button"
-              onClick={() => {
-                const updated = { ...providerConfig, provider: 'gemini' as const };
-                setProviderConfig(updated);
-                saveStoredProviderConfig(updated);
-              }}
-              className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                providerConfig.provider === 'gemini'
-                  ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-              }`}
-            >
-              Gemini
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const updated = { ...providerConfig, provider: 'ollama' as const };
-                setProviderConfig(updated);
-                saveStoredProviderConfig(updated);
-              }}
-              className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                providerConfig.provider === 'ollama'
-                  ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-              }`}
-            >
-              Ollama
-            </button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
-          </div>
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+          <h2 className="text-sm font-medium text-zinc-200">AI Models</h2>
         </div>
-        {providerConfig.provider==='compatible' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{compatibleEndpointField('author')}{listedField('compatible', 'API model', providerConfig.compatibleModel, model => { const updated = { ...providerConfig, compatibleModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'model-id', 'OpenAI-compatible Chat Completions. Optional key stays in API settings.')}</div>}
-        {providerConfig.provider==='anthropic' && <div className="mt-4 pt-3 border-t border-zinc-800">{listedField('anthropic', 'Anthropic model', providerConfig.anthropicModel, model => { const updated = { ...providerConfig, anthropicModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.')}</div>}
-        {providerConfig.provider==='huggingface' && <div className="mt-4 pt-3 border-t border-zinc-800">{hfField('Hugging Face model', providerConfig.hfModel, model => {const updated={...providerConfig,hfModel:model||undefined};setProviderConfig(updated);saveStoredProviderConfig(updated);})}</div>}
 
-        {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{listedField('qwen', 'Qwen model', providerConfig.qwenModel, model => { const updated = { ...providerConfig, qwenModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'qwen3.8-flash', 'Uses the server API key and endpoint from .env.local. Thinking is off. Empty means qwen3.8-flash.')}</div>}
-        {/* Gemini Details */}
-        {providerConfig.provider === 'gemini' && (
-          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
-            {listedField('gemini', 'Gemini model', providerConfig.geminiModel, model => { const updated = { ...providerConfig }; if (model) updated.geminiModel = model; else delete updated.geminiModel; setProviderConfig(updated); saveStoredProviderConfig(updated); }, GEMINI_MODEL_NAME, `Any Gemini model ID. Empty means the default (${GEMINI_MODEL_NAME}).`)}
-          </div>
-        )}
-
-        {/* Ollama Details */}
-        {providerConfig.provider === 'ollama' && (
-          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                  Ollama Endpoint / Proxy
-                </label>
-                <Input
-                  type="text"
-                  value={providerConfig.ollamaEndpoint}
-                  onChange={(e) => {
-                    const updated = { ...providerConfig, ollamaEndpoint: e.target.value };
-                    setProviderConfig(updated);
-                    saveStoredProviderConfig(updated);
-                    if (validator.enabled && validator.provider === 'ollama') {
-                      updateValidator({ ollamaEndpoint: e.target.value });
-                    }
-                  }}
-                  placeholder="/api/ollama"
-                  className="font-mono text-xs"
-                />
-                <p className="text-xs text-zinc-500 mt-1">
-                  Default /api/ollama (proxied via Vite without CORS)
-                </p>
-              </div>
-
-              {ollamaField('Ollama model', providerConfig.ollamaModel, model => { const updated = { ...providerConfig, ollamaModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'Any model your Ollama serves, local or cloud.')}
+        <div className="p-4 md:p-5 space-y-4">
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-xs font-medium text-zinc-300">Author model</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">The model that writes the book: keeps the notebook, plans, speaks as its characters and writes every chapter.</p>
+            </div>
+            
+            <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Author provider selection">
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = { ...providerConfig, provider: 'gemini' as const };
+                  setProviderConfig(updated);
+                  saveStoredProviderConfig(updated);
+                }}
+                className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${
+                  providerConfig.provider === 'gemini'
+                    ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = { ...providerConfig, provider: 'ollama' as const };
+                  setProviderConfig(updated);
+                  saveStoredProviderConfig(updated);
+                }}
+                className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${
+                  providerConfig.provider === 'ollama'
+                    ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                Ollama
+              </button>
+              <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
+              <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
+              <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
+              <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
             </div>
           </div>
-        )}
 
-        {/* Editor (critic) model */}
-        <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
-          <label className="flex items-center gap-2 text-sm font-medium text-zinc-200 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={validator.enabled}
-              onChange={(e) => updateValidator(e.target.checked
-                ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint }
-                : { enabled: false })}
-              className="accent-zinc-200"
-            />
-            <span>Reader model</span>
-          </label>
-          <p className="text-xs text-zinc-400">
-            Another model that reads what the author writes: checks each chapter and audits promises and character arcs before the ending. Off means the author model judges its own text.
-          </p>
+          {providerConfig.provider==='compatible' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{compatibleEndpointField('author')}{listedField('compatible', 'API model', providerConfig.compatibleModel, model => { const updated = { ...providerConfig, compatibleModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'model-id', 'OpenAI-compatible Chat Completions. Optional key stays in API settings.')}</div>}
+          {providerConfig.provider==='anthropic' && <div className="mt-4 pt-3 border-t border-zinc-800">{listedField('anthropic', 'Anthropic model', providerConfig.anthropicModel, model => { const updated = { ...providerConfig, anthropicModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.')}</div>}
+          {providerConfig.provider==='huggingface' && <div className="mt-4 pt-3 border-t border-zinc-800">{hfField('Hugging Face model', providerConfig.hfModel, model => {const updated={...providerConfig,hfModel:model||undefined};setProviderConfig(updated);saveStoredProviderConfig(updated);})}</div>}
 
-          {validator.enabled && (
-            <div className="space-y-3 animate-fade-in pt-1">
-              <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Reader provider selection">
-                <button
-                  type="button"
-                  onClick={() => updateValidator({ provider: 'gemini' })}
-                  className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    validator.provider === 'gemini'
-                      ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                  }`}
-                >
-                  Gemini
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateValidator({ provider: 'ollama' })}
-                  className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    validator.provider === 'ollama'
-                      ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                  }`}
-                >
-                  Ollama
-                </button>
-                <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
-                <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
-                <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
-                <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
-              </div>
-
-              {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
-                listedField('gemini', 'Reader Gemini model', validator.geminiModel, model => updateValidator({ geminiModel: model || undefined }), GEMINI_MODEL_NAME, `Pick a different model than the author. Empty means the default (${GEMINI_MODEL_NAME}).`)
-              ) : (
-                ollamaField('Reader Ollama model', validator.ollamaModel, model => updateValidator({ ollamaModel: model }), 'Uses the same Ollama endpoint as the author.')
-              )}
+          {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{listedField('qwen', 'Qwen model', providerConfig.qwenModel, model => { const updated = { ...providerConfig, qwenModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'qwen3.8-flash', 'Uses the server API key and endpoint from .env.local. Thinking is off. Empty means qwen3.8-flash.')}</div>}
+          {/* Gemini Details */}
+          {providerConfig.provider === 'gemini' && (
+            <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
+              {listedField('gemini', 'Gemini model', providerConfig.geminiModel, model => { const updated = { ...providerConfig }; if (model) updated.geminiModel = model; else delete updated.geminiModel; setProviderConfig(updated); saveStoredProviderConfig(updated); }, GEMINI_MODEL_NAME, `Any Gemini model ID. Empty means the default (${GEMINI_MODEL_NAME}).`)}
             </div>
           )}
-        </div>
 
+          {/* Ollama Details */}
+          {providerConfig.provider === 'ollama' && (
+            <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                    Ollama Endpoint / Proxy
+                  </label>
+                  <Input
+                    type="text"
+                    value={providerConfig.ollamaEndpoint}
+                    onChange={(e) => {
+                      const updated = { ...providerConfig, ollamaEndpoint: e.target.value };
+                      setProviderConfig(updated);
+                      saveStoredProviderConfig(updated);
+                      if (validator.enabled && validator.provider === 'ollama') {
+                        updateValidator({ ollamaEndpoint: e.target.value });
+                      }
+                    }}
+                    placeholder="/api/ollama"
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Default /api/ollama (proxied via Vite without CORS)
+                  </p>
+                </div>
+
+                {ollamaField('Ollama model', providerConfig.ollamaModel, model => { const updated = { ...providerConfig, ollamaModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'Any model your Ollama serves, local or cloud.')}
+              </div>
+            </div>
+          )}
+
+          {/* Editor (critic) model */}
+          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-zinc-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={validator.enabled}
+                onChange={(e) => updateValidator(e.target.checked
+                  ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint }
+                  : { enabled: false })}
+                className="accent-zinc-200"
+              />
+              <span>Reader model</span>
+            </label>
+            <p className="text-xs text-zinc-500">
+              Another model that reads what the author writes: checks each chapter and audits promises and character arcs before the ending. Off means the author model judges its own text.
+            </p>
+
+            {validator.enabled && (
+              <div className="space-y-3 animate-fade-in pt-1">
+                <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Reader provider selection">
+                  <button
+                    type="button"
+                    onClick={() => updateValidator({ provider: 'gemini' })}
+                    className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${
+                      validator.provider === 'gemini'
+                        ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                    }`}
+                  >
+                    Gemini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateValidator({ provider: 'ollama' })}
+                    className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${
+                      validator.provider === 'ollama'
+                        ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                    }`}
+                  >
+                    Ollama
+                  </button>
+                  <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
+                  <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
+                  <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
+                  <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
+                </div>
+
+                {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
+                  listedField('gemini', 'Reader Gemini model', validator.geminiModel, model => updateValidator({ geminiModel: model || undefined }), GEMINI_MODEL_NAME, `Pick a different model than the author. Empty means the default (${GEMINI_MODEL_NAME}).`)
+                ) : (
+                  ollamaField('Reader Ollama model', validator.ollamaModel, model => updateValidator({ ollamaModel: model }), 'Uses the same Ollama endpoint as the author.')
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div>
-        <label htmlFor="bookTitle" className="block text-sm font-medium text-zinc-200 mb-1.5">
-          Book title <span className="text-zinc-500 font-normal text-xs">(optional)</span>
-        </label>
-        <Input
-          id="bookTitle"
-          type="text"
-          value={bookTitle || ''}
-          onChange={(e) => setBookTitle?.(e.target.value)}
-          placeholder="Leave blank to let the AI author invent an evocative commercial title..."
-          maxLength={100}
-        />
-        <p className="text-xs text-zinc-500 mt-1">If blank, the author model will invent an original commercial title during planning.</p>
-      </div>
-
-      <div>
-        <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-200 mb-1.5">
-          Story premise
-        </label>
-        <TextArea
-          id="storyPremise"
-          value={storyPremise}
-          onChange={(e) => setStoryPremise(e.target.value)}
-          placeholder="Describe your story idea (core conflict, protagonist goals, setting)..."
-          rows={5}
-          required
-          maxLength={1200} 
-        />
-        <p className="text-xs text-zinc-500 mt-1">Maximum 1200 characters.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label htmlFor="genre" className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Genre
-          </label>
-          <Combo id="genre" value={genre} onChange={setGenre} placeholder="thriller" className="text-xs font-mono"
-            options={GENRE_CHOICES} />
-          <p className="text-xs text-zinc-500 mt-1">Pick one, type to search, or name your own.</p>
+      {/* Story Setup Section */}
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+          <h2 className="text-sm font-medium text-zinc-200">Story Setup</h2>
         </div>
 
-        <div>
-          <label htmlFor="numChapters" className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Number of chapters
-          </label>
-          <Input
-            id="numChapters"
-            type="number"
-            value={numChapters}
-            onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
-            min={MIN_CHAPTERS}
-            max={100}
-            required
-          />
-           <p className="text-xs text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
-        </div>
+        <div className="p-4 md:p-5 space-y-4">
+          <div>
+            <label htmlFor="storyPremise" className="block text-xs font-medium text-zinc-300 mb-1.5">
+              Story premise
+            </label>
+            <TextArea
+              id="storyPremise"
+              value={storyPremise}
+              onChange={(e) => setStoryPremise(e.target.value)}
+              placeholder="Describe your story idea (core conflict, protagonist goals, setting)..."
+              rows={5}
+              required
+              maxLength={1200}
+            />
+            <p className="text-[11px] text-zinc-500 mt-1">Maximum 1200 characters.</p>
+          </div>
 
-        <div>
-          <label htmlFor="targetWordsPerChapter" className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Words per chapter
-          </label>
-          <Input
-            id="targetWordsPerChapter"
-            type="number"
-            value={storySettings.targetWordsPerChapter ?? 2000}
-            onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
-              setStorySettings({
-                ...storySettings,
-                targetWordsPerChapter: isNaN(val) ? 2000 : Math.max(300, val),
-              });
-            }}
-            step={250}
-            min={300}
-            max={20000}
-            required
-          />
-          <p className="text-xs text-zinc-500 mt-1">
-            ~{((storySettings.targetWordsPerChapter ?? 2000) * numChapters).toLocaleString()} total words
-          </p>
-        </div>
-      </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="genre" className="block text-xs font-medium text-zinc-300 mb-1.5">
+                Genre
+              </label>
+              <Combo id="genre" value={genre} onChange={setGenre} placeholder="thriller" className="text-xs font-mono"
+                options={GENRE_CHOICES} />
+              <p className="text-[11px] text-zinc-500 mt-1">Pick one, type to search, or name your own.</p>
+            </div>
 
-      <div className="pt-1">
-        <p className="text-xs text-zinc-400/90 leading-relaxed pl-3 border-l-2 border-zinc-800">
-          Craft 2.0 Engine: Two-layer architecture (Author Dossier with 4 truth layers + Scene Projection Cards), blind scene-by-scene writing with an anti-metaphor barrier, continuous observer verification, and dual developmental/literary audits.
-        </p>
+            <div>
+              <label htmlFor="numChapters" className="block text-xs font-medium text-zinc-300 mb-1.5">
+                Number of chapters
+              </label>
+              <Input
+                id="numChapters"
+                type="number"
+                value={numChapters}
+                onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
+                min={MIN_CHAPTERS}
+                max={100}
+                required
+              />
+              <p className="text-[11px] text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
+            </div>
+
+            <div>
+              <label htmlFor="targetWordsPerChapter" className="block text-xs font-medium text-zinc-300 mb-1.5">
+                Words per chapter
+              </label>
+              <Input
+                id="targetWordsPerChapter"
+                type="number"
+                value={storySettings.targetWordsPerChapter ?? 2000}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setStorySettings({
+                    ...storySettings,
+                    targetWordsPerChapter: isNaN(val) ? 2000 : Math.max(300, val),
+                  });
+                }}
+                step={250}
+                min={300}
+                max={20000}
+                required
+              />
+              <p className="text-[11px] text-zinc-500 mt-1">
+                ~{((storySettings.targetWordsPerChapter ?? 2000) * numChapters).toLocaleString()} total words
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex justify-end pt-1">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
           {isLoading ? 'Starting…' : 'Start Generation'}
         </Button>
-      </div>
-
-      <div className="mt-10 pt-8 border-t border-zinc-800 space-y-4 text-zinc-300">
-        <div>
-          <h2 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
-            Storytelling Craft 2.0 Architecture
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. Author Dossier & 4 Layers of Truth</h3>
-            <p className="text-xs text-zinc-400/90 leading-relaxed">
-              Setting, backstory, character psychology, and hidden motives are architected before prose drafting. The engine maintains four unbreakable truth layers: objective world facts, character secrets, current POV boundaries, and public facades.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Scene Cards & Projection Matrix</h3>
-            <p className="text-xs text-zinc-400/90 leading-relaxed">
-              Each scene is budgeted with explicit goals, knowledge boundaries, value charge shifts, and concrete props. The writer only accesses facts the POV character knows at that exact second, preventing unearned omniscience.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Grounded Prose & Anti-Metaphor Rule</h3>
-            <p className="text-xs text-zinc-400/90 leading-relaxed">
-              Scenes are executed through tangible physical action, oblique dialogue, and sensory reality. Stock clichés, cosmic abstractions, and reflective filler are banned—dramatic conflict is enacted directly on the page.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Observer, Blind Reader & Dual Audit</h3>
-            <p className="text-xs text-zinc-400/90 leading-relaxed">
-              An external observer verifies action enactment and issues scene receipts. A blind reader tracks hypotheses across chapter prefixes, and a final dual audit validates causal closure, character arcs, and literary style.
-            </p>
-          </div>
-        </div>
       </div>
     </form>
   );
