@@ -13,8 +13,7 @@ interface BookDisplayProps {
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, onReset, onEdit }) => {
-  const [activeTab, setActiveTab] = useState<'book' | 'metadata'>('book');
-  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
+  const [isCopied, setIsCopied] = useState(false);
   const [bookViewMode, setBookViewMode] = useState<'rendered' | 'raw'>('rendered');
 
   const metadata = useMemo(() => {
@@ -40,26 +39,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
   const chapterMatches = bookContent.match(/^##\s+Chapter\s+\d+/gm);
   const chapterCount = chapterMatches ? chapterMatches.length : (metadata?.chapters_count || 1);
 
-  const handleCopyToClipboard = (text: string, type: string) => {
+  const handleCopyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
-      setCopiedStates(prev => ({ ...prev, [type]: true }));
-      setTimeout(() => setCopiedStates(prev => ({ ...prev, [type]: false })), 2000);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
     }).catch(err => {
       console.error('Failed to copy text: ', err);
       alert('Failed to copy text. Please try manually.');
     });
-  };
-  
-  const downloadFile = (content: string, filename: string, contentType: string) => {
-    const blob = new Blob([content], { type: contentType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const readerContent = useMemo(() => {
@@ -188,91 +175,50 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         </div>
       </section>
 
-      {/* Reader & Metadata Card */}
+      {/* Manuscript Reader Card */}
       <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 border-b border-zinc-800 bg-zinc-900/80">
-          {/* Left tabs: Text | Metadata */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('book')}
-              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'book' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
-              Text
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('metadata')}
-              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'metadata' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
-              Metadata
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-zinc-400">Manuscript</span>
           </div>
 
-          {/* Right controls: Reader | Markdown toggle and Copy button */}
-          {activeTab === 'book' ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setBookViewMode('rendered')}
-                  className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-                >
-                  Reader
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBookViewMode('raw')}
-                  className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-                >
-                  Markdown
-                </button>
-              </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs">
               <button
                 type="button"
-                onClick={() => handleCopyToClipboard(bookViewMode === 'rendered' ? readerContent : bookContent, 'book')}
-                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+                onClick={() => setBookViewMode('rendered')}
+                className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                {copiedStates['book'] ? 'Copied' : 'Copy'}
+                Reader
+              </button>
+              <button
+                type="button"
+                onClick={() => setBookViewMode('raw')}
+                className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                Markdown
               </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
-                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
-              >
-                {copiedStates['metadata'] ? 'Copied' : 'Copy'}
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadFile(metadataJson, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}_metadata.json`, 'application/json;charset=utf-8')}
-                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
-              >
-                Download .json
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={() => handleCopyToClipboard(bookViewMode === 'rendered' ? readerContent : bookContent)}
+              className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+            >
+              {isCopied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
 
-        {/* Clean content body without nested borders */}
-        {activeTab === 'book' ? (
-          bookViewMode === 'rendered' ? (
-            <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
-              <MarkdownView
-                content={readerContent}
-                className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
-              />
-            </div>
-          ) : (
-            <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
-              {bookContent}
-            </pre>
-          )
+        {bookViewMode === 'rendered' ? (
+          <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
+            <MarkdownView
+              content={readerContent}
+              className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
+            />
+          </div>
         ) : (
-          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-400 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
-            {metadataJson}
+          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
+            {bookContent}
           </pre>
         )}
       </div>

@@ -167,10 +167,10 @@ const App: React.FC = () => {
                     onClick={exportProject}
                     className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
                   >
-                    Save backup (.json)
+                    Save project backup (.project.json)
                   </button>
                   <label className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors cursor-pointer block">
-                    Load backup (.json)
+                    Restore project backup (.json)
                     <input
                       type="file"
                       accept=".json,application/json"
