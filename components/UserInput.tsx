@@ -395,36 +395,36 @@ const UserInput: React.FC<UserInputProps> = ({
       <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4 text-zinc-300">
         <div>
           <h2 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
-            How the book is written
+            How it works · 4 simple steps
           </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. The notebook</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. Set up your story</h3>
             <p className="text-xs text-zinc-400/90 leading-relaxed">
-              The author thinks the book through before writing: the ending, the people, the facts that must not drift, and a plan of the chapters with what the reader learns in each chapter.
+              Choose your AI model, enter the story premise, and select your genre and chapter count (3 to 30 chapters).
             </p>
           </div>
 
           <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Its people</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Start generation</h3>
             <p className="text-xs text-zinc-400/90 leading-relaxed">
-              Before a scene that turns on someone, the author asks that person from the inside what they want and what they would do. Their answers decide the scene, not a generic template.
+              Click Start Generation. The author model maps the world, character motivations, secrets, and a scene-by-scene outline.
             </p>
           </div>
 
           <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. The chapters</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Watch live in studio</h3>
             <p className="text-xs text-zinc-400/90 leading-relaxed">
-              Nothing is closed to the author: it writes scene by scene, revises prose as needed, and keeps track of pacing and story threads live while drafting.
+              The workspace opens automatically. Follow scenes streaming in real time, view story cards, and track live style checks.
             </p>
           </div>
 
           <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
-            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. The reader</h3>
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Review, edit & export</h3>
             <p className="text-xs text-zinc-400/90 leading-relaxed">
-              A reader model reads what the author writes: checks each chapter, tracks unresolved mysteries and character arcs, and gives editorial feedback on the manuscript.
+              Read the complete draft, edit the manuscript text directly on the page, apply editorial reviews, and save or export your book.
             </p>
           </div>
         </div>
