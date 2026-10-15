@@ -36,4 +36,12 @@ describe('craftOrchestrator utilities', () => {
     expect(AUDIT_STAGES.has('craft-lit-review')).toBe(true);
     expect(AUDIT_CALLS).toBeGreaterThan(0);
   });
+
+  it('extracts book title from dossier with markdown header or explicit title key', () => {
+    const dossier1 = '0. BOOK TITLE:\n   - BOOK TITLE: The Serpent and the Stone\n\n1. OBJECTIVE TRUTH...';
+    expect(extractTitle(dossier1)).toBe('The Serpent and the Stone');
+
+    const dossier2 = '# The Alchemist of Prague\n\nTITLE: The Alchemist of Prague\n\nObjective facts...';
+    expect(extractTitle(dossier2)).toBe('The Alchemist of Prague');
+  });
 });

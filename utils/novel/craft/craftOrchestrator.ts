@@ -111,10 +111,20 @@ export async function runCraftEditorial(input: ProjectInput, store: ProjectStore
 }
 
 export function extractTitle(text: string): string | undefined {
-  const match = text.match(/(?:^|\n)[#*\s]*(?:BOOK\s+)?TITLE\**\s*:\**\s*([^\n\r]+)/i);
-  if (match) {
-    const raw = match[1].replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').trim();
-    if (raw && raw.length >= 2 && raw.length <= 100 && !/^(undefined|null|none|n\/a)$/i.test(raw)) {
+  const regex = /(?:^|\r?\n)[#*\-\d.\t ]*(?:BOOK[ \t]+)?TITLE\**[ \t]*:\**[ \t]*([^\r\n]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    let raw = m[1].replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').trim();
+    raw = raw.replace(/^(?:BOOK\s+)?TITLE\**\s*:\**\s*/i, '').trim();
+    if (raw && raw.length >= 2 && raw.length <= 100 && !/^(undefined|null|none|n\/a|<[^>]+>)$/i.test(raw)) {
+      return raw;
+    }
+  }
+  // Check top-level markdown header: # Book Title
+  const headerMatch = text.match(/^\s*#\s+([^\r\n]+)/m);
+  if (headerMatch) {
+    const raw = headerMatch[1].replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').trim();
+    if (raw && raw.length >= 2 && raw.length <= 100 && !/^(author\s+dossier|story\s+dossier|dossier|untitled)/i.test(raw)) {
       return raw;
     }
   }
@@ -310,6 +320,18 @@ export async function runCraftBook(
   const journal: string[] = [];
   let activeTitle = input.title?.trim() || '';
 
+  const isPremiseFallback = (t?: string): boolean => {
+    if (!t) return false;
+    const trimmed = t.trim();
+    const premiseTrimmed = input.premise.trim();
+    return trimmed === cleanFallbackTitle(premiseTrimmed) || (premiseTrimmed.startsWith(trimmed) && trimmed.length <= 80);
+  };
+
+  const existingAuthor = store.loadAuthor();
+  if (!activeTitle && existingAuthor?.title && !isPremiseFallback(existingAuthor.title)) {
+    activeTitle = existingAuthor.title.trim();
+  }
+
   // Helper to sync state to store
   function syncAuthorState(options: {
     title?: string;
@@ -321,8 +343,10 @@ export async function runCraftBook(
     waiting?: string;
   } = {}) {
     const existing = store.loadAuthor();
-    const resolvedTitle = options.title ?? (activeTitle || existing?.title || cleanFallbackTitle(input.premise));
-    if (resolvedTitle && !activeTitle) activeTitle = resolvedTitle;
+    if (options.title?.trim()) {
+      activeTitle = options.title.trim();
+    }
+    const resolvedTitle = activeTitle || existing?.title || (options.completed ? cleanFallbackTitle(input.premise) : '');
     const draft: AuthorDraft = {
       version: 1,
       input_key: authorKey(input),
@@ -407,6 +431,9 @@ Requirements: ${input.author_requirements || 'none'}
 Scope: ${numChapters} chapters (${totalScenes} scenes total, ~${targetWordsPerScene} words per scene).
 
 Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~1800-2400 words) before writing any prose:
+${!activeTitle ? `0. BOOK TITLE:
+   - BOOK TITLE: <Invent an original, evocative, commercial 2-5 word title for this book. Do NOT copy the premise text.>` : `0. BOOK TITLE:
+   - BOOK TITLE: ${activeTitle}`}
 1. OBJECTIVE TRUTH & PRE-STORY REALITY:
    - The concrete objective facts that took place before the story begins.
    - Stable cast, locations, and key physical props.
@@ -424,7 +451,11 @@ Output the author dossier only.`;
 
       dossier = await llm(prepPrompt, CRAFT_SYSTEM, { stage: 'craft-preparation', temperature: 0.8, maxTokens: 8000 });
       files['dossier.md'] = dossier;
-      syncAuthorState({ dossier });
+      const dossierTitle = extractTitle(dossier);
+      if (!activeTitle && dossierTitle && !isPremiseFallback(dossierTitle)) {
+        activeTitle = dossierTitle;
+      }
+      syncAuthorState({ dossier, title: activeTitle });
     }
 
     // Stage 2: Scene Projection Cards (packet.json)
@@ -453,6 +484,7 @@ SCENE ARCHITECTURE PRINCIPLES:
 
 Return JSON matching:
 {
+  "title": "Evocative 2-5 Word Book Title",
   "names": {"protagonist": "Full Name", "counterpart": "Full Name"},
   "initialProtagonistKnowledge": ["initial pre-story facts"],
   "facts": [
@@ -491,8 +523,14 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
 
     packet = await projectPacket(cardsPrompt, CRAFT_SYSTEM, totalScenes, numChapters, llm);
     validatePacket(packet, numChapters, totalScenes);
+    if ((!activeTitle || isPremiseFallback(activeTitle)) && packet.title?.trim() && !isPremiseFallback(packet.title)) {
+      const cleaned = packet.title.trim().replace(/^["'`*#\s]+|["'`*#\s]+$/g, '');
+      if (cleaned && cleaned.length >= 2 && cleaned.length <= 100) {
+        activeTitle = cleaned;
+      }
+    }
     files['packet.json'] = JSON.stringify(packet);
-    syncAuthorState();
+    syncAuthorState({ title: activeTitle });
 
     // Stage 3: Preflight Validation
     journal.push('Running preflight audit');
@@ -502,7 +540,7 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
         answers.push({ who: 'the preflight auditor', step: journal.length, about: 'scene cards', text: raw });
         files['preflight.json'] = raw;
         files['packet.json'] = JSON.stringify(candidate);
-        syncAuthorState();
+        syncAuthorState({ title: activeTitle });
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -513,24 +551,24 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
       }
     }
   }
-  syncAuthorState({ dossier });
+  syncAuthorState({ dossier, title: activeTitle });
   files['packet.json'] = JSON.stringify(packet);
   files['reader-promises-plan.json'] = JSON.stringify(projectionMetrics(packet));
 
-  if (!activeTitle && packet.title?.trim()) {
+  if ((!activeTitle || isPremiseFallback(activeTitle)) && packet.title?.trim() && !isPremiseFallback(packet.title)) {
     const cleaned = packet.title.trim().replace(/^["'`*#\s]+|["'`*#\s]+$/g, '');
     if (cleaned && cleaned.length >= 2 && cleaned.length <= 100) {
       activeTitle = cleaned;
     }
   }
 
-  // If still no title, quick generation pass
-  if (!activeTitle) {
+  // If still no title or only a premise fallback, dedicated title generation pass
+  if (!activeTitle || isPremiseFallback(activeTitle)) {
     try {
-      const titlePrompt = `Based on this premise and story dossier, provide ONE compelling, evocative commercial book title (2 to 5 words). Output ONLY the title text, nothing else.\n\nPremise: ${input.premise}\nGenre: ${input.genre || 'literary fiction'}\n\nTitle:`;
+      const titlePrompt = `Based on this premise and story dossier, invent ONE compelling, original, evocative commercial book title (2 to 5 words). Do NOT repeat or quote the premise text. Output ONLY the title text, nothing else.\n\nPremise: ${input.premise}\nGenre: ${input.genre || 'literary fiction'}\n\nTitle:`;
       const generated = await llm(titlePrompt, 'You are an acclaimed book editor. Return ONLY the title text.', { stage: 'craft-title', temperature: 0.7, maxTokens: 40 });
       const cleaned = generated.replace(/^["'`*#\s]+|["'`*#\s]+$/g, '').split('\n')[0].trim();
-      if (cleaned && cleaned.length >= 2 && cleaned.length <= 80) {
+      if (cleaned && cleaned.length >= 2 && cleaned.length <= 80 && !isPremiseFallback(cleaned)) {
         activeTitle = cleaned;
       }
     } catch {
