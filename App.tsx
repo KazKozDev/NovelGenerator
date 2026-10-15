@@ -144,14 +144,20 @@ const App: React.FC = () => {
     <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+        <div className="flex items-center justify-between gap-3 mb-2">
           <div className="flex shrink-0 items-baseline gap-2">
             <h1 className="text-2xl font-semibold wordmark">
               NovelGenerator
             </h1>
             <span className="font-mono text-xs text-zinc-500">v4.5</span>
           </div>
-          <div className="app-toolbar flex items-center gap-2 overflow-x-auto py-1" aria-label="Project and appearance controls">
+          <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
+            <ThemeToggle />
+            <ApiKeysToggle />
+            <SystemManualToggle />
+          </div>
+        </div>
+        <div className="app-toolbar flex flex-wrap items-center gap-2 py-1 mb-1.5" aria-label="Project and appearance controls">
           {saveControl}
           <button
             type="button"
@@ -180,12 +186,6 @@ const App: React.FC = () => {
           >
             Clean Slate
           </button>
-          <div className="flex shrink-0 items-center gap-2" aria-label="Appearance and help">
-            <ThemeToggle />
-            <ApiKeysToggle />
-            <SystemManualToggle />
-          </div>
-          </div>
         </div>
         <p className="text-zinc-500 text-xs  text-left">
           Write a novel before your coffee gets cold

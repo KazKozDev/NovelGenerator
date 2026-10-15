@@ -5,6 +5,7 @@ import ChapterChecks from './ChapterChecks';
 import { measureTexture } from '../utils/novel/analytics';
 import ProgressBar from './ProgressBar';
 import ThemeToggle from './ThemeToggle';
+import ApiKeysToggle from './ApiKeysModal';
 import SystemManualToggle from './SystemManualModal';
 import PlanView from './PlanView';
 import StreamingContentView from './StreamingContentView';
@@ -161,6 +162,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         </div>
         <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
           <ThemeToggle />
+          <ApiKeysToggle />
           <SystemManualToggle />
         </div>
       </div>
