@@ -3,7 +3,10 @@ import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
 import { MarkdownView } from './common/MarkdownView';
+import MarkdownChangesView from './MarkdownChangesView';
 import BookCoverUpload, { ImprintData } from './BookCoverUpload';
+import { repairSingleFinding } from '../utils/novel/targetedEditorial';
+import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 
 interface BookDisplayProps {
   bookContent: string;
@@ -107,6 +110,22 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Targeted editorial execution state
+  const [activeFindingIndex, setActiveFindingIndex] = useState<number | null>(null);
+  const [fixedFindingIndices, setFixedFindingIndices] = useState<Set<number>>(new Set());
+  const [findingExplanations, setFindingExplanations] = useState<Record<number, string>>({});
+  const [viewMode, setViewMode] = useState<'clean' | 'changes'>('clean');
+  const [lastDiff, setLastDiff] = useState<{ before: string; after: string } | null>(null);
+  const [localRunning, setLocalRunning] = useState(false);
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
+  const activeFindingRef = React.useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    if (activeFindingIndex !== null && activeFindingRef.current) {
+      activeFindingRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [activeFindingIndex]);
+
   useEffect(() => {
     if (!isEditing) {
       setEditableContent(manuscriptWithTitle);
@@ -138,6 +157,88 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     }
   };
 
+  const isRunning = isEditorialRunning || localRunning;
+  const currentStatus = localStatus || editorialStatus;
+
+  const handleApplyReview = async () => {
+    const rawFindings = metadata?.audit?.findings;
+    if (!rawFindings || !Array.isArray(rawFindings) || rawFindings.length === 0) {
+      onEdit?.();
+      return;
+    }
+
+    // Use previously chosen model
+    const validatorCfg = getStoredValidatorConfig();
+    const modelConfig = (validatorCfg && validatorCfg.enabled) ? validatorCfg : getStoredProviderConfig();
+
+    setLocalRunning(true);
+    setFixedFindingIndices(new Set());
+    setFindingExplanations({});
+
+    let currentManuscript = bookContent;
+
+    try {
+      // Top-to-bottom processing ("сверху вниз")
+      for (let i = 0; i < rawFindings.length; i++) {
+        const finding = rawFindings[i];
+        setActiveFindingIndex(i);
+        setLocalStatus(`Правка ${i + 1}/${rawFindings.length}…`);
+
+        const result = await repairSingleFinding(
+          finding,
+          currentManuscript,
+          displayTitle,
+          async (prompt, system) => {
+            return await generateText(
+              prompt,
+              system,
+              undefined,
+              0.3,
+              undefined,
+              undefined,
+              modelConfig,
+              4000,
+              true
+            );
+          }
+        );
+
+        if (result.changed) {
+          const beforeText = currentManuscript;
+          currentManuscript = result.updatedManuscript;
+          onManualSave?.(result.updatedManuscript);
+          setEditableContent(result.updatedManuscript);
+          setLastDiff({ before: beforeText, after: result.updatedManuscript });
+          setViewMode('changes');
+          setFixedFindingIndices(prev => new Set(prev).add(i));
+          setFindingExplanations(prev => ({
+            ...prev,
+            [i]: result.explanation || 'Правка внесена',
+          }));
+        } else {
+          setFixedFindingIndices(prev => new Set(prev).add(i));
+          setFindingExplanations(prev => ({
+            ...prev,
+            [i]: result.explanation || 'Проверено (правка не потребовалась)',
+          }));
+        }
+
+        // Pacing delay so author can see the active item highlighted and text changes
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      setLocalStatus('Все замечания отработаны!');
+      setTimeout(() => setLocalStatus(null), 4000);
+    } catch (err: any) {
+      console.error('Targeted review failed:', err);
+      setLocalStatus(`Ошибка: ${err?.message || 'Не удалось применить правки'}`);
+      setTimeout(() => setLocalStatus(null), 5000);
+    } finally {
+      setActiveFindingIndex(null);
+      setLocalRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
@@ -148,17 +249,17 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         <section className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-280px)] min-h-[460px]" aria-label="Editorial review">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
             <h2 className="text-sm font-medium text-zinc-200">Editorial Review</h2>
-            {onEdit && (
+            {(onEdit || findingsCount > 0) && (
               <button
                 type="button"
-                onClick={onEdit}
-                disabled={isEditorialRunning}
+                onClick={handleApplyReview}
+                disabled={isRunning}
                 className="inline-flex items-center gap-1.5 h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-60 disabled:hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
               >
-                <span className={isEditorialRunning ? 'inline-block animate-spin' : ''}>↻</span>
+                <span className={isRunning ? 'inline-block animate-spin' : ''}>↻</span>
                 <span>
-                  {isEditorialRunning
-                    ? (editorialStatus || 'Applying Review…')
+                  {isRunning
+                    ? (currentStatus || 'Applying Review…')
                     : findingsCount > 0 ? 'Apply Review' : 'Run Review'}
                 </span>
               </button>
@@ -174,15 +275,54 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                 <div className="pt-2 pl-2 space-y-2 border-t border-zinc-800/60 mt-1">
                   {metadata.audit.findings?.length > 0 ? (
                     <ul className="space-y-2">
-                      {metadata.audit.findings.map((f: any, i: number) => (
-                        <li key={i} className="text-zinc-400">
-                          <span className="font-mono text-[11px] uppercase text-zinc-500 mr-2">[{f.severity || 'note'}]</span>
-                          <span className="text-zinc-300">{f.description}</span>
-                          {f.evidence_refs?.length > 0 && (
-                            <p className="text-[11px] text-zinc-500 mt-1 italic pl-2 border-l border-zinc-800">{f.evidence_refs.join(' · ')}</p>
-                          )}
-                        </li>
-                      ))}
+                      {metadata.audit.findings.map((f: any, i: number) => {
+                        const isActive = activeFindingIndex === i;
+                        const isFixed = fixedFindingIndices.has(i);
+                        const explanation = findingExplanations[i];
+
+                        return (
+                          <li
+                            key={i}
+                            ref={isActive ? activeFindingRef : undefined}
+                            className={`p-2 rounded transition-all ${
+                              isActive
+                                ? 'border border-amber-500/80 bg-amber-950/30 ring-1 ring-amber-500/50 shadow-sm'
+                                : isFixed
+                                ? 'border border-emerald-600/40 bg-emerald-950/20'
+                                : 'border border-zinc-800/40 hover:border-zinc-700/60 text-zinc-400'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="font-mono text-[11px] uppercase text-zinc-500">
+                                [{f.severity || 'note'}]
+                              </span>
+                              {isActive && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium animate-pulse">
+                                  ⚡ Правка в процессе…
+                                </span>
+                              )}
+                              {isFixed && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                                  ✓ Готово
+                                </span>
+                              )}
+                            </div>
+                            <span className={isActive ? 'text-zinc-100 font-medium' : 'text-zinc-300'}>
+                              {f.description}
+                            </span>
+                            {f.evidence_refs?.length > 0 && (
+                              <p className="text-[11px] text-zinc-500 mt-1 italic pl-2 border-l border-zinc-800">
+                                {f.evidence_refs.join(' · ')}
+                              </p>
+                            )}
+                            {isFixed && explanation && (
+                              <p className="text-[11px] text-emerald-400/90 mt-1.5 pl-2 border-l border-emerald-500/50">
+                                {explanation}
+                              </p>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   ) : (
                     <p className="text-zinc-500">No stylistic notes recorded.</p>
@@ -268,6 +408,33 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
             <div className="flex items-center gap-2">
+              {lastDiff && !isEditing && (
+                <div className="flex items-center bg-zinc-950 p-0.5 rounded border border-zinc-800 text-xs mr-1">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('clean')}
+                    className={`px-2 py-0.5 rounded transition-colors ${
+                      viewMode === 'clean'
+                        ? 'bg-zinc-800 text-zinc-100 font-medium'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Чистый текст
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('changes')}
+                    className={`px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+                      viewMode === 'changes'
+                        ? 'bg-amber-950/60 text-amber-300 font-medium border border-amber-800/60'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span>Изменения</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  </button>
+                </div>
+              )}
               {saveSuccess && !isEditing && (
                 <span className="text-xs text-emerald-400 font-medium">Saved ✓</span>
               )}
@@ -331,7 +498,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                   </span>
                   <div className="flex items-center gap-2">
                     <button
-                      type="button"
+                       type="button"
                       onClick={handleSave}
                       className="inline-flex items-center h-7 px-3 text-xs font-semibold whitespace-nowrap bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
                     >
@@ -346,6 +513,22 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                     </button>
                   </div>
                 </div>
+              </div>
+            ) : viewMode === 'changes' && lastDiff ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-xs px-3 py-1.5 bg-amber-950/20 border border-amber-900/40 rounded text-amber-300/90">
+                  <span>
+                    Подсветка изменений: <ins className="revision-added px-1 rounded text-emerald-300 bg-emerald-950/60 font-sans">+добавлено</ins> <del className="revision-removed px-1 rounded text-red-300 bg-red-950/60 font-sans line-through">-удалено</del>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('clean')}
+                    className="text-zinc-400 hover:text-zinc-200 underline"
+                  >
+                    Скрыть диф
+                  </button>
+                </div>
+                <MarkdownChangesView before={lastDiff.before} after={lastDiff.after} />
               </div>
             ) : (
               <MarkdownView
