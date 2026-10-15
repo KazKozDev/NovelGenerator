@@ -700,8 +700,8 @@ INSTRUCTIONS FOR WRITER:
 - ENDING CADENCE: Close the scene with ${card.endingCadence || 'resonance'} (${card.endingType || 'ending beats'}), leaving forward momentum.
 - Do NOT retreat into vague poetic abstraction, cosmic dreaminess, or repetitive metaphors.
 - NARRATIVE PERSPECTIVE & TENSE (MANDATORY STANDARD):
-  * Point of View: Third Person Limited (3-е лицо, ограниченное восприятием одного персонажа). Anchor strictly inside the viewpoint character's sensory perception and immediate consciousness: he/she/they.
-  * Grammatical Tense: Past Tense (Прошедшее время). The standard of world fiction («The lock gave under his thumb. Bruce stepped inside and pulled the door shut behind him.»). All narration, stage business, and beats must be written in past tense (walked, looked, gave, spoke), NEVER present tense.
+  * Point of View: Third Person Limited. Anchor strictly inside the viewpoint character's sensory perception and immediate consciousness: he/she/they.
+  * Grammatical Tense: Past Tense. The standard of fiction ("The lock gave under his thumb. Bruce stepped inside and pulled the door shut behind him."). All narration, stage business, and beats must be written in past tense (walked, looked, gave, spoke), NEVER present tense.
 - Current scene only; do not jump ahead to future scenes.
 - Output fiction prose only, no titles, headings, or meta comments.`;
 

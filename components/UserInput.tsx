@@ -385,20 +385,11 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
 
           {/* Narrative Perspective & Grammatical Tense */}
-          <div className="pt-4 border-t border-zinc-800 space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-xs font-medium text-zinc-200 flex items-center gap-2">
-                <span>Канон повествования: 3-е лицо + Прошедшее время</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
-                  Абсолютный стандарт (80–85% книг)
-                </span>
-              </span>
-            </div>
-
+          <div className="pt-4 border-t border-zinc-800">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="narrativeVoice" className="block text-xs font-medium text-zinc-300 mb-1.5">
-                  Ракурс восприятия (POV)
+                  Point of view (POV)
                 </label>
                 <select
                   id="narrativeVoice"
@@ -406,18 +397,18 @@ const UserInput: React.FC<UserInputProps> = ({
                   onChange={(e) => setStorySettings({ ...storySettings, narrativeVoice: e.target.value })}
                   className="w-full h-8 px-2.5 text-xs bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
                 >
-                  <option value="third-limited">3-е лицо, ограниченное (Third Person Limited) — Стандарт</option>
-                  <option value="first-person">1-е лицо от героя (First Person)</option>
-                  <option value="third-omniscient">3-е лицо всевидящее (Third Person Omniscient)</option>
+                  <option value="third-limited">Third Person Limited (Recommended)</option>
+                  <option value="first-person">First Person</option>
+                  <option value="third-omniscient">Third Person Omniscient</option>
                 </select>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  Привязка к восприятию одного героя (Кинг, Мартин, Аберкромби).
+                  Anchored inside viewpoint character senses and immediate consciousness.
                 </p>
               </div>
 
               <div>
                 <label htmlFor="tense" className="block text-xs font-medium text-zinc-300 mb-1.5">
-                  Грамматическое время (Tense)
+                  Grammatical tense
                 </label>
                 <select
                   id="tense"
@@ -425,22 +416,13 @@ const UserInput: React.FC<UserInputProps> = ({
                   onChange={(e) => setStorySettings({ ...storySettings, tense: e.target.value })}
                   className="w-full h-8 px-2.5 text-xs bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
                 >
-                  <option value="past">Прошедшее время (Past Tense: gave, stepped, pulled) — Стандарт</option>
-                  <option value="present">Настоящее время (Present Tense: gives, steps, pulls)</option>
+                  <option value="past">Past Tense (Standard)</option>
+                  <option value="present">Present Tense</option>
                 </select>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  «Невидимый шрифт» для читателя: многочасовое чтение без усталости.
+                  Standard fiction past tense narration.
                 </p>
               </div>
-            </div>
-
-            <div className="p-3 rounded bg-zinc-950/70 border border-zinc-800/60 text-xs space-y-1">
-              <p className="font-serif italic text-zinc-200 text-[13px]">
-                «The lock gave under his thumb. Bruce stepped inside and pulled the door shut behind him.»
-              </p>
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Почему это база: Прошедшее время для мозга читателя работает как «невидимый шрифт». Человек может читать такой текст по 4–5 часов подряд, не уставая от грамматики. При этом ограниченное 3-е лицо даёт и масштаб, и глубокое психологическое погружение.
-              </p>
             </div>
           </div>
         </div>
