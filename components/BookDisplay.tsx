@@ -58,10 +58,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
 
   return (
     <div className="space-y-6">
-      {/* Compact Statistics */}
-      <div className="mb-4 text-left">
-        <BookStatistics bookContent={bookContent} metadata={metadata} />
-      </div>
+      <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       {/* Editorial Review Block */}
       <section className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900/30" aria-label="Editorial review">
