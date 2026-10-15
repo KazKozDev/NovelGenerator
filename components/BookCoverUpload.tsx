@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ImprintData,
   getDefaultImprintData,
-  resolveImprintColophon,
 } from '../utils/imprintConstants';
 
 export type { ImprintData };
@@ -328,21 +327,11 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
             onChange={handleAuthorInputChange}
             placeholder="Author name (e.g. John Doe)"
             aria-label="Book author"
-            className={`w-full h-8 px-2.5 rounded bg-zinc-950 border transition-colors text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none ${
-              !author.trim()
-                ? 'border-amber-600/80 focus:border-amber-500'
-                : 'border-zinc-800 hover:border-zinc-700 focus:border-zinc-600'
-            }`}
+            className="w-full h-8 px-2.5 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none transition-colors text-xs text-zinc-200 placeholder:text-zinc-600"
           />
-          {!author.trim() ? (
-            <p className="text-[11px] text-amber-400 font-medium">
-              ⚠️ Author name is required to save the book.
-            </p>
-          ) : (
-            <p className="text-[11px] text-zinc-500">
-              Saved in copyright, PDF, EPUB, and project metadata
-            </p>
-          )}
+          <p className="text-[11px] text-zinc-500">
+            Saved in copyright, PDF, EPUB, and project metadata
+          </p>
         </div>
 
         {/* Publishing Imprint (Выходные данные) — Always Included */}
@@ -356,85 +345,62 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
             </span>
           </div>
 
-          {(() => {
-            const colophon = resolveImprintColophon(author, imprint);
-            return (
-              <div className="space-y-3 pt-1 text-xs">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label htmlFor="imprint-edition-input" className="block text-[10px] uppercase font-medium text-zinc-400">
-                      Edition
-                    </label>
-                    <span className="text-[10px] text-zinc-500">Editable</span>
-                  </div>
-                  <input
-                    id="imprint-edition-input"
-                    type="text"
-                    value={imprint.edition || ''}
-                    onChange={(e) => updateImprintField('edition', e.target.value)}
-                    placeholder="First edition"
-                    className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label htmlFor="imprint-isbn-paperback-input" className="block text-[10px] uppercase font-medium text-zinc-400">
-                      ISBN (Paperback)
-                    </label>
-                    <span className="text-[10px] text-zinc-500">Optional</span>
-                  </div>
-                  <input
-                    id="imprint-isbn-paperback-input"
-                    type="text"
-                    value={imprint.isbnPaperback || ''}
-                    onChange={(e) => updateImprintField('isbnPaperback', e.target.value)}
-                    placeholder="978-1-234567-89-0"
-                    className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 font-mono transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label htmlFor="imprint-isbn-ebook-input" className="block text-[10px] uppercase font-medium text-zinc-400">
-                      ISBN (Ebook)
-                    </label>
-                    <span className="text-[10px] text-zinc-500">Optional</span>
-                  </div>
-                  <input
-                    id="imprint-isbn-ebook-input"
-                    type="text"
-                    value={imprint.isbnEbook || ''}
-                    onChange={(e) => updateImprintField('isbnEbook', e.target.value)}
-                    placeholder="978-1-234567-89-1"
-                    className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 font-mono transition-colors"
-                  />
-                </div>
-
-                {/* Read-only Legal Colophon Card */}
-                <div className="mt-2 p-2.5 rounded bg-zinc-950 border border-zinc-800/80 text-[11px] leading-relaxed text-zinc-400 font-serif space-y-2 select-none">
-                  <p className="font-semibold text-zinc-200">{colophon.copyright}</p>
-                  <p>{colophon.rights}</p>
-                  <p className="text-[10px] leading-normal">{colophon.reproduction}</p>
-                  <p className="text-[10px] leading-normal">{colophon.aiDisclaimer}</p>
-                  <p className="text-[10px] leading-normal">{colophon.fictionDisclaimer}</p>
-                  {colophon.isbns.length > 0 && (
-                    <div className="font-mono text-[10px] text-zinc-300">
-                      {colophon.isbns.map(isbn => <p key={isbn}>{isbn}</p>)}
-                    </div>
-                  )}
-                  <div className="pt-2 border-t border-zinc-800/80 font-sans text-[11px] text-zinc-400">
-                    <p className="font-medium text-zinc-300">{colophon.publisher}</p>
-                    <p>{colophon.editionLine}</p>
-                  </div>
-                </div>
-
-                <p className="text-[10px] text-zinc-500 italic">
-                  * Fixed legal disclaimers, rights, and NG Press imprint are standard and cannot be modified.
-                </p>
+          <div className="space-y-3 pt-1 text-xs">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="imprint-edition-input" className="block text-[10px] uppercase font-medium text-zinc-400">
+                  Edition
+                </label>
+                <span className="text-[10px] text-zinc-500">Editable</span>
               </div>
-            );
-          })()}
+              <input
+                id="imprint-edition-input"
+                type="text"
+                value={imprint.edition || ''}
+                onChange={(e) => updateImprintField('edition', e.target.value)}
+                placeholder="First edition"
+                className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="imprint-isbn-paperback-input" className="block text-[10px] uppercase font-medium text-zinc-400">
+                  ISBN (Paperback)
+                </label>
+                <span className="text-[10px] text-zinc-500">Optional</span>
+              </div>
+              <input
+                id="imprint-isbn-paperback-input"
+                type="text"
+                value={imprint.isbnPaperback || ''}
+                onChange={(e) => updateImprintField('isbnPaperback', e.target.value)}
+                placeholder="978-1-234567-89-0"
+                className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 font-mono transition-colors"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="imprint-isbn-ebook-input" className="block text-[10px] uppercase font-medium text-zinc-400">
+                  ISBN (Ebook)
+                </label>
+                <span className="text-[10px] text-zinc-500">Optional</span>
+              </div>
+              <input
+                id="imprint-isbn-ebook-input"
+                type="text"
+                value={imprint.isbnEbook || ''}
+                onChange={(e) => updateImprintField('isbnEbook', e.target.value)}
+                placeholder="978-1-234567-89-1"
+                className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 font-mono transition-colors"
+              />
+            </div>
+
+            <p className="text-[10px] text-zinc-500 italic">
+              Copyright, disclaimers, and NG Press colophon are automatically generated upon export.
+            </p>
+          </div>
         </div>
       </div>
     </div>

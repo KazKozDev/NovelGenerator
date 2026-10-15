@@ -73,7 +73,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('id="imprint-isbn-ebook-input"');
   });
 
-  it('renders author field with required indicator', () => {
+  it('renders author field with required indicator and neutral styling', () => {
     const emptyAuthorHtml = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -82,7 +82,8 @@ describe('BookCoverUpload and three-zone layout', () => {
       />
     );
     expect(emptyAuthorHtml).toContain('Required');
-    expect(emptyAuthorHtml).toContain('Author name is required to save the book');
+    expect(emptyAuthorHtml).not.toContain('border-amber-600');
+    expect(emptyAuthorHtml).toContain('Saved in copyright, PDF, EPUB, and project metadata');
 
     const filledAuthorHtml = renderToStaticMarkup(
       <BookCoverUpload
@@ -95,7 +96,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(filledAuthorHtml).toContain('Saved in copyright, PDF, EPUB, and project metadata');
   });
 
-  it('renders imprint input fields and fixed colophon unconditionally', () => {
+  it('renders imprint input fields without manual copyright card in UI', () => {
     const html = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -118,17 +119,9 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('id="imprint-isbn-ebook-input"');
     expect(html).toContain('value="978-1-234567-89-1"');
     
-    // Verifies fixed legal text & colophon
-    expect(html).toContain('Copyright © 2026 Иван Иванов');
-    expect(html).toContain('All rights reserved.');
-    expect(html).toContain('No part of this book may be reproduced');
-    expect(html).toContain('NovelGenerator tool and other artificial intelligence tools');
-    expect(html).toContain('The author takes complete and exclusive responsibility for all aspects of this book.');
-    expect(html).toContain('This is a work of fiction.');
-    expect(html).toContain('ISBN 978-1-234567-89-0 (paperback)');
-    expect(html).toContain('ISBN 978-1-234567-89-1 (ebook)');
-    expect(html).toContain('Published by NG Press');
-    expect(html).toContain('First edition, 2026');
+    // Verifies that copyright card is not rendered in the UI (added automatically on save)
+    expect(html).not.toContain('Copyright © 2026 Иван Иванов');
+    expect(html).toContain('Copyright, disclaimers, and NG Press colophon are automatically generated upon export');
   });
 });
 
