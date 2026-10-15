@@ -185,15 +185,40 @@ const App: React.FC = () => {
         {!showProgress && errorPanel}
 
         {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && !showProgress && (
-          <div className="border border-zinc-800 rounded p-4 md:p-5 text-sm text-zinc-300">
-            <p className="font-medium">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
-            <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
-            <label className="block text-xs text-zinc-400 mt-3">Target words per chapter
-              <input type="number" min="1" step="1" value={storySettings.targetWordsPerChapter||4000} onChange={event=>{const value=Number(event.target.value);if(Number.isSafeInteger(value)&&value>0)setStorySettings({...storySettings,targetWordsPerChapter:value})}} className="block mt-1 px-3 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-200" />
+          <div className="border border-zinc-800 bg-zinc-900/40 rounded p-4 md:p-5 text-sm text-zinc-300 space-y-3">
+            <div>
+              <p className="font-medium text-zinc-200">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
+              <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
+            </div>
+            <label className="block text-xs font-medium text-zinc-300">Target words per chapter
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={storySettings.targetWordsPerChapter || 4000}
+                onChange={event => {
+                  const value = Number(event.target.value);
+                  if (Number.isSafeInteger(value) && value > 0) {
+                    setStorySettings({ ...storySettings, targetWordsPerChapter: value });
+                  }
+                }}
+                className="block mt-1.5 h-9 px-3 rounded border border-zinc-800 bg-zinc-900/90 text-xs text-zinc-200 hover:border-zinc-700 focus:border-zinc-500 focus:outline-none transition-colors"
+              />
             </label>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button onClick={handleContinue} disabled={isLoading} className="px-3 py-1 bg-zinc-200 text-zinc-900 rounded text-xs font-medium">Continue writing</button>
-              <button onClick={handleReset} className="px-3 py-1 border border-zinc-700 rounded text-xs">Discard and start new</button>
+            <div className="pt-1 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={handleContinue}
+                disabled={isLoading}
+                className="h-8 px-3.5 bg-zinc-100 hover:bg-white text-zinc-900 rounded text-xs font-medium transition-colors disabled:opacity-50"
+              >
+                Continue writing
+              </button>
+              <button
+                onClick={handleReset}
+                className="h-8 px-3.5 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 rounded text-xs text-zinc-300 transition-colors"
+              >
+                Discard and start new
+              </button>
               <label className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors ml-auto">
                 Restore backup (.project.json)
                 <input

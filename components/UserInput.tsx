@@ -63,10 +63,10 @@ const UserInput: React.FC<UserInputProps> = ({
   const hfField = (label: string, value: string | undefined, onChange: (model: string) => void) => (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <label className="block text-sm text-zinc-400">{label}</label>
-        <button type="button" onClick={loadHfModels} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+        <label className="block text-xs font-medium text-zinc-300">{label}</label>
+        <button type="button" onClick={loadHfModels} className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors">List models</button>
       </div>
-      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="org/model or org/model:provider" className="text-xs py-1.5 font-mono" options={hfModels.map(model => ({ value: model.id, label: model.providers.join(', ') }))} />
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="org/model or org/model:provider" className="text-xs font-mono" options={hfModels.map(model => ({ value: model.id, label: model.providers.join(', ') }))} />
       <p className="text-xs text-zinc-500">
         Hugging Face routes the request to a provider that serves the model; add <span className="font-mono">:provider</span>, <span className="font-mono">:fastest</span> or <span className="font-mono">:cheapest</span> to choose. Uses HF_TOKEN from .env.local.{hfNote ? ` ${hfNote}.` : ''}
         {value && hfModels.find(m => m.id === value.split(':')[0]) ? ` Served by: ${hfModels.find(m => m.id === value.split(':')[0])!.providers.join(', ')}.` : ''}
@@ -104,9 +104,9 @@ const UserInput: React.FC<UserInputProps> = ({
     } catch (error) { setCompatibleNote(error instanceof Error ? error.message : 'Could not save base URL'); return false; }
   };
   const compatibleEndpointField = (prefix: string) => <div className="space-y-1.5">
-    <label htmlFor={`${prefix}-api-base-url`} className="block text-sm text-zinc-400">Base URL</label>
+    <label htmlFor={`${prefix}-api-base-url`} className="block text-xs font-medium text-zinc-300">Base URL</label>
     <Input id={`${prefix}-api-base-url`} value={compatibleUrl} onChange={e => { setCompatibleUrl(e.target.value); setCompatibleDirty(true); setCompatibleNote('Unsaved'); }} placeholder="http://127.0.0.1:8085/v1/" className="font-mono" />
-    <div className="flex items-center justify-between gap-2"><p className="text-xs text-zinc-500">Include /v1 if required. Shared by author and reader. {compatibleNote}</p><button type="button" onClick={() => { void saveCompatibleUrl(); }} className="text-xs underline text-zinc-400">Save URL</button></div>
+    <div className="flex items-center justify-between gap-2"><p className="text-xs text-zinc-500">Include /v1 if required. Shared by author and reader. {compatibleNote}</p><button type="button" onClick={() => { void saveCompatibleUrl(); }} className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors">Save URL</button></div>
   </div>;
   // Gemini, Qwen and Anthropic: the models their own servers report, as suggestions for the same kind of field.
   const [listed, setListed] = useState<{ gemini: string[]; qwen: string[]; anthropic: string[]; compatible: string[] }>({ gemini: [], qwen: [], anthropic: [], compatible: [] });
@@ -115,10 +115,10 @@ const UserInput: React.FC<UserInputProps> = ({
   const listedField = (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <label className="block text-sm text-zinc-400">{label}</label>
-        <button type="button" onClick={() => loadListed(provider)} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+        <label className="block text-xs font-medium text-zinc-300">{label}</label>
+        <button type="button" onClick={() => loadListed(provider)} className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors">List models</button>
       </div>
-      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder={placeholder} className="text-xs py-1.5 font-mono" options={listed[provider].map(model => ({ value: model }))} />
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder={placeholder} className="text-xs font-mono" options={listed[provider].map(model => ({ value: model }))} />
       <p className="text-xs text-zinc-500">{hint}{listNote[provider] ? ` ${listNote[provider]}.` : ''}</p>
     </div>
   );
@@ -129,10 +129,10 @@ const UserInput: React.FC<UserInputProps> = ({
   const ollamaField = (label: string, value: string | undefined, onChange: (model: string) => void, hint: string) => (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <label className="block text-sm text-zinc-400">{label}</label>
-        <button type="button" onClick={loadOllamaModels} className="text-xs text-zinc-400 hover:text-zinc-300 underline font-medium">List models</button>
+        <label className="block text-xs font-medium text-zinc-300">{label}</label>
+        <button type="button" onClick={loadOllamaModels} className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors">List models</button>
       </div>
-      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="llama3.1 or name:cloud" className="text-xs py-1.5 font-mono" options={ollamaModels.map(model => ({ value: model }))} />
+      <Combo id={fieldId(label)} value={value || ''} onChange={model => onChange(model.trim())} placeholder="llama3.1 or name:cloud" className="text-xs font-mono" options={ollamaModels.map(model => ({ value: model }))} />
       <p className="text-xs text-zinc-500">{hint}{ollamaNote ? ` ${ollamaNote}.` : ''}</p>
     </div>
   );
@@ -150,17 +150,17 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="border border-zinc-800 rounded p-4 md:p-5">
-        <div className="space-y-3 mb-3">
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 p-4 md:p-5 space-y-4">
+        <div className="space-y-3">
           <div>
-            <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-zinc-400" />
+            <h2 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" aria-hidden="true" />
               <span>Author model</span>
-            </h3>
-            <p className="text-xs text-zinc-500">The model that writes the book: it keeps the notebook, plans, speaks as its people and writes every chapter.</p>
+            </h2>
+            <p className="text-xs text-zinc-400 mt-1">The model that writes the book: keeps the notebook, plans, speaks as its characters and writes every chapter.</p>
           </div>
           
-          <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
+          <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Author provider selection">
             <button
               type="button"
               onClick={() => {
@@ -168,10 +168,10 @@ const UserInput: React.FC<UserInputProps> = ({
                 setProviderConfig(updated);
                 saveStoredProviderConfig(updated);
               }}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+              className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                 providerConfig.provider === 'gemini'
-                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-300'
+                  ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
               }`}
             >
               Gemini
@@ -183,18 +183,18 @@ const UserInput: React.FC<UserInputProps> = ({
                 setProviderConfig(updated);
                 saveStoredProviderConfig(updated);
               }}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+              className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                 providerConfig.provider === 'ollama'
-                  ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-300'
+                  ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
               }`}
             >
               Ollama
             </button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
-            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`px-3 py-1.5 rounded text-xs font-medium ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>API compatible</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
+            <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
           </div>
         </div>
         {providerConfig.provider==='compatible' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{compatibleEndpointField('author')}{listedField('compatible', 'API model', providerConfig.compatibleModel, model => { const updated = { ...providerConfig, compatibleModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'model-id', 'OpenAI-compatible Chat Completions. Optional key stays in API settings.')}</div>}
@@ -214,7 +214,7 @@ const UserInput: React.FC<UserInputProps> = ({
           <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-300 mb-1.5">
                   Ollama Endpoint / Proxy
                 </label>
                 <Input
@@ -229,7 +229,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     }
                   }}
                   placeholder="/api/ollama"
-                  className="text-xs py-1.5"
+                  className="font-mono text-xs"
                 />
                 <p className="text-xs text-zinc-500 mt-1">
                   Default /api/ollama (proxied via Vite without CORS)
@@ -241,38 +241,33 @@ const UserInput: React.FC<UserInputProps> = ({
           </div>
         )}
 
-        {/* Editor (critic) model — a different model than the writer catches blind spots
-            the writer cannot see in its own prose. Off means the writer judges itself. */}
+        {/* Editor (critic) model */}
         <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm font-medium text-zinc-200 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={validator.enabled}
               onChange={(e) => updateValidator(e.target.checked
-                // Entering with the writer's current endpoint so the editor never
-                // points at a stale address from an older stored config.
                 ? { enabled: true, ollamaEndpoint: providerConfig.ollamaEndpoint }
                 : { enabled: false })}
               className="accent-zinc-200"
             />
-            <span className="font-medium">Reader model</span>
+            <span>Reader model</span>
           </label>
-          <p className="text-xs text-zinc-500">
-            Another model that reads what the author writes: the reader the author asks about a chapter, and
-            the one who says, before the ending, what the book still owes. It sees what the
-            author reads past. Off means the author's own model reads its own text.
+          <p className="text-xs text-zinc-400">
+            Another model that reads what the author writes: checks each chapter and audits promises and character arcs before the ending. Off means the author model judges its own text.
           </p>
 
           {validator.enabled && (
-            <div className="space-y-3 animate-fade-in">
-              <div className="inline-flex flex-wrap rounded bg-zinc-900 p-1 border border-zinc-800">
+            <div className="space-y-3 animate-fade-in pt-1">
+              <div className="inline-flex flex-wrap items-center rounded bg-zinc-950 p-1 border border-zinc-800 gap-1" role="tablist" aria-label="Reader provider selection">
                 <button
                   type="button"
                   onClick={() => updateValidator({ provider: 'gemini' })}
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                     validator.provider === 'gemini'
-                      ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-300'
+                      ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
                   }`}
                 >
                   Gemini
@@ -280,18 +275,18 @@ const UserInput: React.FC<UserInputProps> = ({
                 <button
                   type="button"
                   onClick={() => updateValidator({ provider: 'ollama' })}
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                     validator.provider === 'ollama'
-                      ? 'bg-zinc-200 text-zinc-900 shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-300'
+                      ? 'bg-zinc-200 text-zinc-900 font-semibold shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
                   }`}
                 >
                   Ollama
                 </button>
-                <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Qwen</button>
-                <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Hugging Face</button>
-                <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>Anthropic</button>
-                <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`px-3 py-1.5 rounded text-xs font-medium ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900':'text-zinc-400 hover:text-zinc-300'}`}>API compatible</button>
+                <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
+                <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
+                <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
+                <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`h-7 px-2.5 py-1 rounded text-xs font-medium transition-colors ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
               </div>
 
               {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
@@ -306,8 +301,8 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div>
-        <label htmlFor="bookTitle" className="block text-sm font-medium text-zinc-400 mb-1.5">
-          Book title <span className="text-zinc-500 font-normal">(optional)</span>
+        <label htmlFor="bookTitle" className="block text-sm font-medium text-zinc-200 mb-1.5">
+          Book title <span className="text-zinc-500 font-normal text-xs">(optional)</span>
         </label>
         <Input
           id="bookTitle"
@@ -321,7 +316,7 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div>
-        <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-400 mb-1.5">
+        <label htmlFor="storyPremise" className="block text-sm font-medium text-zinc-200 mb-1.5">
           Story premise
         </label>
         <TextArea
@@ -338,17 +333,17 @@ const UserInput: React.FC<UserInputProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label htmlFor="genre" className="block text-sm font-medium text-zinc-400 mb-1.5">
+          <label htmlFor="genre" className="block text-sm font-medium text-zinc-200 mb-1.5">
             Genre
           </label>
-          <Combo id="genre" value={genre} onChange={setGenre} placeholder="thriller" className="text-xs py-1.5 font-mono"
+          <Combo id="genre" value={genre} onChange={setGenre} placeholder="thriller" className="text-xs font-mono"
             options={GENRE_CHOICES} />
           <p className="text-xs text-zinc-500 mt-1">Pick one, type to search, or name your own.</p>
         </div>
 
         <div>
-          <label htmlFor="numChapters" className="block text-sm font-medium text-zinc-400 mb-1.5">
-            Number of Chapters
+          <label htmlFor="numChapters" className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Number of chapters
           </label>
           <Input
             id="numChapters"
@@ -363,8 +358,8 @@ const UserInput: React.FC<UserInputProps> = ({
         </div>
 
         <div>
-          <label htmlFor="targetWordsPerChapter" className="block text-sm font-medium text-zinc-400 mb-1.5">
-            Words per Chapter
+          <label htmlFor="targetWordsPerChapter" className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Words per chapter
           </label>
           <Input
             id="targetWordsPerChapter"
@@ -388,50 +383,50 @@ const UserInput: React.FC<UserInputProps> = ({
         </div>
       </div>
 
-      <div className="pt-2">
-        <p className="text-xs text-zinc-500">
-          Book Craft 2.0: Two-layer architecture (Author Dossier with 4 truth layers + Scene Projection Cards), blind scene-by-scene writing with an anti-metaphor barrier, continuous observer verification, and dual developmental/literary audits.
+      <div className="pt-1">
+        <p className="text-xs text-zinc-400/90 leading-relaxed pl-3 border-l-2 border-zinc-800">
+          Craft 2.0 Engine: Two-layer architecture (Author Dossier with 4 truth layers + Scene Projection Cards), blind scene-by-scene writing with an anti-metaphor barrier, continuous observer verification, and dual developmental/literary audits.
         </p>
       </div>
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-end pt-1">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
           {isLoading ? 'Starting…' : 'Start Generation'}
         </Button>
       </div>
 
-      <div className="mt-10 pt-8 border-t border-zinc-800 space-y-6 text-zinc-300">
+      <div className="mt-10 pt-8 border-t border-zinc-800 space-y-4 text-zinc-300">
         <div>
-          <h2 className="text-xs font-semibold text-zinc-400 uppercase">
+          <h2 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
             Storytelling Craft 2.0 Architecture
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">01. Author Dossier & 4 Layers of Truth</h3>
-            <p className="text-xs text-zinc-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. Author Dossier & 4 Layers of Truth</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
               Setting, backstory, character psychology, and hidden motives are architected before prose drafting. The engine maintains four unbreakable truth layers: objective world facts, character secrets, current POV boundaries, and public facades.
             </p>
           </div>
 
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">02. Scene Cards & Projection Matrix</h3>
-            <p className="text-xs text-zinc-500">
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Scene Cards & Projection Matrix</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
               Each scene is budgeted with explicit goals, knowledge boundaries, value charge shifts, and concrete props. The writer only accesses facts the POV character knows at that exact second, preventing unearned omniscience.
             </p>
           </div>
 
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">03. Grounded Prose & Anti-Metaphor Rule</h3>
-            <p className="text-xs text-zinc-500">
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. Grounded Prose & Anti-Metaphor Rule</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
               Scenes are executed through tangible physical action, oblique dialogue, and sensory reality. Stock clichés, cosmic abstractions, and reflective filler are banned—dramatic conflict is enacted directly on the page.
             </p>
           </div>
 
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-zinc-300 uppercase">04. Observer, Blind Reader & Dual Audit</h3>
-            <p className="text-xs text-zinc-500">
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. Observer, Blind Reader & Dual Audit</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
               An external observer verifies action enactment and issues scene receipts. A blind reader tracks hypotheses across chapter prefixes, and a final dual audit validates causal closure, character arcs, and literary style.
             </p>
           </div>
