@@ -14,7 +14,6 @@ interface BookDisplayProps {
 
 const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, onReset, onEdit }) => {
   const [isCopied, setIsCopied] = useState(false);
-  const [bookViewMode, setBookViewMode] = useState<'rendered' | 'raw'>('rendered');
 
   const metadata = useMemo(() => {
     try {
@@ -175,49 +174,23 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       {/* Manuscript Reader Card */}
       <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 border-b border-zinc-800 bg-zinc-900/80">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-zinc-400">Manuscript</span>
-          </div>
+          <span className="text-xs font-medium text-zinc-400">Manuscript</span>
 
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setBookViewMode('rendered')}
-                className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Reader
-              </button>
-              <button
-                type="button"
-                onClick={() => setBookViewMode('raw')}
-                className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Markdown
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
-              className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
-            >
-              {isCopied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
+            className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+          >
+            {isCopied ? 'Copied' : 'Copy'}
+          </button>
         </div>
 
-        {bookViewMode === 'rendered' ? (
-          <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
-            <MarkdownView
-              content={manuscriptWithTitle}
-              className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
-            />
-          </div>
-        ) : (
-          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
-            {manuscriptWithTitle}
-          </pre>
-        )}
+        <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
+          <MarkdownView
+            content={manuscriptWithTitle}
+            className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
+          />
+        </div>
       </div>
 
       <div className="text-center mt-8 pt-4 border-t border-zinc-800">
