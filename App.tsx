@@ -129,6 +129,14 @@ const App: React.FC = () => {
     return undefined;
   });
 
+  const [coverImageUrl, setCoverImageUrl] = React.useState<string | null>(() => {
+    try {
+      return localStorage.getItem('novel_cover_image') || null;
+    } catch {
+      return null;
+    }
+  });
+
   const handleImprintChange = React.useCallback((newImprint: ImprintData) => {
     setImprintData(newImprint);
     try {
@@ -150,14 +158,18 @@ const App: React.FC = () => {
       if (imprintData) {
         parsed.imprint = imprintData;
       }
+      if (coverImageUrl) {
+        parsed.coverImage = coverImageUrl;
+      }
       return parsed;
     } catch {
       const base: Record<string, unknown> = {};
       if (authorName.trim()) base.author = authorName.trim();
       if (imprintData) base.imprint = imprintData;
+      if (coverImageUrl) base.coverImage = coverImageUrl;
       return base;
     }
-  }, [finalMetadataJson, authorName, imprintData]);
+  }, [finalMetadataJson, authorName, imprintData, coverImageUrl]);
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
@@ -381,6 +393,8 @@ const App: React.FC = () => {
               onAuthorChange={handleAuthorChange}
               imprint={imprintData}
               onImprintChange={handleImprintChange}
+              coverImage={coverImageUrl}
+              onCoverChange={setCoverImageUrl}
             />
             
             {/* Show agent logs after completion too */}

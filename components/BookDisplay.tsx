@@ -17,6 +17,8 @@ interface BookDisplayProps {
   onAuthorChange?: (author: string) => void;
   imprint?: ImprintData;
   onImprintChange?: (imprint: ImprintData) => void;
+  coverImage?: string | null;
+  onCoverChange?: (coverUrl: string | null) => void;
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({
@@ -31,6 +33,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   onAuthorChange,
   imprint,
   onImprintChange,
+  coverImage,
+  onCoverChange,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -361,6 +365,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             onAuthorChange={handleAuthorChange}
             imprint={imprint}
             onImprintChange={onImprintChange}
+            coverImage={coverImage}
+            onCoverChange={onCoverChange}
           />
         </div>
       </div>

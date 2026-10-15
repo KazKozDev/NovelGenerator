@@ -1,9 +1,15 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, it, expect } from 'vitest';
+import JSZip from 'jszip';
 import SaveBook from '../components/SaveBook';
 import { resolveImprintColophon } from '../utils/imprintConstants';
-import { formatMarkdownWithMetadata, formatTextWithMetadata } from '../utils/exportUtils';
+import {
+  formatMarkdownWithMetadata,
+  formatTextWithMetadata,
+  buildEpub,
+  resolveCoverImage,
+} from '../utils/exportUtils';
 
 describe('SaveBook author validation and colophon', () => {
   it('renders SaveBook with author requirement', () => {
@@ -89,5 +95,33 @@ describe('SaveBook author validation and colophon', () => {
     expect(txt).toContain('The author who generated and published this book is solely and fully responsible for the entire content');
     expect(txt).toContain('NovelGenerator and its creators act solely as providers of software tools and disclaim all liability');
     expect(txt).toContain('Chapter 1');
+  });
+
+  it('embeds cover image and cover page in EPUB when coverImage is provided', async () => {
+    const fakeCoverBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const fakeCoverDataUrl = `data:image/png;base64,${fakeCoverBase64}`;
+
+    const epubBlob = await buildEpub(
+      '# The Weight of Rain\n\n## Chapter 1\n\nIt was raining.',
+      {
+        author: 'Artem KK',
+        coverImage: fakeCoverDataUrl,
+      }
+    );
+    const zip = await JSZip.loadAsync(await epubBlob.arrayBuffer());
+    expect(zip.file('OEBPS/cover.png')).not.toBeNull();
+    expect(zip.file('OEBPS/cover.xhtml')).not.toBeNull();
+
+    const opf = await zip.file('OEBPS/content.opf')!.async('string');
+    expect(opf).toContain('id="cover-image"');
+    expect(opf).toContain('properties="cover-image"');
+    expect(opf).toContain('id="cover" href="cover.xhtml"');
+    expect(opf).toContain('<itemref idref="cover"/>');
+  });
+
+  it('resolves cover image from metadata or localStorage', () => {
+    expect(resolveCoverImage('My Book', { coverImage: 'data:image/png;base64,123' })).toBe('data:image/png;base64,123');
+    expect(resolveCoverImage('My Book', { coverUrl: 'data:image/jpeg;base64,456' })).toBe('data:image/jpeg;base64,456');
+    expect(resolveCoverImage('My Book', {})).toBeNull();
   });
 });

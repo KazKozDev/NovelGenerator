@@ -14,6 +14,8 @@ interface BookCoverUploadProps {
   onAuthorChange?: (author: string) => void;
   imprint?: ImprintData;
   onImprintChange?: (imprint: ImprintData) => void;
+  coverImage?: string | null;
+  onCoverChange?: (coverUrl: string | null) => void;
 }
 
 export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
@@ -23,6 +25,8 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
   onAuthorChange,
   imprint: controlledImprint,
   onImprintChange,
+  coverImage: controlledCoverImage,
+  onCoverChange,
 }) => {
   const cleanTitle = title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_');
   const [author, setAuthor] = useState<string>(controlledAuthor ?? '');
@@ -96,19 +100,39 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
   };
 
   useEffect(() => {
+    if (controlledCoverImage !== undefined) {
+      setCoverUrl(controlledCoverImage);
+      if (controlledCoverImage) {
+        setFileInfo({ name: 'Cover image', size: '' });
+      } else {
+        setFileInfo(null);
+      }
+    }
+  }, [controlledCoverImage]);
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         setCoverUrl(saved);
         setFileInfo({ name: 'Saved cover', size: '' });
+        onCoverChange?.(saved);
       } else {
-        setCoverUrl(null);
-        setFileInfo(null);
+        const fallback = localStorage.getItem('novel_cover_image');
+        if (fallback) {
+          setCoverUrl(fallback);
+          setFileInfo({ name: 'Saved cover', size: '' });
+          onCoverChange?.(fallback);
+        } else {
+          setCoverUrl(null);
+          setFileInfo(null);
+          onCoverChange?.(null);
+        }
       }
     } catch {
       // localStorage unavailable or private browsing
     }
-  }, [storageKey]);
+  }, [storageKey, onCoverChange]);
 
   const handleFile = (file: File) => {
     setError(null);
@@ -130,9 +154,11 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
         setFileInfo({ name: file.name, size: `${sizeMb} MB` });
         try {
           localStorage.setItem(storageKey, dataUrl);
+          localStorage.setItem('novel_cover_image', dataUrl);
         } catch {
           // localStorage full or restricted
         }
+        onCoverChange?.(dataUrl);
       }
     };
     reader.onerror = () => {
@@ -176,9 +202,11 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
     setError(null);
     try {
       localStorage.removeItem(storageKey);
+      localStorage.removeItem('novel_cover_image');
     } catch {
       // ignore
     }
+    onCoverChange?.(null);
   };
 
   return (

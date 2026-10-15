@@ -122,6 +122,36 @@ export function extractBookTitle(content: string): string {
 }
 
 /**
+ * Resolves the book cover image data URL from metadata or localStorage
+ */
+export function resolveCoverImage(title?: string, metadata?: any): string | null {
+  if (typeof metadata?.coverImage === 'string' && metadata.coverImage.trim()) {
+    return metadata.coverImage.trim();
+  }
+  if (typeof metadata?.coverUrl === 'string' && metadata.coverUrl.trim()) {
+    return metadata.coverUrl.trim();
+  }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      if (title) {
+        const cleanTitle = title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_');
+        const savedByTitle = window.localStorage.getItem(`novel_cover_${cleanTitle}`);
+        if (savedByTitle && savedByTitle.startsWith('data:image/')) {
+          return savedByTitle;
+        }
+      }
+      const generic = window.localStorage.getItem('novel_cover_image');
+      if (generic && generic.startsWith('data:image/')) {
+        return generic;
+      }
+    } catch {
+      // localStorage restricted
+    }
+  }
+  return null;
+}
+
+/**
  * Export book as EPUB file (real EPUB 3.0 format)
  * Creates a proper EPUB with all required files and structure
  */
@@ -180,6 +210,51 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
 </body>
 </html>`);
 
+  // Optional Cover image & cover page
+  const coverImage = resolveCoverImage(title, metadata);
+  let coverMetaItem = '';
+  let coverManifestItem = '';
+  let coverSpineItem = '';
+
+  if (coverImage && coverImage.startsWith('data:image/')) {
+    const match = coverImage.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (match) {
+      const coverMime = match[1];
+      const base64Data = match[2];
+      const ext = coverMime.includes('png') ? 'png' : coverMime.includes('webp') ? 'webp' : 'jpg';
+      const coverFilename = `cover.${ext}`;
+
+      // Add cover image binary to OEBPS
+      oebps.file(coverFilename, base64Data, { base64: true });
+
+      // Add cover.xhtml page
+      oebps.file(
+        'cover.xhtml',
+`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>Cover</title>
+  <style>
+    @page { margin: 0; padding: 0; }
+    body { margin: 0; padding: 0; text-align: center; background-color: #000000; }
+    .cover-container { text-align: center; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    img { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <div class="cover-container">
+    <img src="${coverFilename}" alt="${xml(title)} Cover" />
+  </div>
+</body>
+</html>`);
+
+      coverMetaItem = `    <meta name="cover" content="cover-image"/>\n`;
+      coverManifestItem = `    <item id="cover-image" href="${coverFilename}" media-type="${coverMime}" properties="cover-image"/>\n    <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n`;
+      coverSpineItem = `    <itemref idref="cover"/>\n`;
+    }
+  }
+
   // 4. content.opf (package document)
   const imprintManifest = `    <item id="imprint" href="imprint.xhtml" media-type="application/xhtml+xml"/>\n`;
   const imprintSpine = `    <itemref idref="imprint"/>\n`;
@@ -206,14 +281,14 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     <dc:rights>${xml(`${colophon.copyright}. ${colophon.rights}`)}</dc:rights>
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
-  </metadata>
+${coverMetaItem}  </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     <item id="stylesheet" href="stylesheet.css" media-type="text/css"/>
-${imprintManifest}${manifestItems}
+${coverManifestItem}${imprintManifest}${manifestItems}
   </manifest>
   <spine>
-${imprintSpine}${spineItems}
+${coverSpineItem}${imprintSpine}${spineItems}
   </spine>
 </package>`);
   
@@ -350,6 +425,7 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
 export function exportAsPdf(content: string, metadata: any): void {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
+  const coverImage = resolveCoverImage(title, metadata);
   
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
@@ -378,6 +454,12 @@ export function exportAsPdf(content: string, metadata: any): void {
       </div>
     </div>
   `;
+
+  const coverHtml = coverImage ? `
+    <div class="book-cover-page" style="page-break-after: always; display: flex; justify-content: center; align-items: center; min-height: 85vh; text-align: center; margin: 0 auto; padding: 1cm 0;">
+      <img src="${coverImage}" alt="${escape(title)} Cover" style="max-width: 100%; max-height: 85vh; object-fit: contain; box-shadow: 0 4px 16px rgba(0,0,0,0.15); border-radius: 4px;" />
+    </div>
+  ` : '';
 
   printWindow.document.write(`
     <!DOCTYPE html>
@@ -445,6 +527,7 @@ export function exportAsPdf(content: string, metadata: any): void {
       </style>
     </head>
     <body>
+      ${coverHtml}
       <h1>${escape(title)}</h1>
       ${author ? `<div class="author">by ${escape(author)}</div>` : ''}
       ${imprintHtml}
