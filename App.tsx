@@ -13,7 +13,6 @@ import ApiKeysToggle from './components/ApiKeysModal';
 import BookDisplay from './components/BookDisplay';
 import { ImprintData } from './components/BookCoverUpload';
 import SaveBook from './components/SaveBook';
-import AppFooter from './components/AppFooter';
 
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
@@ -406,10 +405,6 @@ const App: React.FC = () => {
         )}
 
       </main>
-      <AppFooter
-        isStudioLayout={isStudioLayout}
-        finalBookContent={Boolean(finalBookContent)}
-      />
     </div>
   );
 };

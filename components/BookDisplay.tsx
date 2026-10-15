@@ -145,8 +145,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       {/* Three-zone layout: Column 1 (33% Review), Column 2 (47% Manuscript), Column 3 (1fr Cover) */}
       <div className="grid grid-cols-1 lg:grid-cols-[33%_47%_1fr] gap-6 items-start">
         {/* Column 1 (~35%): Editorial Review */}
-        <section className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col" aria-label="Editorial review">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+        <section className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-140px)] min-h-[600px]" aria-label="Editorial review">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
             <h2 className="text-sm font-medium text-zinc-200">Editorial Review</h2>
             {onEdit && (
               <button
@@ -165,7 +165,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             )}
           </div>
 
-          <div className="p-4 space-y-3 text-xs max-h-[78vh] overflow-y-auto">
+          <div className="p-4 space-y-3 text-xs flex-1 overflow-y-auto">
             {metadata?.audit && (
               <details className="text-zinc-400" open>
                 <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1 select-none">
@@ -263,8 +263,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         </section>
 
         {/* Column 2 (~35%): Manuscript Reader Card */}
-        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-140px)] min-h-[600px]">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
             <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
             <div className="flex items-center gap-2">
@@ -312,7 +312,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             </div>
           </div>
 
-          <div className="p-6 sm:p-8 max-h-[78vh] overflow-y-auto">
+          <div className="p-6 sm:p-8 flex-1 overflow-y-auto">
             {saveError && (
               <p className="text-xs text-red-400 mb-3">{saveError}</p>
             )}
@@ -323,7 +323,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                   onChange={(e) => setEditableContent(e.target.value)}
                   onKeyDown={handleKeyDown}
                   aria-label="Edit manuscript"
-                  className="w-full min-h-[50vh] p-4 bg-zinc-950 border border-zinc-800 rounded font-serif text-prose text-zinc-200 focus:outline-none focus:border-zinc-700 resize-y leading-relaxed"
+                  className="w-full min-h-[calc(100vh-270px)] p-4 bg-zinc-950 border border-zinc-800 rounded font-serif text-prose text-zinc-200 focus:outline-none focus:border-zinc-700 resize-y leading-relaxed"
                 />
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pt-2">
                   <span className="text-xs text-zinc-500">

@@ -21,13 +21,9 @@ describe('SystemManualModal and copyright placement', () => {
     expect(html).toBe('');
   });
 
-  it('App renders 4-column footer on main view', () => {
+  it('App does not render bottom page footer element', () => {
     const html = renderToStaticMarkup(<App />);
-    expect(html).toContain('id="app-page-footer"');
-    expect(html).toContain('Craft 2.0 Engine');
-    expect(html).toContain('Formats &amp; Export');
-    expect(html).toContain('Privacy &amp; Offline');
-    expect(html).toContain('Colophon &amp; Rights');
-    expect(html).toContain('KazKozDev');
+    expect(html).not.toContain('<footer className="w-full');
+    expect(html).not.toContain('<footer');
   });
 });
