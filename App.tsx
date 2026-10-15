@@ -391,21 +391,6 @@ const App: React.FC = () => {
         )}
 
       </main>
-      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : (finalBookContent ? 'max-w-[1700px] mt-8' : 'max-w-4xl mt-8')} transition-all duration-300`}>
-        <div className="text-center text-zinc-500 text-xs">
-          <p>
-            &copy; {new Date().getFullYear()}{' '}
-            <a 
-              href="https://github.com/KazKozDev" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-zinc-400 hover:text-zinc-300 transition-colors duration-200 underline decoration-dotted"
-            >
-              KazKozDev
-            </a>
-          </p>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -162,7 +162,21 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
         </section>)}</div>
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-zinc-800 light:border-zinc-200 shrink-0 text-xs text-zinc-500">
-        <span>NovelGenerator · Craft 2.0 Engine</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>NovelGenerator · Craft 2.0 Engine</span>
+          <span className="text-zinc-600 light:text-zinc-400">·</span>
+          <span>
+            &copy; {new Date().getFullYear()}{' '}
+            <a
+              href="https://github.com/KazKozDev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 hover:text-zinc-200 light:text-zinc-600 light:hover:text-zinc-900 transition-colors underline decoration-dotted"
+            >
+              KazKozDev
+            </a>
+          </span>
+        </div>
         <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 light:bg-zinc-200 light:hover:bg-zinc-300 text-zinc-200 light:text-zinc-800 rounded-md font-medium">Got it</button>
       </footer>
     </div>
