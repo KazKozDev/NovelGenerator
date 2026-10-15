@@ -495,6 +495,108 @@ export function buildPdfHtml(content: string, metadata: any): string {
     </div>
   `;
 
+  // Calculate front matter page count
+  const hasCover = Boolean(coverImage);
+  const frontMatterPages = (hasCover ? 1 : 0) + 2; // cover (if any) + title page (1) + colophon page (1)
+  const tocPagesCount = chapters.length > 0 ? Math.max(1, Math.ceil(chapters.length / 22)) : 0;
+  const tocStartPage = frontMatterPages + 1;
+  const initialChapterPage = frontMatterPages + tocPagesCount + 1;
+
+  // Helper to paginate paragraphs of chapters into discrete A4 pages
+  const CHARS_PER_LINE = 75;
+  const MAX_LINES_FIRST_PAGE = 30; // space reserved for h2 chapter-title
+  const MAX_LINES_OTHER_PAGES = 34;
+
+  const chapterStartPages: Record<number, number> = {};
+  let runningPageNumber = initialChapterPage;
+
+  interface ChapterPageData {
+    chapterNum: number;
+    titleText: string;
+    pageNumber: number;
+    isFirstPage: boolean;
+    paragraphsHtml: string;
+  }
+
+  const paginatedPages: ChapterPageData[] = [];
+
+  for (const ch of chapters) {
+    const titleText = escape(chapterLabel(ch.num, ch.title));
+    const rawBlocks = ch.content
+      .split(/\n\s*\n/)
+      .map(b => b.trim())
+      .filter(Boolean);
+
+    // Split any abnormally long block so it never overflows a physical A4 page
+    const blocks: string[] = [];
+    for (const b of rawBlocks) {
+      if (/^\s*(?:\*\s*){3,}\s*$/.test(b)) {
+        blocks.push(b);
+      } else if (b.length > 1800) {
+        const sentences = b.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [b];
+        let chunk = '';
+        for (const s of sentences) {
+          if ((chunk + s).length > 1500 && chunk.length > 0) {
+            blocks.push(chunk.trim());
+            chunk = s;
+          } else {
+            chunk += s;
+          }
+        }
+        if (chunk.trim()) blocks.push(chunk.trim());
+      } else {
+        blocks.push(b);
+      }
+    }
+
+    chapterStartPages[ch.num] = runningPageNumber;
+    let pageIndexInChapter = 0;
+    let currentPageParagraphsHtml: string[] = [];
+    let currentLines = 0;
+
+    const flushPage = () => {
+      paginatedPages.push({
+        chapterNum: ch.num,
+        titleText,
+        pageNumber: runningPageNumber,
+        isFirstPage: pageIndexInChapter === 0,
+        paragraphsHtml: currentPageParagraphsHtml.join('\n'),
+      });
+      runningPageNumber++;
+      pageIndexInChapter++;
+      currentPageParagraphsHtml = [];
+      currentLines = 0;
+    };
+
+    if (blocks.length === 0) {
+      flushPage();
+    } else {
+      for (const block of blocks) {
+        const isSceneBreak = /^\s*(?:\*\s*){3,}\s*$/.test(block);
+        const cost = isSceneBreak ? 3 : Math.max(1, Math.ceil(block.length / CHARS_PER_LINE)) + 0.8;
+        const maxLines = pageIndexInChapter === 0 ? MAX_LINES_FIRST_PAGE : MAX_LINES_OTHER_PAGES;
+
+        if (currentLines + cost > maxLines && currentPageParagraphsHtml.length > 0) {
+          flushPage();
+        }
+
+        if (isSceneBreak) {
+          currentPageParagraphsHtml.push('<div class="scene-break">* * *</div>');
+        } else {
+          const formatted = escape(block)
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>');
+          currentPageParagraphsHtml.push(`<p>${formatted}</p>`);
+        }
+        currentLines += cost;
+      }
+
+      if (currentPageParagraphsHtml.length > 0) {
+        flushPage();
+      }
+    }
+  }
+
   // 4. Automatic Table of Contents HTML
   const tocHtml = chapters.length > 0 ? `
     <table class="toc-table page toc-page" id="pdf-toc-page">
@@ -511,10 +613,10 @@ export function buildPdfHtml(content: string, metadata: any): string {
               <div class="toc-divider"></div>
               <ul class="toc-list">
                 ${chapters.map(ch => `
-                  <li class="toc-item">
+                  <li class="toc-item" data-chapter="${ch.num}">
                     <span class="toc-title">${escape(chapterLabel(ch.num, ch.title))}</span>
                     <span class="toc-leader"></span>
-                    <span class="toc-number">${ch.num}</span>
+                    <span class="toc-number" id="toc-page-ch-${ch.num}">${chapterStartPages[ch.num] ?? ch.num}</span>
                   </li>
                 `).join('')}
               </ul>
@@ -524,56 +626,41 @@ export function buildPdfHtml(content: string, metadata: any): string {
       </tbody>
       <tfoot>
         <tr>
-          <td class="page-bottom-margin"></td>
+          <td class="page-bottom-margin">
+            <div class="page-footer"><span>${tocStartPage}</span></div>
+          </td>
         </tr>
       </tfoot>
     </table>
   ` : '';
 
-  // 5. Chapters HTML (using thead/tfoot spacers to guarantee top and bottom margins on every printed page)
-  const chapterBodiesHtml = chapters.length > 0
-    ? chapters.map(ch => {
-        const titleText = escape(chapterLabel(ch.num, ch.title));
-        const paragraphsHtml = ch.content
-          .split(/\n\s*\n/)
-          .map(block => {
-            const trimmed = block.trim();
-            if (!trimmed) return '';
-            if (/^\s*(?:\*\s*){3,}\s*$/.test(trimmed)) {
-              return '<div class="scene-break">* * *</div>';
-            }
-            const formatted = escape(trimmed)
-              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-              .replace(/\*(.+?)\*/g, '<em>$1</em>');
-            return `<p>${formatted}</p>`;
-          })
-          .filter(Boolean)
-          .join('\n');
-
-        return `
-          <table class="chapter-table chapter-container">
-            <thead>
-              <tr>
-                <td class="page-top-margin"></td>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="chapter-content-cell">
-                  <h2 class="chapter-title">${titleText}</h2>
-                  ${paragraphsHtml}
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td class="page-bottom-margin"></td>
-              </tr>
-            </tfoot>
-          </table>
-        `;
-      }).join('\n')
-    : `<table class="chapter-table chapter-container"><thead><tr><td class="page-top-margin"></td></tr></thead><tbody><tr><td class="chapter-content-cell">${content.split(/\n\s*\n/).map(b => `<p>${escape(b)}</p>`).join('')}</td></tr></tbody><tfoot><tr><td class="page-bottom-margin"></td></tr></tfoot></table>`;
+  // 5. Chapters HTML (each paginated sheet with dedicated page-footer at bottom center)
+  const chapterBodiesHtml = paginatedPages.length > 0
+    ? paginatedPages.map(page => `
+        <table class="chapter-table chapter-container" data-chapter="${page.chapterNum}" data-page-number="${page.pageNumber}">
+          <thead>
+            <tr>
+              <td class="page-top-margin"></td>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="chapter-content-cell">
+                ${page.isFirstPage ? `<h2 class="chapter-title">${page.titleText}</h2>` : ''}
+                ${page.paragraphsHtml}
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td class="page-bottom-margin">
+                <div class="page-footer"><span>${page.pageNumber}</span></div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      `).join('\n')
+    : `<table class="chapter-table chapter-container"><thead><tr><td class="page-top-margin"></td></tr></thead><tbody><tr><td class="chapter-content-cell">${content.split(/\n\s*\n/).map(b => `<p>${escape(b)}</p>`).join('')}</td></tr></tbody><tfoot><tr><td class="page-bottom-margin"><div class="page-footer"><span>${initialChapterPage}</span></div></td></tr></tfoot></table>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -908,6 +995,20 @@ export function buildPdfHtml(content: string, metadata: any): string {
       letter-spacing: 0.5em;
       color: #666666;
     }
+    .page-footer {
+      width: 100%;
+      height: 2.8cm;
+      line-height: 2.8cm;
+      text-align: center;
+      font-family: 'Georgia', 'Garamond', 'Palatino Linotype', serif;
+      font-size: 10pt;
+      color: #666666;
+      letter-spacing: 0.05em;
+    }
+    .page-footer span {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: 'tnum';
+    }
   </style>
 </head>
 <body>
@@ -918,6 +1019,22 @@ export function buildPdfHtml(content: string, metadata: any): string {
   ${chapterBodiesHtml}
   <script>
     window.onload = function() {
+      try {
+        var tocItems = document.querySelectorAll('.toc-item');
+        tocItems.forEach(function(item) {
+          var chNum = item.getAttribute('data-chapter');
+          var firstPage = document.querySelector('.chapter-table[data-chapter="' + chNum + '"]');
+          if (firstPage) {
+            var pageNum = firstPage.getAttribute('data-page-number');
+            var numEl = item.querySelector('.toc-number');
+            if (pageNum && numEl) {
+              numEl.textContent = pageNum;
+            }
+          }
+        });
+      } catch (err) {
+        console.error('TOC sync error:', err);
+      }
       setTimeout(function() {
         window.print();
       }, 500);

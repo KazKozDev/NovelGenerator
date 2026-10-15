@@ -198,4 +198,36 @@ Morning arrived with gray skies and damp earth.`;
     expect(html).toContain('Silent Whispers');
     expect(html).toContain('by Elena Gray');
   });
+
+  it('buildPdfHtml renders bottom-centered page numbering and syncs with Table of Contents', () => {
+    const fakeCover = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const bookContent = `# The Weight of Rain
+
+## Chapter 1: The Storm
+It began with a whisper in the wind. The rain pelted against the glass.
+
+## Chapter 2: The Aftermath
+Morning arrived with gray skies and damp earth.`;
+
+    const html = buildPdfHtml(bookContent, {
+      author: 'Artem KK',
+      coverImage: fakeCover,
+    });
+
+    // Check footer styling exists with text-align: center
+    expect(html).toContain('.page-footer');
+    expect(html).toContain('text-align: center;');
+
+    // Verify footer page numbers are rendered
+    expect(html).toContain('<div class="page-footer"><span>5</span></div>');
+    expect(html).toContain('<div class="page-footer"><span>6</span></div>');
+
+    // Verify Table of Contents has matching chapter starting page numbers
+    // Front matter with cover: Cover (1) + Title (2) + Colophon (3) + TOC (4) = 4 pages.
+    // Chapter 1 starts on page 5, Chapter 2 starts on page 6.
+    expect(html).toContain('<span class="toc-number" id="toc-page-ch-1">5</span>');
+    expect(html).toContain('<span class="toc-number" id="toc-page-ch-2">6</span>');
+  });
 });
+
+
