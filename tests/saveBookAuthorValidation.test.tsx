@@ -8,6 +8,7 @@ import {
   formatMarkdownWithMetadata,
   formatTextWithMetadata,
   buildEpub,
+  buildPdfHtml,
   resolveCoverImage,
 } from '../utils/exportUtils';
 
@@ -123,5 +124,76 @@ describe('SaveBook author validation and colophon', () => {
     expect(resolveCoverImage('My Book', { coverImage: 'data:image/png;base64,123' })).toBe('data:image/png;base64,123');
     expect(resolveCoverImage('My Book', { coverUrl: 'data:image/jpeg;base64,456' })).toBe('data:image/jpeg;base64,456');
     expect(resolveCoverImage('My Book', {})).toBeNull();
+  });
+
+  it('buildPdfHtml generates full-bleed cover, zero @page margin, dedicated title, colophon, and auto TOC', () => {
+    const fakeCover = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const bookContent = `# The Weight of Rain
+
+## Chapter 1: The Storm
+It began with a whisper in the wind. The rain pelted against the glass.
+
+## Chapter 2: The Aftermath
+Morning arrived with gray skies and damp earth.`;
+
+    const html = buildPdfHtml(bookContent, {
+      author: 'Artem KK',
+      coverImage: fakeCover,
+      imprint: {
+        edition: 'First Edition',
+        isbnPaperback: '978-0-123456-47-2',
+        isbnEbook: '978-0-123456-48-9',
+        year: '2026',
+      },
+    });
+
+    // Zero-margin @page to remove default browser headers and footers (about:blank, date/time)
+    expect(html).toContain('margin: 0');
+    expect(html).toContain('size: A4 portrait');
+
+    // Full-bleed cover page
+    expect(html).toContain('id="pdf-cover-page"');
+    expect(html).toContain('class="page cover-page"');
+    expect(html).toContain('object-fit: cover');
+    expect(html).toContain(fakeCover);
+
+    // Dedicated Title page
+    expect(html).toContain('id="pdf-title-page"');
+    expect(html).toContain('The Weight of Rain');
+    expect(html).toContain('by Artem KK');
+    expect(html).toContain('First Edition, 2026');
+
+    // Dedicated Colophon page with centered card and legal clauses
+    expect(html).toContain('id="pdf-colophon-page"');
+    expect(html).toContain('colophon-card');
+    expect(html).toContain('Copyright © 2026 Artem KK');
+    expect(html).toContain('All rights reserved.');
+    expect(html).toContain('ISBN 978-0-123456-47-2 (paperback)');
+    expect(html).toContain('ISBN 978-0-123456-48-9 (ebook)');
+    expect(html).toContain('Published by NG Press');
+
+    // Automatic Table of Contents
+    expect(html).toContain('id="pdf-toc-page"');
+    expect(html).toContain('Table of Contents');
+    expect(html).toContain('Chapter 1: The Storm');
+    expect(html).toContain('Chapter 2: The Aftermath');
+
+    // Chapters in separate containers with page-break-before
+    expect(html).toContain('class="chapter-container"');
+    expect(html).toContain('page-break-before: always');
+    expect(html).toContain('It began with a whisper in the wind.');
+    expect(html).toContain('Morning arrived with gray skies and damp earth.');
+  });
+
+  it('buildPdfHtml renders cleanly without cover page when no cover is uploaded', () => {
+    const bookContent = `# Silent Whispers\n\n## Chapter 1\nAlone in the library.`;
+    const html = buildPdfHtml(bookContent, { author: 'Elena Gray' });
+
+    expect(html).not.toContain('id="pdf-cover-page"');
+    expect(html).toContain('id="pdf-title-page"');
+    expect(html).toContain('id="pdf-colophon-page"');
+    expect(html).toContain('id="pdf-toc-page"');
+    expect(html).toContain('Silent Whispers');
+    expect(html).toContain('by Elena Gray');
   });
 });

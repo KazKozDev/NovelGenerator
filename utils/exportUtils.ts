@@ -422,126 +422,450 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
 /**
  * Export book as PDF using browser's print functionality
  */
-export function exportAsPdf(content: string, metadata: any): void {
+/**
+ * Builds the complete HTML document string for printing / saving as PDF.
+ * Uses @page { margin: 0 } to suppress browser headers (time/date) and footers (about:blank),
+ * while supplying internal margins on dedicated pages:
+ * 1. Full-bleed cover page (if cover image present)
+ * 2. Dedicated Title page
+ * 3. Dedicated centered Colophon/Copyright page
+ * 4. Automatic Table of Contents page
+ * 5. Chapters (each starting on a new page)
+ */
+export function buildPdfHtml(content: string, metadata: any): string {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
   const coverImage = resolveCoverImage(title, metadata);
-  
+  const colophon = resolveImprintColophon(author, metadata?.imprint);
+  const chapters = parseBookChapters(content);
+
+  const escape = (text: string) =>
+    String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+  // 1. Cover page HTML
+  const coverHtml = coverImage ? `
+    <div class="page cover-page" id="pdf-cover-page">
+      <img src="${coverImage}" alt="${escape(title)} Cover" />
+    </div>
+  ` : '';
+
+  // 2. Title page HTML
+  const titlePageHtml = `
+    <div class="page title-page" id="pdf-title-page">
+      <div class="title-page-content">
+        <h1 class="book-title">${escape(title)}</h1>
+        <div class="title-divider"></div>
+        ${author ? `<div class="book-author">by ${escape(author)}</div>` : ''}
+        ${colophon.editionLine ? `<div class="book-edition-subtitle">${escape(colophon.editionLine)}</div>` : ''}
+      </div>
+    </div>
+  `;
+
+  // 3. Colophon / Copyright page HTML (dedicated, beautifully centered)
+  const colophonHtml = `
+    <div class="page colophon-page" id="pdf-colophon-page">
+      <div class="colophon-card">
+        <div class="colophon-header">
+          <div class="colophon-book-title">${escape(title)}</div>
+          ${author ? `<div class="colophon-book-author">by ${escape(author)}</div>` : ''}
+        </div>
+        <div class="colophon-divider"></div>
+        <div class="colophon-body">
+          <p class="colophon-copyright">${escape(colophon.copyright)}</p>
+          <p class="colophon-rights">${escape(colophon.rights)}</p>
+          <p class="colophon-text">${escape(colophon.reproduction)}</p>
+          <p class="colophon-text">${escape(colophon.aiDisclaimer)}</p>
+          <p class="colophon-text">${escape(colophon.liabilityDisclaimer)}</p>
+          <p class="colophon-text fiction-disclaimer">${escape(colophon.fictionDisclaimer)}</p>
+          ${colophon.isbns.length > 0 ? `
+            <div class="colophon-isbns">
+              ${colophon.isbns.map(isbn => `<div class="colophon-isbn">${escape(isbn)}</div>`).join('')}
+            </div>
+          ` : ''}
+          <div class="colophon-publisher">
+            <div>${escape(colophon.publisher)}</div>
+            ${colophon.editionLine ? `<div>${escape(colophon.editionLine)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 4. Automatic Table of Contents HTML
+  const tocHtml = chapters.length > 0 ? `
+    <div class="page toc-page" id="pdf-toc-page">
+      <div class="toc-container">
+        <h2 class="toc-heading">Table of Contents</h2>
+        <div class="toc-divider"></div>
+        <ul class="toc-list">
+          ${chapters.map(ch => `
+            <li class="toc-item">
+              <span class="toc-title">${escape(chapterLabel(ch.num, ch.title))}</span>
+              <span class="toc-leader"></span>
+              <span class="toc-number">${ch.num}</span>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    </div>
+  ` : '';
+
+  // 5. Chapters HTML
+  const chapterBodiesHtml = chapters.length > 0
+    ? chapters.map(ch => {
+        const titleText = escape(chapterLabel(ch.num, ch.title));
+        const paragraphsHtml = ch.content
+          .split(/\n\s*\n/)
+          .map(block => {
+            const trimmed = block.trim();
+            if (!trimmed) return '';
+            if (/^\s*(?:\*\s*){3,}\s*$/.test(trimmed)) {
+              return '<div class="scene-break">* * *</div>';
+            }
+            const formatted = escape(trimmed)
+              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*(.+?)\*/g, '<em>$1</em>');
+            return `<p>${formatted}</p>`;
+          })
+          .filter(Boolean)
+          .join('\n');
+
+        return `
+          <div class="chapter-container">
+            <h2 class="chapter-title">${titleText}</h2>
+            ${paragraphsHtml}
+          </div>
+        `;
+      }).join('\n')
+    : `<div class="chapter-container">${content.split(/\n\s*\n/).map(b => `<p>${escape(b)}</p>`).join('')}</div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${escape(title)}${author ? ` - ${escape(author)}` : ''}</title>
+  <style>
+    /* Suppress browser print header (date/time) and footer (about:blank) by zeroing @page margin */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color: #111111 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .page, .chapter-container {
+        page-break-after: always;
+        break-after: page;
+      }
+      .cover-page {
+        page-break-after: always;
+        break-after: page;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+      }
+      .cover-page img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      color: #1a1a1a;
+      font-family: 'Georgia', 'Garamond', 'Palatino Linotype', serif;
+      font-size: 11pt;
+      line-height: 1.65;
+    }
+
+    /* Page container base */
+    .page {
+      width: 100%;
+      min-height: 100vh;
+      page-break-after: always;
+      break-after: page;
+    }
+
+    /* 1. Cover Page - Full bleed stretch */
+    .cover-page {
+      width: 100vw;
+      height: 100vh;
+      min-height: 100vh;
+      max-height: 100vh;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #000000;
+    }
+    .cover-page img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* 2. Title Page */
+    .title-page {
+      padding: 4.5cm 2.5cm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    .title-page-content {
+      max-width: 600px;
+      margin: auto;
+    }
+    .book-title {
+      font-size: 2.8em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1.2;
+      color: #111111;
+      margin: 0 0 0.4em 0;
+    }
+    .title-divider {
+      width: 60px;
+      height: 2px;
+      background-color: #333333;
+      margin: 1.8em auto;
+    }
+    .book-author {
+      font-size: 1.35em;
+      font-style: italic;
+      color: #444444;
+      margin-bottom: 2.5em;
+    }
+    .book-edition-subtitle {
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #777777;
+    }
+
+    /* 3. Colophon / Copyright Page */
+    .colophon-page {
+      padding: 3.5cm 2.5cm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .colophon-card {
+      max-width: 520px;
+      margin: auto;
+      font-size: 0.85em;
+      line-height: 1.65;
+      color: #333333;
+    }
+    .colophon-header {
+      margin-bottom: 1.2em;
+    }
+    .colophon-book-title {
+      font-size: 1.15em;
+      font-weight: 700;
+      color: #111111;
+    }
+    .colophon-book-author {
+      font-size: 0.95em;
+      color: #555555;
+      margin-top: 0.2em;
+    }
+    .colophon-divider {
+      width: 100%;
+      height: 1px;
+      background-color: #dddddd;
+      margin: 1.2em 0;
+    }
+    .colophon-copyright {
+      font-weight: 600;
+      color: #111111;
+      margin-bottom: 0.3em;
+    }
+    .colophon-rights {
+      font-weight: 500;
+      color: #222222;
+      margin-bottom: 1em;
+    }
+    .colophon-text {
+      text-align: justify;
+      margin-bottom: 1em;
+      color: #444444;
+      text-indent: 0;
+    }
+    .fiction-disclaimer {
+      font-style: italic;
+      color: #555555;
+    }
+    .colophon-isbns {
+      margin: 1.2em 0;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9em;
+      color: #222222;
+    }
+    .colophon-publisher {
+      margin-top: 1.5em;
+      padding-top: 1em;
+      border-top: 1px solid #dddddd;
+      font-size: 0.85em;
+      color: #666666;
+    }
+
+    /* 4. Table of Contents */
+    .toc-page {
+      padding: 3.5cm 2.5cm;
+    }
+    .toc-container {
+      max-width: 650px;
+      margin: 0 auto;
+    }
+    .toc-heading {
+      font-size: 1.8em;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #111111;
+      margin: 0 0 0.5em 0;
+    }
+    .toc-divider {
+      width: 50px;
+      height: 2px;
+      background: #333333;
+      margin: 1.2em auto 2.5em auto;
+    }
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .toc-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 0.9em;
+      font-size: 0.95em;
+      color: #222222;
+    }
+    .toc-title {
+      font-weight: 500;
+    }
+    .toc-leader {
+      flex-grow: 1;
+      margin: 0 0.8em;
+      border-bottom: 1px dotted #888888;
+      height: 1px;
+    }
+    .toc-number {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: 'tnum';
+      color: #555555;
+      font-weight: 600;
+    }
+
+    /* 5. Chapters */
+    .chapter-container {
+      width: 100%;
+      padding: 3.2cm 2.5cm 2.5cm 2.5cm;
+      page-break-before: always;
+      break-before: page;
+    }
+    .chapter-title {
+      text-align: center;
+      font-size: 1.9em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-top: 1.5em;
+      margin-bottom: 2em;
+      page-break-after: avoid;
+      break-after: avoid;
+      color: #111111;
+    }
+    p {
+      text-align: justify;
+      text-indent: 1.5em;
+      margin: 0.6em 0;
+      line-height: 1.65;
+      orphans: 3;
+      widows: 3;
+    }
+    .chapter-title + p {
+      text-indent: 0;
+    }
+    strong {
+      font-weight: bold;
+    }
+    em {
+      font-style: italic;
+    }
+    .scene-break {
+      text-align: center;
+      margin: 2em 0;
+      letter-spacing: 0.5em;
+      color: #666666;
+    }
+  </style>
+</head>
+<body>
+  ${coverHtml}
+  ${titlePageHtml}
+  ${colophonHtml}
+  ${tocHtml}
+  ${chapterBodiesHtml}
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Export book as PDF via browser print window
+ */
+export function exportAsPdf(content: string, metadata: any): void {
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     alert('Please allow pop-ups to export PDF');
     return;
   }
-  
-  const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const chapters = parseBookChapters(content);
-  const htmlContent = chapters.map(ch => `<h2 class="chapter-title">${escape(chapterLabel(ch.num, ch.title))}</h2>` + ch.content.split(/\n\s*\n/).map(block => /^\s*(?:\*\s*){3,}\s*$/.test(block) ? '<div class="scene-break">* * *</div>' : `<p>${escape(block).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>`).join('')).join('');
 
-  const colophon = resolveImprintColophon(author, metadata?.imprint);
-  const imprintHtml = `
-    <div class="imprint-section" style="page-break-after: always; margin-top: 4em; font-size: 0.85em; color: #333; line-height: 1.6; max-width: 580px;">
-      <p style="margin-bottom: 0.5em; font-weight: bold;">${escape(colophon.copyright)}</p>
-      <p style="margin-bottom: 1.2em;">${escape(colophon.rights)}</p>
-      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.reproduction)}</p>
-      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.aiDisclaimer)}</p>
-      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.liabilityDisclaimer)}</p>
-      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.fictionDisclaimer)}</p>
-      ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${escape(isbn)}</p>`).join('')}
-      <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ccc;">
-        <p style="margin-bottom: 0.3em;">${escape(colophon.publisher)}</p>
-        <p>${escape(colophon.editionLine)}</p>
-      </div>
-    </div>
-  `;
-
-  const coverHtml = coverImage ? `
-    <div class="book-cover-page" style="page-break-after: always; display: flex; justify-content: center; align-items: center; min-height: 85vh; text-align: center; margin: 0 auto; padding: 1cm 0;">
-      <img src="${coverImage}" alt="${escape(title)} Cover" style="max-width: 100%; max-height: 85vh; object-fit: contain; box-shadow: 0 4px 16px rgba(0,0,0,0.15); border-radius: 4px;" />
-    </div>
-  ` : '';
-
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>${escape(title)}${author ? ` - ${escape(author)}` : ''}</title>
-      <style>
-        @page {
-          size: A4;
-          margin: 2cm;
-        }
-        body {
-          font-family: Georgia, serif;
-          line-height: 1.6;
-          color: #000;
-          max-width: 800px;
-          margin: 0 auto;
-          padding: 20px;
-        }
-        h1 {
-          text-align: center;
-          font-size: 2.5em;
-          margin-bottom: 0.5em;
-          page-break-after: avoid;
-        }
-        .author {
-          text-align: center;
-          font-size: 1.2em;
-          color: #666;
-          margin-bottom: 3em;
-        }
-        h2.chapter-title {
-          page-break-before: always;
-          margin-top: 2em;
-          margin-bottom: 1em;
-          font-size: 1.8em;
-        }
-        p {
-          text-align: justify;
-          text-indent: 1.5em;
-          margin: 0.5em 0;
-          orphans: 3;
-          widows: 3;
-        }
-        h2 + p {
-          text-indent: 0;
-        }
-        strong {
-          font-weight: bold;
-        }
-        em {
-          font-style: italic;
-        }
-        .scene-break {
-          text-align: center;
-          margin: 2em 0;
-          letter-spacing: 0.5em;
-        }
-        @media print {
-          body {
-            padding: 0;
-          }
-        }
-      </style>
-    </head>
-    <body>
-      ${coverHtml}
-      <h1>${escape(title)}</h1>
-      ${author ? `<div class="author">by ${escape(author)}</div>` : ''}
-      ${imprintHtml}
-      ${htmlContent}
-      <script>
-        window.onload = function() {
-          setTimeout(function() {
-            window.print();
-          }, 500);
-        };
-      </script>
-    </body>
-    </html>
-  `);
-  
+  const html = buildPdfHtml(content, metadata);
+  printWindow.document.write(html);
   printWindow.document.close();
 }
+
