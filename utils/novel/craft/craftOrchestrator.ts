@@ -15,7 +15,7 @@ import { planSeries, betaReaders, compareBooks } from './readerTools';
 import { validateReceipt, sceneNeedsRepair, observeScene, type Observation } from './observer';
 import { preflightPacket, projectPacket, validatePacket } from './projection';
 import { blindWriterContext, readBlind, readBlindPrefix } from './blindContext';
-import { extractUsedImagery, stripSubtextDecoding, joinScenesWithCameraBreaks } from './craftRules';
+import { extractUsedImagery, stripSubtextDecoding, joinScenesWithCameraBreaks, smoothSceneTransition, smoothAndJoinChapterScenes } from './craftRules';
 import type { TrackedPropState } from './types';
 import type { ProgressStage } from '../v2/orchestrator';
 import { reviseManuscript, editorialReport, manuscriptText, EDITORIAL_FOCUSES, CORE_EDITORIAL_FOCUSES } from './editorial';
@@ -650,7 +650,8 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
     const chScenes = packet.scenes.filter(s => s.chapter === chNum);
     const chSceneProse: string[] = [];
 
-    for (const plannedCard of chScenes) {
+    for (let sceneIdx = 0; sceneIdx < chScenes.length; sceneIdx++) {
+      const plannedCard = chScenes[sceneIdx];
       let card = architecture ? projectArchitecture(architecture).scenes.find(s => s.id === plannedCard.id)! : plannedCard;
       const sceneWords = Number.isFinite(card.targetWords) && card.targetWords! > 0 ? Math.round(card.targetWords!) : targetWordsPerScene;
       journal.push(`Writing Scene ${card.order} (${card.id})`);
@@ -661,6 +662,29 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
       const wornWarning = worn.length > 0 
         ? `\n- BANNED REPETITIVE PHRASES (already overused in prior scenes; DO NOT USE):\n  ${worn.slice(0, 15).join(', ')}`
         : '';
+
+      // Part 1: Prompt Prevention in craft-write (When generating Scene B, index > 0)
+      let transitionRule = '';
+      if (sceneIdx > 0) {
+        const prevCard = chScenes[sceneIdx - 1];
+        const prevPov = prevCard.pov?.trim().toLowerCase();
+        const currPov = card.pov?.trim().toLowerCase();
+        const isCameraShift = Boolean(prevPov && currPov && prevPov !== currPov);
+
+        if (!isCameraShift) {
+          const prevLoc = prevCard.location?.trim().toLowerCase();
+          const currLoc = card.location?.trim().toLowerCase();
+          const prevTime = prevCard.time?.trim().toLowerCase();
+          const currTime = card.time?.trim().toLowerCase();
+          const isContinuous = (!prevLoc || !currLoc || prevLoc === currLoc) && (!prevTime || !currTime || prevTime === currTime);
+
+          if (isContinuous) {
+            transitionRule = `\n- TRANSITION RULE (CONTINUOUS): This scene continues immediately from the final second of the previous scene. NEVER repeat, paraphrase, or summarize the final action, posture, dialogue, or sensory beat of the previous scene. Match the exact verb tense and start directly with the very next physical action or line of dialogue.`;
+          } else {
+            transitionRule = `\n- TRANSITION RULE (TIME/LOCATION SHIFT): The character has moved to a new location or time since the previous scene. Do NOT recap the ending of the previous scene. Ground the new location and time naturally within the first sentence.`;
+          }
+        }
+      }
 
       // A reader sees committed prose only, before the next scene exists.
       const beforeReader = `scene-${card.order}-reader-before.json`;
@@ -703,7 +727,7 @@ INSTRUCTIONS FOR WRITER:
   * Point of View: Third Person Limited. Anchor strictly inside the viewpoint character's sensory perception and immediate consciousness: he/she/they.
   * Grammatical Tense: Past Tense. The standard of fiction ("The lock gave under his thumb. Bruce stepped inside and pulled the door shut behind him."). All narration, stage business, and beats must be written in past tense (walked, looked, gave, spoke), NEVER present tense.
 - Current scene only; do not jump ahead to future scenes.
-- Output fiction prose only, no titles, headings, or meta comments.`;
+- Output fiction prose only, no titles, headings, or meta comments.${transitionRule}`;
 
       let execution: SceneExecution | undefined;
       if (architecture && session) {
@@ -711,8 +735,12 @@ INSTRUCTIONS FOR WRITER:
         execution = await prepareExecution(architecture, node, enacted, files[beforeReader], session, llm);
         card = applyExecutionToCard(card, execution);
         context = executionPrompt(execution, pages);
+        if (transitionRule) {
+          context += `\n\n${transitionRule}`;
+        }
       }
-      const sceneSystem = architecture ? DRAFT_WRITER_SYSTEM : CRAFT_SYSTEM;
+      const baseSystem = architecture ? DRAFT_WRITER_SYSTEM : CRAFT_SYSTEM;
+      const sceneSystem = transitionRule ? `${baseSystem}\n${transitionRule}` : baseSystem;
       const needsRepair = (receipt: Receipt, prose: string) => architecture
         ? receipt.event.status !== 'enacted' || !receipt.tangibleActionEnacted || receipt.issues.some(i => i.status === 'demonstrated' && ['factual', 'knowledge', 'causal'].includes(i.kind || ''))
         : sceneNeedsRepair(receipt, prose, sceneWords);
@@ -727,8 +755,8 @@ INSTRUCTIONS FOR WRITER:
       const saveScene = (phase: string, observation?: Observation) => {
         files[sceneFile] = sceneText;
         files[stateFile] = JSON.stringify({ sceneId: card.id, phase, repairAttempted: checkpoint.repairAttempted, observation });
-        const chScenesWithProse = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov }));
-        chScenesWithProse.push({ text: sceneText, pov: card.pov });
+        const chScenesWithProse = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov, location: s.location, time: s.time }));
+        chScenesWithProse.push({ text: sceneText, pov: card.pov, location: card.location, time: card.time });
         const partial = joinScenesWithCameraBreaks(chScenesWithProse);
         files[`chapter-${chNum}.md`] = partial;
         store.saveManuscript(chNum, partial);
@@ -846,6 +874,28 @@ Return JSON:
         packet = projectArchitecture(architecture);
         files['packet.json'] = JSON.stringify(packet);
       }
+
+      // Smooth transition with previous scene in chapter if same POV (Parts 2 & 3)
+      if (sceneIdx > 0 && chSceneProse.length > 0) {
+        const prevCard = chScenes[sceneIdx - 1];
+        const prevPov = prevCard.pov?.trim().toLowerCase();
+        const currPov = card.pov?.trim().toLowerCase();
+        const isCameraShift = Boolean(prevPov && currPov && prevPov !== currPov);
+        if (!isCameraShift) {
+          sceneText = await smoothSceneTransition(
+            chSceneProse[sceneIdx - 1],
+            sceneText,
+            {
+              locA: prevCard.location,
+              locB: card.location,
+              timeA: prevCard.time,
+              timeB: card.time,
+            },
+            llm
+          );
+        }
+      }
+
       saveScene('complete', observation);
       pages.push(sceneText);
       chSceneProse.push(sceneText);
@@ -879,12 +929,12 @@ Return JSON:
       });
 
       // Save interim chapter progress
-      const interimChapterScenes = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov }));
+      const interimChapterScenes = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov, location: s.location, time: s.time }));
       store.saveManuscript(chNum, joinScenesWithCameraBreaks(interimChapterScenes));
     }
 
-    const fullChapterScenes = chScenes.map((s, idx) => ({ text: chSceneProse[idx] || '', pov: s.pov }));
-    const fullChapterText = joinScenesWithCameraBreaks(fullChapterScenes);
+    const fullChapterScenes = chScenes.map((s, idx) => ({ text: chSceneProse[idx] || '', pov: s.pov, location: s.location, time: s.time }));
+    const fullChapterText = await smoothAndJoinChapterScenes(fullChapterScenes, llm);
     chaptersText.push(fullChapterText);
     files[`chapter-${chNum}.md`] = fullChapterText;
     store.saveManuscript(chNum, fullChapterText);

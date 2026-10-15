@@ -95,9 +95,217 @@ export function stripSubtextDecoding(prose: string): string {
 }
 
 /**
- * Joins chapter scenes with automatic camera breaks (* * *) when POV changes between scenes.
+ * Extracts individual sentences from a prose paragraph.
  */
-export function joinScenesWithCameraBreaks(scenes: Array<{ text: string; pov?: string }>): string {
+export function extractSentences(paragraph: string): string[] {
+  if (!paragraph || !paragraph.trim()) return [];
+  const matches = paragraph.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g);
+  return matches ? matches.map(s => s.trim()).filter(Boolean) : [paragraph.trim()];
+}
+
+/**
+ * Normalizes a sentence for duplicate and similarity comparison.
+ */
+export function normalizeSentenceForDedup(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Computes sentence similarity using word bigram Jaccard similarity.
+ */
+export function computeSentenceSimilarity(sentenceA: string, sentenceB: string): number {
+  const normA = normalizeSentenceForDedup(sentenceA);
+  const normB = normalizeSentenceForDedup(sentenceB);
+  if (!normA && !normB) return 1;
+  if (!normA || !normB) return 0;
+  if (normA === normB) return 1;
+
+  const wordsA = normA.split(' ').filter(Boolean);
+  const wordsB = normB.split(' ').filter(Boolean);
+
+  if (!wordsA.length || !wordsB.length) return 0;
+  if (wordsA.join(' ') === wordsB.join(' ')) return 1.0;
+
+  // Word bigram Jaccard similarity
+  if (wordsA.length >= 2 && wordsB.length >= 2) {
+    const bgA = new Set<string>();
+    for (let i = 0; i < wordsA.length - 1; i++) bgA.add(`${wordsA[i]} ${wordsA[i + 1]}`);
+    const bgB = new Set<string>();
+    for (let i = 0; i < wordsB.length - 1; i++) bgB.add(`${wordsB[i]} ${wordsB[i + 1]}`);
+    let intersection = 0;
+    for (const bg of bgA) {
+      if (bgB.has(bg)) intersection++;
+    }
+    const union = new Set([...bgA, ...bgB]).size;
+    return union > 0 ? intersection / union : 0;
+  }
+
+  return 0;
+}
+
+/**
+ * Deterministic Dedup Filter (Part 2):
+ * When joining Scene A and Scene B with \n\n (same POV, no * * * separator):
+ * Extracts last sentence of Scene A (from last paragraph) and first sentence of Scene B (from first paragraph).
+ * Normalizes both and if similarity >= 0.70, strips first sentence from the beginning of Scene B.
+ */
+export function applyDeterministicDedup(sceneA: string, sceneB: string): string {
+  const parasA = sceneA.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const parasB = sceneB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+
+  if (!parasA.length || !parasB.length) return sceneB;
+
+  const tailA = parasA[parasA.length - 1];
+  const headB = parasB[0];
+
+  const sentencesA = extractSentences(tailA);
+  const sentencesB = extractSentences(headB);
+
+  if (!sentencesA.length || !sentencesB.length) return sceneB;
+
+  const lastSentenceA = sentencesA[sentencesA.length - 1];
+  const firstSentenceB = sentencesB[0];
+
+  const similarity = computeSentenceSimilarity(lastSentenceA, firstSentenceB);
+
+  if (similarity >= 0.70) {
+    if (sentencesB.length > 1) {
+      parasB[0] = sentencesB.slice(1).join(' ').trim();
+    } else {
+      parasB.shift();
+    }
+    return parasB.join('\n\n');
+  }
+
+  return sceneB;
+}
+
+export interface SeamPolisherMetadata {
+  locA?: string;
+  locB?: string;
+  timeA?: string;
+  timeB?: string;
+}
+
+/**
+ * Formats the exact Fast LLM Micro-Seam Polisher prompt (Part 3).
+ */
+export function buildSeamPolisherPrompt(
+  tailA: string,
+  headB: string,
+  anchorB: string,
+  meta: SeamPolisherMetadata = {}
+): string {
+  const locA = meta.locA?.trim() || 'unspecified';
+  const locB = meta.locB?.trim() || 'unspecified';
+  const isJump = Boolean(
+    (meta.locA && meta.locB && meta.locA.trim().toLowerCase() !== meta.locB.trim().toLowerCase()) ||
+    (meta.timeA && meta.timeB && meta.timeA.trim().toLowerCase() !== meta.timeB.trim().toLowerCase())
+  ) ? 'True' : 'False';
+
+  return `You are an invisible prose seam editor. Evaluate and smooth the transition between [TAIL_A] (end of Scene A) and [HEAD_B] (start of Scene B).
+
+Metadata:
+- Location A: ${locA}
+- Location B: ${locB}
+- Time/Location Jump: ${isJump}
+
+[TAIL_A] (Read-only context — end of Scene A):
+${tailA}
+
+[HEAD_B] (Target to edit — first paragraph of Scene B):
+${headB}
+
+[ANCHOR_B] (Read-only continuation — second paragraph of Scene B):
+${anchorB}
+
+RULES:
+1. If [HEAD_B] already flows naturally from [TAIL_A] without repeating actions/postures and without jarring spatial teleportation — output ONLY the exact word: PASS
+2. Remove any redundant action echoes, paraphrased repetitions of [TAIL_A], or awkward emotional recaps at the start of [HEAD_B].
+3. If Time/Location Jump is True and the transition feels like an abrupt teleportation, weave a brief, grounded 3–8 word spatial or temporal anchor into the opening of [HEAD_B] (matching the author's minimalist style, NO clichés like "Meanwhile" or "Later that day").
+4. CRITICAL: Strictly preserve the exact verb tense (Present vs. Past) and POV used in [TAIL_A] and [HEAD_B].
+5. Ensure the end of your edited [HEAD_B] connects seamlessly and grammatically into [ANCHOR_B] (do not leave dangling pronouns in [ANCHOR_B]).
+6. Output ONLY "PASS" or the raw replacement text for [HEAD_B]. No markdown, no quotes, no explanations.`;
+}
+
+/**
+ * Smooths the transition between Scene A and Scene B:
+ * 1. Runs deterministic dedup filter (Part 2)
+ * 2. Runs Fast LLM micro-seam polisher (Part 3) with fallback safety
+ */
+export async function smoothSceneTransition(
+  sceneA: string,
+  sceneB: string,
+  meta: SeamPolisherMetadata = {},
+  llm?: (prompt: string, system: string, options?: any) => Promise<string>
+): Promise<string> {
+  // Step 1: Part 2 Deterministic Dedup Filter
+  const dedupedSceneB = applyDeterministicDedup(sceneA, sceneB);
+  if (!llm) {
+    return dedupedSceneB;
+  }
+
+  // Step 2: Part 3 Fast LLM Micro-Seam Polisher
+  const parasA = sceneA.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const parasB = dedupedSceneB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+
+  if (!parasA.length || !parasB.length) {
+    return dedupedSceneB;
+  }
+
+  const tailA = parasA[parasA.length - 1];
+  const headB = parasB[0];
+  const anchorB = parasB.length > 1 ? parasB[1] : '[None / End of Scene]';
+
+  const prompt = buildSeamPolisherPrompt(tailA, headB, anchorB, meta);
+  const system = 'You are an invisible prose seam editor. Output ONLY PASS or the raw replacement text.';
+
+  try {
+    const rawResponse = await llm(prompt, system, {
+      stage: 'craft-seam',
+      temperature: 0.1,
+      maxTokens: 1000,
+      route: 'helper',
+    });
+
+    const trimmed = (rawResponse || '').trim();
+    let cleaned = trimmed.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '').trim();
+    if (/^["'](.*)["']$/s.test(cleaned)) {
+      cleaned = cleaned.replace(/^["'](.*)["']$/s, '$1').trim();
+    }
+
+    if (!cleaned || cleaned.toUpperCase() === 'PASS') {
+      return dedupedSceneB;
+    }
+
+    // Guard against mock or accidental JSON responses
+    if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(cleaned);
+        if (parsed && typeof parsed === 'object') {
+          return dedupedSceneB;
+        }
+      } catch {
+        // Not valid JSON, proceed as prose
+      }
+    }
+
+    // Replace first paragraph of Scene B with the returned text
+    parasB[0] = cleaned;
+    return parasB.join('\n\n');
+  } catch (err) {
+    console.warn('Fast LLM seam polisher fallback:', err);
+    return dedupedSceneB;
+  }
+}
+
+/**
+ * Joins chapter scenes with automatic camera breaks (* * *) when POV changes between scenes,
+ * and applies deterministic dedup (Part 2) when joining same-POV scenes.
+ */
+export function joinScenesWithCameraBreaks(
+  scenes: Array<{ text: string; pov?: string; location?: string; time?: string }>
+): string {
   if (!scenes.length) return '';
   let result = scenes[0].text;
   for (let i = 1; i < scenes.length; i++) {
@@ -106,8 +314,52 @@ export function joinScenesWithCameraBreaks(scenes: Array<{ text: string; pov?: s
     const prevPov = prev.pov?.trim().toLowerCase();
     const currPov = curr.pov?.trim().toLowerCase();
     const isCameraShift = Boolean(prevPov && currPov && prevPov !== currPov);
-    const sep = isCameraShift ? '\n\n* * *\n\n' : '\n\n';
-    result += sep + curr.text;
+    if (isCameraShift) {
+      result += '\n\n* * *\n\n' + curr.text;
+    } else {
+      const dedupedText = applyDeterministicDedup(prev.text, curr.text);
+      result += '\n\n' + dedupedText;
+    }
   }
   return result;
 }
+
+/**
+ * Asynchronously joins chapter scenes, applying camera breaks on POV changes,
+ * and running the full Part 2 + Part 3 seam smoothing pipeline on same-POV transitions.
+ */
+export async function smoothAndJoinChapterScenes(
+  scenes: Array<{ text: string; pov?: string; location?: string; time?: string }>,
+  llm?: (prompt: string, system: string, options?: any) => Promise<string>
+): Promise<string> {
+  if (!scenes.length) return '';
+  let result = scenes[0].text;
+
+  for (let i = 1; i < scenes.length; i++) {
+    const prev = scenes[i - 1];
+    const curr = scenes[i];
+    const prevPov = prev.pov?.trim().toLowerCase();
+    const currPov = curr.pov?.trim().toLowerCase();
+    const isCameraShift = Boolean(prevPov && currPov && prevPov !== currPov);
+
+    if (isCameraShift) {
+      result += '\n\n* * *\n\n' + curr.text;
+    } else {
+      const smoothedCurrText = await smoothSceneTransition(
+        prev.text,
+        curr.text,
+        {
+          locA: prev.location,
+          locB: curr.location,
+          timeA: prev.time,
+          timeB: curr.time,
+        },
+        llm
+      );
+      result += '\n\n' + smoothedCurrText;
+    }
+  }
+
+  return result;
+}
+

@@ -58,6 +58,7 @@ export function scriptedAuthorLLM(plan = authorArchitecture(), calls: { stage: s
       return JSON.stringify({ events: [{ event: `E${index}`, quote, outcome: plan.graph.scenes[index - 1].outcome }], acquisitions: index === 2 ? [{ character: 'C1', fact: 'F1', quote }] : [], resources: [{ resource: 'R1', available: index === 1, quote }], relationships: [], options: index === 2 ? ['Testify publicly without a usable key.'] : ['Take the next costly step.'], summary: quote, deferred: [], deviations: [] });
     }
     if (stage === 'craft-preflight') return '{"issues":[]}';
+    if (stage === 'craft-seam') return 'PASS';
     if (stage === 'craft-reader') return '{"hypotheses":[],"expectations":["She must risk her cover."]}';
     if (stage === 'craft-write' || stage === 'craft-repair') {
       const scene = Number(prompt.match(/"sceneId":"SC(\d+)"/)?.[1] || 1);
