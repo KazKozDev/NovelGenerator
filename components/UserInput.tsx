@@ -3,9 +3,8 @@ import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
 import { Combo } from './common/Combo';
-import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
+import { GEMINI_MODEL_NAME, MIN_CHAPTERS, MAX_CHAPTERS } from '../constants';
 import { GENRE_CHOICES } from '../utils/genreList';
-import { fetchHuggingFaceModels } from '../services/hfBrowserService';
 import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { fetchProviderModels } from '../services/qwenBrowserService';
@@ -140,10 +139,10 @@ const UserInput: React.FC<UserInputProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((providerConfig.provider === 'compatible' || (validator.enabled && validator.provider === 'compatible')) && !await saveCompatibleUrl()) return;
-    if (numChapters >= MIN_CHAPTERS) {
+    if (numChapters >= MIN_CHAPTERS && numChapters <= MAX_CHAPTERS) {
       onSubmit();
     } else {
-      alert(`Please enter at least ${MIN_CHAPTERS} chapters.`);
+      alert(`Please enter between ${MIN_CHAPTERS} and ${MAX_CHAPTERS} chapters.`);
     }
   };
 
@@ -344,12 +343,19 @@ const UserInput: React.FC<UserInputProps> = ({
                 id="numChapters"
                 type="number"
                 value={numChapters}
-                onChange={(e) => setNumChapters(Math.max(MIN_CHAPTERS, parseInt(e.target.value, 10) || MIN_CHAPTERS))}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (isNaN(val)) {
+                    setNumChapters(MIN_CHAPTERS);
+                  } else {
+                    setNumChapters(Math.min(MAX_CHAPTERS, Math.max(MIN_CHAPTERS, val)));
+                  }
+                }}
                 min={MIN_CHAPTERS}
-                max={100}
+                max={MAX_CHAPTERS}
                 required
               />
-              <p className="text-[11px] text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
+              <p className="text-[11px] text-zinc-500 mt-1">{MIN_CHAPTERS}–{MAX_CHAPTERS} chapters</p>
             </div>
 
             <div>
@@ -381,9 +387,47 @@ const UserInput: React.FC<UserInputProps> = ({
       </div>
 
       <div className="flex justify-end pt-1">
-        <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS} variant="primary">
+        <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS || numChapters > MAX_CHAPTERS} variant="primary">
           {isLoading ? 'Starting…' : 'Start Generation'}
         </Button>
+      </div>
+
+      <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4 text-zinc-300">
+        <div>
+          <h2 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
+            How the book is written
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">01. The notebook</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
+              The author thinks the book through before writing: the ending, the people, the facts that must not drift, and a plan of the chapters with what the reader learns in each chapter.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">02. Its people</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
+              Before a scene that turns on someone, the author asks that person from the inside what they want and what they would do. Their answers decide the scene, not a generic template.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">03. The chapters</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
+              Nothing is closed to the author: it writes scene by scene, revises prose as needed, and keeps track of pacing and story threads live while drafting.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded border border-zinc-800/80 bg-zinc-900/30 space-y-1.5">
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wide">04. The reader</h3>
+            <p className="text-xs text-zinc-400/90 leading-relaxed">
+              A reader model reads what the author writes: checks each chapter, tracks unresolved mysteries and character arcs, and gives editorial feedback on the manuscript.
+            </p>
+          </div>
+        </div>
       </div>
     </form>
   );

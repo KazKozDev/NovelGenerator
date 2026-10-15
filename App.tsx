@@ -3,6 +3,7 @@
 
 import React, { useEffect } from 'react';
 import { assembleManuscript } from './utils/novel/manuscript';
+import { MIN_CHAPTERS, MAX_CHAPTERS } from './constants';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
@@ -76,11 +77,11 @@ const App: React.FC = () => {
 
   const handleStartGeneration = () => {
     if (!storeReady) return;
-    if (storyPremise && numChapters >= 3) {
+    if (storyPremise && numChapters >= MIN_CHAPTERS && numChapters <= MAX_CHAPTERS) {
       startGeneration(storyPremise, numChapters, bookTitleInput);
     } else {
       // Basic validation feedback, can be improved
-      alert("Please provide a story premise and at least 3 chapters.");
+      alert(`Please provide a story premise and between ${MIN_CHAPTERS} and ${MAX_CHAPTERS} chapters.`);
     }
   };
 
