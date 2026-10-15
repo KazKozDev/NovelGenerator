@@ -69,7 +69,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
               onClick={onEdit}
               className="inline-flex items-center h-6 px-2.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded transition-colors"
             >
-              <span className="mr-1">↻</span> {findingsCount > 0 ? 'Re-run Review' : 'Run Review'}
+              <span className="mr-1">↻</span> {findingsCount > 0 ? 'Apply Review' : 'Run Review'}
             </button>
           )}
         </div>

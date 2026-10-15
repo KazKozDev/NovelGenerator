@@ -65,7 +65,7 @@ describe('reader and series tools', () => {
     expect(html).not.toContain('Target-reader feedback');
     const book = renderToStaticMarkup(<BookDisplay bookContent={text} metadataJson={JSON.stringify({ audit: { status: 'COMPLETE_WITH_WARNINGS', summary: 'Unresolved problem', findings: [{ severity: 'major', description: 'Missing key', evidence_refs: ['Chapter 1'] }] } })} onReset={() => {}} onEdit={() => {}} />);
     expect(book).toContain('Missing key');
-    expect(book).toContain('Re-run Review');
+    expect(book).toContain('Apply Review');
     expect(book).toContain('Editorial Review');
   });
 });
