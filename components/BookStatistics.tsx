@@ -64,30 +64,30 @@ const BookStatistics: React.FC<BookStatisticsProps> = ({ bookContent, metadata }
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
       {/* Chapters */}
-      <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded text-left">
-        <div className="text-zinc-500 text-xs uppercase mb-1">Chapters</div>
-        <div className="text-zinc-100 text-lg font-semibold">{stats.chapterCount}</div>
+      <div className="bg-zinc-900/40 border border-zinc-800 p-3.5 rounded text-left">
+        <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Chapters</div>
+        <div className="text-zinc-100 text-lg font-semibold tracking-tight">{stats.chapterCount}</div>
         <div className="text-zinc-500 text-xs mt-0.5">{stats.avgWordsPerChapter.toLocaleString()} words avg</div>
       </div>
 
       {/* Total Words */}
-      <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded text-left">
-        <div className="text-zinc-500 text-xs uppercase mb-1">Total Words</div>
-        <div className="text-zinc-100 text-lg font-semibold">{stats.totalWords.toLocaleString()}</div>
+      <div className="bg-zinc-900/40 border border-zinc-800 p-3.5 rounded text-left">
+        <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Words</div>
+        <div className="text-zinc-100 text-lg font-semibold tracking-tight">{stats.totalWords.toLocaleString()}</div>
         <div className="text-zinc-500 text-xs mt-0.5">{stats.characters.toLocaleString()} characters</div>
       </div>
 
       {/* Reading Time */}
-      <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded text-left">
-        <div className="text-zinc-500 text-xs uppercase mb-1">Reading Time</div>
-        <div className="text-zinc-100 text-lg font-semibold">{formatReadingTime(stats.readingTimeMinutes)}</div>
+      <div className="bg-zinc-900/40 border border-zinc-800 p-3.5 rounded text-left">
+        <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Reading Time</div>
+        <div className="text-zinc-100 text-lg font-semibold tracking-tight">{formatReadingTime(stats.readingTimeMinutes)}</div>
         <div className="text-zinc-500 text-xs mt-0.5">~200 words/min</div>
       </div>
 
       {/* Dialogue Ratio */}
-      <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded text-left">
-        <div className="text-zinc-500 text-xs uppercase mb-1">Dialogue</div>
-        <div className="text-zinc-100 text-lg font-semibold">{stats.dialogueRatio}%</div>
+      <div className="bg-zinc-900/40 border border-zinc-800 p-3.5 rounded text-left">
+        <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Dialogue</div>
+        <div className="text-zinc-100 text-lg font-semibold tracking-tight">{stats.dialogueRatio}%</div>
         <div className="text-zinc-500 text-xs mt-0.5">of content</div>
       </div>
     </div>

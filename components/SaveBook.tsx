@@ -38,7 +38,7 @@ export default function SaveBook({
         type="button"
         aria-label={draft ? 'Save draft' : 'Save book'}
         disabled={busy || !content.trim()}
-        className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 rounded transition-colors disabled:opacity-50"
+        className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors disabled:opacity-50"
       >
         {busy ? 'Downloading…' : draft ? 'Download Draft ▾' : 'Download Book ▾'}
       </button>

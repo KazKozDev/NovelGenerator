@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
@@ -67,7 +66,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             <button
               type="button"
               onClick={onEdit}
-              className="inline-flex items-center h-6 px-2.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded transition-colors"
+              className="inline-flex items-center h-6 px-2.5 text-xs bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
             >
               <span className="mr-1">↻</span> {findingsCount > 0 ? 'Apply Review' : 'Run Review'}
             </button>
@@ -179,7 +178,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           <button
             type="button"
             onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
-            className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+            className="inline-flex items-center h-6 text-xs px-2.5 py-0.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
           >
             {isCopied ? 'Copied' : 'Copy'}
           </button>
@@ -194,9 +193,13 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
       </div>
 
       <div className="text-center mt-8 pt-4 border-t border-zinc-800">
-        <Button onClick={onReset} variant="danger">
-          Start New Book
-        </Button>
+        <button
+          type="button"
+          onClick={onReset}
+          className="inline-flex items-center justify-center h-8 px-4 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+        >
+          Reset Project
+        </button>
       </div>
 
 

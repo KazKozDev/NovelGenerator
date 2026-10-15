@@ -157,9 +157,9 @@ const App: React.FC = () => {
               type="button"
               onClick={handleReset}
               title="Wipe state and start a new book"
-              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
             >
-              Reset
+              Reset Project
             </button>
 
             {saveControl}
