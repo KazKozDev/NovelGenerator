@@ -120,6 +120,7 @@ export class PersistentProjectStore extends MemoryProjectStore {
   saveAuthor(draft: AuthorDraft): void { super.saveAuthor(draft); this.persistSoon(); }
   saveInput(input: ProjectInput): void { super.saveInput(input); this.persistSoon(); }
   saveManuscript(chapter: number, text: string): void { super.saveManuscript(chapter, text); this.persistSoon(); }
+  removeManuscript(chapter: number): void { super.removeManuscript(chapter); this.persistSoon(); }
   saveReport(report: FinalReport): void { super.saveReport(report); this.persistSoon(); }
   clearReport(): void { super.clearReport(); this.persistSoon(); }
   log(stage: string, detail: string): void { super.log(stage, detail); this.persistSoon(); }

@@ -68,12 +68,38 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editableContent, setEditableContent] = useState(manuscriptWithTitle);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     if (!isEditing) {
       setEditableContent(manuscriptWithTitle);
     }
   }, [manuscriptWithTitle, isEditing]);
+
+  const handleSave = () => {
+    const success = onManualSave?.(editableContent);
+    if (success !== false) {
+      setIsEditing(false);
+      setSaveError(null);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } else {
+      setSaveError('Could not save manuscript chapters.');
+    }
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditableContent(manuscriptWithTitle);
+    setSaveError(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      handleSave();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -203,6 +229,9 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
           <div className="flex items-center gap-2">
+            {saveSuccess && !isEditing && (
+              <span className="text-xs text-emerald-400 font-medium">Saved ✓</span>
+            )}
             {onManualSave && !isEditing && (
               <button
                 type="button"
@@ -220,26 +249,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               <>
                 <button
                   type="button"
-                  onClick={() => {
-                    const success = onManualSave?.(editableContent);
-                    if (success !== false) {
-                      setIsEditing(false);
-                      setSaveError(null);
-                    } else {
-                      setSaveError('Could not save manuscript chapters.');
-                    }
-                  }}
+                  onClick={handleSave}
                   className="inline-flex items-center h-6 px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
                 >
                   Save
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditableContent(manuscriptWithTitle);
-                    setSaveError(null);
-                  }}
+                  onClick={handleCancel}
                   className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
                 >
                   Cancel
@@ -261,12 +278,36 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             <p className="text-xs text-red-400 mb-3">{saveError}</p>
           )}
           {isEditing ? (
-            <textarea
-              value={editableContent}
-              onChange={(e) => setEditableContent(e.target.value)}
-              aria-label="Edit manuscript"
-              className="w-full min-h-[50vh] p-4 bg-zinc-950 border border-zinc-800 rounded font-serif text-prose text-zinc-200 focus:outline-none focus:border-zinc-700 resize-y leading-relaxed"
-            />
+            <div>
+              <textarea
+                value={editableContent}
+                onChange={(e) => setEditableContent(e.target.value)}
+                onKeyDown={handleKeyDown}
+                aria-label="Edit manuscript"
+                className="w-full min-h-[50vh] p-4 bg-zinc-950 border border-zinc-800 rounded font-serif text-prose text-zinc-200 focus:outline-none focus:border-zinc-700 resize-y leading-relaxed"
+              />
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pt-2">
+                <span className="text-xs text-zinc-500">
+                  Tip: press <kbd className="px-1.5 py-0.5 bg-zinc-900 rounded border border-zinc-800 text-zinc-400 text-[11px]">Cmd+S</kbd> or <kbd className="px-1.5 py-0.5 bg-zinc-900 rounded border border-zinc-800 text-zinc-400 text-[11px]">Ctrl+S</kbd> to save
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="inline-flex items-center h-7 px-3 text-xs font-semibold whitespace-nowrap bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
+                  >
+                    Save changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="inline-flex items-center h-7 px-3 text-xs font-medium whitespace-nowrap bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <MarkdownView
               content={manuscriptWithTitle}

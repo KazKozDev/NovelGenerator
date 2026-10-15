@@ -1,29 +1,48 @@
 export interface ManuscriptChapter { chapter: number; text: string }
-const heading = /^[ \t]*(?:#{1,6}[ \t]+|\*\*)?(?:Chapter|Глава)[ \t]+(\d+)(?:[ \t]*[:—–-][ \t]*(.*?))?[ \t]*(?:\*\*)?[ \t]*$/i;
+const heading = /^[ \t]*(?:(?:#{1,6}[ \t]+|\*\*)(?:(?:Chapter|Глава)[ \t]+)?(\d+)|(?:Chapter|Глава)[ \t]+(\d+))(?:[ \t]*[:.—–-][ \t]*(.*?)|[ \t]+([^\r\n*]+))?(?:\*\*)?[ \t]*$/i;
 
 /** Presentation owns chapter headings; the prose never owns a second copy. */
 export function normalizeChapterBody(text: string, chapter: number): string {
   const lines = text.split(/\r?\n/);
-  if (!lines.some(line => Number(line.match(heading)?.[1]) === chapter)) return text;
-  return lines.filter(line => Number(line.match(heading)?.[1]) !== chapter).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (!lines.some(line => {
+    const m = line.match(heading);
+    return Number(m?.[1] || m?.[2]) === chapter;
+  })) return text;
+  return lines.filter(line => {
+    const m = line.match(heading);
+    return Number(m?.[1] || m?.[2]) !== chapter;
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 export function foreignChapterHeadings(text: string, chapter: number): number[] {
-  return [...new Set(text.split(/\r?\n/).map(line => Number(line.match(heading)?.[1])).filter(n => n && n !== chapter))];
+  return [...new Set(text.split(/\r?\n/).map(line => {
+    const m = line.match(heading);
+    return Number(m?.[1] || m?.[2]);
+  }).filter(n => n && n !== chapter))];
 }
 export function assembleManuscript(chapters: ManuscriptChapter[], title?: string): string {
   return [title ? `# ${title}` : '', ...chapters.map(c => `## Chapter ${c.chapter}\n\n${normalizeChapterBody(c.text, c.chapter)}`)].filter(Boolean).join('\n\n');
 }
 export function parseBookChapters(content: string): { num: number; title: string; content: string }[] {
-  const markers = [...content.matchAll(/^##[ \t]+(?:Chapter|Глава)[ \t]+(\d+)(?:[ \t]*[:—–-][ \t]*(.*?))?[ \t]*$/gm)];
+  const headingRegex = /^[ \t]*(?:(?:#{1,6}[ \t]+|\*\*)(?:(?:Chapter|Глава)[ \t]+)?(\d+)|(?:Chapter|Глава)[ \t]+(\d+))(?:[ \t]*[:.—–-][ \t]*(.*?)|[ \t]+([^\r\n*]+))?(?:\*\*)?[ \t]*$/gim;
+  const markers = [...content.matchAll(headingRegex)];
   const chapters: { num: number; title: string; content: string }[] = [];
   for (let at = 0; at < markers.length; at++) {
-    const match = markers[at], num = Number(match[1]);
+    const match = markers[at];
+    const num = Number(match[1] || match[2]);
+    const rawTitle = (match[3] || match[4] || '').trim();
     const body = normalizeChapterBody(content.slice(match.index! + match[0].length, markers[at + 1]?.index ?? content.length), num).trim();
     const previous = chapters.at(-1);
     if (previous?.num === num) { previous.content = [previous.content, body].filter(Boolean).join('\n\n'); continue; }
-    chapters.push({ num, title: match[2]?.trim() || '', content: body });
+    chapters.push({ num, title: rawTitle, content: body });
   }
-  return chapters.filter(c => c.content.trim());
+  const filtered = chapters.filter(c => c.content.trim());
+  if (filtered.length > 0) return filtered;
+
+  const bodyWithoutTitle = content.replace(/^#[ \t]+[^\r\n]+(?:\r?\n)*/, '').trim();
+  if (bodyWithoutTitle) {
+    return [{ num: 1, title: '', content: bodyWithoutTitle }];
+  }
+  return [];
 }
 export const chapterLabel = (num: number, title = '') => title && !new RegExp(`^Chapter\\s+${num}$`, 'i').test(title) ? `Chapter ${num}: ${title}` : `Chapter ${num}`;
 

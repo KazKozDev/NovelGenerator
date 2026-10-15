@@ -14,6 +14,7 @@ export interface ProjectStore {
   saveInput(input: ProjectInput): void;
   loadInput(): ProjectInput | null;
   saveManuscript(chapter: number, text: string): void;
+  removeManuscript?(chapter: number): void;
   /** Apply a fully staged revision and its author state without partial chapters. */
   commitRevision(chapters: { chapter: number; text: string }[], draft: AuthorDraft): void;
   manuscript(): { chapter: number; text: string }[];
@@ -40,6 +41,7 @@ export class MemoryProjectStore implements ProjectStore {
   saveInput(input: ProjectInput): void { this.input = input; }
   loadInput(): ProjectInput | null { return this.input; }
   saveManuscript(chapter: number, text: string): void { this.chapters.set(chapter, text); }
+  removeManuscript(chapter: number): void { this.chapters.delete(chapter); }
   commitRevision(chapters: { chapter: number; text: string }[], draft: AuthorDraft): void {
     const expected = this.input?.chapter_count || chapters.length;
     if (chapters.length !== expected || chapters.some((c, i) => c.chapter !== i + 1 || !c.text.trim())

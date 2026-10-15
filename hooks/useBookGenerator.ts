@@ -411,21 +411,44 @@ export default function useBookGenerator() {
     const parsed = parseBookChapters(newContent);
     if (!parsed.length) return false;
     const draft = store.loadAuthor();
-    for (const c of parsed) {
-      store.saveManuscript(c.num, c.content);
-      if (draft?.chapters[c.num - 1]) {
-        draft.chapters[c.num - 1].text = c.content;
-      }
-      if (draft?.desk) {
-        draft.desk.files[`chapter-${c.num}.md`] = c.content;
+    const titleMatch = newContent.match(/^#[ \t]+([^\r\n]+)/m);
+    const customTitle = titleMatch ? titleMatch[1].trim() : undefined;
+    if (customTitle && draft) {
+      draft.title = customTitle;
+    }
+    const currentChapters = store.manuscript();
+    const parsedNums = new Set(parsed.map(c => c.num));
+    for (const c of currentChapters) {
+      if (!parsedNums.has(c.chapter)) {
+        store.removeManuscript?.(c.chapter);
       }
     }
-    if (draft?.desk) {
-      draft.desk.files['book.md'] = newContent;
+    for (const c of parsed) {
+      store.saveManuscript(c.num, c.content);
+      if (draft) {
+        if (draft.chapters[c.num - 1]) {
+          draft.chapters[c.num - 1].text = c.content;
+        } else {
+          draft.chapters[c.num - 1] = {
+            text: c.content,
+            card: `Chapter ${c.num}`,
+            facts: '',
+            reader: '',
+          };
+        }
+        if (draft.desk) {
+          draft.desk.files[`chapter-${c.num}.md`] = c.content;
+        }
+      }
+    }
+    if (draft) {
+      if (draft.desk) {
+        draft.desk.files['book.md'] = newContent;
+      }
       store.saveAuthor(draft);
     }
     const input = store.loadInput();
-    const title = input ? bookTitle(draft?.title, input.premise) : undefined;
+    const title = customTitle || (input ? bookTitle(draft?.title, input.premise) : undefined);
     const finalContent = assembleManuscript(store.manuscript(), title);
     setFinalBookContent(finalContent);
     const report = store.loadReport();
@@ -445,6 +468,7 @@ export default function useBookGenerator() {
       genre: input?.genre,
     }));
     refreshFromStore();
+    void store.flush().catch(err => console.error('Failed to flush manual edit to store:', err));
     return true;
   }
 
