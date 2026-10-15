@@ -7,7 +7,7 @@ export function speechChunks(text: string): string[] {
   return chunks;
 }
 
-export default function ReaderTools({ text }: { text: string }) {
+export default function ReaderTools({ text, compact }: { text: string; compact?: boolean }) {
   const [speaking, setSpeaking] = useState(false);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -33,12 +33,54 @@ export default function ReaderTools({ text }: { text: string }) {
     };
     next(0);
   };
-  return <section className="border border-zinc-800 rounded p-4 space-y-3" aria-label="Reader workshop">
-    <div className="flex flex-wrap items-center gap-3 text-xs">
-      <button type="button" className="border border-zinc-700 rounded px-3 py-1" onClick={play} disabled={!supported || !text.trim()}>Read aloud</button>
-      {speaking && <><button type="button" onClick={() => { if (paused) window.speechSynthesis.resume(); else window.speechSynthesis.pause(); setPaused(!paused); }}>{paused ? 'Resume audio' : 'Pause audio'}</button><button type="button" onClick={stop}>Stop audio</button><span aria-live="polite">{progress}% listened</span></>}
-      {!supported && <span>Read aloud is unavailable in this browser.</span>}
+
+  const controls = (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <button
+        type="button"
+        className="border border-zinc-700 hover:border-zinc-500 rounded px-3 py-1 text-zinc-200 transition-colors"
+        onClick={play}
+        disabled={!supported || !text.trim()}
+      >
+        Read aloud
+      </button>
+      {speaking && (
+        <div className="flex items-center gap-2 text-xs bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700">
+          <button
+            type="button"
+            className="text-zinc-300 hover:text-zinc-100 underline text-xs"
+            onClick={() => {
+              if (paused) window.speechSynthesis.resume();
+              else window.speechSynthesis.pause();
+              setPaused(!paused);
+            }}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
+          <button
+            type="button"
+            className="text-zinc-300 hover:text-zinc-100 underline text-xs"
+            onClick={stop}
+          >
+            Stop
+          </button>
+          <span className="font-mono text-zinc-400 tabular-nums text-xs" aria-live="polite">
+            {progress}%
+          </span>
+        </div>
+      )}
+      {!supported && <span className="text-zinc-500 text-xs">Read aloud unavailable</span>}
+      {error && <p role="alert" className="text-xs text-amber-300">{error}</p>}
     </div>
-    {error && <p role="alert" className="text-xs text-amber-300">{error}</p>}
-  </section>;
+  );
+
+  if (compact) {
+    return controls;
+  }
+
+  return (
+    <section className="border border-zinc-800 rounded p-4 space-y-3" aria-label="Reader workshop">
+      {controls}
+    </section>
+  );
 }

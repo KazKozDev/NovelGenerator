@@ -58,25 +58,94 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       </div>
-      {metadata?.audit && <section className="text-sm border border-zinc-800 rounded p-4" aria-label="Final manuscript review">
-        <p>{metadata.audit.summary}</p>
-        <details className="mt-3">
-        <summary className="cursor-pointer text-xs text-zinc-400">Review details</summary>
-        {metadata.audit.findings?.length > 0 && <ul className="list-disc pl-5 mt-2">{metadata.audit.findings.map((f: any, i: number) => <li key={i} className="mt-2"><strong>{f.severity}</strong>: {f.description}<p className="text-xs text-zinc-500">{f.evidence_refs?.join(' · ')}</p></li>)}</ul>}
-        {metadata.audit.need_more_evidence?.map((failure: string, i: number) => <p key={i} className="text-amber-300 text-xs mt-2">Check unavailable: {failure}</p>)}
-        </details>
-        {onEdit && <Button onClick={onEdit} variant="secondary" size="sm" className="mt-3">Edit saved book</Button>}
-      </section>}
-      {metadata?.craft?.landmarks?.length > 0 && <details className="border border-zinc-800 rounded p-4 text-xs">
-        <summary className="cursor-pointer">Turning points · actual word positions</summary>
-        <div className="overflow-x-auto mt-3"><table className="w-full text-left"><thead><tr><th>Turn</th><th>Position</th><th>Chapter</th><th>Evidence</th></tr></thead><tbody>{metadata.craft.landmarks.map((p: any) => <tr key={p.name}><td className="p-2">{p.name}</td><td className="p-2">{Number(p.percent).toFixed(1)}%</td><td className="p-2">{p.chapter}</td><td className="p-2">{p.quote}</td></tr>)}</tbody></table></div>
-      </details>}
-      {metadata?.craft?.readerMap && <details className="border border-zinc-800 rounded p-4 text-xs">
-        <summary className="cursor-pointer">Reader questions and setups · source map</summary>
-        <ul className="mt-3 space-y-2">{metadata.craft.readerMap.loops.map((loop: any) => <li key={loop.id}><strong>{loop.id} · {loop.scale}</strong> — chapter {loop.opened.chapter}: “{loop.opened.quote}” · {loop.progress.length} progress beats · {loop.closed ? `answered in chapter ${loop.closed.chapter}: “${loop.closed.quote}”` : 'still open'}</li>)}</ul>
-        <ul className="mt-3 space-y-2">{metadata.craft.readerMap.props.map((prop: any) => <li key={prop.name}><strong>{prop.name}</strong>: {prop.appearances.map((p: any) => `${p.role}, chapter ${p.chapter}: “${p.quote}”`).join(' → ')}</li>)}</ul>
-      </details>}
-      <ReaderTools text={bookContent} />
+      <section className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900/30" aria-label="Final manuscript review">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
+          <div className="text-sm text-zinc-300">
+            {metadata?.audit?.summary ? (
+              <p className="font-medium text-zinc-200">{metadata.audit.summary}</p>
+            ) : (
+              <p className="text-xs text-zinc-400">Manuscript review & reader tools</p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onEdit && <Button onClick={onEdit} variant="secondary" size="sm">Edit saved book</Button>}
+            <ReaderTools compact text={bookContent} />
+          </div>
+        </div>
+
+        <div className="space-y-2 text-xs">
+          {metadata?.audit && (
+            <details className="text-zinc-400">
+              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Review details</summary>
+              <div className="pt-2 pl-2">
+                {metadata.audit.findings?.length > 0 && (
+                  <ul className="list-disc pl-5 space-y-1.5">
+                    {metadata.audit.findings.map((f: any, i: number) => (
+                      <li key={i}>
+                        <strong className="text-zinc-300">{f.severity}</strong>: {f.description}
+                        <p className="text-[11px] text-zinc-500">{f.evidence_refs?.join(' · ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {metadata.audit.need_more_evidence?.map((failure: string, i: number) => (
+                  <p key={i} className="text-amber-300 text-xs mt-1">Check unavailable: {failure}</p>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {metadata?.craft?.landmarks?.length > 0 && (
+            <details className="text-zinc-400 pt-1">
+              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Turning points · actual word positions</summary>
+              <div className="overflow-x-auto mt-2 pt-2 border-t border-zinc-800/60">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-zinc-500 border-b border-zinc-800">
+                      <th className="p-2">Turn</th>
+                      <th className="p-2">Position</th>
+                      <th className="p-2">Chapter</th>
+                      <th className="p-2">Evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metadata.craft.landmarks.map((p: any) => (
+                      <tr key={p.name} className="border-b border-zinc-800/40">
+                        <td className="p-2 font-medium text-zinc-300">{p.name}</td>
+                        <td className="p-2 font-mono">{Number(p.percent).toFixed(1)}%</td>
+                        <td className="p-2">{p.chapter}</td>
+                        <td className="p-2 text-zinc-400 italic">“{p.quote}”</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+
+          {metadata?.craft?.readerMap && (
+            <details className="text-zinc-400 pt-1">
+              <summary className="cursor-pointer hover:text-zinc-200 font-medium">Reader questions and setups · source map</summary>
+              <div className="mt-2 pt-2 border-t border-zinc-800/60 space-y-2">
+                <ul className="space-y-1.5 pl-2">
+                  {metadata.craft.readerMap.loops.map((loop: any) => (
+                    <li key={loop.id}>
+                      <strong className="text-zinc-300">{loop.id} · {loop.scale}</strong> — chapter {loop.opened.chapter}: “{loop.opened.quote}” · {loop.progress.length} progress beats · {loop.closed ? `answered in chapter ${loop.closed.chapter}: “${loop.closed.quote}”` : 'still open'}
+                    </li>
+                  ))}
+                </ul>
+                <ul className="space-y-1.5 pl-2 border-t border-zinc-800/40 pt-2">
+                  {metadata.craft.readerMap.props.map((prop: any) => (
+                    <li key={prop.name}>
+                      <strong className="text-zinc-300">{prop.name}</strong>: {prop.appearances.map((p: any) => `${p.role}, chapter ${p.chapter}: “${p.quote}”`).join(' → ')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
+          )}
+        </div>
+      </section>
       
       <div className="flex flex-wrap border-b border-zinc-800">
         <button
