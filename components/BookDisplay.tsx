@@ -192,18 +192,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           />
         </div>
       </div>
-
-      <div className="text-center mt-8 pt-4 border-t border-zinc-800">
-        <button
-          type="button"
-          onClick={onReset}
-          className="inline-flex items-center justify-center h-8 px-4 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
-        >
-          Reset Project
-        </button>
-      </div>
-
-
     </div>
   );
 };
