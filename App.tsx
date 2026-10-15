@@ -87,6 +87,10 @@ const App: React.FC = () => {
   };
 
   const handleReset = () => {
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      const confirmed = window.confirm('Reset this project? All progress and manuscript text will be lost.');
+      if (!confirmed) return;
+    }
     resetGenerator();
   };
 
