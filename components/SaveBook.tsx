@@ -40,7 +40,7 @@ export default function SaveBook({
         disabled={busy || !content.trim()}
         className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors disabled:opacity-50"
       >
-        {busy ? 'Downloading…' : draft ? 'Download Draft ▾' : 'Download Book ▾'}
+        {busy ? 'Saving…' : draft ? 'Save Draft ▾' : 'Save ▾'}
       </button>
       <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[170px]">
         <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
