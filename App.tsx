@@ -29,6 +29,8 @@ const App: React.FC = () => {
     startGeneration,
     continueGeneration,
     editBook,
+    isEditorialRunning,
+    updateManualManuscript,
     isLoading,
     currentStep,
     error,
@@ -94,7 +96,7 @@ const App: React.FC = () => {
     resetGenerator();
   };
 
-  const showProgress = isLoading || (isResumable && currentStep !== GenerationStep.Done);
+  const showProgress = (isLoading && !isEditorialRunning) || (isResumable && currentStep !== GenerationStep.Done);
 
   const isStudioLayout = showProgress;
 
@@ -283,6 +285,9 @@ const App: React.FC = () => {
               metadataJson={finalMetadataJson}
               onReset={handleReset}
               onEdit={editBook}
+              isEditorialRunning={isEditorialRunning}
+              editorialStatus={developmentLabel}
+              onManualSave={updateManualManuscript}
             />
             
             {/* Show agent logs after completion too */}
