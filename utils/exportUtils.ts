@@ -465,15 +465,11 @@ export function buildPdfHtml(content: string, metadata: any): string {
     </div>
   `;
 
-  // 3. Colophon / Copyright page HTML (dedicated, beautifully centered)
+  // 3. Colophon / Copyright page HTML (classic publishing: bottom-left aligned)
   const colophonHtml = `
     <div class="page colophon-page" id="pdf-colophon-page">
       <div class="colophon-card">
-        <div class="colophon-header">
-          <div class="colophon-book-title">${escape(title)}</div>
-          ${author ? `<div class="colophon-book-author">by ${escape(author)}</div>` : ''}
-        </div>
-        <div class="colophon-divider"></div>
+        <div class="colophon-title">${escape(title)}</div>
         <div class="colophon-body">
           <p class="colophon-copyright">${escape(colophon.copyright)}</p>
           <p class="colophon-rights">${escape(colophon.rights)}</p>
@@ -673,72 +669,58 @@ export function buildPdfHtml(content: string, metadata: any): string {
       color: #777777;
     }
 
-    /* 3. Colophon / Copyright Page */
+    /* 3. Colophon / Copyright Page - Classic publishing: bottom-left aligned */
     .colophon-page {
-      padding: 3.5cm 2.5cm;
+      padding: 3.5cm 2.8cm 2.5cm 2.8cm;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      align-items: center;
+      justify-content: flex-end;
+      align-items: flex-start;
     }
     .colophon-card {
       max-width: 520px;
-      margin: auto;
-      font-size: 0.85em;
-      line-height: 1.65;
+      margin: 0;
+      font-size: 8.5pt;
+      line-height: 1.55;
       color: #333333;
+      text-align: left;
     }
-    .colophon-header {
-      margin-bottom: 1.2em;
-    }
-    .colophon-book-title {
-      font-size: 1.15em;
+    .colophon-title {
+      font-size: 1.05em;
       font-weight: 700;
       color: #111111;
-    }
-    .colophon-book-author {
-      font-size: 0.95em;
-      color: #555555;
-      margin-top: 0.2em;
-    }
-    .colophon-divider {
-      width: 100%;
-      height: 1px;
-      background-color: #dddddd;
-      margin: 1.2em 0;
+      margin-bottom: 1.2em;
     }
     .colophon-copyright {
       font-weight: 600;
       color: #111111;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.25em;
     }
     .colophon-rights {
-      font-weight: 500;
       color: #222222;
-      margin-bottom: 1em;
+      margin-bottom: 0.9em;
     }
     .colophon-text {
       text-align: justify;
-      margin-bottom: 1em;
+      margin-bottom: 0.8em;
       color: #444444;
       text-indent: 0;
     }
     .fiction-disclaimer {
       font-style: italic;
       color: #555555;
+      margin-top: 1em;
+      margin-bottom: 1em;
     }
     .colophon-isbns {
-      margin: 1.2em 0;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.9em;
+      margin: 0.9em 0;
+      font-size: 0.95em;
       color: #222222;
     }
     .colophon-publisher {
-      margin-top: 1.5em;
-      padding-top: 1em;
-      border-top: 1px solid #dddddd;
-      font-size: 0.85em;
-      color: #666666;
+      margin-top: 1.2em;
+      font-size: 0.9em;
+      color: #555555;
     }
 
     /* 4. Table of Contents */
