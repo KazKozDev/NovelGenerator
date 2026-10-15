@@ -71,6 +71,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
+  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
   const uuid = `urn:uuid:${crypto.randomUUID()}`;
   
   const chapters = parseBookChapters(content);
@@ -94,7 +95,32 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   const oebps = zip.folder('OEBPS')!;
   
   const xml = (text: string) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  
+  // Optional Imprint / Colophon file
+  if (imprint) {
+    oebps.file('imprint.xhtml',
+`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Publishing Imprint</title>
+  <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+</head>
+<body>
+  <div style="margin-top: 4em; font-size: 0.9em; line-height: 1.8; color: #555;">
+    ${imprint.publisher ? `<p><strong>Publisher:</strong> ${xml(imprint.publisher)}</p>` : ''}
+    ${imprint.date ? `<p><strong>Publication Date:</strong> ${xml(imprint.date)}</p>` : ''}
+    ${imprint.models ? `<p><strong>AI Generation Models:</strong> ${xml(imprint.models)}</p>` : ''}
+    ${imprint.disclaimer ? `<p style="margin-top: 2em; font-style: italic;">${xml(imprint.disclaimer)}</p>` : ''}
+  </div>
+</body>
+</html>`);
+  }
+
   // 4. content.opf (package document)
+  const imprintManifest = imprint ? `    <item id="imprint" href="imprint.xhtml" media-type="application/xhtml+xml"/>\n` : '';
+  const imprintSpine = imprint ? `    <itemref idref="imprint"/>\n` : '';
+  
   const manifestItems = chapters.map(ch => 
     `    <item id="chapter${ch.num}" href="chapter${ch.num}.xhtml" media-type="application/xhtml+xml"/>`
   ).join('\n');
@@ -109,17 +135,20 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uuid">${uuid}</dc:identifier>
     <dc:title>${xml(title)}</dc:title>
-    <dc:creator>${xml(author)}</dc:creator>
+    <dc:creator>${xml(author || 'Anonymous')}</dc:creator>
+    ${imprint?.publisher ? `<dc:publisher>${xml(imprint.publisher)}</dc:publisher>` : ''}
+    ${imprint?.date ? `<dc:date>${xml(imprint.date)}</dc:date>` : ''}
+    ${imprint?.disclaimer ? `<dc:rights>${xml(imprint.disclaimer)}</dc:rights>` : ''}
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     <item id="stylesheet" href="stylesheet.css" media-type="text/css"/>
-${manifestItems}
+${imprintManifest}${manifestItems}
   </manifest>
   <spine>
-${spineItems}
+${imprintSpine}${spineItems}
   </spine>
 </package>`);
   
@@ -256,6 +285,7 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
 export function exportAsPdf(content: string, metadata: any): void {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
+  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
   
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
@@ -267,6 +297,17 @@ export function exportAsPdf(content: string, metadata: any): void {
   const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const chapters = parseBookChapters(content);
   const htmlContent = chapters.map(ch => `<h2 class="chapter-title">${escape(chapterLabel(ch.num, ch.title))}</h2>` + ch.content.split(/\n\s*\n/).map(block => /^\s*(?:\*\s*){3,}\s*$/.test(block) ? '<div class="scene-break">* * *</div>' : `<p>${escape(block).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>`).join('')).join('');
+
+  const imprintHtml = imprint ? `
+    <div class="imprint-section" style="page-break-after: always; margin-top: 5em; font-size: 0.9em; color: #444; line-height: 1.8;">
+      <div style="border-top: 1px solid #ccc; padding-top: 2em; max-width: 500px;">
+        ${imprint.publisher ? `<p><strong>Publisher:</strong> ${escape(imprint.publisher)}</p>` : ''}
+        ${imprint.date ? `<p><strong>Publication Date:</strong> ${escape(imprint.date)}</p>` : ''}
+        ${imprint.models ? `<p><strong>Generation Models:</strong> ${escape(imprint.models)}</p>` : ''}
+        ${imprint.disclaimer ? `<p style="margin-top: 2em; font-style: italic; color: #666;">${escape(imprint.disclaimer)}</p>` : ''}
+      </div>
+    </div>
+  ` : '';
 
   printWindow.document.write(`
     <!DOCTYPE html>
@@ -336,6 +377,7 @@ export function exportAsPdf(content: string, metadata: any): void {
     <body>
       <h1>${escape(title)}</h1>
       ${author ? `<div class="author">by ${escape(author)}</div>` : ''}
+      ${imprintHtml}
       ${htmlContent}
       <script>
         window.onload = function() {

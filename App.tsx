@@ -11,6 +11,7 @@ import ThemeToggle from './components/ThemeToggle';
 import SystemManualToggle from './components/SystemManualModal';
 import ApiKeysToggle from './components/ApiKeysModal';
 import BookDisplay from './components/BookDisplay';
+import { ImprintData } from './components/BookCoverUpload';
 import SaveBook from './components/SaveBook';
 
 import AgentActivityLog from './components/AgentActivityLog';
@@ -118,6 +119,25 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const [imprintData, setImprintData] = React.useState<ImprintData | undefined>(() => {
+    try {
+      const saved = localStorage.getItem('novel_imprint_global');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return undefined;
+  });
+
+  const handleImprintChange = React.useCallback((newImprint: ImprintData) => {
+    setImprintData(newImprint);
+    try {
+      localStorage.setItem('novel_imprint_global', JSON.stringify(newImprint));
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // The metadata document runs to hundreds of kilobytes on a finished book, and this parsed it on every
   // render — twice over, since BookDisplay parses it too and its memo missed on a string rebuilt each
   // time. Parsed once per document now.
@@ -127,11 +147,17 @@ const App: React.FC = () => {
       if (authorName.trim()) {
         parsed.author = authorName.trim();
       }
+      if (imprintData) {
+        parsed.imprint = imprintData;
+      }
       return parsed;
     } catch {
-      return authorName.trim() ? { author: authorName.trim() } : {};
+      const base: Record<string, unknown> = {};
+      if (authorName.trim()) base.author = authorName.trim();
+      if (imprintData) base.imprint = imprintData;
+      return base;
     }
-  }, [finalMetadataJson, authorName]);
+  }, [finalMetadataJson, authorName, imprintData]);
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
@@ -353,6 +379,8 @@ const App: React.FC = () => {
               onManualSave={updateManualManuscript}
               author={authorName}
               onAuthorChange={handleAuthorChange}
+              imprint={imprintData}
+              onImprintChange={handleImprintChange}
             />
             
             {/* Show agent logs after completion too */}

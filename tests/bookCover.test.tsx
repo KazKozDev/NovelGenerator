@@ -56,4 +56,43 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('id="book-author-input"');
     expect(html).toContain('value="Jane Austen"');
   });
+
+  it('renders the publishing imprint toggle and default state', () => {
+    const html = renderToStaticMarkup(
+      <BookCoverUpload
+        title="Shadows of the City"
+        genre="noir"
+        author="Arthur Conan"
+      />
+    );
+    expect(html).toContain('Publishing imprint');
+    expect(html).toContain('id="toggle-imprint-checkbox"');
+  });
+
+  it('renders imprint input fields when enabled', () => {
+    const html = renderToStaticMarkup(
+      <BookCoverUpload
+        title="Shadows of the City"
+        genre="noir"
+        author="Arthur Conan"
+        imprint={{
+          enabled: true,
+          date: 'October 2026',
+          models: 'Qwen 2.5 72B & Claude 3.5 Sonnet',
+          publisher: 'Studio Press',
+          disclaimer: 'This is a work of fiction.',
+        }}
+      />
+    );
+    expect(html).toContain('id="toggle-imprint-checkbox"');
+    expect(html).toContain('checked=""');
+    expect(html).toContain('id="imprint-date-input"');
+    expect(html).toContain('value="October 2026"');
+    expect(html).toContain('id="imprint-models-input"');
+    expect(html).toContain('value="Qwen 2.5 72B &amp; Claude 3.5 Sonnet"');
+    expect(html).toContain('id="imprint-publisher-input"');
+    expect(html).toContain('value="Studio Press"');
+    expect(html).toContain('id="imprint-disclaimer-input"');
+    expect(html).toContain('This is a work of fiction.');
+  });
 });

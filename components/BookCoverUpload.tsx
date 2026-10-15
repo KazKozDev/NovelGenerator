@@ -1,10 +1,46 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+
+export interface ImprintData {
+  enabled: boolean;
+  date: string;
+  models: string;
+  publisher: string;
+  disclaimer: string;
+}
+
+export function getDefaultImprint(customModels?: string): ImprintData {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  let modelsStr = customModels || '';
+  if (!modelsStr) {
+    try {
+      const prov = getStoredProviderConfig();
+      const val = getStoredValidatorConfig();
+      const authorModel = prov.provider === 'ollama' ? `Ollama (${prov.ollamaModel})` : prov.provider === 'gemini' ? (prov.geminiModel || 'Gemini') : prov.provider;
+      const readerModel = val ? (val.provider === 'ollama' ? `Ollama (${val.ollamaModel})` : val.provider === 'gemini' ? (val.geminiModel || 'Gemini') : val.provider) : null;
+      modelsStr = readerModel ? `${authorModel} (Author), ${readerModel} (Reader)` : `${authorModel} (Author)`;
+    } catch {
+      modelsStr = 'AI Author Model';
+    }
+  }
+
+  return {
+    enabled: false,
+    date: dateStr,
+    models: modelsStr,
+    publisher: 'NovelGenerator Studio',
+    disclaimer: 'This work of fiction was generated using artificial intelligence. All characters and events are fictitious.',
+  };
+}
 
 interface BookCoverUploadProps {
   title: string;
   genre?: string;
   author?: string;
   onAuthorChange?: (author: string) => void;
+  imprint?: ImprintData;
+  onImprintChange?: (imprint: ImprintData) => void;
 }
 
 export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
@@ -12,17 +48,51 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
   genre,
   author: controlledAuthor,
   onAuthorChange,
+  imprint: controlledImprint,
+  onImprintChange,
 }) => {
+  const cleanTitle = title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_');
   const [author, setAuthor] = useState<string>(controlledAuthor ?? '');
+  const [imprint, setImprint] = useState<ImprintData>(() => {
+    if (controlledImprint) return controlledImprint;
+    try {
+      const saved = localStorage.getItem(`novel_imprint_${cleanTitle}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return getDefaultImprint();
+  });
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<{ name: string; size: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const cleanTitle = title.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_');
   const storageKey = `novel_cover_${cleanTitle}`;
   const authorStorageKey = `novel_author_${cleanTitle}`;
+
+  useEffect(() => {
+    if (controlledImprint !== undefined) {
+      setImprint(controlledImprint);
+    }
+  }, [controlledImprint]);
+
+  const handleImprintToggle = (enabled: boolean) => {
+    const updated = { ...imprint, enabled };
+    setImprint(updated);
+    onImprintChange?.(updated);
+    try {
+      localStorage.setItem(`novel_imprint_${cleanTitle}`, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const updateImprintField = (field: keyof ImprintData, value: string) => {
+    const updated = { ...imprint, [field]: value };
+    setImprint(updated);
+    onImprintChange?.(updated);
+    try {
+      localStorage.setItem(`novel_imprint_${cleanTitle}`, JSON.stringify(updated));
+    } catch {}
+  };
 
   useEffect(() => {
     if (controlledAuthor !== undefined) {
@@ -289,6 +359,91 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
           <p className="text-[11px] text-zinc-500">
             Saved in PDF, EPUB, and project metadata
           </p>
+        </div>
+
+        {/* Optional Publishing Imprint (Выходные данные) */}
+        <div className="w-full mt-3.5 pt-3.5 border-t border-zinc-800 text-left space-y-2.5">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                id="toggle-imprint-checkbox"
+                type="checkbox"
+                checked={imprint.enabled}
+                onChange={(e) => handleImprintToggle(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border border-zinc-700 bg-zinc-950 text-zinc-200 accent-zinc-200 focus:ring-0 cursor-pointer"
+              />
+              <span className="text-xs font-medium text-zinc-300">
+                Publishing imprint
+              </span>
+            </label>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
+              {imprint.enabled ? 'Included' : 'Off'}
+            </span>
+          </div>
+
+          {imprint.enabled && (
+            <div className="space-y-2.5 pt-1 animate-fade-in text-xs">
+              <div>
+                <label htmlFor="imprint-date-input" className="block text-[10px] uppercase font-medium text-zinc-500 mb-1">
+                  Publication Date
+                </label>
+                <input
+                  id="imprint-date-input"
+                  type="text"
+                  value={imprint.date}
+                  onChange={(e) => updateImprintField('date', e.target.value)}
+                  placeholder="e.g. October 2026"
+                  className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="imprint-models-input" className="block text-[10px] uppercase font-medium text-zinc-500 mb-1">
+                  AI Generation Models
+                </label>
+                <input
+                  id="imprint-models-input"
+                  type="text"
+                  value={imprint.models}
+                  onChange={(e) => updateImprintField('models', e.target.value)}
+                  placeholder="e.g. Gemini 2.5 Flash (Author)"
+                  className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="imprint-publisher-input" className="block text-[10px] uppercase font-medium text-zinc-500 mb-1">
+                  Publisher / Studio
+                </label>
+                <input
+                  id="imprint-publisher-input"
+                  type="text"
+                  value={imprint.publisher}
+                  onChange={(e) => updateImprintField('publisher', e.target.value)}
+                  placeholder="NovelGenerator Studio"
+                  className="w-full h-7 px-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="imprint-disclaimer-input" className="block text-[10px] uppercase font-medium text-zinc-500 mb-1">
+                  Disclaimer
+                </label>
+                <textarea
+                  id="imprint-disclaimer-input"
+                  rows={2}
+                  value={imprint.disclaimer}
+                  onChange={(e) => updateImprintField('disclaimer', e.target.value)}
+                  placeholder="Fiction and AI disclaimer..."
+                  className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none text-xs text-zinc-200 placeholder:text-zinc-600 transition-colors resize-none leading-relaxed"
+                />
+              </div>
+
+              <p className="text-[11px] text-zinc-500 italic pt-0.5">
+                Printed on colophon page in PDF and included in EPUB metadata.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

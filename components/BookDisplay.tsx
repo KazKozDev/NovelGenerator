@@ -3,7 +3,7 @@ import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
 import { MarkdownView } from './common/MarkdownView';
-import BookCoverUpload from './BookCoverUpload';
+import BookCoverUpload, { ImprintData } from './BookCoverUpload';
 
 interface BookDisplayProps {
   bookContent: string;
@@ -15,6 +15,8 @@ interface BookDisplayProps {
   onManualSave?: (newContent: string) => boolean;
   author?: string;
   onAuthorChange?: (author: string) => void;
+  imprint?: ImprintData;
+  onImprintChange?: (imprint: ImprintData) => void;
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({
@@ -27,6 +29,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   onManualSave,
   author,
   onAuthorChange,
+  imprint,
+  onImprintChange,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -348,13 +352,15 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           </div>
         </div>
 
-        {/* Column 3 (~20%): Book Cover */}
+        {/* Column 3 (~20%): Book Cover & Imprint */}
         <div className="flex flex-col">
           <BookCoverUpload
             title={displayTitle}
             genre={metadata?.genre}
             author={currentAuthor}
             onAuthorChange={handleAuthorChange}
+            imprint={imprint}
+            onImprintChange={onImprintChange}
           />
         </div>
       </div>
