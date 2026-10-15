@@ -68,4 +68,29 @@ describe('reader and series tools', () => {
     expect(book).toContain('Apply Review');
     expect(book).toContain('Editorial Review');
   });
+
+  it('renders active editorial indicator when isEditorialRunning is true', () => {
+    const html = renderToStaticMarkup(
+      <BookDisplay
+        bookContent="# Title\n\n## Chapter 1\n\nText."
+        metadataJson="{}"
+        onEdit={() => {}}
+        isEditorialRunning={true}
+        editorialStatus="Copyediting chapters..."
+      />
+    );
+    expect(html).toContain('Copyediting chapters...');
+  });
+
+  it('renders manual edit button when onManualSave is provided', () => {
+    const html = renderToStaticMarkup(
+      <BookDisplay
+        bookContent="# Title\n\n## Chapter 1\n\nText."
+        metadataJson="{}"
+        onEdit={() => {}}
+        onManualSave={() => true}
+      />
+    );
+    expect(html).toContain('Edit text');
+  });
 });

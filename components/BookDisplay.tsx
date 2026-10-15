@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
@@ -9,9 +9,20 @@ interface BookDisplayProps {
   metadataJson: string;
   onReset: () => void;
   onEdit?: () => void;
+  isEditorialRunning?: boolean;
+  editorialStatus?: string;
+  onManualSave?: (newContent: string) => boolean;
 }
 
-const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, onReset, onEdit }) => {
+const BookDisplay: React.FC<BookDisplayProps> = ({
+  bookContent,
+  metadataJson,
+  onReset,
+  onEdit,
+  isEditorialRunning,
+  editorialStatus,
+  onManualSave,
+}) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const metadata = useMemo(() => {
@@ -54,6 +65,16 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
     return `# ${displayTitle}\n\n${bookContent}`;
   }, [bookContent, displayTitle]);
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editableContent, setEditableContent] = useState(manuscriptWithTitle);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setEditableContent(manuscriptWithTitle);
+    }
+  }, [manuscriptWithTitle, isEditing]);
+
   return (
     <div className="space-y-6">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
@@ -66,10 +87,15 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             <button
               type="button"
               onClick={onEdit}
-              className="inline-flex items-center gap-1.5 h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+              disabled={isEditorialRunning}
+              className="inline-flex items-center gap-1.5 h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-60 disabled:hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
             >
-              <span>↻</span>
-              <span>{findingsCount > 0 ? 'Apply Review' : 'Run Review'}</span>
+              <span className={isEditorialRunning ? 'inline-block animate-spin' : ''}>↻</span>
+              <span>
+                {isEditorialRunning
+                  ? (editorialStatus || 'Applying Review…')
+                  : findingsCount > 0 ? 'Apply Review' : 'Run Review'}
+              </span>
             </button>
           )}
         </div>
@@ -176,20 +202,77 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
           <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
-          <button
-            type="button"
-            onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
-            className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
-          >
-            {isCopied ? 'Copied' : 'Copy'}
-          </button>
+          <div className="flex items-center gap-2">
+            {onManualSave && !isEditing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditableContent(manuscriptWithTitle);
+                  setIsEditing(true);
+                  setSaveError(null);
+                }}
+                className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+              >
+                Edit text
+              </button>
+            )}
+            {isEditing && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const success = onManualSave?.(editableContent);
+                    if (success !== false) {
+                      setIsEditing(false);
+                      setSaveError(null);
+                    } else {
+                      setSaveError('Could not save manuscript chapters.');
+                    }
+                  }}
+                  className="inline-flex items-center h-6 px-2.5 text-xs font-semibold whitespace-nowrap shrink-0 bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditableContent(manuscriptWithTitle);
+                    setSaveError(null);
+                  }}
+                  className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
+              className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+            >
+              {isCopied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
 
         <div className="p-6 sm:p-10 max-h-[72vh] overflow-y-auto">
-          <MarkdownView
-            content={manuscriptWithTitle}
-            className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
-          />
+          {saveError && (
+            <p className="text-xs text-red-400 mb-3">{saveError}</p>
+          )}
+          {isEditing ? (
+            <textarea
+              value={editableContent}
+              onChange={(e) => setEditableContent(e.target.value)}
+              aria-label="Edit manuscript"
+              className="w-full min-h-[50vh] p-4 bg-zinc-950 border border-zinc-800 rounded font-serif text-prose text-zinc-200 focus:outline-none focus:border-zinc-700 resize-y leading-relaxed"
+            />
+          ) : (
+            <MarkdownView
+              content={manuscriptWithTitle}
+              className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
+            />
+          )}
         </div>
       </div>
     </div>
