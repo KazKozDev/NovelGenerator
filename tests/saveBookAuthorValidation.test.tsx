@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, it, expect } from 'vitest';
 import SaveBook from '../components/SaveBook';
 import { resolveImprintColophon } from '../utils/imprintConstants';
+import { formatMarkdownWithMetadata, formatTextWithMetadata } from '../utils/exportUtils';
 
 describe('SaveBook author validation and colophon', () => {
   it('renders SaveBook with author requirement', () => {
@@ -43,5 +44,43 @@ describe('SaveBook author validation and colophon', () => {
     expect(colophon.copyright).toBe('Copyright © 2027 Иван Иванов');
     expect(colophon.isbns).toEqual([]);
     expect(colophon.editionLine).toBe('Second revised edition, 2027');
+  });
+
+  it('formats Markdown with author and title at top', () => {
+    const md = formatMarkdownWithMetadata(
+      '# My Mystery Novel\n\n## Chapter 1\n\nThe detective arrived.',
+      { author: 'Иван Иванов' }
+    );
+    expect(md.startsWith('# My Mystery Novel\n\n**Author:** Иван Иванов')).toBe(true);
+    expect(md).toContain('## Chapter 1');
+  });
+
+  it('formats Markdown with author and colophon when imprint is enabled', () => {
+    const md = formatMarkdownWithMetadata(
+      '# My Mystery Novel\n\n## Chapter 1\n\nThe detective arrived.',
+      {
+        author: 'Иван Иванов',
+        imprint: { enabled: true, edition: 'First edition', year: '2026' },
+      }
+    );
+    expect(md).toContain('# My Mystery Novel');
+    expect(md).toContain('**Author:** Иван Иванов');
+    expect(md).toContain('### Publishing Imprint');
+    expect(md).toContain('Copyright © 2026 Иван Иванов');
+    expect(md).toContain('Published by NG Press');
+  });
+
+  it('formats Plain Text with author at the top and optional colophon', () => {
+    const txt = formatTextWithMetadata(
+      '# My Mystery Novel\n\n## Chapter 1\n\nThe detective arrived.',
+      {
+        author: 'Иван Иванов',
+        imprint: { enabled: true, edition: 'First edition', year: '2026' },
+      }
+    );
+    expect(txt.startsWith('My Mystery Novel\nby Иван Иванов')).toBe(true);
+    expect(txt).toContain('Copyright © 2026 Иван Иванов');
+    expect(txt).toContain('Published by NG Press');
+    expect(txt).toContain('Chapter 1');
   });
 });

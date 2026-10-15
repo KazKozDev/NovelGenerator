@@ -40,8 +40,8 @@ export default function SaveBook({
 
     setBusy(true);
     try {
-      if (format === 'txt') exportAsText(content.replace(/^#{1,6}\s+/gm, ''), `${filename}.txt`);
-      else if (format === 'md') exportAsMarkdown(content, `${filename}.md`);
+      if (format === 'txt') exportAsText(content, `${filename}.txt`, metadata);
+      else if (format === 'md') exportAsMarkdown(content, `${filename}.md`, metadata);
       else if (format === 'report') exportAsJSON(metadata, `${filename}-report.json`);
       else if (format === 'pdf') exportAsPdf(content, metadata);
       else await exportAsEpub(content, metadata, `${filename}.epub`);

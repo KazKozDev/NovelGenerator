@@ -7,18 +7,83 @@ import { resolveImprintColophon } from './imprintConstants';
  */
 
 /**
- * Export book as plain text file
+ * Formats Markdown book content with Title, Author at the top, and optional colophon
  */
-export function exportAsText(content: string, filename: string = 'book.txt'): void {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+export function formatMarkdownWithMetadata(content: string, metadata?: any): string {
+  const title = extractBookTitle(content);
+  const author = typeof metadata?.author === 'string' ? metadata.author.trim() : '';
+  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
+
+  // Remove duplicate title heading from the start of content if present
+  let body = content;
+  const headingMatch = body.match(/^#\s+[^\n]+\n*/);
+  if (headingMatch) {
+    body = body.slice(headingMatch[0].length).trim();
+  }
+
+  const lines: string[] = [`# ${title}`];
+  if (author) {
+    lines.push(`\n**Author:** ${author}`);
+  }
+
+  if (imprint) {
+    const colophon = resolveImprintColophon(author, imprint);
+    lines.push('\n---\n');
+    lines.push('### Publishing Imprint\n');
+    lines.push(colophon.plainText.split('\n').map(line => line.trim() ? `${line}  ` : '').join('\n'));
+    lines.push('\n---\n');
+  } else {
+    lines.push('\n');
+  }
+
+  lines.push(body);
+  return lines.join('\n');
+}
+
+/**
+ * Formats plain text book content with Title, Author at the top, and optional colophon
+ */
+export function formatTextWithMetadata(content: string, metadata?: any): string {
+  const title = extractBookTitle(content);
+  const author = typeof metadata?.author === 'string' ? metadata.author.trim() : '';
+  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
+
+  // Clean markdown headings from content
+  const cleanBody = content.replace(/^#{1,6}\s+/gm, '').trim();
+
+  const lines: string[] = [title];
+  if (author) {
+    lines.push(`by ${author}`);
+  }
+  lines.push('');
+
+  if (imprint) {
+    const colophon = resolveImprintColophon(author, imprint);
+    lines.push('================================================================================');
+    lines.push(colophon.plainText);
+    lines.push('================================================================================');
+    lines.push('');
+  }
+
+  lines.push(cleanBody);
+  return lines.join('\n');
+}
+
+/**
+ * Export book as plain text file with author at the top
+ */
+export function exportAsText(content: string, filename: string = 'book.txt', metadata?: any): void {
+  const formatted = formatTextWithMetadata(content, metadata);
+  const blob = new Blob([formatted], { type: 'text/plain;charset=utf-8' });
   downloadBlob(blob, filename);
 }
 
 /**
- * Export book as Markdown file
+ * Export book as Markdown file with author at the top
  */
-export function exportAsMarkdown(content: string, filename: string = 'book.md'): void {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+export function exportAsMarkdown(content: string, filename: string = 'book.md', metadata?: any): void {
+  const formatted = formatMarkdownWithMetadata(content, metadata);
+  const blob = new Blob([formatted], { type: 'text/markdown;charset=utf-8' });
   downloadBlob(blob, filename);
 }
 
