@@ -103,7 +103,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       {/* Three-zone layout: Column 1 (40%), Column 2 (40%), Column 3 (20%) */}
