@@ -134,8 +134,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     <div className="space-y-4">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
-      {/* Three-zone layout: Column 1 (40%), Column 2 (40%), Column 3 (20%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[40%_40%_20%] gap-6 items-start">
+      {/* Three-zone layout: Column 1 (40%), Column 2 (40%), Column 3 (1fr / remaining width) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[40%_40%_1fr] gap-6 items-start">
         {/* Column 1 (~35%): Editorial Review */}
         <section className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col" aria-label="Editorial review">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
