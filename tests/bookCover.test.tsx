@@ -57,7 +57,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('value="Jane Austen"');
   });
 
-  it('renders the publishing imprint section unconditionally without toggle checkbox', () => {
+  it('renders the imprint metadata input fields directly under author', () => {
     const html = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -65,8 +65,8 @@ describe('BookCoverUpload and three-zone layout', () => {
         author="Arthur Conan"
       />
     );
-    expect(html).toContain('Publishing imprint');
-    expect(html).toContain('Included');
+    expect(html).not.toContain('Publishing imprint');
+    expect(html).not.toContain('Included');
     expect(html).not.toContain('id="toggle-imprint-checkbox"');
     expect(html).toContain('id="imprint-edition-input"');
     expect(html).toContain('id="imprint-isbn-paperback-input"');
@@ -119,9 +119,9 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('id="imprint-isbn-ebook-input"');
     expect(html).toContain('value="978-1-234567-89-1"');
     
-    // Verifies that copyright card is not rendered in the UI (added automatically on save)
+    // Verifies that copyright card and redundant messages are not rendered in the UI (added automatically on save)
     expect(html).not.toContain('Copyright © 2026 Иван Иванов');
-    expect(html).toContain('Copyright, disclaimers, and NG Press colophon are automatically generated upon export');
+    expect(html).not.toContain('Copyright, disclaimers, and NG Press colophon are automatically generated upon export');
   });
 });
 
