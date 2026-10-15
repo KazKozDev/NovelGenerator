@@ -57,7 +57,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(html).toContain('value="Jane Austen"');
   });
 
-  it('renders the publishing imprint toggle and default state', () => {
+  it('renders the publishing imprint section unconditionally without toggle checkbox', () => {
     const html = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -66,7 +66,11 @@ describe('BookCoverUpload and three-zone layout', () => {
       />
     );
     expect(html).toContain('Publishing imprint');
-    expect(html).toContain('id="toggle-imprint-checkbox"');
+    expect(html).toContain('Included');
+    expect(html).not.toContain('id="toggle-imprint-checkbox"');
+    expect(html).toContain('id="imprint-edition-input"');
+    expect(html).toContain('id="imprint-isbn-paperback-input"');
+    expect(html).toContain('id="imprint-isbn-ebook-input"');
   });
 
   it('renders author field with required indicator', () => {
@@ -91,7 +95,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     expect(filledAuthorHtml).toContain('Saved in copyright, PDF, EPUB, and project metadata');
   });
 
-  it('renders imprint input fields and fixed colophon when enabled', () => {
+  it('renders imprint input fields and fixed colophon unconditionally', () => {
     const html = renderToStaticMarkup(
       <BookCoverUpload
         title="Shadows of the City"
@@ -106,8 +110,7 @@ describe('BookCoverUpload and three-zone layout', () => {
         }}
       />
     );
-    expect(html).toContain('id="toggle-imprint-checkbox"');
-    expect(html).toContain('checked=""');
+    expect(html).not.toContain('id="toggle-imprint-checkbox"');
     expect(html).toContain('id="imprint-edition-input"');
     expect(html).toContain('value="First edition"');
     expect(html).toContain('id="imprint-isbn-paperback-input"');

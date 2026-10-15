@@ -12,7 +12,6 @@ import { resolveImprintColophon } from './imprintConstants';
 export function formatMarkdownWithMetadata(content: string, metadata?: any): string {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' ? metadata.author.trim() : '';
-  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
 
   // Remove duplicate title heading from the start of content if present
   let body = content;
@@ -26,15 +25,11 @@ export function formatMarkdownWithMetadata(content: string, metadata?: any): str
     lines.push(`\n**Author:** ${author}`);
   }
 
-  if (imprint) {
-    const colophon = resolveImprintColophon(author, imprint);
-    lines.push('\n---\n');
-    lines.push('### Publishing Imprint\n');
-    lines.push(colophon.plainText.split('\n').map(line => line.trim() ? `${line}  ` : '').join('\n'));
-    lines.push('\n---\n');
-  } else {
-    lines.push('\n');
-  }
+  const colophon = resolveImprintColophon(author, metadata?.imprint);
+  lines.push('\n---\n');
+  lines.push('### Publishing Imprint\n');
+  lines.push(colophon.plainText.split('\n').map(line => line.trim() ? `${line}  ` : '').join('\n'));
+  lines.push('\n---\n');
 
   lines.push(body);
   return lines.join('\n');
@@ -46,7 +41,6 @@ export function formatMarkdownWithMetadata(content: string, metadata?: any): str
 export function formatTextWithMetadata(content: string, metadata?: any): string {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' ? metadata.author.trim() : '';
-  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
 
   // Clean markdown headings from content
   const cleanBody = content.replace(/^#{1,6}\s+/gm, '').trim();
@@ -57,13 +51,11 @@ export function formatTextWithMetadata(content: string, metadata?: any): string 
   }
   lines.push('');
 
-  if (imprint) {
-    const colophon = resolveImprintColophon(author, imprint);
-    lines.push('================================================================================');
-    lines.push(colophon.plainText);
-    lines.push('================================================================================');
-    lines.push('');
-  }
+  const colophon = resolveImprintColophon(author, metadata?.imprint);
+  lines.push('================================================================================');
+  lines.push(colophon.plainText);
+  lines.push('================================================================================');
+  lines.push('');
 
   lines.push(cleanBody);
   return lines.join('\n');
@@ -137,7 +129,6 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
-  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
   const uuid = `urn:uuid:${crypto.randomUUID()}`;
   
   const chapters = parseBookChapters(content);
@@ -162,10 +153,9 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   const xml = (text: string) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   
-  // Optional Imprint / Colophon file
-  if (imprint) {
-    const colophon = resolveImprintColophon(author, imprint);
-    oebps.file('imprint.xhtml',
+  // Mandatory Imprint / Colophon file
+  const colophon = resolveImprintColophon(author, metadata?.imprint);
+  oebps.file('imprint.xhtml',
 `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -188,11 +178,10 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   </div>
 </body>
 </html>`);
-  }
 
   // 4. content.opf (package document)
-  const imprintManifest = imprint ? `    <item id="imprint" href="imprint.xhtml" media-type="application/xhtml+xml"/>\n` : '';
-  const imprintSpine = imprint ? `    <itemref idref="imprint"/>\n` : '';
+  const imprintManifest = `    <item id="imprint" href="imprint.xhtml" media-type="application/xhtml+xml"/>\n`;
+  const imprintSpine = `    <itemref idref="imprint"/>\n`;
   
   const manifestItems = chapters.map(ch => 
     `    <item id="chapter${ch.num}" href="chapter${ch.num}.xhtml" media-type="application/xhtml+xml"/>`
@@ -202,8 +191,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     `    <itemref idref="chapter${ch.num}"/>`
   ).join('\n');
   
-  const colophonMeta = imprint ? resolveImprintColophon(author, imprint) : null;
-  const isbnIdentifier = imprint?.isbnEbook || imprint?.isbnPaperback;
+  const isbnIdentifier = metadata?.imprint?.isbnEbook || metadata?.imprint?.isbnPaperback;
 
   oebps.file('content.opf',
 `<?xml version="1.0" encoding="UTF-8"?>
@@ -213,8 +201,8 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     ${isbnIdentifier ? `<dc:identifier id="isbn">urn:isbn:${xml(isbnIdentifier)}</dc:identifier>` : ''}
     <dc:title>${xml(title)}</dc:title>
     <dc:creator>${xml(author || 'Anonymous')}</dc:creator>
-    ${colophonMeta ? `<dc:publisher>${xml(colophonMeta.publisher)}</dc:publisher>` : ''}
-    ${colophonMeta ? `<dc:rights>${xml(`${colophonMeta.copyright}. ${colophonMeta.rights}`)}</dc:rights>` : ''}
+    <dc:publisher>${xml(colophon.publisher)}</dc:publisher>
+    <dc:rights>${xml(`${colophon.copyright}. ${colophon.rights}`)}</dc:rights>
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
   </metadata>
@@ -361,7 +349,6 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
 export function exportAsPdf(content: string, metadata: any): void {
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
-  const imprint = metadata?.imprint?.enabled ? metadata.imprint : null;
   
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
@@ -374,9 +361,8 @@ export function exportAsPdf(content: string, metadata: any): void {
   const chapters = parseBookChapters(content);
   const htmlContent = chapters.map(ch => `<h2 class="chapter-title">${escape(chapterLabel(ch.num, ch.title))}</h2>` + ch.content.split(/\n\s*\n/).map(block => /^\s*(?:\*\s*){3,}\s*$/.test(block) ? '<div class="scene-break">* * *</div>' : `<p>${escape(block).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>`).join('')).join('');
 
-  const imprintHtml = imprint ? (() => {
-    const colophon = resolveImprintColophon(author, imprint);
-    return `
+  const colophon = resolveImprintColophon(author, metadata?.imprint);
+  const imprintHtml = `
     <div class="imprint-section" style="page-break-after: always; margin-top: 4em; font-size: 0.85em; color: #333; line-height: 1.6; max-width: 580px;">
       <p style="margin-bottom: 0.5em; font-weight: bold;">${escape(colophon.copyright)}</p>
       <p style="margin-bottom: 1.2em;">${escape(colophon.rights)}</p>
@@ -390,7 +376,6 @@ export function exportAsPdf(content: string, metadata: any): void {
       </div>
     </div>
   `;
-  })() : '';
 
   printWindow.document.write(`
     <!DOCTYPE html>

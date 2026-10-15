@@ -21,7 +21,7 @@ export const FIXED_IMPRINT_TEXT = {
 
 export function getDefaultImprintData(): ImprintData {
   return {
-    enabled: false,
+    enabled: true,
     edition: FIXED_IMPRINT_TEXT.defaultEdition,
     year: new Date().getFullYear().toString(),
     isbnPaperback: '',

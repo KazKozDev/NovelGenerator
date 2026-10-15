@@ -53,15 +53,6 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
     }
   }, [controlledImprint]);
 
-  const handleImprintToggle = (enabled: boolean) => {
-    const updated = { ...imprint, enabled };
-    setImprint(updated);
-    onImprintChange?.(updated);
-    try {
-      localStorage.setItem(`novel_imprint_${cleanTitle}`, JSON.stringify(updated));
-    } catch {}
-  };
-
   const updateImprintField = (field: keyof ImprintData, value: string) => {
     const updated = { ...imprint, [field]: value };
     setImprint(updated);
@@ -354,30 +345,21 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
           )}
         </div>
 
-        {/* Optional Publishing Imprint (Выходные данные) */}
+        {/* Publishing Imprint (Выходные данные) — Always Included */}
         <div className="w-full mt-3.5 pt-3.5 border-t border-zinc-800 text-left space-y-2.5">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                id="toggle-imprint-checkbox"
-                type="checkbox"
-                checked={imprint.enabled}
-                onChange={(e) => handleImprintToggle(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border border-zinc-700 bg-zinc-950 text-zinc-200 accent-zinc-200 focus:ring-0 cursor-pointer"
-              />
-              <span className="text-xs font-medium text-zinc-300">
-                Publishing imprint
-              </span>
-            </label>
+            <span className="text-xs font-medium text-zinc-300">
+              Publishing imprint
+            </span>
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
-              {imprint.enabled ? 'Included' : 'Off'}
+              Included
             </span>
           </div>
 
-          {imprint.enabled && (() => {
+          {(() => {
             const colophon = resolveImprintColophon(author, imprint);
             return (
-              <div className="space-y-3 pt-1 animate-fade-in text-xs">
+              <div className="space-y-3 pt-1 text-xs">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label htmlFor="imprint-edition-input" className="block text-[10px] uppercase font-medium text-zinc-400">
