@@ -49,17 +49,17 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
     });
   };
 
-  const readerContent = useMemo(() => {
-    return bookContent.replace(/^#\s+[^\r\n]+\r?\n*/m, '').trimStart();
-  }, [bookContent]);
+  const manuscriptWithTitle = useMemo(() => {
+    if (/^#\s+[^\r\n]+/m.test(bookContent)) {
+      return bookContent;
+    }
+    return `# ${displayTitle}\n\n${bookContent}`;
+  }, [bookContent, displayTitle]);
 
   return (
     <div className="space-y-6">
-      {/* Title & Compact Statistics */}
-      <div className="space-y-2 mb-6 text-left">
-        <h1 className="text-2xl sm:text-3xl font-serif font-semibold text-zinc-100 tracking-tight">
-          {displayTitle}
-        </h1>
+      {/* Compact Statistics */}
+      <div className="mb-4 text-left">
         <BookStatistics bookContent={bookContent} metadata={metadata} />
       </div>
 
@@ -201,7 +201,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             </div>
             <button
               type="button"
-              onClick={() => handleCopyToClipboard(bookViewMode === 'rendered' ? readerContent : bookContent)}
+              onClick={() => handleCopyToClipboard(manuscriptWithTitle)}
               className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
             >
               {isCopied ? 'Copied' : 'Copy'}
@@ -212,13 +212,13 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
         {bookViewMode === 'rendered' ? (
           <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
             <MarkdownView
-              content={readerContent}
+              content={manuscriptWithTitle}
               className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
             />
           </div>
         ) : (
           <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
-            {bookContent}
+            {manuscriptWithTitle}
           </pre>
         )}
       </div>
