@@ -1,5 +1,6 @@
 import type { ProjectStore } from './store';
 import type { ProjectInput } from './types';
+import { repairStoredFormatting } from '../manuscript';
 
 /** A portable copy of the book at the desk: input, the author's draft, the manuscript, the report and the log. */
 export interface ProjectSnapshot {
@@ -53,6 +54,7 @@ export function restoreSnapshot(store: ProjectStore, snap: unknown): void {
   for (const mark of (Array.isArray(files.checkpoints) ? files.checkpoints : []) as unknown[]) {
     if (typeof mark === 'string') store.checkpoint(mark);
   }
+  repairStoredFormatting(store);
 }
 
 export function downloadJson(filename: string, value: unknown): void {

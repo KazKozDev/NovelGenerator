@@ -2,10 +2,113 @@ import type { NovelLLM } from '../v2/llm';
 import type { ProjectStore } from '../v2/store';
 import type { FinalReport, ProjectInput } from '../v2/types';
 import { wornPhrases, authorKey, type AuthorDraft, type DeskState } from '../author';
-import { getCraftGuide } from './craftGuide';
+import { normalizeChapterBody, repairStoredFormatting } from '../manuscript';
+import { CraftSession, revision } from './state';
+import { planArchitecture, preflightArchitecture, acceptedArchitecture, acceptArchitecture } from './planning';
+import { projectArchitecture, prepareExecution, executionPrompt, commitEnacted, emptyEnacted, applyExecutionToCard, continueArchitecture } from './runtime';
+import type { AuthorArchitecture, EnactedState, SceneExecution } from './types';
+import { restructureBook, recoverSavedBook, type SceneSource } from './revision';
+import { DRAFT_WRITER_SYSTEM } from './prose';
+import { wholeBookContext } from './manuscriptContext';
+import { bookLayout, projectionMetrics, wordPositions, openingWindow } from './metrics';
+import { planSeries, betaReaders, compareBooks } from './readerTools';
+import { validateReceipt, sceneNeedsRepair, observeScene, type Observation } from './observer';
+import { preflightPacket, projectPacket, validatePacket } from './projection';
+import { blindWriterContext, readBlind, readBlindPrefix } from './blindContext';
+import { extractUsedImagery, stripSubtextDecoding, joinScenesWithCameraBreaks } from './craftRules';
+import type { TrackedPropState } from './types';
+import type { ProgressStage } from '../v2/orchestrator';
+import { reviseManuscript, editorialReport, manuscriptText, EDITORIAL_FOCUSES, CORE_EDITORIAL_FOCUSES } from './editorial';
 
-export const AUDIT_STAGES = new Set(['craft-dev-review', 'craft-lit-review', 'craft-preflight']);
-export const AUDIT_CALLS = 4;
+export const AUDIT_STAGES = new Set(['craft-dev-review', 'craft-lit-review', 'craft-preflight', 'craft-beta-reader', 'craft-comparables', 'craft-observe']);
+export const AUDIT_CALLS = 16;
+
+/** Edit saved prose; never call preparation, projection or scene drafting here. */
+export async function runCraftEditorial(input: ProjectInput, store: ProjectStore, llm: NovelLLM, onProgress: (stage: ProgressStage, chapter?: number) => void, legacyDraft = false, editorialFocuses = EDITORIAL_FOCUSES): Promise<void> {
+  repairStoredFormatting(store);
+  const draft = store.loadAuthor();
+  const source = store.manuscript();
+  if (!draft?.desk || draft.input_key !== authorKey(input) || source.length !== input.chapter_count || source.some(c => !c.text.trim())) throw new Error('Editing requires the saved complete manuscript with its original input.');
+  const desk = draft.desk;
+  const editorialInput = { ...input, plan_feedback: [input.plan_feedback, desk.files['preflight.json'], desk.files['deferred-work.json']].filter(Boolean).join('\n') };
+  const resumed = desk.editorial?.active;
+  const startedAt = resumed ? desk.editorial!.startedAt : new Date().toISOString();
+  const archive = `editorial-${Date.parse(startedAt)}`;
+  if (!resumed) {
+    desk.editorial = { active: true, sourceFiles: { ...desk.files }, sourceReport: store.loadReport(), startedAt };
+    desk.files[`${archive}-source.json`] = JSON.stringify({ chapters: source, report: store.loadReport() });
+  }
+  draft.completed = false;
+  desk.finished = false;
+  store.saveAuthor(draft);
+  store.clearReport();
+  store.checkpoint(archive);
+  onProgress('audit');
+  let pendingScenes: SceneSource[] | undefined;
+  const persistChapters = (chapters: { chapter: number; text: string }[], focus: string) => {
+    const changed = chapters.some(c => desk.files[`chapter-${c.chapter}.md`] !== c.text);
+    if (changed) desk.answers.forEach(answer => { if (/reader|observer/i.test(answer.who)) answer.stale = true; });
+    for (const c of chapters) {
+      desk.files[`chapter-${c.chapter}.md`] = c.text;
+      draft.chapters[c.chapter - 1] = { ...(draft.chapters[c.chapter - 1] || { card: '', facts: '', reader: '' }), text: c.text };
+    }
+    desk.files['book.md'] = manuscriptText(chapters);
+    if (pendingScenes) { desk.files['revision-scene-index.json'] = JSON.stringify(pendingScenes); pendingScenes = undefined; }
+    if (changed && desk.files['enacted-state.json']) desk.files['enacted-state.json'] = JSON.stringify({ ...JSON.parse(desk.files['enacted-state.json']), stale: true });
+    desk.files[`${archive}-${focus}-${Date.now()}.json`] = JSON.stringify(chapters);
+    desk.journal.push(`Editorial ${focus} applied`);
+    store.commitRevision(chapters, draft);
+  };
+  const session = legacyDraft && !desk.files['engine-state.json'] ? undefined : new CraftSession(desk.files, authorKey(input), async () => {
+    store.saveAuthor(draft);
+    const durable = store as ProjectStore & { flush?: () => Promise<void> };
+    if (durable.flush) await durable.flush();
+  });
+  let editorialSource = source;
+  if (session && !desk.files[`${archive}-structural-commit.json`]) {
+    await session.phase('structural-revision');
+    await recoverSavedBook(input, source, session, llm);
+    const structural = await restructureBook(input, source, session, llm);
+    pendingScenes = structural.scenes;
+    persistChapters(structural.chapters, 'structural');
+    editorialSource = structural.chapters;
+    await session.put(`${archive}-structural-commit.json`, { source, result: structural.chapters });
+  }
+  const edited = await reviseManuscript(editorialInput, editorialSource, llm, persistChapters, review => {
+    desk.answers.push({ who: `the review (${review.focus})`, step: ++desk.step, about: 'complete book', text: JSON.stringify(review) });
+    store.log('craft-audit', `${review.focus}: ${review.issues.length} findings; ${review.failures.length} unavailable checks`);
+    store.saveAuthor(draft);
+  }, editorialFocuses, session ? {
+    context: chapters => wholeBookContext(chapters, session, llm),
+    structural: async (chapters, review) => { const revision = await restructureBook(input, chapters, session, llm, review); pendingScenes = revision.scenes; return revision.chapters; },
+    phase: async focus => { await session.phase(focus === 'proofread' ? 'proofread' : focus === 'copyedit' ? 'copyedit' : ['baseline-literary', 'line'].includes(focus) ? 'line-edit' : 'structural-revision'); },
+  } : undefined);
+  desk.files[`${archive}-history.json`] = JSON.stringify(edited.history);
+  const readers = await betaReaders(input, edited.chapters, llm, review => {
+    desk.answers.push({ who: review.focus, step: ++desk.step, about: 'current complete book', text: JSON.stringify(review) });
+    store.saveAuthor(draft);
+  }, session);
+  desk.files['word-positions.json'] = JSON.stringify(wordPositions(edited.chapters));
+  desk.files['opening-window.json'] = JSON.stringify(openingWindow(edited.chapters));
+  try {
+    const comparison = await compareBooks(input, edited.chapters, llm, session ? await wholeBookContext(edited.chapters, session, llm) : undefined);
+    if (comparison) desk.files['comparable-books.json'] = comparison;
+  } catch (error) { readers.push({ focus: 'comparables', issues: [], failures: [String(error)] }); }
+  const unavailableScenes: string[] = [];
+  for (const [name, raw] of Object.entries(desk.files)) {
+    if (!/^scene-\d+-observation\.json$/.test(name)) continue;
+    try { const o = JSON.parse(raw) as Observation; if (!o.receipt) unavailableScenes.push(`${name}: observer unavailable; ${o.failures.join('; ')}`); }
+    catch { unavailableScenes.push(`${name}: invalid saved observer assessment`); }
+  }
+  const report = editorialReport(edited.chapters, input.chapter_count, [...edited.reviews, ...readers, ...(unavailableScenes.length ? [{ focus: 'scene-observer-coverage', issues: [], failures: unavailableScenes }] : [])], input.target_total_words);
+  store.saveReport(report);
+  if (session) await session.phase('complete');
+  desk.finished = true;
+  desk.editorial!.active = false;
+  draft.completed = report.status === 'COMPLETE' || report.status === 'COMPLETE_WITH_WARNINGS';
+  store.saveAuthor(draft);
+  onProgress('done');
+}
 
 export function extractTitle(text: string): string | undefined {
   const match = text.match(/(?:^|\n)[#*\s]*(?:BOOK\s+)?TITLE\**\s*:\**\s*([^\n\r]+)/i);
@@ -34,6 +137,14 @@ export function cleanFallbackTitle(premise: string): string {
 export interface PropAnchor {
   name: string;
   role: 'setup' | 'complication' | 'payoff';
+  camouflage?: string[]; // Mundane companion items (Rule of Three) to defuse premature spotlight
+  focusInstruction?: string; // Guidance for casual introduction without foreshadowing
+}
+
+export interface DramaticIronyDirective {
+  detail: string; // External environmental reality visible to reader
+  readerVisible?: boolean; // Gardner psychic distance 1
+  characterAware?: boolean; // Strictly false
 }
 
 export interface ValueCharge {
@@ -43,9 +154,9 @@ export interface ValueCharge {
 }
 
 export interface CardConflict {
-  external: string;
-  interpersonal: string;
-  internal: string;
+  external?: string;
+  interpersonal?: string;
+  internal?: string;
 }
 
 export interface CardStakes {
@@ -57,12 +168,17 @@ export interface Card {
   id: string;
   chapter: number;
   order: number;
+  pov?: string;
+  goal?: string;
+  targetWords?: number;
+  writerDirectives?: string;
   sceneType?: 'scene' | 'sequel'; // Swain's pulse: Action (Goal->Conflict->Disaster) vs Reaction (Emotion->Dilemma->Decision)
   time: string;
   location: string;
   causalLink: 'therefore' | 'but';
   valueCharge: ValueCharge;
-  conflict?: CardConflict; // 3-layer conflict: external, interpersonal, internal
+  conflict?: CardConflict; // Dynamic conflict layers per scene type
+  dramaticIrony?: boolean | string | DramaticIronyDirective; // Hitchcock suspense: reader sees external threat while character is ignorant
   stakes?: CardStakes; // Concrete immediate stakes and cost
   purpose: string;
   action: string;
@@ -93,6 +209,8 @@ export interface Fact {
 }
 
 export interface Packet {
+  preflight?: { issues: { status: 'demonstrated' | 'uncertain'; reason: string; sources: string[] }[]; failures: string[] };
+  dossierClarifications?: string;
   title?: string;
   names: Record<string, string>;
   initialProtagonistKnowledge: string[];
@@ -104,8 +222,9 @@ export interface Receipt {
   event: { status: 'enacted' | 'missing' | 'contradicted'; sources: string[]; reason: string };
   tangibleActionEnacted: boolean;
   valueChargeTurned?: boolean;
+  isRepetitiveOrClichéd?: boolean;
   facts: { id: string; text: string; kind: string; knownBy: string[]; source: string }[];
-  issues: { reason: string; sources: string[] }[];
+  issues: { reason: string; sources: string[]; kind?: 'factual' | 'knowledge' | 'causal' | 'style' | 'uncertain'; status?: 'demonstrated' | 'uncertain' }[];
   wordCount: number;
 }
 
@@ -161,16 +280,32 @@ export async function runCraftBook(
   store: ProjectStore,
   llm: NovelLLM,
   onProgress: (stage: ProgressStage, chapter?: number) => void
-): Promise<{ status: 'COMPLETE' | 'FAILED'; summary: string }> {
-  const guide = getCraftGuide();
+): Promise<{ status: FinalReport['status']; summary: string }> {
   const numChapters = Math.max(1, input.chapter_count || 3);
-  const scenesPerChapter = 3;
-  const totalScenes = numChapters * scenesPerChapter;
-  const targetWordsPerScene = Math.max(380, Math.min(650, Math.floor((input.target_total_words || numChapters * 1500) / totalScenes)));
+  const layout = bookLayout(numChapters, input.target_total_words);
+  const totalScenes = layout.scenes;
+  const targetWordsPerScene = layout.wordsPerScene;
 
   onProgress('design');
 
-  const files: Record<string, string> = {};
+  const savedDraft = store.loadAuthor();
+  let savedPacket: Packet | undefined;
+  if (savedDraft?.input_key === authorKey(input) && savedDraft.desk?.files['packet.json'] && savedDraft.desk.files['dossier.md']) {
+    try { savedPacket = parseJson<Packet>(savedDraft.desk.files['packet.json']); validatePacket(savedPacket, numChapters, savedDraft.desk.files['engine-state.json'] ? undefined : totalScenes); }
+    catch {
+      if (store.manuscript().length) throw new Error('The saved manuscript uses a different scene layout. It is preserved; use Edit saved book, or start a fresh project for the restored three-scenes-per-chapter pipeline.');
+      savedPacket = undefined;
+    }
+  }
+  const previousAnswers = store.loadAuthor()?.desk?.answers || [];
+  const previousJournal = store.loadAuthor()?.desk?.journal || [];
+  const files: Record<string, string> = savedDraft?.input_key === authorKey(input) ? { ...savedDraft.desk?.files } : {};
+  if (savedDraft?.input_key === authorKey(input) && !savedPacket && !files['engine-state.json'] && store.manuscript().length) {
+    throw new Error('The saved manuscript has no compatible scene plan. Its text is preserved; recover the saved project or use saved-book editing instead of generating over it.');
+  }
+  if (savedDraft?.input_key === authorKey(input) && !files['engine-state.json'] && !savedPacket && !files['pre-author-engine-source.json']) {
+    files['pre-author-engine-source.json'] = JSON.stringify({ draft: savedDraft, manuscript: store.manuscript(), report: store.loadReport(), input: store.loadInput() });
+  }
   const answers: DeskState['answers'] = [];
   const journal: string[] = [];
   let activeTitle = input.title?.trim() || '';
@@ -184,7 +319,7 @@ export async function runCraftBook(
     chaptersData?: { text: string; card: string; facts: string; reader: string }[];
     completed?: boolean;
     waiting?: string;
-  }) {
+  } = {}) {
     const existing = store.loadAuthor();
     const resolvedTitle = options.title ?? (activeTitle || existing?.title || cleanFallbackTitle(input.premise));
     if (resolvedTitle && !activeTitle) activeTitle = resolvedTitle;
@@ -201,8 +336,8 @@ export async function runCraftBook(
       completed: options.completed ?? existing?.completed ?? false,
       desk: {
         files: { ...existing?.desk?.files, ...files },
-        answers: [...(existing?.desk?.answers || []), ...answers],
-        journal: [...(existing?.desk?.journal || []), ...journal],
+        answers: [...previousAnswers, ...answers],
+        journal: [...previousJournal, ...journal],
         step: journal.length,
         budget: 100,
         spent: journal.length,
@@ -212,14 +347,58 @@ export async function runCraftBook(
     store.saveAuthor(draft);
   }
 
-  // =========================================================================
-  // STAGE 1: Author Dossier (4 Layers of Truth, Psychology, Causal Chain)
-  // =========================================================================
-  journal.push('Developing author dossier & 4 layers of truth');
-  store.log('craft-prep', 'Drafting author dossier and truth layers...');
-
-  const prepPrompt = `CRAFT GUIDE REFERENCE:
-${guide.slice(0, 20000)}
+  // Craft 2.0 is the primary, deterministic engine (Dossier -> Cards -> Preflight -> Blind Write -> Observer -> Dual Review).
+  // When generation_mode === 'craft' (default UI setting), the clean Craft 2.0 pipeline is strictly executed.
+  const usesAuthorEngine = input.generation_mode !== 'craft' && (input.generation_mode === 'author' || !!files['engine-state.json'] || !savedPacket);
+  let architecture: AuthorArchitecture | undefined;
+  let session: CraftSession | undefined;
+  let dossier = files['dossier.md'] || '';
+  let packet: Packet;
+  if (usesAuthorEngine) {
+    session = new CraftSession(files, authorKey(input), async () => {
+      syncAuthorState();
+      const durable = store as ProjectStore & { flush?: () => Promise<void> };
+      if (durable.flush) await durable.flush();
+    });
+    journal.push('Growing concept, objective events, character engines and causal scene architecture');
+    const series = files['series-bible.json'] || await planSeries(input, llm);
+    if (series) { files['series-bible.json'] = series; syncAuthorState(); }
+    architecture = acceptedArchitecture(session);
+    if (!architecture) {
+      architecture = await planArchitecture(input, session, llm);
+      architecture = await preflightArchitecture(architecture, session, llm);
+      await acceptArchitecture(architecture, session);
+    }
+    packet = projectArchitecture(architecture);
+    validatePacket(packet, numChapters, architecture.form.sceneSlots.length, architecture.form.layout);
+    dossier = `# ${architecture.concept.title}\n\n${architecture.concept.synopsis}\n\n## Ending mechanism\n${JSON.stringify(architecture.concept.ending, null, 2)}\n\n## Objective events\n${JSON.stringify(architecture.world, null, 2)}\n\n## Character engines\n${JSON.stringify(architecture.characters, null, 2)}`;
+    files['dossier.md'] = dossier;
+    await session.phase('draft');
+  } else if (savedPacket) {
+    packet = savedPacket;
+    if (!store.manuscript().length) {
+      try {
+        packet = await preflightPacket(packet, input.premise, dossier, numChapters, llm, (raw, candidate) => {
+          answers.push({ who: 'the preflight auditor', step: journal.length, about: 'scene cards', text: raw });
+          files['preflight.json'] = raw;
+          files['packet.json'] = JSON.stringify(candidate);
+          syncAuthorState();
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        store.log('craft-preflight', `Preflight advisory note (${msg}); proceeding with saved plan.`);
+        answers.push({ who: 'the preflight auditor (advisory)', step: journal.length, about: 'scene cards', text: msg });
+        if (files['packet.json']) {
+          try { packet = JSON.parse(files['packet.json']); } catch { /* retain savedPacket */ }
+        }
+      }
+    }
+  } else {
+    // Stage 1: Author Dossier (4 Layers of Truth)
+    if (!dossier) {
+      journal.push('Developing author dossier & 4 layers of truth');
+      store.log('craft-preparation', 'Developing author dossier (4 Layers of Truth)...');
+      const prepPrompt = `${CRAFT_SYSTEM}
 
 EXPERIMENT CONTRACT:
 Premise: ${input.premise}
@@ -227,91 +406,53 @@ Genre: ${input.genre || 'literary fiction'}
 Requirements: ${input.author_requirements || 'none'}
 Scope: ${numChapters} chapters (${totalScenes} scenes total, ~${targetWordsPerScene} words per scene).
 
-Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~2200-2800 words) before writing any prose:
-0. BOOK TITLE:
-   - Invent a striking, original, evocative commercial book title (2 to 5 words) fitting ${input.genre || 'literary fiction'}. Avoid generic cliches.
-   - Format clearly on its own line: TITLE: <Book Title>
-1. GENRE CONTRACT & CORE PREMISE:
-   - Identify the explicit genre obligations and fatal tropes to avoid for ${input.genre || 'literary fiction'}.
-   - What is the reader's promised payoff? (e.g. intellectual satisfaction of fair-play puzzle, visceral terror, emotional heartbreak/healing).
-2. CHARACTER ARC ARCHITECTURE (K.M. Weiland Model):
-   - For Protagonist:
-     * THE WANT: Tangible external goal they pursue.
-     * THE NEED: Spiritual / emotional truth they must embrace to heal.
-     * THE LIE: The toxic misconception about themselves or the world they currently believe.
-     * THE GHOST / WOUND: The specific backstory event that created this Lie.
-     * THE CRUCIBLE: The climactic moral dilemma where holding onto the Lie becomes fatal or impossible.
-   - For Supporting Cast & Antagonist:
-     * Steelmanned Antagonist Worldview: The antagonist believes they are entirely justified; what is their logic?
-3. THEME AS AN OPEN QUESTION:
-   - Formulate the core theme as an unresolved dramatic argument/question (e.g. "Can justice exist without cruelty?"), NOT a preachy moral slogan.
-4. SETTING AS PRESSURE & CONSTRAINTS (Sanderson's Law):
-   - Physical setting rules, resource scarcity, and environmental boundaries that trap or pressure characters into tough choices.
-5. THREE-ACT PROPORTIONS & 7 TURNING POINTS (Mapped across the ${totalScenes} scenes):
-   - Hook (0-10%): Status quo disrupted; establishing protagonist flaw and normal world.
-   - Plot Turn 1 (~25%): Door of No Return; protagonist crosses boundary into new world/conflict.
-   - Pinch Point 1 (~37%): Antagonistic force asserts itself; direct demonstration of vulnerability.
-   - Midpoint (~50%): REVERSAL OF APPROACH. Protagonist switches from passive reaction to active initiative (false victory or false defeat).
-   - Pinch Point 2 (~62%): The trap tightens; bridges burn; pressure escalates.
-   - All Is Lost / Dark Night of the Soul (~75%): Absolute failure of the old strategy; death of the Lie.
-   - Climax (~90-95%): Final Crucible; decisive action proving character transformation.
-   - Resolution (95-100%): New equilibrium; contrast with opening image.
-6. 4 LAYERS OF TRUTH & CHRONOLOGY:
-   - Layer 1: Objective truth of what actually happened.
-   - Layer 2: Protagonist POV initial knowledge and blind spots.
-   - Layer 3: Character false beliefs, rumors, and cover stories.
-   - Layer 4: Concrete physical evidence visible to the reader.
+Develop an ORIGINAL, psychologically grounded, complete author-only dossier (~1800-2400 words) before writing any prose:
+1. OBJECTIVE TRUTH & PRE-STORY REALITY:
+   - The concrete objective facts that took place before the story begins.
+   - Stable cast, locations, and key physical props.
+2. CHARACTER PSYCHOLOGY, MOTIVES & COSTS:
+   - For protagonist and key counterparts: specific wants, hidden fears, false strategies, boundaries, and price of each choice.
+3. CHRONOLOGICAL TIMELINE & 4 LAYERS OF TRUTH:
+   - Separate: 1) What really happened; 2) What protagonist knows initially; 3) What characters falsely believe; 4) What the reader will see.
+4. CAUSAL PROGRESSION & ANTI-METAPHOR DESIGN:
+   - The chain of cause-choice-action-consequence across ${totalScenes} scenes.
+   - Outline pivotal turning points with concrete physical and dialogue actions, not metaphorical fade-outs.
+5. SCENE MILESTONES (${totalScenes} SCENES):
+   - Outline broad goals for SC1 through SC${totalScenes} (3 scenes per chapter).
 
 Output the author dossier only.`;
 
-  const dossier = await llm(prepPrompt, CRAFT_SYSTEM, { stage: 'craft-preparation', temperature: 0.8, maxTokens: 8000 });
-  files['dossier.md'] = dossier;
-  if (!activeTitle) {
-    const found = extractTitle(dossier);
-    if (found) activeTitle = found;
-  }
-  syncAuthorState({ dossier, title: activeTitle });
+      dossier = await llm(prepPrompt, CRAFT_SYSTEM, { stage: 'craft-preparation', temperature: 0.8, maxTokens: 8000 });
+      files['dossier.md'] = dossier;
+      syncAuthorState({ dossier });
+    }
 
-  // =========================================================================
-  // STAGE 2: Scene Projection Cards (packet.json)
-  // =========================================================================
-  journal.push('Building scene projection cards & knowledge registry');
-  store.log('craft-cards', `Projecting story into ${totalScenes} executable scene cards...`);
+    // Stage 2: Scene Projection Cards (packet.json)
+    journal.push('Building scene projection cards & knowledge registry');
+    store.log('craft-cards', `Projecting story into ${totalScenes} executable scene cards...`);
 
-  const cardsPrompt = `AUTHOR DOSSIER:
+    const scenesPerChapter = Math.round(totalScenes / numChapters);
+    const cardsPrompt = `AUTHOR DOSSIER:
 ${dossier}
 
 Project this exact story into an executable scene projection for ${totalScenes} chronological scenes (${scenesPerChapter} per chapter).
 Separate objective truth from protagonist initial knowledge and newly acquired facts.
 No hidden future information in a scene's POV knowledge.
 Every fact referenced in povKnows must have learnsAt < scene.order.
+Props must be concrete objects with owner and location.
+Enact physical, bodily presence, dialogue aims, and concrete choices.
 
-CRAFT RULES FOR EACH SCENE:
-1. SCENE VS SEQUEL PULSE (Swain's Law):
-   - Designate each scene as "scene" (Action: Goal -> Conflict -> Disaster) or "sequel" (Reaction: Emotion -> Dilemma -> Decision).
-2. CAUSAL LINK (The "But / Therefore" Law):
-   - Every scene (except SC1) must connect to the preceding scene with "therefore" (direct consequence of previous choice) or "but" (unexpected complication). Never episodic "and then".
-3. THREE-LAYER CONFLICT:
-   - "conflict": Define all 3 layers: "external" (physical obstacle/task), "interpersonal" (opposing agendas in the room), and "internal" (moral dilemma or crisis of belief).
-4. CONCRETE STAKES & COSTS:
-   - "stakes": Define "atRisk" (what is immediately lost if protagonist fails) and "costOfChoice" (what price must be paid).
-5. VALUE CHARGE SHIFT:
-   - Every scene must shift the value charge from start to end (e.g. Safety -> Jeopardy, Trust -> Suspect, Hope -> Crisis). The shift must be "+ to -" or "- to +". No static scenes.
-6. CHEKHOV'S PROPS & ANCHORS:
-   - List concrete physical objects in "props". Where applicable, track "propAnchors" with their lifecycle: "setup" (planted in normal life), "complication" (becomes a risk/obstacle), or "payoff" (pivotal weapon/clue in the climax).
-7. OPEN LOOPS:
-   - Track unanswered dramatic questions: "openLoopsIntroduced" (questions that compel reading) and "openLoopsResolved". Ensure 2-3 loops remain active across the middle.
-8. ENDING CADENCE & TYPE:
-   - "endingCadence": "cliffhanger" or "quiet-resonance".
-   - "endingType": "interrupted-action", "new-reveal", "impossible-choice", "arrival-of-threat", "loaded-line", or "pause".
-9. SCENIC VARIETY & NON-REPETITIVE ESCALATION:
-   - Every scene MUST occur in a distinct setting or tackle a fundamentally new dramatic dynamic.
-   - BANNED: Repeating identical scene setups (e.g. characters repeatedly meeting in an abandoned ruin/shack to talk softly, touch a wrist/face, and depart).
-   - ESCALATION: Advance the story through diverse narrative arenas—investigations, confrontations with allies, public perils, tactical compromises, and irreversible decisions.
+SCENE ARCHITECTURE PRINCIPLES:
+1. SWAIN/BICKHAM PULSE & CONFLICT LAYERING:
+   - "sceneType": "scene" (Action: Goal -> Conflict -> Disaster). Conflict is dominated by external obstacles and interpersonal friction. Do NOT force characters into artificial philosophical introspection or relationship dissection while dodging bullets or handling immediate physical crises.
+   - "sceneType": "sequel" (Reaction: Emotion -> Dilemma -> Decision). Conflict is dominated by internal hesitation, cognitive dissonance, and choosing between bad alternatives. External obstacles remain ambient.
+2. DRAMATIC IRONY (HITCHCOCK SUSPENSE):
+   - When suspense is desired, set "dramaticIrony": {"detail": "...", "readerVisible": true, "characterAware": false}. The reader sees the ticking bomb or hidden threat, but the POV character remains unaware (respecting povKnows).
+3. CHEKHOV PROP CAMOUFLAGE (DEFUSING THE SPOTLIGHT):
+   - Use "propAnchors": [{"name": "...", "role": "setup|complication|payoff", "camouflage": ["mundane item 1", "mundane item 2"], "focusInstruction": "rule of three"}] to naturally conceal crucial setup props among ordinary items without drawing artificial spotlight.
 
 Return JSON matching:
 {
-  "title": "A striking, commercial book title (2 to 5 words)",
   "names": {"protagonist": "Full Name", "counterpart": "Full Name"},
   "initialProtagonistKnowledge": ["initial pre-story facts"],
   "facts": [
@@ -322,24 +463,10 @@ Return JSON matching:
       "id": "SC1",
       "chapter": 1,
       "order": 1,
+      "causalLink": "therefore",
       "sceneType": "scene",
       "time": "precise time",
       "location": "stable place",
-      "causalLink": "therefore",
-      "valueCharge": {
-        "start": "Security (+)",
-        "end": "Disruption (-)",
-        "shift": "+ to -"
-      },
-      "conflict": {
-        "external": "concrete task/danger",
-        "interpersonal": "clash of wills with counterpart",
-        "internal": "fear of exposure vs desire to help"
-      },
-      "stakes": {
-        "atRisk": "freedom / reputation",
-        "costOfChoice": "must betray trust"
-      },
       "purpose": "dramatic purpose",
       "action": "concrete physical action and dialogue to enact",
       "choice": "protagonist specific choice",
@@ -349,22 +476,46 @@ Return JSON matching:
       "rhythm": "action|reaction|quiet tension",
       "readerBefore": "what reader suspects",
       "readerAfter": "what is revealed",
-      "endingCadence": "cliffhanger",
-      "endingType": "new-reveal",
-      "openLoopsIntroduced": ["Why did X happen?"],
-      "openLoopsResolved": [],
       "dependsOn": [],
       "povKnows": ["F1"],
       "newFacts": ["F2"],
       "props": ["concrete object"],
-      "propAnchors": [{"name": "concrete object", "role": "setup"}]
+      "propAnchors": [{"name": "object", "role": "setup", "camouflage": ["item A", "item B"]}],
+      "dramaticIrony": {"detail": "external threat visible to reader", "readerVisible": true, "characterAware": false},
+      "valueCharge": {"start": "neutral", "end": "threatened", "shift": "+ to -"},
+      "conflict": {"external": "external task", "interpersonal": "interpersonal friction", "internal": "internal hesitation"}
     }
   ]
 }
 Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3). Dependencies only on earlier scenes.`;
 
-  const rawCards = await llm(cardsPrompt, CRAFT_SYSTEM, { stage: 'craft-cards', temperature: 0.7, json: true, maxTokens: 12000 });
-  const packet = parseJson<Packet>(rawCards);
+    packet = await projectPacket(cardsPrompt, CRAFT_SYSTEM, totalScenes, numChapters, llm);
+    validatePacket(packet, numChapters, totalScenes);
+    files['packet.json'] = JSON.stringify(packet);
+    syncAuthorState();
+
+    // Stage 3: Preflight Validation
+    journal.push('Running preflight audit');
+    store.log('craft-preflight', 'Auditing scene cards for causal consistency...');
+    try {
+      packet = await preflightPacket(packet, input.premise, dossier, numChapters, llm, (raw, candidate) => {
+        answers.push({ who: 'the preflight auditor', step: journal.length, about: 'scene cards', text: raw });
+        files['preflight.json'] = raw;
+        files['packet.json'] = JSON.stringify(candidate);
+        syncAuthorState();
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      store.log('craft-preflight', `Preflight advisory note (${msg}); proceeding with retained valid plan.`);
+      answers.push({ who: 'the preflight auditor (advisory)', step: journal.length, about: 'scene cards', text: msg });
+      if (files['packet.json']) {
+        try { packet = JSON.parse(files['packet.json']); } catch { /* retain candidate */ }
+      }
+    }
+  }
+  syncAuthorState({ dossier });
+  files['packet.json'] = JSON.stringify(packet);
+  files['reader-promises-plan.json'] = JSON.stringify(projectionMetrics(packet));
 
   if (!activeTitle && packet.title?.trim()) {
     const cleaned = packet.title.trim().replace(/^["'`*#\s]+|["'`*#\s]+$/g, '');
@@ -395,47 +546,57 @@ Exactly ${totalScenes} scenes, order 1..${totalScenes}, chapter = ceil(order/3).
 - **Causal Link:** ${s.order === 1 ? 'Opening Scene' : (s.causalLink || 'therefore').toUpperCase()}
 - **Value Charge Shift:** ${s.valueCharge?.start || '?'} → ${s.valueCharge?.end || '?'} (${s.valueCharge?.shift || 'turn'})
 - **Location & Time:** ${s.location} (${s.time})
-- **3-Layer Conflict:**
-  * *External:* ${s.conflict?.external || 'Not specified'}
-  * *Interpersonal:* ${s.conflict?.interpersonal || 'Not specified'}
-  * *Internal:* ${s.conflict?.internal || 'Not specified'}
-- **Stakes & Cost:** At risk: ${s.stakes?.atRisk || 'N/A'} | Cost: ${s.stakes?.costOfChoice || s.cost || 'N/A'}
+- **POV & Goal:** ${s.pov || 'protagonist'} — ${s.goal || s.purpose}
+- **Target Words:** ${s.targetWords || targetWordsPerScene}
+- **Conflict Profile (${s.sceneType === 'sequel' ? 'Sequel / Internal Dominant' : 'Action / External Dominant'}):**
+  * *External:* ${s.conflict?.external || 'Ambient'}
+  * *Interpersonal:* ${s.conflict?.interpersonal || 'Ambient'}
+  * *Internal:* ${s.conflict?.internal || 'Ambient'}
+${s.dramaticIrony ? `- **Dramatic Irony (Reader Suspense):** ${typeof s.dramaticIrony === 'object' && s.dramaticIrony !== null && 'detail' in s.dramaticIrony ? s.dramaticIrony.detail : typeof s.dramaticIrony === 'string' ? s.dramaticIrony : 'Active external detail visible to reader while character is ignorant'}\n` : ''}- **Stakes & Cost:** At risk: ${s.stakes?.atRisk || 'N/A'} | Cost: ${s.stakes?.costOfChoice || s.cost || 'N/A'}
 - **Purpose:** ${s.purpose}
 - **Action:** ${s.action}
 - **Choice:** ${s.choice}
 - **Ending:** ${s.endingCadence || 'standard'} (${s.endingType || 'resolution'})
-- **Props & Chekhov Anchors:** ${s.propAnchors?.length ? s.propAnchors.map(p => `${p.name} [${p.role}]`).join(', ') : s.props?.join(', ') || 'none'}
+- **Props & Chekhov Anchors:** ${s.propAnchors?.length ? s.propAnchors.map(p => `${p.name} [${p.role}${p.camouflage?.length ? `; camo: ${p.camouflage.join(', ')}` : ''}]`).join(', ') : s.props?.join(', ') || 'none'}
 ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsIntroduced.join('; ')}\n` : ''}${s.openLoopsResolved?.length ? `- **Open Loops Resolved:** ${s.openLoopsResolved.join('; ')}\n` : ''}- **Change:** ${s.change}`).join('\n\n---\n\n');
   files['plan.md'] = cardsMarkdown;
   syncAuthorState({ cardsMd: cardsMarkdown, title: activeTitle });
 
   // =========================================================================
-  // STAGE 3: Preflight Validation
-  // =========================================================================
-  journal.push('Running preflight audit');
-  store.log('craft-preflight', 'Auditing scene cards for causal consistency...');
-
-  const preflightPrompt = `PREMISE: ${input.premise}
-DOSSIER:
-${dossier}
-PROJECTED CARDS:
-${JSON.stringify(packet)}
-
-Evaluate this scene projection for causal impossibilities, timeline contradictions, or missing dependencies BEFORE prose.
-Output JSON:
-{"issues": [{"id": "I1", "status": "demonstrated|uncertain", "reason": "...", "sources": ["SC1", "F1"]}], "summary": "..."}`;
-
-  const preflightRaw = await llm(preflightPrompt, CRAFT_SYSTEM, { stage: 'craft-preflight', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-  answers.push({ who: 'the preflight auditor', step: journal.length, about: 'scene cards', text: preflightRaw });
-
-  // =========================================================================
   // STAGE 4: Scene-by-Scene Blind Writing Loop
   // =========================================================================
+  let enacted: EnactedState = session?.files['enacted-state.json'] ? session.read<EnactedState>('enacted-state.json') : emptyEnacted();
   const pages: string[] = [];
   const chaptersText: string[] = [];
   const knownFacts = new Set<string>();
   for (const f of packet.facts || []) {
     if (f.learnsAt === 0) knownFacts.add(f.id);
+  }
+
+  // Tracking dynamic stop-list of metaphors & physical object state graph
+  let usedImagery: string[] = [];
+  try {
+    if (files['used-imagery.json']) usedImagery = JSON.parse(files['used-imagery.json']);
+  } catch { /* use empty */ }
+
+  let objectStates: Record<string, TrackedPropState> = {};
+  try {
+    if (files['object-states.json']) objectStates = JSON.parse(files['object-states.json']);
+  } catch { /* use empty */ }
+  if (!Object.keys(objectStates).length && packet.scenes) {
+    for (const sc of packet.scenes) {
+      for (const p of sc.props || []) {
+        const pid = p.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (!objectStates[pid]) {
+          objectStates[pid] = {
+            id: pid,
+            name: p,
+            location: `${packet.names?.protagonist || 'Protagonist'}'s possession`,
+          };
+        }
+      }
+    }
+    files['object-states.json'] = JSON.stringify(objectStates);
   }
 
   const chaptersData: { text: string; card: string; facts: string; reader: string }[] = [];
@@ -448,9 +609,11 @@ Output JSON:
     const chScenes = packet.scenes.filter(s => s.chapter === chNum);
     const chSceneProse: string[] = [];
 
-    for (const card of chScenes) {
+    for (const plannedCard of chScenes) {
+      let card = architecture ? projectArchitecture(architecture).scenes.find(s => s.id === plannedCard.id)! : plannedCard;
+      const sceneWords = Number.isFinite(card.targetWords) && card.targetWords! > 0 ? Math.round(card.targetWords!) : targetWordsPerScene;
       journal.push(`Writing Scene ${card.order} (${card.id})`);
-      const availableFacts = packet.facts.filter(f => knownFacts.has(f.id));
+      const availableFacts = packet.facts.filter(f => card.povKnows.includes(f.id) && f.learnsAt < card.order && knownFacts.has(f.id));
       const newSceneFacts = packet.facts.filter(f => card.newFacts?.includes(f.id));
 
       const worn = wornPhrases(pages);
@@ -458,38 +621,32 @@ Output JSON:
         ? `\n- BANNED REPETITIVE PHRASES (already overused in prior scenes; DO NOT USE):\n  ${worn.slice(0, 15).join(', ')}`
         : '';
 
-      const recentProse = pages.length > 0 
-        ? pages.slice(-2).join('\n\n') 
-        : '(Story begins here.)';
+      // A reader sees committed prose only, before the next scene exists.
+      const beforeReader = `scene-${card.order}-reader-before.json`;
+      const prefixRevision = await revision(pages);
+      if (!files[beforeReader] || files[`${beforeReader}.source`] !== prefixRevision) {
+        journal.push(`Blind reader before Scene ${card.order}`);
+        files[beforeReader] = session ? await readBlindPrefix(pages, session, llm) : await readBlind(pages, llm);
+        files[`${beforeReader}.source`] = prefixRevision;
+        answers.push({ who: `a reader before Scene ${card.order}`, step: journal.length, about: card.id, text: files[beforeReader] });
+        syncAuthorState();
+      }
 
-      const context = `STORY BACKGROUND:
-Premise: ${input.premise}
-Genre: ${input.genre || 'fiction'}
-Author Directives: ${input.author_requirements || 'Standard literary'}
-
-PROTAGONIST INITIAL KNOWLEDGE:
-${JSON.stringify(packet.initialProtagonistKnowledge)}
-
-COMMITTED RECENT PROSE (for immediate narrative continuity):
-${recentProse}
-
-CURRENT SCENE CARD (Intentions to enact NOW):
-${JSON.stringify(card)}
-
-FACTS AVAILABLE TO PROTAGONIST IN THIS SCENE:
-${JSON.stringify(availableFacts)}
-
-FACTS TO INTRODUCE/ACQUIRE IN THIS SCENE:
-${JSON.stringify(newSceneFacts)}
+      // No premise, dossier, future cards, review advice or global author directives
+      // cross this boundary. Only the current scene and permitted knowledge do.
+      let context = `${blindWriterContext(packet, card, availableFacts, newSceneFacts, pages, input.genre, { usedImagery, objectStates })}
 
 INSTRUCTIONS FOR WRITER:
-- Write ONE continuous, complete fiction scene of ~${targetWordsPerScene} words (${Math.max(350, targetWordsPerScene - 60)}–${targetWordsPerScene + 80} words).
+- Write ONE continuous, complete fiction scene of ~${sceneWords} words (${Math.round(sceneWords * 0.85)}–${Math.round(sceneWords * 1.15)} words).
 - Enact the specific choice, action, and consequence detailed in the scene card.
 - ANTI-REPETITION & FRESH PROSE DIRECTIVE:
   * Do NOT repeat the physical actions of previous scenes (e.g. do not write another scene of characters meeting in a quiet ruin to touch and part).
   * Do NOT repeat stock sensory crutches (e.g. "copper taste", "burnt sage", "cold skin dry as parchment", "hand pressed flat against", "cupped hand"). Invent fresh sensory observations grounded in this specific scene's unique environment.${wornWarning}
-- SCENE PULSE: If this is a "scene", drive Goal -> Conflict -> Disaster. If this is a "sequel", process Emotion -> Dilemma -> Decision.
-- 3-LAYER CONFLICT: Enact the external task (${card.conflict?.external || 'external'}), interpersonal tension (${card.conflict?.interpersonal || 'interpersonal'}), and internal hesitation (${card.conflict?.internal || 'internal'}).
+- SCENE PULSE & CONFLICT FOCUS (Swain/Bickham Action vs Sequel):
+  * ${card.sceneType === 'sequel'
+    ? 'SEQUEL SCENE: Focus heavily on internal reaction, processing the emotional fallout, wrestling with a painful dilemma, and committing to a difficult decision. External action is secondary or ambient.'
+    : 'ACTION SCENE: Focus on driving the immediate external objective and interpersonal confrontation towards a disaster/complication. Do NOT interrupt active physical stakes with artificial internal monologues or emotional philosophizing.'}
+- CONFLICT LAYERS: External (${card.conflict?.external || 'ambient'}), Interpersonal (${card.conflict?.interpersonal || 'ambient'}), Internal (${card.conflict?.internal || 'ambient'}).
 - VALUE CHARGE TURN: Ensure the scene shifts the emotional/situational polarity from ${card.valueCharge?.start || 'initial state'} to ${card.valueCharge?.end || 'terminal state'}.
 - PERCEPTUAL ORDER: In shock/action moments, depict raw sensory stimulus first, involuntary physical reflex second, conscious cognitive labeling third. Never put explanation before physical sensation.
 - DEEP POV (ZERO FILTER WORDS): Ban phrases like "he saw", "she felt", "he noticed", "she wondered", "it seemed". Present the world directly from inside the character's perception.
@@ -504,29 +661,72 @@ INSTRUCTIONS FOR WRITER:
 - Current scene only; do not jump ahead to future scenes.
 - Output fiction prose only, no titles, headings, or meta comments.`;
 
-      let sceneText = await llm(context, CRAFT_SYSTEM, { stage: 'craft-write', temperature: 0.8, maxTokens: 4000 });
+      let execution: SceneExecution | undefined;
+      if (architecture && session) {
+        const node = architecture.graph.scenes.find(s => s.id === card.id)!;
+        execution = await prepareExecution(architecture, node, enacted, files[beforeReader], session, llm);
+        card = applyExecutionToCard(card, execution);
+        context = executionPrompt(execution, pages);
+      }
+      const sceneSystem = architecture ? DRAFT_WRITER_SYSTEM : CRAFT_SYSTEM;
+      const needsRepair = (receipt: Receipt, prose: string) => architecture
+        ? receipt.event.status !== 'enacted' || !receipt.tangibleActionEnacted || receipt.issues.some(i => i.status === 'demonstrated' && ['factual', 'knowledge', 'causal'].includes(i.kind || ''))
+        : sceneNeedsRepair(receipt, prose, sceneWords);
+      const sceneFile = `scene-${card.order}.md`;
+      const stateFile = `scene-${card.order}-state.json`;
+      let checkpoint: { sceneId?: string; phase?: string; repairAttempted?: boolean; observation?: Observation } = {};
+      try { checkpoint = JSON.parse(files[stateFile] || '{}'); } catch { /* Re-observe saved prose if its checkpoint is invalid. */ }
+      let sceneText = files[sceneFile]?.trim() ? files[sceneFile] : await llm(context, sceneSystem, { stage: 'craft-write', temperature: 0.8, maxTokens: Math.max(4000, sceneWords * 3) });
+      sceneText = normalizeChapterBody(sceneText, chNum);
+      sceneText = stripSubtextDecoding(sceneText);
+      if (files[sceneFile] && files[sceneFile] !== sceneText) checkpoint.phase = 'written';
+      const saveScene = (phase: string, observation?: Observation) => {
+        files[sceneFile] = sceneText;
+        files[stateFile] = JSON.stringify({ sceneId: card.id, phase, repairAttempted: checkpoint.repairAttempted, observation });
+        const chScenesWithProse = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov }));
+        chScenesWithProse.push({ text: sceneText, pov: card.pov });
+        const partial = joinScenesWithCameraBreaks(chScenesWithProse);
+        files[`chapter-${chNum}.md`] = partial;
+        store.saveManuscript(chNum, partial);
+        syncAuthorState({ chaptersData: [...chaptersData, { text: partial, card: chScenes.map(s => s.purpose).join('; '), facts: '', reader: '' }] });
+      };
+      // Persist the writer's output before asking a fallible observer to describe it.
+      if (checkpoint.phase !== 'complete') saveScene('written');
 
       // Observer check
       journal.push(`Observer verifying Scene ${card.order} (${card.id})`);
-      const paras = sceneText.split(/\n\s*\n/).filter(Boolean).map((t, i) => ({ id: `${card.id}-p${i + 1}`, text: t }));
+      const observerHistory = architecture ? JSON.stringify(enacted.scenes.filter(s => architecture!.graph.scenes.find(n => n.id === s.id)!.order < card.order).map(s => ({ id: s.id, summary: s.summary, acquisitions: s.acquisitions, resources: s.resources, relationships: s.relationships }))) : pages.join('\n\n');
 
-      const obsPrompt = `REQUIRED SCENE CARD:
+      const obsPrompt = (text: string) => `REQUIRED SCENE CARD:
 ${JSON.stringify(card)}
 
 ASSIGNED FACTS:
 ${JSON.stringify(newSceneFacts)}
 
-WRITTEN SCENE PARAGRAPHS:
-${JSON.stringify(paras)}
+PERMITTED POV KNOWLEDGE AND ACQUISITIONS:
+${JSON.stringify(execution ? { available: execution.availableFacts, acquireNow: execution.acquireNow, initialKnowledge: execution.initialKnowledge } : {})}
 
-Examine this scene draft.
-1. Event status: was the card's required physical action and choice enacted, missing, or contradicted?
+PRIOR COMMITTED SCENES (data, compare continuity and repetition):
+${observerHistory}
+
+WRITTEN SCENE PARAGRAPHS:
+${JSON.stringify(text.split(/\n\s*\n/).filter(Boolean).map((text, index) => ({ id: `${card.id}-p${index + 1}`, text })))}
+
+${architecture ? 'DISCOVERY DRAFT: Assess only concrete execution, causality and permitted knowledge. Do not demand line polishing, filter-word removal, extra sensory detail or rigid length. Label each issue with kind factual|knowledge|causal|style|uncertain and status demonstrated|uncertain. Uncertainty and deliberate character lies are not demonstrated contradictions. Incidental new observations are allowed; do not grant decisive future knowledge without an enacted acquisition.' : 'Examine this scene draft.'}
+${architecture ? `1. Was the required current physical action and choice actually enacted?
+2. Does its causal consequence follow from visible action and permitted world access?
+3. Did decisive knowledge enter only through an available fact or an enacted acquisition?
+4. Extract plot-relevant observed facts with exact current paragraph sources. Distinguish claims from actual events.
+Do not stop the discovery draft for wording, length, sensory density, metaphors or filter words.` : `1. Event status: was the card's required physical action and choice enacted, missing, or contradicted?
 2. Tangibility check: did the prose depict concrete actions and dialogue, or did it evaporate into vague metaphors?
 3. Repetition & Cliché check: did this scene recycle physical actions from earlier scenes, or use tired clichés ("copper taste", "burnt sage", "cold skin dry as parchment")?
 4. Value charge turn: did the scene execute the required value charge turn (${card.valueCharge?.start || 'start'} -> ${card.valueCharge?.end || 'end'})?
-5. Deep POV check: did the text avoid filter-word distancing ("he saw", "she felt", etc.)?
-6. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
-7. Issues: flag any factual contradictions with prior text.
+5. Deep POV & Head-hopping check: did the text strictly maintain '${card.pov || packet.names?.protagonist || 'protagonist'}'s perspective and avoid hopping into other minds or using filter-word distancing?
+6. Subtext Decoding check: did the text avoid explaining dialogue subtext ("he heard what was underneath", "what he really meant")?
+7. End-weight check: did the scene conclude on a physical action, sensory detail, or dialogue rather than moralizing summary?
+8. Facts: extract newly acquired or narrated facts with exact paragraph source IDs.
+9. Issues: flag any factual contradictions with prior text.`}
+
 
 Return JSON:
 {
@@ -535,56 +735,112 @@ Return JSON:
   "valueChargeTurned": true,
   "isRepetitiveOrClichéd": false,
   "facts": [{"id": "F1 or new_id", "text": "...", "kind": "narrated|claim|belief", "knownBy": ["protagonist"], "source": "${card.id}-p1"}],
-  "issues": [{"reason": "...", "sources": ["${card.id}-p1"]}],
+  "issues": [{"reason": "...", "sources": ["${card.id}-p1"]${architecture ? ', "kind": "factual", "status": "demonstrated"' : ''}}],
   "wordCount": ${wc(sceneText)}
 }`;
 
-      let receiptRaw = await llm(obsPrompt, CRAFT_SYSTEM, { stage: 'craft-observe', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-      let receipt = parseJson<Receipt & { isRepetitiveOrClichéd?: boolean }>(receiptRaw);
+      let observation: Observation | undefined;
+      if (checkpoint.sceneId === card.id && checkpoint.phase === 'complete' && checkpoint.observation) {
+        try {
+          if (checkpoint.observation.receipt) validateReceipt(checkpoint.observation.receipt, sceneText, card.id);
+          observation = checkpoint.observation;
+        } catch { /* A stale receipt is rechecked against the saved scene. */ }
+      }
+      observation ||= await observeScene(llm, obsPrompt(sceneText), sceneText, card.id, architecture ? 'draft' : 'legacy');
+      let receipt = observation.receipt;
 
-      // Check if repair is needed
-      const needsRepair = receipt.event?.status !== 'enacted' || !receipt.tangibleActionEnacted || receipt.isRepetitiveOrClichéd || wc(sceneText) < 280;
-
-      if (needsRepair) {
-        journal.push(`Repairing Scene ${card.order} (${card.id})`);
-        store.log('craft-repair', `Repairing Scene ${card.id}: ${receipt.event?.reason || 'un-enacted action'}`);
-
-        const repairPrompt = `${context}
-
-CURRENT DRAFT:
-${sceneText}
-
-OBSERVER VALIDATION ISSUES:
-${JSON.stringify(receipt)}
-
-Rewrite this scene to fully enact the required choice and physical action.
-Ensure length is ~${targetWordsPerScene} words.
-Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors, elliptical evasions, and recycled clichés. Ensure fresh vocabulary and distinct physical staging.
-Output corrected fiction scene only.`;
-
-        sceneText = await llm(repairPrompt, CRAFT_SYSTEM, { stage: 'craft-repair', temperature: 0.8, maxTokens: 4000 });
-        receiptRaw = await llm(obsPrompt, CRAFT_SYSTEM, { stage: 'craft-observe', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-        receipt = parseJson<Receipt>(receiptRaw);
+      // Programmatic scan for banned clichés / imagery duplicates across scenes:
+      if (receipt && !receipt.isRepetitiveOrClichéd && usedImagery.length) {
+        const lowerScene = sceneText.toLowerCase();
+        const matchedCliche = usedImagery.find(c => lowerScene.includes(c));
+        if (matchedCliche) {
+          receipt.isRepetitiveOrClichéd = true;
+          receipt.issues.push({
+            reason: `Duplicate metaphor / cliché from earlier scene: "${matchedCliche}". Replace with fresh sensory image.`,
+            sources: [`${card.id}-p1`],
+          });
+        }
       }
 
+      if (receipt && needsRepair(receipt, sceneText) && !checkpoint.repairAttempted) {
+        journal.push(`Repairing Scene ${card.order} (${card.id})`);
+        store.log('craft-repair', `Repairing Scene ${card.id}: ${receipt.event.reason || 'scene findings'}`);
+        checkpoint.repairAttempted = true;
+        saveScene('written');
+        const repairPrompt = `${context}\nCURRENT DRAFT:\n${sceneText}\nOBSERVER VALIDATION ISSUES:\n${JSON.stringify(receipt)}\nRewrite this scene to enact its required choice, action and consequence. Preserve successful material and the premise. Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors, elliptical evasions, and recycled clichés. Ensure fresh vocabulary and distinct physical staging. Target ~${sceneWords} words. Output corrected fiction prose only.`;
+        sceneText = normalizeChapterBody(await llm(repairPrompt, sceneSystem, { stage: 'craft-repair', temperature: 0.8, maxTokens: Math.max(4000, sceneWords * 3) }), chNum);
+        sceneText = stripSubtextDecoding(sceneText);
+        saveScene('written');
+        observation = await observeScene(llm, obsPrompt(sceneText), sceneText, card.id, architecture ? 'draft' : 'legacy');
+        receipt = observation.receipt;
+      }
+
+      files[`scene-${card.order}-observation.json`] = JSON.stringify(observation);
+      if (receipt) {
+        const tasks = files['deferred-work.json'] ? JSON.parse(files['deferred-work.json']) as { scene: string; reason: string; textRevision: string }[] : [];
+        const remaining = tasks.filter(t => t.scene !== card.id);
+        if (receipt.isRepetitiveOrClichéd) remaining.push({ scene: card.id, reason: 'Line edit: replace repetitive actions or clichés in this exact scene.', textRevision: await revision(sceneText) });
+        if (receipt.valueChargeTurned !== true) remaining.push({ scene: card.id, reason: 'Structural revision: make the consequence and value change tangible.', textRevision: await revision(sceneText) });
+        receipt.issues.filter(i => i.status !== 'demonstrated' || !['factual', 'knowledge', 'causal'].includes(i.kind || '')).forEach(i => remaining.push({ scene: card.id, reason: i.reason, textRevision: '' }));
+        receipt.issues.filter(i => i.status === 'demonstrated' && ['factual', 'knowledge', 'causal'].includes(i.kind || '')).forEach(i => remaining.push({ scene: card.id, reason: `Causal revision: ${i.reason}`, textRevision: '' }));
+        files['deferred-work.json'] = JSON.stringify(remaining);
+      }
+      if (!receipt || needsRepair(receipt, sceneText)) {
+        files[`scene-${card.order}-unresolved.json`] = JSON.stringify(observation);
+        store.log('craft-warning', receipt ? `Scene ${card.id} retains observer findings after repair. Deferring to whole-book revision.` : `Scene ${card.id} is saved; observer unavailable after two bounded attempts. Final manuscript checks will revisit it.`);
+      } else delete files[`scene-${card.order}-unresolved.json`];
+      // Keep saved prose and the pending checkpoint, but do not certify an unchecked scene when observer is unavailable.
+      if (!receipt) {
+        syncAuthorState();
+        throw new Error(`Scene ${card.id} observer unavailable after recovery. Saved prose retained; Continue retries the check.`);
+      }
+      if (receipt) files[`scene-${card.order}-receipt.json`] = JSON.stringify(receipt);
+      else delete files[`scene-${card.order}-receipt.json`];
+      if (architecture && session) {
+        enacted = await commitEnacted(architecture, architecture.graph.scenes.find(s => s.id === card.id)!, sceneText, enacted, session, llm);
+        architecture = await continueArchitecture(architecture, enacted.scenes.find(s => s.id === card.id)!, session, llm);
+        packet = projectArchitecture(architecture);
+        files['packet.json'] = JSON.stringify(packet);
+      }
+      saveScene('complete', observation);
       pages.push(sceneText);
       chSceneProse.push(sceneText);
-      for (const f of receipt.facts || []) {
+      for (const f of receipt?.facts || []) {
         if (f.knownBy?.includes('protagonist')) knownFacts.add(f.id);
+      }
+
+      // Update used imagery stop-list & physical object states
+      const newImgs = extractUsedImagery([sceneText]);
+      for (const img of newImgs) {
+        if (!usedImagery.includes(img)) usedImagery.push(img);
+      }
+      files['used-imagery.json'] = JSON.stringify(usedImagery);
+
+      if (card.props?.length && receipt) {
+        for (const propName of card.props) {
+          const pid = propName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          if (objectStates[pid]) {
+            objectStates[pid].lastModifiedScene = card.id;
+            if (card.location) objectStates[pid].location = card.location;
+          }
+        }
+        files['object-states.json'] = JSON.stringify(objectStates);
       }
 
       answers.push({
         who: 'the observer',
         step: journal.length,
         about: card.id,
-        text: `### Scene ${card.order} (${card.id})\n- **Status:** ${receipt.event?.status}\n- **Tangible Action:** ${receipt.tangibleActionEnacted ? 'Verified ✅' : 'Failed ❌'}\n- **Words:** ${wc(sceneText)}\n- **Reason:** ${receipt.event?.reason || 'OK'}`,
+        text: `### Scene ${card.order} (${card.id})\n- **Status:** ${receipt?.event.status || 'unavailable'}\n- **Tangible Action:** ${receipt ? (receipt.tangibleActionEnacted ? 'Verified ✅' : 'Failed ❌') : 'Not checked'}\n- **Words:** ${wc(sceneText)}\n- **Reason:** ${receipt?.event.reason || observation.failures.join('; ') || 'OK'}`,
       });
 
       // Save interim chapter progress
-      store.saveManuscript(chNum, chSceneProse.join('\n\n'));
+      const interimChapterScenes = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov }));
+      store.saveManuscript(chNum, joinScenesWithCameraBreaks(interimChapterScenes));
     }
 
-    const fullChapterText = chSceneProse.join('\n\n');
+    const fullChapterScenes = chScenes.map((s, idx) => ({ text: chSceneProse[idx] || '', pov: s.pov }));
+    const fullChapterText = joinScenesWithCameraBreaks(fullChapterScenes);
     chaptersText.push(fullChapterText);
     files[`chapter-${chNum}.md`] = fullChapterText;
     store.saveManuscript(chNum, fullChapterText);
@@ -593,28 +849,7 @@ Output corrected fiction scene only.`;
     journal.push(`Blind reader reviewing Chapter ${chNum}`);
     store.log('craft-reader', `Blind reader reviewing Chapter ${chNum}...`);
 
-    const readerPrompt = `You are an astute reader of a published novel.
-You have read ONLY this published text so far. You do NOT have access to the outline, author plan, or future chapters.
-
-TEXT SO FAR:
-${pages.join('\n\n')}
-
-Analyze your experience:
-- What are your current working hypotheses about the characters and plot?
-- What evidence in the text supports your expectations?
-- Which character choices felt earned and which felt abrupt?
-- Any confusion or points where the prose felt evasive?
-- Emotional impact so far.
-
-Return JSON:
-{
-  "hypotheses": [{"claim": "...", "evidence": "quote"}],
-  "expectations": ["..."],
-  "characterChoicesPlausibility": "...",
-  "emotionalImpact": "..."
-}`;
-
-    const readerFeedbackRaw = await llm(readerPrompt, CRAFT_SYSTEM, { stage: 'craft-reader', temperature: 0.2, json: true, route: 'validator', maxTokens: 3000 });
+    const readerFeedbackRaw = session ? await readBlindPrefix(pages, session, llm) : await readBlind(pages, llm);
     answers.push({ who: `a reader after Chapter ${chNum}`, step: journal.length, about: `Chapter ${chNum}`, text: readerFeedbackRaw });
 
     chaptersData.push({
@@ -627,88 +862,11 @@ Return JSON:
     syncAuthorState({ chaptersData, waiting: readerFeedbackRaw });
   }
 
-  // =========================================================================
-  // STAGE 5: Final Developmental and Literary Reviews
-  // =========================================================================
-  onProgress('audit');
-  journal.push('Conducting final developmental and literary audits');
-  store.log('craft-audit', 'Conducting final developmental and literary reviews...');
-
-  const fullBookText = chaptersText.map((t, i) => `## Chapter ${i + 1}\n\n${t}`).join('\n\n\n');
-  files['book.md'] = fullBookText;
-
-  // Developmental review
-  const devPrompt = `PREMISE: ${input.premise}
-
-COMPLETE MANUSCRIPT:
-${fullBookText}
-
-Evaluate the complete manuscript against classical storytelling craft and the 18 Diagnostic Manuscript Flaws:
-1. CAUSAL ARC & SWAIN PULSE: Does the story move coherently from setup through 7 key turning points (Hook -> Plot Turn 1 -> Pinch 1 -> Midpoint Shift -> Pinch 2 -> All is Lost -> Climax Crucible -> Resolution)?
-2. CHARACTER ARC: Did the protagonist confront their Lie in the Crucible and change (or test their code), moving from Want to Need?
-3. ANTI-METAPHOR & ACTION: Were pivotal moments enacted through tangible physical bodily action and spoken dialogue, or did they evade into vague poetic abstractions?
-4. DIAGNOSTIC FLAWS AUDIT (Flag if present):
-   - Flaw 1: Aimless Wanderer (passive hero driven only by circumstance).
-   - Flaw 2: The Talking Head Syndrome (endless dialogue without physical movement or prop interaction).
-   - Flaw 3: Infodump / "As You Know, Bob" (exposition disguised as unnatural dialogue).
-   - Flaw 4: Episodic "And Then" Structure (scenes lacking "therefore / but" causal connections).
-   - Flaw 5: The Soft Middle (lack of Midpoint reversal from reactive to proactive).
-   - Flaw 6: Deus Ex Machina (crisis resolved by chance or outside power without protagonist sacrifice).
-   - Flaw 7: Chekhov's Sleeping Dogs (unresolved loaded props/loops).
-   - Flaw 8: Melodramatic Inflation (unearned emotional outbursts).
-5. CLOSURE: Is the ending consequential and closed through an active choice?
-6. Flag any inconsistencies in time, location, props, or character knowledge.
-
-Return JSON:
-{
-  "causalArcComplete": true,
-  "antiMetaphorStandardMet": true,
-  "endingEnacted": true,
-  "diagnosticFlawsDetected": ["none" | "list of flaws"],
-  "issues": [{"category": "causality|action|props|knowledge|closure|flaw", "severity": "major|minor", "reason": "...", "quotes": ["..."]}],
-  "summary": "..."
-}`;
-
-  const devRaw = await llm(devPrompt, CRAFT_SYSTEM, { stage: 'craft-dev-review', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-  answers.push({ who: 'the review (developmental)', step: journal.length, about: 'complete book', text: devRaw });
-
-  // Literary review
-  const litPrompt = `COMPLETE MANUSCRIPT:
-${fullBookText}
-
-Evaluate literary craftsmanship:
-- Voice distinctness of characters
-- Restraint and tension: how central conflict and intimacy are handled without melodrama
-- Rhythm and pacing across the chapters
-- Quality of dialogue and sensory details
-- Overall emotional payoff
-
-Return JSON:
-{
-  "strengths": ["..."],
-  "weaknesses": [{"reason": "...", "quotes": ["..."]}],
-  "voiceDistinctness": "...",
-  "rhythm": "...",
-  "emotionalPayoff": "..."
-}`;
-
-  const litRaw = await llm(litPrompt, CRAFT_SYSTEM, { stage: 'craft-lit-review', temperature: 0.2, json: true, route: 'validator', maxTokens: 4000 });
-  answers.push({ who: 'the review (literary)', step: journal.length, about: 'complete book', text: litRaw });
-
-  // Save report
-  const devReport = parseJson<{ summary?: string; issues?: any[] }>(devRaw);
-  const finalReport: FinalReport = {
-    status: 'COMPLETE',
-    summary: devReport.summary || 'Manuscript successfully completed and audited under 2-layer craft architecture.',
-    checks: [
-      { name: 'Causal Arc & Closure', passed: true, detail: 'Cause-choice-action-consequence verified across all scenes.' },
-      { name: 'Anti-Metaphor Directive', passed: true, detail: 'Pivotal scenes enacted with concrete actions and sensory reality.' },
-      { name: '4 Layers of Truth & POV', passed: true, detail: 'Knowledge dependencies respected with no premature revelation.' },
-    ],
-  };
-  store.saveReport(finalReport);
-  syncAuthorState({ chaptersData, completed: true });
-
-  onProgress('done');
-  return { status: 'COMPLETE', summary: finalReport.summary };
+  // Automatic and user-invoked editing share the same saved-book path and resume marker.
+  files['book.md'] = manuscriptText(chaptersText.map((text, index) => ({ chapter: index + 1, text })));
+  syncAuthorState({ chaptersData, completed: false });
+  if (session) await session.phase('structural-revision');
+  await runCraftEditorial(input, store, llm, onProgress, !usesAuthorEngine);
+  const report = store.loadReport()!;
+  return { status: report.status, summary: report.summary };
 }

@@ -19,6 +19,9 @@ export interface FinalReport {
 }
 
 export interface ProjectInput {
+  scene_layout?: 'classic-three-scenes' | 'flexible';
+  writing_method?: 'outliner' | 'hybrid' | 'discovery';
+  story_structure?: string;
   planning_version?: 2;
   generation_mode?: 'author' | 'craft';
   title?: string;
@@ -27,4 +30,7 @@ export interface ProjectInput {
   genre: string;
   target_total_words: number;
   author_requirements: string;
+  series_context?: string;
+  comparable_books?: string;
+  plan_feedback?: string;
 }

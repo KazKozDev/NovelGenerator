@@ -16,6 +16,22 @@ export function deskTabs(desk: DeskState): DeskTab[] {
 
   const tabs: DeskTab[] = [];
 
+  if (desk.files['engine-state.json']) {
+    let text = '*Author decisions are being developed.*', count = 0;
+    try {
+      const state = JSON.parse(desk.files['engine-state.json']);
+      const rows = Object.entries(state.operations || {}).map(([name, raw]) => {
+        const op = raw as { status: string; output: string; error?: string };
+        return `| ${name} | ${op.status} | ${op.output} |`;
+      });
+      count = rows.length;
+      const decisions = ['concept.json', 'opposition-plan.json', 'promises.json', 'setups-payoffs.json', 'revelation-plan.json', 'pacing-plan.json', 'scene-graph.json', 'revision-plan.json']
+        .filter(file => desk.files[file]).map(file => `### ${file}\n\n\`\`\`json\n${desk.files[file]}\n\`\`\``).join('\n\n');
+      text = `## Author decisions\n\nCurrent work: ${state.phase}\n\n| Operation | State | Artifact |\n| --- | --- | --- |\n${rows.join('\n')}\n\n${decisions}`;
+    } catch { text = '*Saved author decisions could not be displayed; original artifacts retained.*'; }
+    tabs.push({ name: 'Author decisions', count, text });
+  }
+
   // 1. Dossier (4 Layers of Truth)
   tabs.push({
     name: 'Dossier',
@@ -75,6 +91,7 @@ export interface DeskFocus {
  * Maps the active pipeline stage to the appropriate inspector tab and live activity text.
  */
 export function deskFocus(stage: string, arrived: string, activeTab: string | null): DeskFocus | null {
+  if (stage.startsWith('craft-author-')) return { tab: 'Author decisions', label: `Developing ${stage.replace('craft-author-', '').replaceAll('-', ' ')}`, text: arrived };
   if (stage === 'craft-preparation') {
     return { tab: 'Dossier', label: 'Drafting 4-layer author dossier', text: arrived };
   }

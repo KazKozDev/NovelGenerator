@@ -3,7 +3,6 @@ import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
 import { Input } from './common/Input';
 import { Combo } from './common/Combo';
-import { Select } from './common/Select';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS } from '../constants';
 import { GENRE_CHOICES } from '../utils/genreList';
 import { fetchHuggingFaceModels } from '../services/hfBrowserService';
@@ -337,7 +336,7 @@ const UserInput: React.FC<UserInputProps> = ({
         <p className="text-xs text-zinc-500 mt-1">Maximum 1200 characters.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label htmlFor="genre" className="block text-sm font-medium text-zinc-400 mb-1.5">
             Genre
@@ -363,52 +362,29 @@ const UserInput: React.FC<UserInputProps> = ({
            <p className="text-xs text-zinc-500 mt-1">{MIN_CHAPTERS}–100 chapters</p>
         </div>
 
-        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {([
-            ['targetAudience', 'Target audience', 'adult', [
-              ['adult', 'Grown readers; nothing is held back for age'], ['new adult', 'Readers of 18–25; first jobs, first serious loves'],
-              ['young adult', 'Teen readers; teen heroes'], ['middle grade', 'Readers of 8–12']]],
-            ['narrativeVoice', 'Narrative voice / POV', 'third-limited', [
-              ['third-limited', 'She — inside one head at a time'], ['first-person', 'I — the hero tells it'],
-              ['third-omniscient', 'A narrator who knows everyone'], ['multiple POV', 'Several heads, taking turns by chapter'], ['second-person', 'You — rare, close, strange']]],
-            ['tone', 'Tone', 'serious', [
-              ['serious', 'Played straight'], ['dark', 'Bleak, with real harm'], ['tense', 'Tight, something always about to happen'], ['sensual', 'Bodies, heat, wanting'],
-              ['romantic', 'Warm, hopeful about love'], ['melancholic', 'Quiet, with loss in it'], ['humorous', 'Light, funny'], ['ironic', 'Dry, knowing']]],
-            ['writingStyle', 'Style and voice notes', 'descriptive', [
-              ['descriptive', 'Rich in place and detail'], ['spare', 'Short, plain sentences; little ornament'], ['lyrical', 'Musical, image-led'],
-              ['fast-paced', 'Short scenes, quick cuts'], ['dialogue-driven', 'Carried by what people say'], ['cinematic', 'Seen from outside, scene by scene']]],
-          ] as const).map(([key, label, fallback, choices]) => (
-            <div key={key}>
-              <label htmlFor={key} className="block text-sm font-medium text-zinc-400 mb-1.5">{label}</label>
-              <Combo id={key} value={storySettings[key] ?? fallback} onChange={value => setStorySettings({ ...storySettings, [key]: value })} placeholder={fallback} className="text-xs py-1.5 font-mono"
-                options={choices.map(([value, hint]) => ({ value, label: hint }))} />
-              <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way.</p>
-            </div>
-          ))}
-          <div>
-            <label htmlFor="intimacy" className="block text-sm font-medium text-zinc-400 mb-1.5">Intimate scenes</label>
-            <Combo id="intimacy" value={storySettings.intimacy ?? 'on the page, not faded out'} onChange={intimacy => setStorySettings({ ...storySettings, intimacy })} placeholder="on the page, restrained" className="text-xs py-1.5 font-mono"
-              options={[{ value: 'fade to black', label: 'The door closes; the next line is morning' }, { value: 'on the page, restrained', label: 'The scene is written, without detail' }, { value: 'on the page, explicit', label: 'The scene is written in full' }]} />
-            <p className="text-xs text-zinc-500 mt-1">How far a love scene goes on the page. Pick one or say it your way.</p>
-          </div>
-          <div>
-            <label htmlFor="targetWords" className="block text-sm font-medium text-zinc-400 mb-1.5">Rough words per chapter</label>
-            <Input id="targetWords" type="number" min={300} max={10000} step={100}
-              value={storySettings.targetWordsPerChapter || 4000}
-              onChange={event => setStorySettings({ ...storySettings, targetWordsPerChapter: Number(event.target.value) })} />
-          </div>
-          <div>
-            <label htmlFor="tense" className="block text-sm font-medium text-zinc-400 mb-1.5">Tense</label>
-            <Combo id="tense" value={storySettings.tense ?? 'past'} onChange={tense => setStorySettings({ ...storySettings, tense })} placeholder="past" className="text-xs py-1.5 font-mono"
-              options={[{ value: 'past', label: 'She opened the door' }, { value: 'present', label: 'She opens the door' }]} />
-            <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way.</p>
-          </div>
-          <div>
-            <label htmlFor="ending" className="block text-sm font-medium text-zinc-400 mb-1.5">Ending</label>
-            <Combo id="ending" value={storySettings.ending ?? 'closed'} onChange={ending => setStorySettings({ ...storySettings, ending })} placeholder="closed" className="text-xs py-1.5 font-mono"
-              options={[{ value: 'closed', label: 'Resolved' }, { value: 'open', label: 'Intentionally open' }, { value: 'series', label: 'Part of a series' }]} />
-            <p className="text-xs text-zinc-500 mt-1">Pick one or say it your way, e.g. closed, bittersweet.</p>
-          </div>
+        <div>
+          <label htmlFor="targetWordsPerChapter" className="block text-sm font-medium text-zinc-400 mb-1.5">
+            Words per Chapter
+          </label>
+          <Input
+            id="targetWordsPerChapter"
+            type="number"
+            value={storySettings.targetWordsPerChapter ?? 2000}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10);
+              setStorySettings({
+                ...storySettings,
+                targetWordsPerChapter: isNaN(val) ? 2000 : Math.max(300, val),
+              });
+            }}
+            step={250}
+            min={300}
+            max={20000}
+            required
+          />
+          <p className="text-xs text-zinc-500 mt-1">
+            ~{((storySettings.targetWordsPerChapter ?? 2000) * numChapters).toLocaleString()} total words
+          </p>
         </div>
       </div>
 

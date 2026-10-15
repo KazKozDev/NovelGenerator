@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import AuthorPromptModal from './AuthorPromptModal';
 import { exportAsEpub, exportAsJSON, exportAsPdf, exportAsText, exportAsMarkdown, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
 
 export default function SaveBook({ content, metadata = {}, draft = false }: { content: string; metadata?: Record<string, unknown>; draft?: boolean }) {
   const [format, setFormat] = useState('epub');
-  const [authorOpen, setAuthorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const filename = sanitizeFilename(extractBookTitle(content));
-  const save = () => {
+  const save = async () => {
     setError('');
+    setBusy(true);
     try {
       if (format === 'txt') exportAsText(content.replace(/^#{1,6}\s+/gm, ''), `${filename}.txt`);
       else if (format === 'md') exportAsMarkdown(content, `${filename}.md`);
@@ -17,8 +16,10 @@ export default function SaveBook({ content, metadata = {}, draft = false }: { co
       // never paid, the places the plan did not hold, the chapters that gave up on a defect. All of
       // it was being produced and kept where only a developer would find it.
       else if (format === 'report') exportAsJSON(metadata, `${filename}-report.json`);
-      else setAuthorOpen(true);
+      else if (format === 'pdf') exportAsPdf(content, metadata);
+      else await exportAsEpub(content, metadata, `${filename}.epub`);
     } catch (error) { setError(String(error)); }
+    finally { setBusy(false); }
   };
   return <div className="shrink-0 max-w-full">
     <div className="app-toolbar flex flex-wrap items-center gap-2">
@@ -29,14 +30,5 @@ export default function SaveBook({ content, metadata = {}, draft = false }: { co
       {draft && <span className="sr-only">Current chapters · not fully reviewed</span>}
     </div>
     {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
-    <AuthorPromptModal isOpen={authorOpen} defaultAuthor={typeof metadata.author === 'string' ? metadata.author : ''} onCancel={() => setAuthorOpen(false)} onConfirm={async author => {
-      setAuthorOpen(false);
-      setBusy(true);
-      try {
-        if (format === 'pdf') exportAsPdf(content, { ...metadata, author });
-        else await exportAsEpub(content, { ...metadata, author }, `${filename}.epub`);
-      } catch (error) { setError(String(error)); }
-      finally { setBusy(false); }
-    }} />
   </div>;
 }

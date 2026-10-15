@@ -31,7 +31,7 @@ export interface DeskState {
   budget: number;
   spent: number;
   finished: boolean;
-  editorial?: { active: boolean; sourceFiles: Record<string, string>; sourceReport: FinalReport; startedAt: string };
+  editorial?: { active: boolean; sourceFiles: Record<string, string>; sourceReport: FinalReport | null; startedAt: string };
   chapter_frontier?: number;
   failed_edits?: { step: number; file: string; tool: string; reason: string; proposed?: string }[];
 }
@@ -41,7 +41,7 @@ export const chapterFile = (n: number): string => `chapter-${n}.md`;
 const paragraphs = (text: string) => text.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
 
 export const authorKey = (input: ProjectInput): string =>
-  JSON.stringify([input.premise, input.chapter_count, input.target_total_words, input.genre, input.author_requirements]);
+  JSON.stringify([input.premise, input.chapter_count, input.target_total_words, input.genre, input.author_requirements, ...(input.series_context || input.comparable_books ? [input.series_context || '', input.comparable_books || ''] : []), ...(input.scene_layout || input.writing_method || input.story_structure ? [input.scene_layout || 'classic-three-scenes', input.writing_method || 'outliner', input.story_structure || ''] : [])]);
 
 const rule = (part: string) => /^[-=*_~\s]{3,}$/.test(part);
 

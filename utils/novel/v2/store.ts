@@ -14,6 +14,8 @@ export interface ProjectStore {
   saveInput(input: ProjectInput): void;
   loadInput(): ProjectInput | null;
   saveManuscript(chapter: number, text: string): void;
+  /** Apply a fully staged revision and its author state without partial chapters. */
+  commitRevision(chapters: { chapter: number; text: string }[], draft: AuthorDraft): void;
   manuscript(): { chapter: number; text: string }[];
   saveReport(report: FinalReport): void;
   loadReport(): FinalReport | null;
@@ -38,6 +40,15 @@ export class MemoryProjectStore implements ProjectStore {
   saveInput(input: ProjectInput): void { this.input = input; }
   loadInput(): ProjectInput | null { return this.input; }
   saveManuscript(chapter: number, text: string): void { this.chapters.set(chapter, text); }
+  commitRevision(chapters: { chapter: number; text: string }[], draft: AuthorDraft): void {
+    const expected = this.input?.chapter_count || chapters.length;
+    if (chapters.length !== expected || chapters.some((c, i) => c.chapter !== i + 1 || !c.text.trim())
+      || draft.chapters.length !== expected || draft.chapters.some((c, i) => c.text !== chapters[i].text)) throw new Error('Invalid staged revision; original manuscript retained.');
+    const author = structuredClone(draft), next = new Map(chapters.map(c => [c.chapter, c.text]));
+    this.chapters = next;
+    this.author = author;
+    this.report = null;
+  }
   manuscript(): { chapter: number; text: string }[] {
     return [...this.chapters.entries()].map(([chapter, text]) => ({ chapter, text })).sort((a, b) => a.chapter - b.chapter);
   }
@@ -115,6 +126,12 @@ export class BrowserProjectStore extends MemoryProjectStore {
     const all = (this.read<{ chapter: number; text: string }[]>('manuscript') || []).filter(item => item.chapter !== chapter);
     all.push({ chapter, text });
     this.write('manuscript', all);
+  }
+  commitRevision(chapters: { chapter: number; text: string }[], draft: AuthorDraft): void {
+    super.commitRevision(chapters, draft);
+    // The primary PersistentProjectStore snapshots the whole state atomically.
+    // This legacy localStorage adapter remains readable by its normal migration.
+    this.write('author', draft); this.write('manuscript', chapters); this.remove('report');
   }
   saveReport(report: FinalReport): void { super.saveReport(report); this.write('report', report); }
   clearReport(): void { super.clearReport(); this.remove('report'); }

@@ -19,6 +19,11 @@ export class PersistentProjectStore extends MemoryProjectStore {
   private status(status: PersistentProjectStore['saveStatus']): void { this.saveStatus = status; this.onSaveStatus?.(status); }
   private timer: ReturnType<typeof setTimeout> | null = null;
 
+  commitRevision(chapters: { chapter: number; text: string }[], draft: Parameters<MemoryProjectStore['saveAuthor']>[0]): void {
+    super.commitRevision(chapters, draft);
+    this.persistSoon();
+  }
+
   static async open(): Promise<PersistentProjectStore> {
     const store = new PersistentProjectStore();
     let disk: any = null;

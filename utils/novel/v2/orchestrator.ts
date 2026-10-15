@@ -1,5 +1,5 @@
 import { authorKey } from '../author';
-import { runCraftBook, AUDIT_CALLS, AUDIT_STAGES } from '../craft/craftOrchestrator';
+import { runCraftBook, runCraftEditorial, AUDIT_CALLS, AUDIT_STAGES } from '../craft/craftOrchestrator';
 import { drainRetryNotices, type NovelLLM } from './llm';
 import { MemoryProjectStore, type ProjectStore } from './store';
 import type { FinalReport, ProjectInput } from './types';
@@ -44,7 +44,7 @@ export interface BookResult {
 
 export function budgetFor(chapters: number): CallBudget {
   const count = Math.max(1, chapters);
-  return { maxCalls: Math.max(200, count * 40), maxTimeMs: count * 60 * 60 * 1000 };
+  return { maxCalls: Math.max(250, count * 65), maxTimeMs: count * 60 * 60 * 1000 };
 }
 
 export const DEFAULT_BUDGET: CallBudget = budgetFor(3);
@@ -101,10 +101,11 @@ export class Orchestrator {
   }
 
   async runEditorial(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
-    return this.runBook(input, llm);
+    const result = await this.run(input, llm, true);
+    return { ...result, usage: [...this.stages.values()] };
   }
 
-  private async run(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
+  private async run(input: ProjectInput, llm: NovelLLM, editorial = false): Promise<BookResult> {
     this.callsUsed = 0;
     this.tokensUsed = 0;
     this.stages = new Map();
@@ -113,10 +114,15 @@ export class Orchestrator {
     if (authored && authored.input_key !== authorKey(input)) {
       return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
     }
+    const existingReport = this.store.loadReport();
+    if (!editorial && authored?.completed && !authored.desk?.editorial?.active && existingReport) {
+      return { status: existingReport.status, report: existingReport, callsUsed: 0, tokensUsed: 0, stoppedReason: existingReport.status === 'COMPLETE' ? null : existingReport.summary };
+    }
     this.store.saveInput({ ...input, generation_mode: 'craft' });
     this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. 2-layer craft engine active.`);
     try {
-      await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
+      if (editorial || authored?.desk?.editorial?.active) await runCraftEditorial(input, this.store, this.counted(llm), this.onProgress);
+      else await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
       this.flushRetries();
       const report = this.store.loadReport()!;
       this.store.log('audit', report.summary);

@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { parseBookChapters, chapterLabel } from './novel/manuscript';
 
 /**
  * Utilities for exporting book content in different formats
@@ -66,47 +67,15 @@ export function extractBookTitle(content: string): string {
  * Export book as EPUB file (real EPUB 3.0 format)
  * Creates a proper EPUB with all required files and structure
  */
-export async function exportAsEpub(content: string, metadata: any, filename: string = 'book.epub'): Promise<void> {
+export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   const title = extractBookTitle(content);
-  const author = metadata?.author || 'Unknown Author';
+  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author : 'Unknown Author';
   const uuid = `urn:uuid:${crypto.randomUUID()}`;
   
-  // Split content into chapters
-  // Remove the main title first
-  const contentWithoutTitle = content.replace(/^#\s+.+$/m, '').trim();
-  
-  // Split by chapter headers
-  const chapterSections = contentWithoutTitle.split(/^## Chapter (\d+):/gm);
-  const chapters: Array<{num: number, title: string, content: string}> = [];
-  
-  // Process pairs: [empty, num1, content1, num2, content2, ...]
-  for (let i = 1; i < chapterSections.length; i += 2) {
-    const num = parseInt(chapterSections[i]);
-    const fullContent = chapterSections[i + 1] || '';
-    
-    // The title is on the same line as "Chapter N:" so extract it
-    const firstLineMatch = fullContent.match(/^\s*(.+?)$/m);
-    const title = firstLineMatch ? firstLineMatch[1].trim() : `Chapter ${num}`;
-    
-    // Content is everything after the first line
-    const contentStart = fullContent.indexOf('\n');
-    let content = contentStart >= 0 ? fullContent.substring(contentStart + 1).trim() : '';
-    
-    // Check if content starts with duplicate title (e.g., "## The Title")
-    // Remove it if it matches the chapter title
-    const duplicateTitlePattern = new RegExp(`^##\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\n`, 'm');
-    content = content.replace(duplicateTitlePattern, '');
-    
-    if (content) {
-      chapters.push({
-        num,
-        title,
-        content
-      });
-    }
-  }
-  
+  const chapters = parseBookChapters(content);
+  if (!chapters.length) throw new Error('No chapter bodies found in the manuscript.');
+
   const zip = new JSZip();
   
   // 1. mimetype (must be first, uncompressed)
@@ -124,6 +93,7 @@ export async function exportAsEpub(content: string, metadata: any, filename: str
   // 3. OEBPS folder
   const oebps = zip.folder('OEBPS')!;
   
+  const xml = (text: string) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   // 4. content.opf (package document)
   const manifestItems = chapters.map(ch => 
     `    <item id="chapter${ch.num}" href="chapter${ch.num}.xhtml" media-type="application/xhtml+xml"/>`
@@ -138,8 +108,8 @@ export async function exportAsEpub(content: string, metadata: any, filename: str
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uuid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uuid">${uuid}</dc:identifier>
-    <dc:title>${title}</dc:title>
-    <dc:creator>${author}</dc:creator>
+    <dc:title>${xml(title)}</dc:title>
+    <dc:creator>${xml(author)}</dc:creator>
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
   </metadata>
@@ -155,7 +125,7 @@ ${spineItems}
   
   // 5. nav.xhtml (navigation document)
   const navItems = chapters.map(ch => 
-    `        <li><a href="chapter${ch.num}.xhtml">Chapter ${ch.num}: ${ch.title}</a></li>`
+    `        <li><a href="chapter${ch.num}.xhtml">${xml(chapterLabel(ch.num, ch.title))}</a></li>`
   ).join('\n');
   
   oebps.file('nav.xhtml',
@@ -255,11 +225,11 @@ del {
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <title>Chapter ${ch.num}: ${markdownToHtml(ch.title)}</title>
+  <title>${markdownToHtml(chapterLabel(ch.num, ch.title))}</title>
   <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
 </head>
 <body>
-  <h2>Chapter ${ch.num}: ${markdownToHtml(ch.title)}</h2>
+  <h2>${markdownToHtml(chapterLabel(ch.num, ch.title))}</h2>
 ${htmlParagraphs}
 </body>
 </html>`);
@@ -273,7 +243,11 @@ ${htmlParagraphs}
     compressionOptions: { level: 9 }
   });
   
-  downloadBlob(blob, filename);
+  return blob;
+}
+
+export async function exportAsEpub(content: string, metadata: any, filename = 'book.epub'): Promise<void> {
+  downloadBlob(await buildEpub(content, metadata), filename);
 }
 
 /**
@@ -281,7 +255,7 @@ ${htmlParagraphs}
  */
 export function exportAsPdf(content: string, metadata: any): void {
   const title = extractBookTitle(content);
-  const author = metadata?.author || 'Unknown Author';
+  const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author : 'Unknown Author';
   
   // Create a new window with the book content
   const printWindow = window.open('', '_blank');
@@ -290,31 +264,16 @@ export function exportAsPdf(content: string, metadata: any): void {
     return;
   }
   
-  // Remove the main title from content (we'll add it separately)
-  let contentWithoutTitle = content.replace(/^#\s+.+$/m, '').trim();
-  
-  // Remove duplicate chapter titles (e.g., "## Chapter 2: Title\n\n## Title")
-  contentWithoutTitle = contentWithoutTitle.replace(/^## Chapter (\d+): (.+?)\s*\n+## \2\s*$/gm, '## Chapter $1: $2');
-  
-  // Convert markdown to HTML
-  const htmlContent = contentWithoutTitle
-    // First protect scene breaks with a unique marker
-    .replace(/^\s*\*\*\*\s*$/gm, '\n\n___SCENE_BREAK___\n\n')
-    .replace(/^## Chapter (\d+): (.+)$/gm, '<h2 class="chapter-title">Chapter $1: $2</h2>')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/^(.+)$/gm, '<p>$1</p>')
-    // Now restore scene breaks as proper divs
-    .replace(/<p>___SCENE_BREAK___<\/p>/g, '<div class="scene-break">* * *</div>');
-  
+  const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const chapters = parseBookChapters(content);
+  const htmlContent = chapters.map(ch => `<h2 class="chapter-title">${escape(chapterLabel(ch.num, ch.title))}</h2>` + ch.content.split(/\n\s*\n/).map(block => /^\s*(?:\*\s*){3,}\s*$/.test(block) ? '<div class="scene-break">* * *</div>' : `<p>${escape(block).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>`).join('')).join('');
+
   printWindow.document.write(`
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>${title} - ${author}</title>
+      <title>${escape(title)} - ${escape(author)}</title>
       <style>
         @page {
           size: A4;
@@ -375,8 +334,8 @@ export function exportAsPdf(content: string, metadata: any): void {
       </style>
     </head>
     <body>
-      <h1>${title}</h1>
-      <div class="author">by ${author}</div>
+      <h1>${escape(title)}</h1>
+      <div class="author">by ${escape(author)}</div>
       ${htmlContent}
       <script>
         window.onload = function() {

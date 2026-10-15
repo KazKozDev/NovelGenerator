@@ -38,7 +38,7 @@ export function buildProjectInput(premise:string,chapters:number,settings:StoryS
   if(!premise.trim())throw new Error('Fill in Story premise on the main page.');
   if(!Number.isSafeInteger(chapters)||chapters<3||chapters>100)throw new Error('Set Number of Chapters between 3 and 100.');
   if(!Number.isSafeInteger(words)||words<1)throw new Error('Set a positive Target words per chapter.');
-  return {planning_version:2,premise,chapter_count:chapters,genre:settings.genre||'fantasy',target_total_words:words*chapters,...(title?.trim()?{title:title.trim()}:{}),author_requirements:[
+  return {planning_version:2,...(settings.sceneLayout?{scene_layout:settings.sceneLayout}:{}),...(settings.writingMethod?{writing_method:settings.writingMethod}:{}),...(settings.storyStructure?.trim()?{story_structure:settings.storyStructure.trim()}:{}),premise,chapter_count:chapters,genre:settings.genre||'fantasy',target_total_words:words*chapters,...(title?.trim()?{title:title.trim()}:{}),...(settings.seriesContext?.trim()?{series_context:settings.seriesContext.trim()}:{}),...(settings.comparableBooks?.trim()?{comparable_books:settings.comparableBooks.trim()}:{}),author_requirements:[
     settings.narrativeVoice?`Voice: ${settings.narrativeVoice}.`:'',settings.tone?`Tone: ${settings.tone}.`:'',
     settings.writingStyle?`Style: ${settings.writingStyle}.`:'',settings.targetAudience?`Audience: ${settings.targetAudience}.`:'',
     settings.tense?`Tense: ${settings.tense}.`:'',settings.ending?`Ending: ${settings.ending}.`:'',

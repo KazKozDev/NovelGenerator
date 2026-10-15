@@ -24,7 +24,7 @@ export async function generateCompatibleText(prompt: string, system = '', maxTok
   const timer = setTimeout(() => controller.abort(), 900000);
   try {
     const response = await fetch(`${base}/chat/completions`, { method: 'POST', headers, signal: controller.signal,
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: true }) });
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: true, ...(schema ? { response_format: { type: 'json_object' } } : {}) }) });
     if (!response.ok) throw new Error(`Compatible API request failed [${response.status}].`);
     let text = '', finish: string | undefined, usage: unknown;
     if (!/text\/event-stream/i.test(response.headers.get('content-type') || '')) {

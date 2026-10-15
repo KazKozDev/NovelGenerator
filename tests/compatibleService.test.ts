@@ -15,7 +15,7 @@ it('streams split UTF-8 events and extracts usage using the configured server an
   vi.stubGlobal('fetch', vi.fn(async (url, init) => {
     expect(url).toBe('http://localhost:1234/v1/chat/completions');
     expect(init.headers.Authorization).toBe('Bearer test-key');
-    const body = JSON.parse(init.body); expect(body.model).toBe('my-model'); expect(body.stream).toBe(true);
+    const body = JSON.parse(init.body); expect(body.model).toBe('my-model'); expect(body.stream).toBe(true); expect(body.response_format).toEqual({ type: 'json_object' });
     expect(body.messages[0].content).toContain('Return JSON');
     expect(body.enable_thinking).toBeUndefined(); expect(body.reasoning_effort).toBeUndefined();
     return sse();

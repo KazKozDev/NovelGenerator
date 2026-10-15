@@ -15,6 +15,7 @@ import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
 import { livePreview } from '../utils/livePreview';
+import { assembleManuscript, normalizeChapterBody } from '../utils/novel/manuscript';
 import { readGenerationSettings, saveGenerationSettings, readMainForm, saveMainForm, buildProjectInput, DEFAULT_GENERATION_SETTINGS } from '../utils/generationSettings';
 
 const DEFAULT_SETTINGS = DEFAULT_GENERATION_SETTINGS;
@@ -141,10 +142,18 @@ export default function useBookGenerator() {
     setTokenTotals(savedTokenTotals(store.runLog()));
     const manuscript = store.manuscript();
     const author = store.loadAuthor();
-    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: text, ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}) })));
+    setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: normalizeChapterBody(text, chapter), ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}) })));
     setDeskTools(author?.desk ? deskTabs(author.desk) : []);
     if (author) {
-      setDevelopmentLabel(author.completed ? undefined : author.desk ? `${author.desk.editorial?.active ? 'Revising novel' : 'Writing novel'} · step ${author.desk.step} · ${author.desk.budget - author.desk.spent} calls left` : !author.notebook && !author.clock ? 'Developing premise & concept' : !author.clock ? 'Settling characters & world' : !author.plan ? 'Planning chapters' : `Writing chapter ${Math.min(author.chapters.length + 1, store.loadInput()?.chapter_count || 1)}`);
+      let engineLabel: string | undefined;
+      try {
+        const state = JSON.parse(author.desk?.files['engine-state.json'] || 'null');
+        if (state) {
+          const running = Object.entries(state.operations || {}).find(([, value]) => (value as { status: string }).status === 'running')?.[0];
+          engineLabel = running ? `Developing ${running.split('/')[0].replaceAll('-', ' ')}` : ({ planning: 'Developing the story', draft: 'Writing the draft', 'structural-revision': 'Reshaping the book', 'line-edit': 'Editing prose', copyedit: 'Copyediting', proofread: 'Proofreading', complete: 'Book processing finished' } as Record<string, string>)[state.phase];
+        }
+      } catch { /* Legacy projects keep their existing progress display. */ }
+      setDevelopmentLabel(author.completed ? undefined : engineLabel || (author.desk ? `${author.desk.editorial?.active ? 'Revising novel' : 'Writing novel'} · step ${author.desk.step} · ${author.desk.budget - author.desk.spent} calls left` : !author.notebook && !author.clock ? 'Developing premise & concept' : !author.clock ? 'Settling characters & world' : !author.plan ? 'Planning chapters' : `Writing chapter ${Math.min(author.chapters.length + 1, store.loadInput()?.chapter_count || 1)}`));
       setCurrentStoryOutline([author.notebook ? `# The author's notebook\n\n${author.notebook}` : '', author.plan ? `# The author's plan\n\n${author.plan}` : '', author.clock ? `# ${author.desk ? 'The dossier' : 'The clock'}\n\n${author.clock}` : ''].filter(Boolean).join('\n\n') || 'The author has not written its plan yet.');
       const at = author.chapters.at(-1);
       if (author.desk) setCurrentChapterPlan(`**What the author has done, step by step**\n\n${author.desk.journal.slice(-30).map(line => `- ${line}`).join('\n') || '(nothing yet)'}${author.desk.answers.length ? `\n\n**What it was last told**\n\n*${author.desk.answers.at(-1)!.who}:* ${author.desk.answers.at(-1)!.text}` : ''}`);
@@ -160,13 +169,21 @@ export default function useBookGenerator() {
     if (!input || (store.loadAuthor() && (!store.loadAuthor()!.completed || !store.loadReport()))) return;
     const manuscript = store.manuscript();
     const report = store.loadReport();
+    const desk = store.loadAuthor()?.desk;
+    const latestReview = (focus: string) => {
+      for (const answer of [...(desk?.answers || [])].reverse()) {
+        try { const review = JSON.parse(answer.text); if (review.focus === focus) return review; } catch { /* prose feedback */ }
+      }
+      return undefined;
+    };
     const title = bookTitle(store.loadAuthor()?.title, input.premise);
-    const content = `# ${title}\n\n` + manuscript.map(({ chapter, text }) => `## Chapter ${chapter}\n\n${text}`).join('\n\n');
+    const content = assembleManuscript(manuscript, title);
     setFinalBookContent(content);
     setFinalMetadataJson(JSON.stringify({
       title,
       chapters: manuscript.map(({ chapter, text }) => ({ chapter, words: text.split(/\s+/).filter(Boolean).length })),
-      audit: report ? { status: report.status, summary: report.summary } : null,
+      audit: report,
+      craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
       premise: input.premise,
       genre: input.genre,
     }));

@@ -2,6 +2,7 @@
 
 
 import React, { useEffect } from 'react';
+import { assembleManuscript } from './utils/novel/manuscript';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
@@ -102,7 +103,7 @@ const App: React.FC = () => {
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
-    <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
+    <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} />
   ) : null;
 
   const errorPanel = error ? (
@@ -143,27 +144,26 @@ const App: React.FC = () => {
     <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex items-start gap-3 mb-1.5">
-          <div className="flex flex-1 min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex items-baseline gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+          <div className="flex shrink-0 items-baseline gap-2">
             <h1 className="text-2xl font-semibold wordmark">
               NovelGenerator
             </h1>
-            <span className="font-mono text-xs text-zinc-500">v4.2</span>
+            <span className="font-mono text-xs text-zinc-500">v4.5</span>
           </div>
-          <div className="app-toolbar flex flex-wrap items-center gap-2">
+          <div className="app-toolbar flex items-center gap-2 overflow-x-auto py-1" aria-label="Project and appearance controls">
           {saveControl}
           <button
             type="button"
             onClick={exportProject}
             title="Download the project: the author's desk, the manuscript, the report and the log"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Export project
           </button>
           <label
             title="Restore a project from an exported .project.json file"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
+            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
           >
             Import project
             <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
@@ -176,16 +176,15 @@ const App: React.FC = () => {
             type="button"
             onClick={handleReset}
             title="Wipe all temporary generation state and start from clean slate"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
           >
             Clean Slate
           </button>
-          </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
+          <div className="flex shrink-0 items-center gap-2" aria-label="Appearance and help">
             <ThemeToggle />
             <ApiKeysToggle />
             <SystemManualToggle />
+          </div>
           </div>
         </div>
         <p className="text-zinc-500 text-xs  text-left">
@@ -258,7 +257,7 @@ const App: React.FC = () => {
             isLoading={isLoading}
             onResumeGeneration={handleContinue}
             headerActions={saveControl}
-            version="v4.2"
+            version="v4.5"
             onReset={handleReset}
           />
         )}
@@ -270,6 +269,7 @@ const App: React.FC = () => {
               bookContent={finalBookContent}
               metadataJson={finalMetadataJson}
               onReset={handleReset}
+              onEdit={editBook}
             />
             
             {/* Show agent logs after completion too */}

@@ -7,9 +7,10 @@ function createMockDesk(overrides?: Partial<DeskState>): DeskState {
     step: 1,
     budget: 50,
     files: {},
-    notes: [],
+    journal: [],
     answers: [],
-    events: [],
+    spent: 0,
+    finished: false,
     ...overrides,
   };
 }
@@ -46,8 +47,8 @@ describe('deskTabs for Craft 2.0', () => {
   it('populates Observer and Reader tabs from desk answers', () => {
     const desk = createMockDesk({
       answers: [
-        { step: 1, who: 'Observer Check', asked: '', text: 'Sensory grounding verified.' },
-        { step: 2, who: 'Blind Reader', asked: 'What did you expect?', text: 'Anticipating betrayal.' },
+        { step: 1, who: 'Observer Check', about: 'Chapter 1', asked: '', text: 'Sensory grounding verified.' },
+        { step: 2, who: 'Blind Reader', about: 'Chapter 1', asked: 'What did you expect?', text: 'Anticipating betrayal.' },
       ],
     });
     const tabs = deskTabs(desk);

@@ -52,7 +52,7 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
     const advisory = bestsellerAdvisory(content);
     for (const adv of advisory) {
       if (!list.some(item => item.id === adv.id)) {
-        list.push(adv);
+        list.push({ id: adv.id, description: adv.detail });
       }
     }
     return list;
@@ -61,20 +61,24 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
   return (
     <div data-testid="zone-checks" className="shrink-0 flex flex-col pb-5">
       {/* Header: Chapter title + status + word count */}
-      <div className="shrink-0 flex items-center justify-between pb-2 border-b border-zinc-800">
-        <div className="flex items-center gap-2 min-w-0">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Chapter {chapterNum}</h3>
-          {revisionStatus && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-medium truncate">
+      <div className="shrink-0 flex flex-col gap-1.5 pb-2.5 border-b border-zinc-800">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 whitespace-nowrap">
+            Chapter {chapterNum}
+          </h3>
+          {content.trim() ? (
+            <span className="text-xs font-mono tabular-nums text-zinc-400 whitespace-nowrap shrink-0">
+              {wordCount.toLocaleString()} {targetWords ? `/ ${targetWords.toLocaleString()} ` : ''}words
+            </span>
+          ) : null}
+        </div>
+        {revisionStatus && (
+          <div className="flex items-center">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/60 text-zinc-400 font-medium whitespace-nowrap">
               {revisionStatus}
             </span>
-          )}
-        </div>
-        {content.trim() ? (
-          <span className="text-xs font-mono text-zinc-400 shrink-0">
-            {wordCount.toLocaleString()} {targetWords ? `/ ${targetWords.toLocaleString()} ` : ''}words
-          </span>
-        ) : null}
+          </div>
+        )}
       </div>
 
       {rows ? (

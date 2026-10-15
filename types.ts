@@ -280,6 +280,11 @@ export type ChapterMode = 'full' | 'scene';
 
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
+  sceneLayout?: 'classic-three-scenes' | 'flexible';
+  writingMethod?: 'outliner' | 'hybrid' | 'discovery';
+  storyStructure?: string;
+  seriesContext?: string;
+  comparableBooks?: string;
   /** past or present — or the author's own words. */
   tense?: string;
   /** closed, open or series — or the author's own words for how the book should end. */
