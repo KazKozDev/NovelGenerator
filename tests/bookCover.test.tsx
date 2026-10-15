@@ -31,7 +31,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     );
     expect(html).toContain('id="book-author-input"');
     expect(html).toContain('value="Arthur Conan"');
-    expect(html).toContain('Saved in copyright, PDF, EPUB, and project metadata');
+    expect(html).not.toContain('Saved in copyright, PDF, EPUB, and project metadata');
   });
 
   it('renders BookDisplay with 3-column layout containing Editorial Review, Manuscript and Book Cover', () => {
@@ -83,7 +83,7 @@ describe('BookCoverUpload and three-zone layout', () => {
     );
     expect(emptyAuthorHtml).toContain('Required');
     expect(emptyAuthorHtml).not.toContain('border-amber-600');
-    expect(emptyAuthorHtml).toContain('Saved in copyright, PDF, EPUB, and project metadata');
+    expect(emptyAuthorHtml).not.toContain('Saved in copyright, PDF, EPUB, and project metadata');
 
     const filledAuthorHtml = renderToStaticMarkup(
       <BookCoverUpload
@@ -93,7 +93,7 @@ describe('BookCoverUpload and three-zone layout', () => {
       />
     );
     expect(filledAuthorHtml).toContain('Required');
-    expect(filledAuthorHtml).toContain('Saved in copyright, PDF, EPUB, and project metadata');
+    expect(filledAuthorHtml).not.toContain('Saved in copyright, PDF, EPUB, and project metadata');
   });
 
   it('renders imprint input fields without manual copyright card in UI', () => {

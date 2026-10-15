@@ -329,9 +329,6 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
             aria-label="Book author"
             className="w-full h-8 px-2.5 rounded bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-600 focus:outline-none transition-colors text-xs text-zinc-200 placeholder:text-zinc-600"
           />
-          <p className="text-[11px] text-zinc-500">
-            Saved in copyright, PDF, EPUB, and project metadata
-          </p>
         </div>
 
         {/* Imprint Metadata Fields */}
