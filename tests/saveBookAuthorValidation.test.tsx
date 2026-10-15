@@ -23,9 +23,13 @@ describe('SaveBook author validation and colophon', () => {
 
     expect(colophon.copyright).toBe('Copyright © 2026 Иван Иванов');
     expect(colophon.rights).toBe('All rights reserved.');
-    expect(colophon.reproduction).toContain('No part of this book may be reproduced, distributed, or transmitted in any form');
+    expect(colophon.reproduction).toContain('No part of this book may be reproduced, distributed');
     expect(colophon.aiDisclaimer).toContain('NovelGenerator tool and other artificial intelligence tools');
     expect(colophon.aiDisclaimer).toContain('The author who generated and published this book is solely and fully responsible for the entire content');
+    expect(colophon.liabilityDisclaimer).toContain('infringe upon any copyright, trademark, patent');
+    expect(colophon.liabilityDisclaimer).toContain('sole, exclusive, and unreserved legal and financial liability');
+    expect(colophon.liabilityDisclaimer).toContain('compliance with all applicable local, regional, national, and international laws');
+    expect(colophon.liabilityDisclaimer).toContain('defend, indemnify, and hold harmless NovelGenerator');
     expect(colophon.fictionDisclaimer).toContain('This is a work of fiction.');
     expect(colophon.isbns).toEqual([
       'ISBN 978-1-234567-89-0 (paperback)',
@@ -69,6 +73,7 @@ describe('SaveBook author validation and colophon', () => {
     expect(md).toContain('Copyright © 2026 Иван Иванов');
     expect(md).toContain('Published by NG Press');
     expect(md).toContain('The author takes complete and exclusive responsibility for all aspects of this book.');
+    expect(md).toContain('defend, indemnify, and hold harmless NovelGenerator');
   });
 
   it('formats Plain Text with author and mandatory publishing imprint colophon', () => {
@@ -82,6 +87,7 @@ describe('SaveBook author validation and colophon', () => {
     expect(txt).toContain('Copyright © 2026 Иван Иванов');
     expect(txt).toContain('Published by NG Press');
     expect(txt).toContain('The author takes complete and exclusive responsibility for all aspects of this book.');
+    expect(txt).toContain('defend, indemnify, and hold harmless NovelGenerator');
     expect(txt).toContain('Chapter 1');
   });
 });

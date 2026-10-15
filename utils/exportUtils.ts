@@ -169,6 +169,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     <p style="margin-bottom: 1.2em;">${xml(colophon.rights)}</p>
     <p style="margin-bottom: 1.2em;">${xml(colophon.reproduction)}</p>
     <p style="margin-bottom: 1.2em;">${xml(colophon.aiDisclaimer)}</p>
+    <p style="margin-bottom: 1.2em;">${xml(colophon.liabilityDisclaimer)}</p>
     <p style="margin-bottom: 1.2em;">${xml(colophon.fictionDisclaimer)}</p>
     ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${xml(isbn)}</p>`).join('\n    ')}
     <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd;">
@@ -368,6 +369,7 @@ export function exportAsPdf(content: string, metadata: any): void {
       <p style="margin-bottom: 1.2em;">${escape(colophon.rights)}</p>
       <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.reproduction)}</p>
       <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.aiDisclaimer)}</p>
+      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.liabilityDisclaimer)}</p>
       <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.fictionDisclaimer)}</p>
       ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${escape(isbn)}</p>`).join('')}
       <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ccc;">
