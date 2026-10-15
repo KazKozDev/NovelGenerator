@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { parseBookChapters, chapterLabel } from './novel/manuscript';
+import { resolveImprintColophon } from './imprintConstants';
 
 /**
  * Utilities for exporting book content in different formats
@@ -98,6 +99,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   
   // Optional Imprint / Colophon file
   if (imprint) {
+    const colophon = resolveImprintColophon(author, imprint);
     oebps.file('imprint.xhtml',
 `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -107,11 +109,17 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
 </head>
 <body>
-  <div style="margin-top: 4em; font-size: 0.9em; line-height: 1.8; color: #555;">
-    ${imprint.publisher ? `<p><strong>Publisher:</strong> ${xml(imprint.publisher)}</p>` : ''}
-    ${imprint.date ? `<p><strong>Publication Date:</strong> ${xml(imprint.date)}</p>` : ''}
-    ${imprint.models ? `<p><strong>AI Generation Models:</strong> ${xml(imprint.models)}</p>` : ''}
-    ${imprint.disclaimer ? `<p style="margin-top: 2em; font-style: italic;">${xml(imprint.disclaimer)}</p>` : ''}
+  <div style="margin-top: 3em; font-size: 0.85em; line-height: 1.6; color: #444; max-width: 580px;">
+    <p style="margin-bottom: 0.5em; font-weight: bold;">${xml(colophon.copyright)}</p>
+    <p style="margin-bottom: 1.2em;">${xml(colophon.rights)}</p>
+    <p style="margin-bottom: 1.2em;">${xml(colophon.reproduction)}</p>
+    <p style="margin-bottom: 1.2em;">${xml(colophon.aiDisclaimer)}</p>
+    <p style="margin-bottom: 1.2em;">${xml(colophon.fictionDisclaimer)}</p>
+    ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${xml(isbn)}</p>`).join('\n    ')}
+    <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd;">
+      <p style="margin-bottom: 0.3em;">${xml(colophon.publisher)}</p>
+      <p>${xml(colophon.editionLine)}</p>
+    </div>
   </div>
 </body>
 </html>`);
@@ -129,16 +137,19 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     `    <itemref idref="chapter${ch.num}"/>`
   ).join('\n');
   
+  const colophonMeta = imprint ? resolveImprintColophon(author, imprint) : null;
+  const isbnIdentifier = imprint?.isbnEbook || imprint?.isbnPaperback;
+
   oebps.file('content.opf',
 `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uuid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uuid">${uuid}</dc:identifier>
+    ${isbnIdentifier ? `<dc:identifier id="isbn">urn:isbn:${xml(isbnIdentifier)}</dc:identifier>` : ''}
     <dc:title>${xml(title)}</dc:title>
     <dc:creator>${xml(author || 'Anonymous')}</dc:creator>
-    ${imprint?.publisher ? `<dc:publisher>${xml(imprint.publisher)}</dc:publisher>` : ''}
-    ${imprint?.date ? `<dc:date>${xml(imprint.date)}</dc:date>` : ''}
-    ${imprint?.disclaimer ? `<dc:rights>${xml(imprint.disclaimer)}</dc:rights>` : ''}
+    ${colophonMeta ? `<dc:publisher>${xml(colophonMeta.publisher)}</dc:publisher>` : ''}
+    ${colophonMeta ? `<dc:rights>${xml(`${colophonMeta.copyright}. ${colophonMeta.rights}`)}</dc:rights>` : ''}
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
   </metadata>
@@ -298,16 +309,23 @@ export function exportAsPdf(content: string, metadata: any): void {
   const chapters = parseBookChapters(content);
   const htmlContent = chapters.map(ch => `<h2 class="chapter-title">${escape(chapterLabel(ch.num, ch.title))}</h2>` + ch.content.split(/\n\s*\n/).map(block => /^\s*(?:\*\s*){3,}\s*$/.test(block) ? '<div class="scene-break">* * *</div>' : `<p>${escape(block).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>`).join('')).join('');
 
-  const imprintHtml = imprint ? `
-    <div class="imprint-section" style="page-break-after: always; margin-top: 5em; font-size: 0.9em; color: #444; line-height: 1.8;">
-      <div style="border-top: 1px solid #ccc; padding-top: 2em; max-width: 500px;">
-        ${imprint.publisher ? `<p><strong>Publisher:</strong> ${escape(imprint.publisher)}</p>` : ''}
-        ${imprint.date ? `<p><strong>Publication Date:</strong> ${escape(imprint.date)}</p>` : ''}
-        ${imprint.models ? `<p><strong>Generation Models:</strong> ${escape(imprint.models)}</p>` : ''}
-        ${imprint.disclaimer ? `<p style="margin-top: 2em; font-style: italic; color: #666;">${escape(imprint.disclaimer)}</p>` : ''}
+  const imprintHtml = imprint ? (() => {
+    const colophon = resolveImprintColophon(author, imprint);
+    return `
+    <div class="imprint-section" style="page-break-after: always; margin-top: 4em; font-size: 0.85em; color: #333; line-height: 1.6; max-width: 580px;">
+      <p style="margin-bottom: 0.5em; font-weight: bold;">${escape(colophon.copyright)}</p>
+      <p style="margin-bottom: 1.2em;">${escape(colophon.rights)}</p>
+      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.reproduction)}</p>
+      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.aiDisclaimer)}</p>
+      <p style="margin-bottom: 1.2em; text-align: justify;">${escape(colophon.fictionDisclaimer)}</p>
+      ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${escape(isbn)}</p>`).join('')}
+      <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ccc;">
+        <p style="margin-bottom: 0.3em;">${escape(colophon.publisher)}</p>
+        <p>${escape(colophon.editionLine)}</p>
       </div>
     </div>
-  ` : '';
+  `;
+  })() : '';
 
   printWindow.document.write(`
     <!DOCTYPE html>

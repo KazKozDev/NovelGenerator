@@ -14,10 +14,30 @@ export default function SaveBook({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showAuthorAlert, setShowAuthorAlert] = useState(false);
   const filename = sanitizeFilename(extractBookTitle(content));
 
   const download = async (format: string) => {
     setError('');
+    setShowAuthorAlert(false);
+
+    // Author name is mandatory for saving
+    const authorName = typeof metadata?.author === 'string' ? metadata.author.trim() : '';
+    if (!authorName) {
+      setError('Author name is required to save');
+      setShowAuthorAlert(true);
+      const authorInput = document.getElementById('book-author-input') as HTMLInputElement | null;
+      if (authorInput) {
+        authorInput.focus();
+        authorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        authorInput.classList.add('ring-2', 'ring-red-500', 'border-red-500');
+        setTimeout(() => {
+          authorInput.classList.remove('ring-2', 'ring-red-500', 'border-red-500');
+        }, 3000);
+      }
+      return;
+    }
+
     setBusy(true);
     try {
       if (format === 'txt') exportAsText(content.replace(/^#{1,6}\s+/gm, ''), `${filename}.txt`);
@@ -63,7 +83,42 @@ export default function SaveBook({
           )}
         </div>
       </div>
-      {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40">{error}</p>}
+      {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40 whitespace-nowrap">{error}</p>}
+
+      {showAuthorAlert && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 bg-zinc-900 border border-red-500 rounded-lg shadow-2xl text-xs max-w-md animate-fade-in"
+        >
+          <div className="w-8 h-8 rounded-full bg-red-950 border border-red-800 flex items-center justify-center shrink-0 text-red-400 font-bold">
+            !
+          </div>
+          <div className="space-y-0.5 min-w-0">
+            <p className="font-semibold text-zinc-100">Author name required</p>
+            <p className="text-zinc-400 text-[11px]">Please enter the Author name in the Book Cover panel to save your book.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowAuthorAlert(false);
+              const authorInput = document.getElementById('book-author-input');
+              authorInput?.focus();
+            }}
+            className="shrink-0 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-[11px] font-medium transition-colors"
+          >
+            Enter author
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAuthorAlert(false)}
+            className="shrink-0 p-1 text-zinc-500 hover:text-zinc-300"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
