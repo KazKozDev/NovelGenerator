@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 import { exportAsEpub, exportAsJSON, exportAsPdf, exportAsText, exportAsMarkdown, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
 
-export default function SaveBook({ content, metadata = {}, draft = false }: { content: string; metadata?: Record<string, unknown>; draft?: boolean }) {
+export default function SaveBook({
+  content,
+  metadata = {},
+  draft = false,
+  onExportProject,
+}: {
+  content: string;
+  metadata?: Record<string, unknown>;
+  draft?: boolean;
+  onExportProject?: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const filename = sanitizeFilename(extractBookTitle(content));
@@ -32,13 +42,25 @@ export default function SaveBook({ content, metadata = {}, draft = false }: { co
       >
         {busy ? 'Downloading…' : draft ? 'Download Draft ▾' : 'Download Book ▾'}
       </button>
-      <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[140px]">
+      <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[170px]">
         <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
           <button type="button" onClick={() => download('epub')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">EPUB (.epub)</button>
           <button type="button" onClick={() => download('md')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Markdown (.md)</button>
           <button type="button" onClick={() => download('txt')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Plain Text (.txt)</button>
           <button type="button" onClick={() => download('pdf')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">PDF (.pdf)</button>
           <button type="button" onClick={() => download('report')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Editorial Report (.json)</button>
+          {onExportProject && (
+            <>
+              <div className="my-1 border-t border-zinc-800/80" />
+              <button
+                type="button"
+                onClick={onExportProject}
+                className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+              >
+                Project Backup (.project.json)
+              </button>
+            </>
+          )}
         </div>
       </div>
       {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40">{error}</p>}

@@ -101,9 +101,9 @@ const App: React.FC = () => {
     try { return finalMetadataJson ? JSON.parse(finalMetadataJson) : {}; } catch { return {}; }
   }, [finalMetadataJson]);
   const saveControl = finalBookContent ? (
-    <SaveBook content={finalBookContent} metadata={savedMetadata} />
+    <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
-    <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} />
+    <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} onExportProject={exportProject} />
   ) : null;
 
   const errorPanel = error ? (
@@ -153,39 +153,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
-            <div className="relative group shrink-0">
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 rounded transition-colors"
-              >
-                Project <span className="ml-1 text-[10px] text-zinc-500">▾</span>
-              </button>
-              <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[160px]">
-                <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
-                  <button
-                    type="button"
-                    onClick={exportProject}
-                    className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
-                  >
-                    Save project backup (.project.json)
-                  </button>
-                  <label className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors cursor-pointer block">
-                    Restore project backup (.json)
-                    <input
-                      type="file"
-                      accept=".json,application/json"
-                      className="hidden"
-                      onChange={event => {
-                        const file = event.target.files?.[0];
-                        event.target.value = '';
-                        if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
             <button
               type="button"
               onClick={handleReset}
@@ -219,9 +186,22 @@ const App: React.FC = () => {
             <label className="block text-xs text-zinc-400 mt-3">Target words per chapter
               <input type="number" min="1" step="1" value={storySettings.targetWordsPerChapter||4000} onChange={event=>{const value=Number(event.target.value);if(Number.isSafeInteger(value)&&value>0)setStorySettings({...storySettings,targetWordsPerChapter:value})}} className="block mt-1 px-3 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-200" />
             </label>
-            <div className="mt-3 flex gap-3">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <button onClick={handleContinue} disabled={isLoading} className="px-3 py-1 bg-zinc-200 text-zinc-900 rounded text-xs font-medium">Continue writing</button>
               <button onClick={handleReset} className="px-3 py-1 border border-zinc-700 rounded text-xs">Discard and start new</button>
+              <label className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors ml-auto">
+                Restore backup (.project.json)
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
+                  }}
+                />
+              </label>
             </div>
           </div>
         )}
@@ -247,6 +227,21 @@ const App: React.FC = () => {
               isLoading={isLoading}
             />
 
+            <div className="mt-4 text-center">
+              <label className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors inline-flex items-center gap-1.5">
+                <span>Or restore project from backup (.project.json)</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
+                  }}
+                />
+              </label>
+            </div>
           </>
         )}
         
