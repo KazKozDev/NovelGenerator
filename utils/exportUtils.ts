@@ -193,18 +193,18 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
   <title>Publishing Imprint</title>
   <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
 </head>
-<body>
-  <div style="margin-top: 3em; font-size: 0.85em; line-height: 1.6; color: #444; max-width: 580px;">
-    <p style="margin-bottom: 0.5em; font-weight: bold;">${xml(colophon.copyright)}</p>
-    <p style="margin-bottom: 1.2em;">${xml(colophon.rights)}</p>
-    <p style="margin-bottom: 1.2em;">${xml(colophon.reproduction)}</p>
-    <p style="margin-bottom: 1.2em;">${xml(colophon.aiDisclaimer)}</p>
-    <p style="margin-bottom: 1.2em;">${xml(colophon.liabilityDisclaimer)}</p>
-    <p style="margin-bottom: 1.2em;">${xml(colophon.fictionDisclaimer)}</p>
-    ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace;">${xml(isbn)}</p>`).join('\n    ')}
+<body class="imprint-page">
+  <div style="margin-top: 3em; font-size: 0.85em; line-height: 1.6; color: #444; max-width: 580px; text-align: left;">
+    <p style="margin-bottom: 0.5em; font-weight: bold; text-indent: 0;">${xml(colophon.copyright)}</p>
+    <p style="margin-bottom: 1.2em; text-indent: 0;">${xml(colophon.rights)}</p>
+    <p style="margin-bottom: 1.2em; text-indent: 0;">${xml(colophon.reproduction)}</p>
+    <p style="margin-bottom: 1.2em; text-indent: 0;">${xml(colophon.aiDisclaimer)}</p>
+    <p style="margin-bottom: 1.2em; text-indent: 0;">${xml(colophon.liabilityDisclaimer)}</p>
+    <p style="margin-bottom: 1.2em; text-indent: 0;">${xml(colophon.fictionDisclaimer)}</p>
+    ${colophon.isbns.map(isbn => `<p style="margin-bottom: 0.3em; font-family: monospace; text-indent: 0;">${xml(isbn)}</p>`).join('\n    ')}
     <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd;">
-      <p style="margin-bottom: 0.3em;">${xml(colophon.publisher)}</p>
-      <p>${xml(colophon.editionLine)}</p>
+      <p style="margin-bottom: 0.3em; text-indent: 0;">${xml(colophon.publisher)}</p>
+      <p style="text-indent: 0;">${xml(colophon.editionLine)}</p>
     </div>
   </div>
 </body>
@@ -346,6 +346,10 @@ em {
 }
 del {
   text-decoration: line-through;
+}
+.imprint-page p {
+  text-indent: 0 !important;
+  text-align: left !important;
 }
 .scene-break {
   text-align: center;
@@ -716,56 +720,75 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
     /* 3. Colophon / Copyright Page - Classic publishing: bottom-left aligned */
     .colophon-page {
-      padding: 3.5cm 2.8cm 2.5cm 2.8cm;
+      padding: 3.5cm 2.6cm 2.5cm 2.6cm;
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
       align-items: flex-start;
     }
     .colophon-card {
-      max-width: 520px;
+      max-width: 540px;
       margin: 0;
+      padding: 0;
       font-size: 8.5pt;
       line-height: 1.55;
       color: #333333;
       text-align: left;
+    }
+    .colophon-card p,
+    .colophon-card div {
+      text-indent: 0 !important;
+      text-align: left !important;
+      margin-left: 0 !important;
+      padding-left: 0 !important;
     }
     .colophon-title {
       font-size: 1.05em;
       font-weight: 700;
       color: #111111;
       margin-bottom: 1.2em;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
     .colophon-copyright {
       font-weight: 600;
       color: #111111;
-      margin-bottom: 0.25em;
+      margin: 0 0 0.25em 0 !important;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
     .colophon-rights {
       color: #222222;
-      margin-bottom: 0.9em;
+      margin: 0 0 0.9em 0 !important;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
     .colophon-text {
-      text-align: justify;
-      margin-bottom: 0.8em;
+      text-align: left !important;
+      margin: 0 0 0.8em 0 !important;
       color: #444444;
-      text-indent: 0;
+      text-indent: 0 !important;
     }
     .fiction-disclaimer {
       font-style: italic;
       color: #555555;
-      margin-top: 1em;
-      margin-bottom: 1em;
+      margin: 1em 0 !important;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
     .colophon-isbns {
-      margin: 0.9em 0;
+      margin: 0.9em 0 !important;
       font-size: 0.95em;
       color: #222222;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
     .colophon-publisher {
-      margin-top: 1.2em;
+      margin-top: 1.2em !important;
       font-size: 0.9em;
       color: #555555;
+      text-indent: 0 !important;
+      text-align: left !important;
     }
 
     /* 4. Table of Contents */
