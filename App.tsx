@@ -112,6 +112,31 @@ const App: React.FC = () => {
     <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} onExportProject={exportProject} />
   ) : null;
 
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) {
+      importProject(file).catch(err =>
+        alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+      );
+    }
+  };
+
+  const loadProjectButton = (
+    <label
+      title="Load project from backup (.project.json)"
+      className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded cursor-pointer transition-colors"
+    >
+      Load Project
+      <input
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleFileImport}
+      />
+    </label>
+  );
+
   const errorPanel = error ? (
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
@@ -158,6 +183,8 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
+            {loadProjectButton}
+
             <button
               type="button"
               onClick={handleReset}
@@ -225,11 +252,7 @@ const App: React.FC = () => {
                   type="file"
                   accept=".json,application/json"
                   className="hidden"
-                  onChange={event => {
-                    const file = event.target.files?.[0];
-                    event.target.value = '';
-                    if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-                  }}
+                  onChange={handleFileImport}
                 />
               </label>
             </div>
@@ -264,11 +287,7 @@ const App: React.FC = () => {
                   type="file"
                   accept=".json,application/json"
                   className="hidden"
-                  onChange={event => {
-                    const file = event.target.files?.[0];
-                    event.target.value = '';
-                    if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-                  }}
+                  onChange={handleFileImport}
                 />
               </label>
             </div>
@@ -297,7 +316,7 @@ const App: React.FC = () => {
             isResumable={isResumable}
             isLoading={isLoading}
             onResumeGeneration={handleContinue}
-            headerActions={saveControl}
+            headerActions={<>{loadProjectButton}{saveControl}</>}
             onReset={handleReset}
           />
         )}
