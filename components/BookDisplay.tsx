@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Button } from './common/Button';
 import BookStatistics from './BookStatistics';
-import ReaderTools from './ReaderTools';
 
 import { MarkdownView } from './common/MarkdownView';
 
@@ -64,13 +63,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
             {metadata?.audit?.summary ? (
               <p className="font-medium text-zinc-200">{metadata.audit.summary}</p>
             ) : (
-              <p className="text-xs text-zinc-400">Manuscript review & reader tools</p>
+              <p className="text-xs text-zinc-400">Manuscript review</p>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {onEdit && <Button onClick={onEdit} variant="secondary" size="sm">Edit saved book</Button>}
-            <ReaderTools compact text={bookContent} />
-          </div>
+          {onEdit && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Button onClick={onEdit} variant="secondary" size="sm">Edit saved book</Button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2 text-xs">
