@@ -139,8 +139,6 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               {version}
             </span>
           )}
-          <span className="text-zinc-700 shrink-0">|</span>
-          <span className="text-zinc-500 text-xs">Write a novel before your coffee gets cold</span>
         </div>
 
         <div className="app-toolbar flex flex-wrap items-center gap-2 min-w-0">

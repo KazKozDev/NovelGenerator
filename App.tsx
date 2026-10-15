@@ -172,15 +172,22 @@ const App: React.FC = () => {
           </div>
         ) : null;
 
+  const isMainPage = currentStep === GenerationStep.Idle && !finalBookContent;
+
   return (
     <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex shrink-0 items-baseline gap-2">
+          <div className="flex flex-col">
             <h1 className="text-xl font-semibold wordmark">
               NovelGenerator
             </h1>
+            {isMainPage && (
+              <p className="text-xs text-zinc-500 mt-1">
+                Write a novel before your coffee gets cold
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
@@ -265,34 +272,20 @@ const App: React.FC = () => {
         )}
 
         {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && storeReady && (
-          <>
-            <UserInput
-              bookTitle={bookTitleInput}
-              setBookTitle={setBookTitleInput}
-              storyPremise={storyPremise}
-              setStoryPremise={setStoryPremise}
-              numChapters={numChapters}
-              setNumChapters={setNumChapters}
-              genre={storySettings.genre || 'fantasy'}
-              setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
-              storySettings={storySettings}
-              setStorySettings={setStorySettings}
-              onSubmit={handleStartGeneration}
-              isLoading={isLoading}
-            />
-
-            <div className="mt-4 text-center">
-              <label className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors inline-flex items-center gap-1.5">
-                <span>Or restore project from backup (.project.json)</span>
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  onChange={handleFileImport}
-                />
-              </label>
-            </div>
-          </>
+          <UserInput
+            bookTitle={bookTitleInput}
+            setBookTitle={setBookTitleInput}
+            storyPremise={storyPremise}
+            setStoryPremise={setStoryPremise}
+            numChapters={numChapters}
+            setNumChapters={setNumChapters}
+            genre={storySettings.genre || 'fantasy'}
+            setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
+            storySettings={storySettings}
+            setStorySettings={setStorySettings}
+            onSubmit={handleStartGeneration}
+            isLoading={isLoading}
+          />
         )}
         
 
