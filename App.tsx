@@ -149,7 +149,6 @@ const App: React.FC = () => {
             <h1 className="text-xl font-semibold wordmark">
               NovelGenerator
             </h1>
-            <span className="font-mono text-xs text-zinc-500">v4.5</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
@@ -268,7 +267,6 @@ const App: React.FC = () => {
             isLoading={isLoading}
             onResumeGeneration={handleContinue}
             headerActions={saveControl}
-            version="v4.5"
             onReset={handleReset}
           />
         )}
