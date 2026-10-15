@@ -144,56 +144,68 @@ const App: React.FC = () => {
     <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
       <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex shrink-0 items-baseline gap-2">
-            <h1 className="text-2xl font-semibold wordmark">
+            <h1 className="text-xl font-semibold wordmark">
               NovelGenerator
             </h1>
             <span className="font-mono text-xs text-zinc-500">v4.5</span>
           </div>
-          <div className="flex shrink-0 items-center gap-2 ml-auto" aria-label="Appearance and help">
-            <ThemeToggle />
-            <ApiKeysToggle />
-            <SystemManualToggle />
-          </div>
-        </div>
-        <div className="app-toolbar flex flex-wrap items-center gap-2 py-1 mb-1.5" aria-label="Project and appearance controls">
-          {saveControl}
-          {saveControl && <span className="hidden sm:inline-block w-px h-4 bg-zinc-800 mx-1" aria-hidden="true" />}
-          <div className="inline-flex items-center gap-1.5">
+
+          <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
+            <div className="relative group shrink-0">
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 rounded transition-colors"
+              >
+                Project <span className="ml-1 text-[10px] text-zinc-500">▾</span>
+              </button>
+              <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[160px]">
+                <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
+                  <button
+                    type="button"
+                    onClick={exportProject}
+                    className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+                  >
+                    Save backup (.json)
+                  </button>
+                  <label className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors cursor-pointer block">
+                    Load backup (.json)
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={event => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <button
               type="button"
-              onClick={exportProject}
-              title="Download project backup (.project.json) containing the author's desk, manuscript, report, and full logs"
-              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
+              onClick={handleReset}
+              title="Wipe state and start a new book"
+              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 rounded transition-colors"
             >
-              Export project
+              Reset
             </button>
-            <label
-              title="Restore a project from a previously exported .project.json file"
-              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
-            >
-              Import project
-              <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
-                const file = event.target.files?.[0];
-                event.target.value = '';
-                if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-              }} />
-            </label>
+
+            {saveControl}
+
+            <span className="w-px h-4 bg-zinc-800 mx-1 hidden sm:inline-block" aria-hidden="true" />
+
+            <div className="flex shrink-0 items-center gap-1.5" aria-label="Appearance and help">
+              <ThemeToggle />
+              <ApiKeysToggle />
+              <SystemManualToggle />
+            </div>
           </div>
-          <span className="hidden sm:inline-block w-px h-4 bg-zinc-800 mx-1" aria-hidden="true" />
-          <button
-            type="button"
-            onClick={handleReset}
-            title="Wipe all temporary generation state and start from clean slate"
-            className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
-          >
-            Clean Slate
-          </button>
         </div>
-        <p className="text-zinc-500 text-xs  text-left">
-          Write a novel before your coffee gets cold
-        </p>
       </header>
       )}
 

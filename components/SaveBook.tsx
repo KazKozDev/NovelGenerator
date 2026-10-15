@@ -2,33 +2,46 @@ import React, { useState } from 'react';
 import { exportAsEpub, exportAsJSON, exportAsPdf, exportAsText, exportAsMarkdown, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
 
 export default function SaveBook({ content, metadata = {}, draft = false }: { content: string; metadata?: Record<string, unknown>; draft?: boolean }) {
-  const [format, setFormat] = useState('epub');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const filename = sanitizeFilename(extractBookTitle(content));
-  const save = async () => {
+
+  const download = async (format: string) => {
     setError('');
     setBusy(true);
     try {
       if (format === 'txt') exportAsText(content.replace(/^#{1,6}\s+/gm, ''), `${filename}.txt`);
       else if (format === 'md') exportAsMarkdown(content, `${filename}.md`);
-      // The report the book wrote about itself: the whole-book review's findings, the promises it
-      // never paid, the places the plan did not hold, the chapters that gave up on a defect. All of
-      // it was being produced and kept where only a developer would find it.
       else if (format === 'report') exportAsJSON(metadata, `${filename}-report.json`);
       else if (format === 'pdf') exportAsPdf(content, metadata);
       else await exportAsEpub(content, metadata, `${filename}.epub`);
-    } catch (error) { setError(String(error)); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
   };
-  return <div className="shrink-0 max-w-full">
-    <div className="app-toolbar flex flex-wrap items-center gap-2">
-      <select aria-label="Save format" value={format} onChange={event => setFormat(event.target.value)} disabled={busy} className="bg-zinc-900 border border-zinc-700 rounded h-7 px-3 py-1 text-xs text-zinc-200">
-        <option value="epub">EPUB</option><option value="pdf">PDF</option><option value="txt">TXT</option><option value="md">Markdown</option><option value="report">Report (JSON)</option>
-      </select>
-      <button type="button" onClick={save} disabled={busy || !content.trim()} className="h-7 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded text-xs text-zinc-100 disabled:opacity-50">{busy ? 'Saving…' : draft ? 'Save draft' : 'Save book'}</button>
-      {draft && <span className="sr-only">Current chapters · not fully reviewed</span>}
+
+  return (
+    <div className="relative group shrink-0">
+      <button
+        type="button"
+        aria-label={draft ? 'Save draft' : 'Save book'}
+        disabled={busy || !content.trim()}
+        className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 rounded transition-colors disabled:opacity-50"
+      >
+        {busy ? 'Downloading…' : draft ? 'Download Draft ▾' : 'Download Book ▾'}
+      </button>
+      <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[140px]">
+        <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
+          <button type="button" onClick={() => download('epub')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">EPUB (.epub)</button>
+          <button type="button" onClick={() => download('md')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Markdown (.md)</button>
+          <button type="button" onClick={() => download('txt')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Plain Text (.txt)</button>
+          <button type="button" onClick={() => download('pdf')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">PDF (.pdf)</button>
+          <button type="button" onClick={() => download('report')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Report (.json)</button>
+        </div>
+      </div>
+      {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40">{error}</p>}
     </div>
-    {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
-  </div>;
+  );
 }

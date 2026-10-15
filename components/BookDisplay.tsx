@@ -62,62 +62,40 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
     URL.revokeObjectURL(url);
   };
 
+  const readerContent = useMemo(() => {
+    return bookContent.replace(/^#\s+[^\r\n]+\r?\n*/m, '').trimStart();
+  }, [bookContent]);
+
   return (
     <div className="space-y-6">
-      {/* Book Header & Title Section */}
-      <div className="text-center space-y-2 mb-6">
-        <div className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-          {metadata?.audit?.status === 'COMPLETE_WITH_WARNINGS'
-            ? 'Book reviewed · warnings remain'
-            : metadata?.audit?.need_more_evidence?.length
-              ? 'Draft complete · review incomplete'
-              : 'Draft complete'}
-        </div>
-        
-        <h1 className="text-2xl sm:text-3xl font-serif font-semibold text-zinc-100 tracking-tight max-w-3xl mx-auto">
+      {/* Title & Compact Statistics */}
+      <div className="space-y-2 mb-6 text-left">
+        <h1 className="text-2xl sm:text-3xl font-serif font-semibold text-zinc-100 tracking-tight">
           {displayTitle}
         </h1>
-        
-        <p className="text-xs text-zinc-500 max-w-xl mx-auto">
-          {chapterCount} chapters compiled · {findingsCount} editorial notes recorded
-        </p>
-
-        {/* Primary Actions */}
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-          {onEdit && (
-            <Button onClick={onEdit} variant="secondary" size="sm" title="Re-run AI editorial review and structural revisions">
-              Run editorial pass
-            </Button>
-          )}
-          <Button onClick={() => handleCopyToClipboard(bookContent, 'quick-copy')} variant="secondary" size="sm">
-            {copiedStates['quick-copy'] ? 'Copied' : 'Copy text'}
-          </Button>
-        </div>
+        <BookStatistics bookContent={bookContent} metadata={metadata} />
       </div>
 
-      {/* Book Statistics Cards */}
-      <BookStatistics bookContent={bookContent} metadata={metadata} />
-
-      {/* Editorial & Structure Review Card */}
-      <section className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900/30" aria-label="Editorial and craft review">
-        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 pb-3 border-b border-zinc-800">
-          <div>
-            <h3 className="text-sm font-medium text-zinc-200">Editorial review</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Automated craft analysis of narrative beats and pacing.</p>
-          </div>
-          <div className="font-mono text-xs text-zinc-500 flex items-center gap-3">
-            <span>{chapterCount}/{chapterCount} ch</span>
-            {findingsCount > 0 && <span>{findingsCount} notes</span>}
-            {landmarksCount > 0 && <span>{landmarksCount} landmarks</span>}
-          </div>
+      {/* Editorial Review Block */}
+      <section className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900/30" aria-label="Editorial review">
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-800">
+          <h3 className="text-sm font-medium text-zinc-200">Editorial Review</h3>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex items-center h-6 px-2.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 rounded transition-colors"
+            >
+              <span className="mr-1">↻</span> {findingsCount > 0 ? 'Re-run Review' : 'Run Review'}
+            </button>
+          )}
         </div>
 
-        {/* Collapsible Inspection Details */}
         <div className="space-y-2 text-xs">
           {metadata?.audit && (
             <details className="text-zinc-400">
               <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1">
-                Editorial notes ({findingsCount})
+                ▸ Editorial notes ({findingsCount})
               </summary>
               <div className="pt-2 pl-2 space-y-2 border-t border-zinc-800/60 mt-1">
                 {metadata.audit.findings?.length > 0 ? (
@@ -147,7 +125,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           {metadata?.craft?.landmarks?.length > 0 && (
             <details className="text-zinc-400">
               <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1">
-                Story landmarks & pacing ({landmarksCount})
+                ▸ Story landmarks & pacing ({landmarksCount})
               </summary>
               <div className="overflow-x-auto pt-2 border-t border-zinc-800/60 mt-1">
                 <table className="w-full text-left text-xs">
@@ -177,7 +155,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           {metadata?.craft?.readerMap && (
             <details className="text-zinc-400">
               <summary className="cursor-pointer hover:text-zinc-200 font-medium py-1">
-                Reader narrative map
+                ▸ Reader narrative map
               </summary>
               <div className="pt-2 border-t border-zinc-800/60 mt-1 space-y-2">
                 {metadata.craft.readerMap.loops?.length > 0 && (
@@ -209,96 +187,97 @@ const BookDisplay: React.FC<BookDisplayProps> = ({ bookContent, metadataJson, on
           )}
         </div>
       </section>
-      
-      <div className="flex flex-wrap border-b border-zinc-800">
-        <button
-          onClick={() => setActiveTab('book')}
-          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
-            ${activeTab === 'book' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
-        >
-          Book Content
-        </button>
-        <button
-          onClick={() => setActiveTab('metadata')}
-          className={`py-2 px-4 text-xs font-semibold uppercase transition-colors duration-150
-            ${activeTab === 'metadata' ? 'border-b-2 border-zinc-200 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
-        >
-          Metadata
-        </button>
-      </div>
 
-      {activeTab === 'book' && (
-        <div className="p-4 border border-zinc-800 rounded">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-zinc-800/80 pb-3">
-            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setBookViewMode('rendered')}
-                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Rendered Markdown
-              </button>
-              <button
-                type="button"
-                onClick={() => setBookViewMode('raw')}
-                className={`px-3 py-1 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Raw Source
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button 
-                onClick={() => handleCopyToClipboard(bookContent, 'book')}
-                variant="secondary"
-                size="sm"
-              >
-                {copiedStates['book'] ? 'Copied' : 'Copy Markdown'}
-              </Button>
-            </div>
+      {/* Reader & Metadata Card */}
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 border-b border-zinc-800 bg-zinc-900/80">
+          {/* Left tabs: Text | Metadata */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('book')}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'book' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('metadata')}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'metadata' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              Metadata
+            </button>
           </div>
-          {bookViewMode === 'rendered' ? (
-            <div className="bg-zinc-900 border border-zinc-800 p-3 sm:p-6 rounded max-h-[65vh] overflow-y-auto text-left">
-              <MarkdownView 
-                content={bookContent} 
-                className="font-serif text-prose break-words max-w-[62ch] mx-auto" 
+
+          {/* Right controls: Reader | Markdown toggle and Copy button */}
+          {activeTab === 'book' ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setBookViewMode('rendered')}
+                  className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'rendered' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  Reader
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBookViewMode('raw')}
+                  className={`px-2.5 py-0.5 rounded transition-colors ${bookViewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  Markdown
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopyToClipboard(bookViewMode === 'rendered' ? readerContent : bookContent, 'book')}
+                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+              >
+                {copiedStates['book'] ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
+                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+              >
+                {copiedStates['metadata'] ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadFile(metadataJson, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}_metadata.json`, 'application/json;charset=utf-8')}
+                className="h-6 text-xs px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+              >
+                Download .json
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Clean content body without nested borders */}
+        {activeTab === 'book' ? (
+          bookViewMode === 'rendered' ? (
+            <div className="p-4 sm:p-8 max-h-[70vh] overflow-y-auto">
+              <MarkdownView
+                content={readerContent}
+                className="font-serif text-prose break-words max-w-[62ch] mx-auto text-zinc-200"
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap break-words text-xs  text-zinc-300 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[65vh] overflow-y-auto text-left">
+            <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
               {bookContent}
             </pre>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'metadata' && (
-        <div className="p-4 border border-zinc-800 rounded">
-          <div className="app-toolbar flex flex-wrap gap-2 justify-end mb-3">
-            <Button 
-              onClick={() => handleCopyToClipboard(metadataJson, 'metadata')}
-              variant="secondary"
-              size="sm"
-            >
-              {copiedStates['metadata'] ? 'Copied' : 'Copy JSON'}
-            </Button>
-             <Button 
-              onClick={() => downloadFile(metadataJson, `${(metadata?.title || 'generated_book').replace(/\s+/g, '_')}_metadata.json`, 'application/json;charset=utf-8')}
-              variant="secondary"
-              size="sm"
-            >
-              Download .json
-            </Button>
-          </div>
-          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 p-4 rounded max-h-[60vh] overflow-y-auto">
+          )
+        ) : (
+          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-400 p-4 sm:p-6 max-h-[70vh] overflow-y-auto font-mono">
             {metadataJson}
           </pre>
-        </div>
-      )}
-      
-      <div className="text-center mt-10 pt-6 border-t border-zinc-800/80">
-        <p className="text-xs text-zinc-500 mb-3">
-          Done with this project? Make sure you have downloaded or exported your work above before starting fresh.
-        </p>
+        )}
+      </div>
+
+      <div className="text-center mt-8 pt-4 border-t border-zinc-800">
         <Button onClick={onReset} variant="danger">
           Start New Book
         </Button>
