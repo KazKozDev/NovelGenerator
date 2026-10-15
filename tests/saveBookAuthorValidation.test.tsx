@@ -178,8 +178,10 @@ Morning arrived with gray skies and damp earth.`;
     expect(html).toContain('Chapter 1: The Storm');
     expect(html).toContain('Chapter 2: The Aftermath');
 
-    // Chapters in separate containers with page-break-before
-    expect(html).toContain('class="chapter-container"');
+    // Chapters in separate containers with page-break-before and repeating top/bottom margin spacers
+    expect(html).toContain('chapter-container');
+    expect(html).toContain('page-top-margin');
+    expect(html).toContain('page-bottom-margin');
     expect(html).toContain('page-break-before: always');
     expect(html).toContain('It began with a whisper in the wind.');
     expect(html).toContain('Morning arrived with gray skies and damp earth.');

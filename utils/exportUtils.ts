@@ -493,24 +493,40 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
   // 4. Automatic Table of Contents HTML
   const tocHtml = chapters.length > 0 ? `
-    <div class="page toc-page" id="pdf-toc-page">
-      <div class="toc-container">
-        <h2 class="toc-heading">Table of Contents</h2>
-        <div class="toc-divider"></div>
-        <ul class="toc-list">
-          ${chapters.map(ch => `
-            <li class="toc-item">
-              <span class="toc-title">${escape(chapterLabel(ch.num, ch.title))}</span>
-              <span class="toc-leader"></span>
-              <span class="toc-number">${ch.num}</span>
-            </li>
-          `).join('')}
-        </ul>
-      </div>
-    </div>
+    <table class="toc-table page toc-page" id="pdf-toc-page">
+      <thead>
+        <tr>
+          <td class="page-top-margin"></td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="toc-content-cell">
+            <div class="toc-container">
+              <h2 class="toc-heading">Table of Contents</h2>
+              <div class="toc-divider"></div>
+              <ul class="toc-list">
+                ${chapters.map(ch => `
+                  <li class="toc-item">
+                    <span class="toc-title">${escape(chapterLabel(ch.num, ch.title))}</span>
+                    <span class="toc-leader"></span>
+                    <span class="toc-number">${ch.num}</span>
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="page-bottom-margin"></td>
+        </tr>
+      </tfoot>
+    </table>
   ` : '';
 
-  // 5. Chapters HTML
+  // 5. Chapters HTML (using thead/tfoot spacers to guarantee top and bottom margins on every printed page)
   const chapterBodiesHtml = chapters.length > 0
     ? chapters.map(ch => {
         const titleText = escape(chapterLabel(ch.num, ch.title));
@@ -531,13 +547,29 @@ export function buildPdfHtml(content: string, metadata: any): string {
           .join('\n');
 
         return `
-          <div class="chapter-container">
-            <h2 class="chapter-title">${titleText}</h2>
-            ${paragraphsHtml}
-          </div>
+          <table class="chapter-table chapter-container">
+            <thead>
+              <tr>
+                <td class="page-top-margin"></td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="chapter-content-cell">
+                  <h2 class="chapter-title">${titleText}</h2>
+                  ${paragraphsHtml}
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td class="page-bottom-margin"></td>
+              </tr>
+            </tfoot>
+          </table>
         `;
       }).join('\n')
-    : `<div class="chapter-container">${content.split(/\n\s*\n/).map(b => `<p>${escape(b)}</p>`).join('')}</div>`;
+    : `<table class="chapter-table chapter-container"><thead><tr><td class="page-top-margin"></td></tr></thead><tbody><tr><td class="chapter-content-cell">${content.split(/\n\s*\n/).map(b => `<p>${escape(b)}</p>`).join('')}</td></tr></tbody><tfoot><tr><td class="page-bottom-margin"></td></tr></tfoot></table>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -564,9 +596,22 @@ export function buildPdfHtml(content: string, metadata: any): string {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
-      .page, .chapter-container {
+      .page {
         page-break-after: always;
         break-after: page;
+      }
+      .chapter-table, .toc-table {
+        page-break-before: always;
+        break-before: page;
+      }
+      .chapter-table thead, .toc-table thead {
+        display: table-header-group !important;
+      }
+      .chapter-table tfoot, .toc-table tfoot {
+        display: table-footer-group !important;
+      }
+      .page-top-margin, .page-bottom-margin {
+        height: 2.8cm !important;
       }
       .cover-page {
         page-break-after: always;
@@ -775,12 +820,36 @@ export function buildPdfHtml(content: string, metadata: any): string {
       font-weight: 600;
     }
 
-    /* 5. Chapters */
-    .chapter-container {
+    /* 5. Chapters & TOC Table-based Multi-page Margins */
+    .chapter-table, .toc-table {
       width: 100%;
-      padding: 3.2cm 2.5cm 2.5cm 2.5cm;
+      border-collapse: collapse;
+      border-spacing: 0;
       page-break-before: always;
       break-before: page;
+    }
+    .chapter-table thead, .toc-table thead {
+      display: table-header-group;
+    }
+    .chapter-table tfoot, .toc-table tfoot {
+      display: table-footer-group;
+    }
+    .page-top-margin {
+      height: 2.8cm;
+      padding: 0;
+      margin: 0;
+      border: none;
+    }
+    .page-bottom-margin {
+      height: 2.8cm;
+      padding: 0;
+      margin: 0;
+      border: none;
+    }
+    .chapter-content-cell, .toc-content-cell {
+      padding: 0 2.6cm;
+      border: none;
+      vertical-align: top;
     }
     .chapter-title {
       text-align: center;
