@@ -49,7 +49,7 @@ describe('BookCoverUpload and three-zone layout', () => {
         onManualSave={() => true}
       />
     );
-    expect(html).toContain('lg:grid-cols-[40%_40%_1fr]');
+    expect(html).toContain('lg:grid-cols-[33%_47%_1fr]');
     expect(html).toContain('Editorial Review');
     expect(html).toContain('Manuscript');
     expect(html).toContain('Book Cover');
