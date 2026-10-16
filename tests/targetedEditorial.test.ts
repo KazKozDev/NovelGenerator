@@ -272,4 +272,154 @@ He walked to the heavy oak door.`;
       expect(result.updatedManuscript).toContain('He walked to the heavy oak door.');
     });
   });
+
+  describe('3-Level Editorial Triage & State Ledger', () => {
+    const oxygenDebtChapters = [
+      {
+        num: 1,
+        content: `The seal on bulkhead four hissed as the pressure differential equalized. Vance tightened the straps on his combat boots, feeling the vibration of the auxiliary oxygen scrubbers humming through the grated steel catwalk.
+
+The primary scrubber displayed a declining gradient: eighteen percent and falling. He tapped the analog gauge with his gloved knuckles. A hairline fracture in his left wrist sent a sharp needle of pain up his forearm, but he kept his grip on the heavy wrench.
+
+* * *
+
+He moved down to the flooded sub-tier. The lower catwalk hung suspended over two feet of black hydraulic coolant. He unclipped the battery torch from his utility harness and swept the beam across the emergency intake valves.`,
+      },
+      {
+        num: 2,
+        content: `The auxiliary intake valve was frozen shut with mineral encrustation. Vance braced both heavy boots against the concrete abutment and leaned all his body weight into the wrench.
+
+Metal shrieked against metal. The seal fractured with a crack that echoed off the damp concrete walls.`,
+      },
+    ];
+
+    it('Level 0: rejects hallucinated findings referencing external drafts/entities not in the manuscript', async () => {
+      const { checkFindingGrounding, filterHallucinatedFindings } = await import('../utils/novel/targetedEditorial');
+
+      const hallucinatedFindings: EditorialFinding[] = [
+        {
+          description: 'Log and key relocation causality (Bleecker Street apartment, mansion study desk, rain).',
+          category: 'Plot Causality',
+          severity: 'major',
+          evidence_refs: ['chapter-1: coat pocket in Bleecker apartment'],
+        },
+        {
+          description: 'Meaning of the 41 log entries and Forty-two in the vigil diary.',
+          category: 'Thematic Meaning',
+          severity: 'medium',
+          evidence_refs: ['chapter-1: forty-one entries counted'],
+        },
+        {
+          description: 'Origin of Bruce left hand tremor from scaphoid fracture at Gotham docks.',
+          category: 'Character Detail',
+          severity: 'medium',
+          evidence_refs: ['chapter-1: scaphoid fracture sustained at Gotham docks'],
+        },
+      ];
+
+      for (const finding of hallucinatedFindings) {
+        const check = checkFindingGrounding(finding, oxygenDebtChapters);
+        expect(check.grounded).toBe(false);
+        expect(check.reason).toBeDefined();
+      }
+
+      const { groundedFindings, hallucinatedFindings: rejected } = filterHallucinatedFindings(
+        hallucinatedFindings,
+        oxygenDebtChapters
+      );
+      expect(groundedFindings.length).toBe(0);
+      expect(rejected.length).toBe(3);
+    });
+
+    it('Level 0: accepts grounded findings referencing actual elements in the manuscript', async () => {
+      const { checkFindingGrounding, filterHallucinatedFindings } = await import('../utils/novel/targetedEditorial');
+
+      const groundedFinding: EditorialFinding = {
+        description: 'The oxygen scrubbers pressure drop is cited without showing the intake valve failure.',
+        category: 'Plot Causality',
+        severity: 'major',
+        evidence_refs: ['chapter-1: eighteen percent and falling'],
+      };
+
+      const check = checkFindingGrounding(groundedFinding, oxygenDebtChapters);
+      expect(check.grounded).toBe(true);
+      expect(check.matchedQuotes).toContain('eighteen percent and falling');
+
+      const { groundedFindings, hallucinatedFindings } = filterHallucinatedFindings(
+        [groundedFinding],
+        oxygenDebtChapters
+      );
+      expect(groundedFindings.length).toBe(1);
+      expect(hallucinatedFindings.length).toBe(0);
+    });
+
+    it('State Ledger: extracts footwear, surfaces, props, and injuries from prose and formats constraints', async () => {
+      const { extractStateLedger, formatStateLedgerConstraint } = await import('../utils/novel/targetedEditorial');
+
+      const ledger = extractStateLedger(oxygenDebtChapters[0].content, 1);
+      expect(ledger.chapterNumber).toBe(1);
+      expect(ledger.invariants.footwear).toContain('boots');
+      expect(ledger.invariants.surfaces).toContain('catwalk');
+      expect(ledger.invariants.surfaces).toContain('sub-tier');
+      expect(ledger.invariants.inHandProps).toContain('wrench');
+      expect(ledger.invariants.inHandProps).toContain('torch');
+      expect(ledger.invariants.injuries).toContain('fracture');
+
+      const constraintBlock = formatStateLedgerConstraint(ledger);
+      expect(constraintBlock).toContain('STATE LEDGER PHYSICAL INVARIANTS');
+      expect(constraintBlock).toContain('boots');
+      expect(constraintBlock).toContain('catwalk');
+      expect(constraintBlock).toContain('wrench');
+      expect(constraintBlock).toContain('FORBIDDEN: Do not alter footwear');
+    });
+
+    it('Level 1: macro-edit dedup prunes duplicate scene openings and redundant paragraphs across seams', async () => {
+      const { applyMacroMergeAndDedup } = await import('../utils/novel/targetedEditorial');
+
+      const textWithDuplicateSceneOpening = `He activated the handheld scanner and swept the beam across the bulkhead. The readings fluctuated between ten and twelve millibars.
+
+He noted the anomaly on his pad.
+
+* * *
+
+He activated the handheld scanner and swept the beam across the bulkhead. He stepped onto the catwalk.`;
+
+      const result = applyMacroMergeAndDedup(textWithDuplicateSceneOpening);
+      expect(result.changed).toBe(true);
+      expect(result.prunedCount).toBeGreaterThanOrEqual(1);
+      expect(result.summary).toContain('Level 1 Macro-edit');
+      // The duplicated scanner sentence at the start of Scene 2 should be pruned
+      expect(result.mergedText).toContain('He stepped onto the catwalk.');
+    });
+
+    it('Universal Clusters: non-Gotham stories use universal directives rather than fanfiction lore', async () => {
+      const { resolveActiveClusters, clusterEditorialFindings, UNIVERSAL_EDITORIAL_CLUSTERS } = await import(
+        '../utils/novel/targetedEditorial'
+      );
+
+      const activeClusters = resolveActiveClusters(oxygenDebtChapters);
+      expect(activeClusters).toEqual(UNIVERSAL_EDITORIAL_CLUSTERS);
+
+      // Verify universal cluster directives do NOT mention Clark, Bruce, Bleecker, or Kryptonite
+      for (const cluster of activeClusters) {
+        expect(cluster.canonicalDirective).not.toContain('Bleecker');
+        expect(cluster.canonicalDirective).not.toContain('Clark');
+        expect(cluster.canonicalDirective).not.toContain('kryptonite');
+      }
+
+      const validFinding: EditorialFinding = {
+        description: 'Sudden relocation of the wrench between tiers has no movement beat.',
+        category: 'Plot Causality',
+        severity: 'major',
+        evidence_refs: ['chapter-1: heavy wrench'],
+      };
+
+      const tasks = clusterEditorialFindings([validFinding], oxygenDebtChapters);
+      expect(tasks.length).toBe(1);
+      expect(tasks[0].id).toBe('prop-teleportation');
+      expect(tasks[0].canonicalDirective).toContain('movement beats');
+      expect(tasks[0].canonicalDirective).not.toContain('Bleecker');
+    });
+  });
 });
+

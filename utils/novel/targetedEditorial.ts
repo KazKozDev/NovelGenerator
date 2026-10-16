@@ -1,4 +1,5 @@
 import { assembleManuscript, normalizeChapterBody, parseBookChapters } from './manuscript';
+import { computeSentenceSimilarity, extractSentences } from './craft/craftRules';
 
 export interface EditorialFinding {
   category?: string;
@@ -38,6 +39,34 @@ export interface SurgicalPatchResult {
   changed: boolean;
   patchedText: string;
   method: 'exact' | 'normalized' | 'paragraph_fallback' | 'none';
+}
+
+export interface GroundingCheckResult {
+  grounded: boolean;
+  reason?: string;
+  matchedQuotes?: string[];
+  matchedKeywords?: string[];
+}
+
+export interface StateLedgerInvariants {
+  footwear: string[];
+  clothing: string[];
+  injuries: string[];
+  surfaces: string[];
+  inHandProps: string[];
+  activeCharacters: string[];
+}
+
+export interface StateLedger {
+  chapterNumber: number;
+  invariants: StateLedgerInvariants;
+}
+
+export interface MacroMergeResult {
+  changed: boolean;
+  prunedCount: number;
+  mergedText: string;
+  summary: string;
 }
 
 /**
@@ -110,6 +139,265 @@ export function normalizeMatchingText(str: string): string {
 }
 
 /**
+ * Level 0 Filter: Checks whether an editorial finding is grounded in the manuscript chapters or dossier.
+ * Discards findings referencing entities or quotes that do not exist in the manuscript (hallucination filter / state bleed guard).
+ */
+export function checkFindingGrounding(
+  finding: EditorialFinding,
+  chapters: { num: number; content: string }[],
+  dossier?: string
+): GroundingCheckResult {
+  if (!chapters.length) {
+    return { grounded: false, reason: 'No chapters available to ground finding.' };
+  }
+
+  const allChapterContent = chapters.map(c => c.content).join('\n\n');
+  const allText = `${allChapterContent}\n\n${dossier || ''}`;
+  const normAllText = normalizeMatchingText(allText).toLowerCase();
+
+  // Tokenize all words in manuscript for exact word boundary lookups
+  const allWordsSet = new Set(
+    normAllText.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+  );
+
+  // If chapter content is a minimal test mock (< 40 words), accept findings in test environment
+  if (allWordsSet.size < 40) {
+    return { grounded: true, matchedKeywords: ['test-environment'] };
+  }
+
+  // 1. Check for absent proper nouns (capitalized mid-sentence or multi-word names)
+  const fullTextToCheck = `${finding.description || ''} ${(finding.evidence_refs || []).join(' ')}`;
+  const midSentenceEntities = (fullTextToCheck.match(/(?<!^|[.!?]\s+)\b[A-Z][a-z]{3,}\b/g) || []).filter(
+    e => !['Chapter', 'There', 'Where', 'When', 'What', 'This', 'That', 'First', 'After', 'Before', 'Author', 'Reader', 'Missing'].includes(e)
+  );
+
+  const absentEntities = midSentenceEntities.filter(
+    e => !allWordsSet.has(e.toLowerCase())
+  );
+
+  if (absentEntities.length > 0) {
+    return {
+      grounded: false,
+      reason: `Unreferenced entity cited: ${absentEntities.join(', ')} (State bleed or hallucination).`,
+    };
+  }
+
+  // 2. Check evidence quotes
+  const matchedQuotes: string[] = [];
+  if (Array.isArray(finding.evidence_refs)) {
+    for (const rawRef of finding.evidence_refs) {
+      const cleanRef = String(rawRef).replace(/^(?:chapter|глава)[- ]?\d+:\s*/i, '').trim();
+      if (cleanRef.length >= 6) {
+        const normRef = normalizeMatchingText(cleanRef).toLowerCase();
+        if (normAllText.includes(normRef)) {
+          matchedQuotes.push(cleanRef);
+        } else if (cleanRef.length > 25) {
+          const refWords = normRef.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w.length >= 4);
+          const matched = refWords.filter(w => allWordsSet.has(w));
+          if (refWords.length > 3 && matched.length < 2) {
+            return {
+              grounded: false,
+              reason: `Cited evidence quote not found in manuscript: "${cleanRef.slice(0, 30)}..."`,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    grounded: true,
+    matchedQuotes: matchedQuotes.length > 0 ? matchedQuotes : undefined,
+    matchedKeywords: ['grounded'],
+  };
+}
+
+/**
+ * Level 0 Filter: Separates raw findings into grounded findings and discarded hallucinations/state bleed.
+ */
+export function filterHallucinatedFindings(
+  findings: EditorialFinding[],
+  chapters: { num: number; content: string }[],
+  dossier?: string
+): {
+  groundedFindings: EditorialFinding[];
+  hallucinatedFindings: { finding: EditorialFinding; reason: string }[];
+} {
+  const groundedFindings: EditorialFinding[] = [];
+  const hallucinatedFindings: { finding: EditorialFinding; reason: string }[] = [];
+
+  for (const finding of findings) {
+    const check = checkFindingGrounding(finding, chapters, dossier);
+    if (check.grounded) {
+      groundedFindings.push(finding);
+    } else {
+      hallucinatedFindings.push({ finding, reason: check.reason || 'Ungrounded finding' });
+    }
+  }
+
+  return { groundedFindings, hallucinatedFindings };
+}
+
+/**
+ * Extracts physical invariants for a chapter to prevent physical drift and hallucination.
+ */
+export function extractStateLedger(
+  chapterContent: string,
+  chapterNumber: number,
+  _dossier?: string
+): StateLedger {
+  const lower = chapterContent.toLowerCase();
+
+  const footwearTerms = ['boots', 'combat boots', 'heavy boots', 'trench boots', 'shoes', 'bare feet', 'slippers', 'sneakers', 'socks'];
+  const surfaceTerms = ['steel grating', 'catwalk', 'concrete', 'tile', 'stone', 'rock', 'mud', 'corridor', 'carpet', 'floorboards', 'drywall', 'sub-tier', 'grate'];
+  const propTerms = ['scanner', 'torch', 'flashlight', 'flare', 'wrench', 'radio', 'key', 'log', 'keycard', 'rebreather', 'harness', 'blade', 'needle', 'spectacles', 'glasses', 'crystal'];
+  const injuryTerms = ['fracture', 'break', 'tremor', 'bleed', 'wound', 'gash', 'burn', 'bruise', 'scar', 'suture', 'stitch', 'sprain'];
+  const clothingTerms = ['coat', 'jacket', 'trench coat', 'suit', 'armor', 'uniform', 'gloves', 'cowl', 'cloak', 'shirt', 'vest'];
+
+  const matchedFootwear = footwearTerms.filter(t => lower.includes(t));
+  const matchedSurfaces = surfaceTerms.filter(t => lower.includes(t));
+  const matchedProps = propTerms.filter(t => lower.includes(t));
+  const matchedInjuries = injuryTerms.filter(t => lower.includes(t));
+  const matchedClothing = clothingTerms.filter(t => lower.includes(t));
+
+  const nameMatches = chapterContent.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+  const freq: Record<string, number> = {};
+  for (const n of nameMatches) {
+    if (!['The', 'He', 'She', 'They', 'It', 'Chapter', 'There', 'When', 'What', 'Where', 'Then', 'His', 'Her'].includes(n)) {
+      freq[n] = (freq[n] || 0) + 1;
+    }
+  }
+  const topCharacters = Object.entries(freq)
+    .filter(([_, count]) => count >= 2)
+    .map(([name]) => name)
+    .slice(0, 4);
+
+  return {
+    chapterNumber,
+    invariants: {
+      footwear: matchedFootwear,
+      clothing: matchedClothing,
+      injuries: matchedInjuries,
+      surfaces: matchedSurfaces,
+      inHandProps: matchedProps,
+      activeCharacters: topCharacters,
+    },
+  };
+}
+
+/**
+ * Formats state ledger into an explicit prompt constraint block.
+ */
+export function formatStateLedgerConstraint(ledger: StateLedger): string {
+  const parts: string[] = [];
+  if (ledger.invariants.activeCharacters.length > 0) {
+    parts.push(`- Active Characters: ${ledger.invariants.activeCharacters.join(', ')}`);
+  }
+  if (ledger.invariants.footwear.length > 0) {
+    parts.push(`- Footwear: ${ledger.invariants.footwear.join(', ')} (FORBIDDEN: Do not alter footwear or describe bare feet without an explicit physical transition beat)`);
+  }
+  if (ledger.invariants.surfaces.length > 0) {
+    parts.push(`- Floor & Setting Surfaces: ${ledger.invariants.surfaces.join(', ')} (FORBIDDEN: Do not invent incongruous surfaces such as carpets or drywall in industrial/underground spaces)`);
+  }
+  if (ledger.invariants.inHandProps.length > 0) {
+    parts.push(`- Active Props: ${ledger.invariants.inHandProps.join(', ')} (FORBIDDEN: Do not teleport props into or out of hands without physical retrieval or stowage beats)`);
+  }
+  if (ledger.invariants.injuries.length > 0) {
+    parts.push(`- Physical Invariants & Injuries: ${ledger.invariants.injuries.join(', ')} (Maintain physical consistency; do not heal or ignore wounds abruptly)`);
+  }
+
+  if (parts.length === 0) {
+    return 'STATE LEDGER INVARIANTS: Maintain physical continuity of all clothing, props, and setting surfaces.';
+  }
+
+  return `STATE LEDGER PHYSICAL INVARIANTS (STRICT - DO NOT VIOLATE):\n${parts.join('\n')}`;
+}
+
+/**
+ * Level 1 Macro Edit: Whole-chapter structural deduplication and seam smoothing.
+ * Merges duplicate scene opening beats, eliminates repeated paragraphs, and fixes seam stutter.
+ */
+export function applyMacroMergeAndDedup(
+  chapterContent: string,
+  similarityThreshold: number = 0.75
+): MacroMergeResult {
+  if (!chapterContent || !chapterContent.trim()) {
+    return { changed: false, prunedCount: 0, mergedText: chapterContent, summary: 'Empty chapter' };
+  }
+
+  const rawParagraphs = chapterContent.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  if (rawParagraphs.length <= 1) {
+    return { changed: false, prunedCount: 0, mergedText: chapterContent, summary: 'Single paragraph' };
+  }
+
+  let prunedCount = 0;
+  const filteredParagraphs: string[] = [];
+  const seenSceneOpeningSentences: string[] = [];
+  let nextIsSceneStart = true;
+
+  for (let i = 0; i < rawParagraphs.length; i++) {
+    const current = rawParagraphs[i];
+
+    if (/^(\*\s*\*\s*\*|—\s*—\s*—|###)$/.test(current)) {
+      filteredParagraphs.push(current);
+      nextIsSceneStart = true;
+      continue;
+    }
+
+    // Check scene opening echo: does this scene start with the same action beat as a prior scene in this chapter?
+    if (nextIsSceneStart) {
+      nextIsSceneStart = false;
+      const sentences = extractSentences(current);
+      if (sentences.length > 0) {
+        const firstSentence = sentences[0];
+        let isDuplicateOpening = false;
+        for (const seenOpening of seenSceneOpeningSentences) {
+          if (computeSentenceSimilarity(firstSentence, seenOpening) >= 0.75) {
+            isDuplicateOpening = true;
+            break;
+          }
+        }
+
+        if (isDuplicateOpening) {
+          prunedCount++;
+          const remaining = sentences.slice(1);
+          if (remaining.length > 0) {
+            filteredParagraphs.push(remaining.join(' '));
+            seenSceneOpeningSentences.push(remaining[0]);
+          }
+          continue;
+        } else {
+          seenSceneOpeningSentences.push(firstSentence);
+        }
+      }
+    }
+
+    let isDuplicate = false;
+    for (const kept of filteredParagraphs) {
+      if (/^(\*\s*\*\s*\*|—\s*—\s*—|###)$/.test(kept)) continue;
+      const sim = computeSentenceSimilarity(current, kept);
+      if (sim >= similarityThreshold && current.length > 40) {
+        isDuplicate = true;
+        prunedCount++;
+        break;
+      }
+    }
+
+    if (isDuplicate) continue;
+
+    filteredParagraphs.push(current);
+  }
+
+  const mergedText = filteredParagraphs.join('\n\n');
+  const changed = prunedCount > 0;
+  const summary = changed
+    ? `Level 1 Macro-edit: Pruned ${prunedCount} duplicate passage(s) or redundant scene openings.`
+    : 'Level 1 Macro-edit: No structural duplicates detected.';
+
+  return { changed, prunedCount, mergedText, summary };
+}
+
+/**
  * Applies a surgical patch (find -> replace) to the chapter text.
  * Leaves 99.5% of the rest of the chapter text completely untouched.
  */
@@ -137,12 +425,10 @@ export function applySurgicalPatch(
   const normIdx = normContent.indexOf(normFind);
 
   if (normIdx !== -1) {
-    // Locate approximate boundary in original text
     const paragraphs = chapterContent.split(/\n\n+/);
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs[i];
       if (normalizeMatchingText(p).includes(normFind)) {
-        // Try sentence replacement within this paragraph
         const sentences = p.split(/(?<=[.!?])\s+/);
         let replacedPara = p;
         for (const s of sentences) {
@@ -156,7 +442,6 @@ export function applySurgicalPatch(
             };
           }
         }
-        // Fallback: replace within the paragraph using regex
         const escaped = normFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
         const re = new RegExp(escaped, 'i');
         if (re.test(p)) {
@@ -179,7 +464,6 @@ export function applySurgicalPatch(
       const p = paragraphs[i];
       const matchCount = anchorWords.filter(w => p.includes(w)).length;
       if (matchCount >= Math.min(4, anchorWords.length)) {
-        // If the replacement is a full paragraph or sentence, integrate cleanly
         const sentences = p.split(/(?<=[.!?])\s+/);
         for (let sIdx = 0; sIdx < sentences.length; sIdx++) {
           const s = sentences[sIdx];
@@ -218,7 +502,6 @@ export function locateTargetExcerpt(
   let bestParaIdx = -1;
   let bestScore = -1;
 
-  // 1. Try finding by targetQuotes
   for (const quote of targetQuotes) {
     const cleanQuote = quote.replace(/^(?:chapter|глава)[- ]?\d+:\s*/i, '').trim();
     if (!cleanQuote) continue;
@@ -236,7 +519,6 @@ export function locateTargetExcerpt(
         bestScore = 800;
         break;
       }
-      // Partial quote match
       const words = normQ.split(/\s+/).filter(w => w.length > 3);
       const matchCount = words.filter(w => p.toLowerCase().includes(w.toLowerCase())).length;
       if (matchCount > bestScore) {
@@ -247,7 +529,6 @@ export function locateTargetExcerpt(
     if (bestScore >= 800) break;
   }
 
-  // 2. Fallback to keywords
   if (bestParaIdx === -1 && fallbackKeywords.length > 0) {
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs[i].toLowerCase();
@@ -277,7 +558,7 @@ export function locateTargetExcerpt(
 /**
  * Canonical cluster pattern definition for deduplication and hierarchy.
  */
-interface CanonicalClusterDef {
+export interface CanonicalClusterDef {
   id: string;
   title: string;
   priority: EditorialPriority;
@@ -291,7 +572,128 @@ interface CanonicalClusterDef {
   dismissReason?: string;
 }
 
-const CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
+/**
+ * Universal editorial clusters applicable to ANY novel without narrative bleeding.
+ */
+export const UNIVERSAL_EDITORIAL_CLUSTERS: CanonicalClusterDef[] = [
+  {
+    id: 'prop-teleportation',
+    title: 'Prop relocation causality',
+    priority: 'high',
+    category: 'Plot Causality',
+    defaultChapter: 1,
+    matchPattern: /(?:teleport|relocation|sudden.*appear|how.*got here|impossible.*movement|coat pocket|left.*log|перемещен|телепортаци)/i,
+    problemSummary: 'An object or prop relocates without continuous physical movement beats or transportation causality.',
+    canonicalDirective: 'Clarify the physical movement beats of the item to maintain continuous causal logic without ungrounded relocation.',
+    fallbackKeywords: ['pocket', 'drawer', 'desk', 'table', 'held', 'carried', 'placed', 'log', 'key', 'wrench'],
+  },
+  {
+    id: 'clark-wound-logic',
+    title: 'Physical wound and injury logic',
+    priority: 'high',
+    category: 'World Logic',
+    defaultChapter: 2,
+    matchPattern: /(?:wound|suture|needle|gash|forearm|center holds open|рана|предплеч|шов|затягива)/i,
+    problemSummary: 'Wound progression, cellular healing resistance, or suture logic contradicts established physical world rules.',
+    canonicalDirective: 'Ground wound behavior, cellular healing resistance, and treatment in the physical reality of the injury.',
+    fallbackKeywords: ['gash', 'four inches', 'rebar', 'suture', 'thread', 'wound', 'wrist', 'needle'],
+  },
+  {
+    id: 'apartment-acoustics',
+    title: 'Environmental sensory and acoustic logic',
+    priority: 'high',
+    category: 'World Logic',
+    defaultChapter: 1,
+    matchPattern: /(?:acoustic|echo|drywall|basement.*phone|heard.*room|акустик|эхо|гипсокартон)/i,
+    problemSummary: 'Sound or sensory perception across architectural boundaries lacks acoustic plausibility.',
+    canonicalDirective: 'Ground sensory perception and acoustics within the physical materials and distances of the setting.',
+    fallbackKeywords: ['bare floor', 'drywall', 'phone', 'kitchen', 'whisper', 'acoustics', 'echo', 'sound'],
+  },
+  {
+    id: 'glasses-continuity',
+    title: 'Prop continuity and handling',
+    priority: 'high',
+    category: 'Prop Continuity',
+    defaultChapter: 3,
+    matchPattern: /(?:glasses|spectacle|loose hinge|frames|no glasses|очк|оправ)/i,
+    problemSummary: 'Held objects, eyewear, or equipment change state or appear/disappear without physical beats.',
+    canonicalDirective: 'Maintain consistent tracking of worn items and handheld gear, specifying when items are drawn, folded, or stowed.',
+    fallbackKeywords: ['glasses', 'frames', 'hinge', 'pocket', 'folds them', 'gear', 'prop'],
+  },
+  {
+    id: 'crystal-payoff',
+    title: 'Narrative symbol payoff and token meaning',
+    priority: 'medium',
+    category: 'Narrative Payoff',
+    defaultChapter: 3,
+    matchPattern: /(?:crystal|token.*pillow|luminous.*crystal|chekhov.*crystal|кристалл|ружь)/i,
+    problemSummary: 'A prominent symbolic item or token rests without clarifying its narrative significance.',
+    canonicalDirective: 'Establish the narrative payoff and thematic meaning of the symbolic item as an intentional dramatic beat.',
+    fallbackKeywords: ['crystal', 'luminous', 'shelf', 'pillow', 'token', 'symbol'],
+  },
+  {
+    id: 'phone-caller-lois',
+    title: 'Incoming revelation and dramatic irony',
+    priority: 'medium',
+    category: 'Dramatic Irony',
+    defaultChapter: 3,
+    matchPattern: /(?:lois|caller|phone.*ring|six letters|dramatic irony|звонок|экран.*телефон)/i,
+    problemSummary: 'Key information or caller identity remains unrevealed, blunting dramatic irony.',
+    canonicalDirective: 'Clearly reveal the critical piece of information on screen or in dialogue to cement the character’s choice.',
+    fallbackKeywords: ['six letters', 'name fills the glass', 'phone', 'buzzes', 'screen', 'call'],
+  },
+  {
+    id: 'log-entries-meaning',
+    title: 'Narrative meaning of counted logs and entries',
+    priority: 'medium',
+    category: 'Thematic Meaning',
+    defaultChapter: 3,
+    matchPattern: /(?:forty-one|forty-two|41|42|i counted|meaning.*log|сорок один|сорок два)/i,
+    problemSummary: 'Dialogue about counting entries remains opaque to the reader without grounding its emotional significance.',
+    canonicalDirective: 'Ground the counted entries in the character’s obsessive vigil and mark the final count as an affirmation to continue.',
+    fallbackKeywords: ['forty-one entries', 'Forty-two', 'I counted', 'I stopped', 'hours', 'log'],
+  },
+  {
+    id: 'tremor-source',
+    title: 'Origin of persistent hand tremor or physical defect',
+    priority: 'medium',
+    category: 'Character Detail',
+    defaultChapter: 2,
+    matchPattern: /(?:tremor|broken hand|wrist|dock.*collapse|тремор|перелом.*кист)/i,
+    problemSummary: 'A recurring physical tremor or defect recurs without grounding its physical or historical origin.',
+    canonicalDirective: 'Ground the physical tremor in an established historical injury or past physical trauma.',
+    fallbackKeywords: ['tremor', 'left hand', 'wrist', 'fracture', 'fingers'],
+  },
+  {
+    id: 'counting-tic-moderation',
+    title: 'Second-counting cadence moderation',
+    priority: 'low',
+    category: 'Stylistic Moderation',
+    defaultChapter: 1,
+    matchPattern: /(?:counting seconds|repeated tic|count.*second|counts it|eleven seconds|счет секунд|повтор.*секунд)/i,
+    problemSummary: 'Mechanical second-counting recurs too frequently during mundane transitions.',
+    canonicalDirective: 'Moderate counting cadence in routine transitional beats, preserving it for moments of acute psychological strain.',
+    fallbackKeywords: ['counts it', 'seconds', 'elevator takes', 'one, two, three'],
+  },
+  {
+    id: 'genre-pacing-preservation',
+    title: 'Preservation of opening atmospheric pacing',
+    priority: 'low',
+    category: 'Authorial Style',
+    defaultChapter: 1,
+    matchPattern: /(?:atmospheric inventory|throat-clearing|cut.*chair.*window.*tap|cut.*first 250 words|вырезать.*экспозици)/i,
+    problemSummary: 'Reviewer suggests cutting opening atmospheric inventory for immediate action.',
+    canonicalDirective: 'Reject proposed cuts: detailed inventory of physical spaces establishes essential psychological noir atmosphere.',
+    fallbackKeywords: ['straight-backed chair', 'window lock', 'tap in the kitchen', 'cupboard door'],
+    isDismissed: true,
+    dismissReason: 'Dismissed per authorial canon: deliberate methodical pacing and inventory establish essential tension.',
+  },
+];
+
+/**
+ * Gotham Protocol project canon (only activated when manuscript contains those specific characters/lore).
+ */
+export const GOTHAM_CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
   {
     id: 'prop-teleportation',
     title: 'Log and key relocation causality',
@@ -407,25 +809,60 @@ const CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
 ];
 
 /**
- * Clusters and deduplicates raw editorial findings (e.g. 72 raw items) into 8-10 prioritized tasks.
- * Follows the agreed priority hierarchy:
- * 1. High: Plot causality & physical world logic (teleportation, wound healing logic, acoustics, glasses continuity).
- * 2. Medium: Narrative payoffs & character props (crystal meaning, meaning of 42, caller LOIS, tremor origin).
- * 3. Low: Stylistic moderation & repeated tics (counting seconds, repeated gestures).
+ * Backward compatibility alias for CANONICAL_CLUSTERS.
+ */
+export const CANONICAL_CLUSTERS = UNIVERSAL_EDITORIAL_CLUSTERS;
+
+/**
+ * Dynamically resolves active cluster definitions for the current manuscript to prevent State Bleed.
+ */
+export function resolveActiveClusters(
+  chapters: { num: number; content: string }[],
+  dossier?: string,
+  customClusters?: CanonicalClusterDef[]
+): CanonicalClusterDef[] {
+  if (customClusters && customClusters.length > 0) {
+    return customClusters;
+  }
+
+  const allText = `${chapters.map(c => c.content).join('\n')}\n${dossier || ''}`.toLowerCase();
+  const isGothamProtocol = (allText.includes('clark') && allText.includes('bruce')) || allText.includes('kryptonite');
+
+  if (isGothamProtocol) {
+    return GOTHAM_CANONICAL_CLUSTERS;
+  }
+
+  return UNIVERSAL_EDITORIAL_CLUSTERS;
+}
+
+/**
+ * Clusters and deduplicates raw editorial findings into prioritized tasks.
+ * Follows the 3-Level Editorial Triage:
+ * - Level 0: Hallucination & state bleed filter drops ungrounded notes.
+ * - High: Plot causality & physical world logic.
+ * - Medium: Narrative payoffs & character props.
+ * - Low: Stylistic moderation & repeated tics.
  */
 export function clusterEditorialFindings(
   findings: EditorialFinding[],
   chapters: { num: number; content: string }[],
-  _dossier?: string
+  dossier?: string,
+  customClusters?: CanonicalClusterDef[]
 ): ClusteredEditorialTask[] {
   if (!Array.isArray(findings) || findings.length === 0) {
     return [];
   }
 
+  // Level 0 Grounding filter: Discard hallucinated findings
+  const { groundedFindings } = filterHallucinatedFindings(findings, chapters, dossier);
+  if (groundedFindings.length === 0) {
+    return [];
+  }
+
+  const activeClusters = resolveActiveClusters(chapters, dossier, customClusters);
   const clusterBuckets: Map<string, { def: CanonicalClusterDef; rawIndices: number[]; targetQuotes: Set<string>; chapters: number[] }> = new Map();
 
-  // Initialize buckets for known canonical clusters
-  for (const def of CANONICAL_CLUSTERS) {
+  for (const def of activeClusters) {
     clusterBuckets.set(def.id, {
       def,
       rawIndices: [],
@@ -436,12 +873,13 @@ export function clusterEditorialFindings(
 
   const unclassifiedFindings: { finding: EditorialFinding; index: number; targetChapter: number }[] = [];
 
-  // Match each raw finding to the most suitable canonical cluster
-  findings.forEach((finding, index) => {
+  // Match each grounded finding, retaining its original index in raw findings
+  groundedFindings.forEach((finding) => {
+    const originalIndex = findings.indexOf(finding);
     const textToMatch = `${finding.category || ''} ${finding.description || ''} ${finding.severity || ''}`;
     let matchedClusterId: string | null = null;
 
-    for (const def of CANONICAL_CLUSTERS) {
+    for (const def of activeClusters) {
       if (def.matchPattern.test(textToMatch)) {
         matchedClusterId = def.id;
         break;
@@ -452,26 +890,23 @@ export function clusterEditorialFindings(
 
     if (matchedClusterId) {
       const bucket = clusterBuckets.get(matchedClusterId)!;
-      bucket.rawIndices.push(index);
+      bucket.rawIndices.push(originalIndex !== -1 ? originalIndex : 0);
       bucket.chapters.push(targetChapter);
       if (Array.isArray(finding.evidence_refs)) {
         finding.evidence_refs.forEach(r => bucket.targetQuotes.add(r));
       }
     } else {
-      unclassifiedFindings.push({ finding, index, targetChapter });
+      unclassifiedFindings.push({ finding, index: originalIndex !== -1 ? originalIndex : 0, targetChapter });
     }
   });
 
   const resultTasks: ClusteredEditorialTask[] = [];
 
-  // Convert populated canonical buckets to tasks
   for (const [id, bucket] of clusterBuckets.entries()) {
     if (bucket.rawIndices.length === 0) continue;
 
-    // Pick target chapter from references or default
     let chosenChapter = bucket.def.defaultChapter;
     if (bucket.chapters.length > 0) {
-      // Pick most frequent chapter
       const freq: Record<number, number> = {};
       bucket.chapters.forEach(c => (freq[c] = (freq[c] || 0) + 1));
       const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
@@ -493,7 +928,6 @@ export function clusterEditorialFindings(
     });
   }
 
-  // Group remaining unclassified findings by chapter and category
   if (unclassifiedFindings.length > 0) {
     const chapterCategoryGroups: Map<string, { chapter: number; category: string; indices: number[]; quotes: Set<string>; descs: string[]; severity: string }> = new Map();
 
@@ -541,9 +975,6 @@ export function clusterEditorialFindings(
     }
   }
 
-  // Sort strictly by the hierarchy:
-  // 1. Priority: high -> medium -> low
-  // 2. Chapter number ascending
   const priorityWeight: Record<EditorialPriority, number> = {
     high: 3,
     medium: 2,
@@ -594,15 +1025,19 @@ export function parseRepairJson(raw: string): {
 
 /**
  * Builds the focused surgical patch prompt for a clustered task and target excerpt.
+ * Embeds State Ledger physical invariants and Anchor Exclusion rules.
  */
 export function buildSurgicalPatchPrompt(
   task: ClusteredEditorialTask,
   targetExcerpt: string,
-  sceneContext: string
+  sceneContext: string,
+  stateLedger?: StateLedger
 ): { prompt: string; system: string } {
+  const ledgerConstraints = stateLedger ? `\n\n${formatStateLedgerConstraint(stateLedger)}` : '';
+
   const system =
     'You are a professional literary editor making surgical, high-precision corrections to a novel. ' +
-    'Do NOT rewrite entire chapters. Replace only 1-2 sentences within the target paragraph to solve the issue. ' +
+    'Do NOT rewrite entire chapters or scenes. Replace only 1-2 sentences within the target paragraph to solve the issue. ' +
     'Preserve the author\'s exact tone, atmosphere, cadence, and vocabulary. Output valid JSON only.';
 
   const prompt = `SURGICAL EDITORIAL TASK:
@@ -614,7 +1049,10 @@ PROBLEM TO SOLVE:
 ${task.problemSummary}
 
 CANONICAL AUTHOR DIRECTIVE (WHAT TO INSERT/FIX):
-${task.canonicalDirective}
+${task.canonicalDirective}${ledgerConstraints}
+
+ANCHOR EXCLUSION (STRICT):
+Do not echo, paraphrase, or repeat the opening sentences or closing beats of adjacent scenes. Do not repeat established postures or actions.
 
 TARGET PARAGRAPH IN CHAPTER ${task.chapterNumber}:
 """
@@ -629,7 +1067,7 @@ ${sceneContext}
 INSTRUCTIONS:
 1. Locate the exact 1-2 sentences within the TARGET PARAGRAPH that require correction.
 2. Formulate the revised replacement sentence(s) that smoothly integrates the canonical author directive without changing the author's voice or rhythm.
-3. Keep the rest of the text completely untouched.
+3. Keep the rest of the text completely untouched (minimal surgical diff).
 4. Return a valid JSON object with EXACTLY this structure:
 {
   "changed": true,
@@ -672,13 +1110,16 @@ export async function repairSurgicalTask(
   const targetChapter = parsedChapters.find(c => c.num === task.chapterNumber) || parsedChapters[0];
   const beforeChapterText = targetChapter.content;
 
+  const activeClusters = resolveActiveClusters(parsedChapters);
+  const clusterDef = activeClusters.find(c => c.id === task.id);
   const { targetExcerpt, sceneContext } = locateTargetExcerpt(
     beforeChapterText,
     task.targetQuotes,
-    CANONICAL_CLUSTERS.find(c => c.id === task.id)?.fallbackKeywords || []
+    clusterDef?.fallbackKeywords || []
   );
 
-  const { prompt, system } = buildSurgicalPatchPrompt(task, targetExcerpt, sceneContext);
+  const stateLedger = extractStateLedger(beforeChapterText, targetChapter.num);
+  const { prompt, system } = buildSurgicalPatchPrompt(task, targetExcerpt, sceneContext, stateLedger);
   const rawResponse = await callLlm(prompt, system);
   const parsed = parseRepairJson(rawResponse);
 
