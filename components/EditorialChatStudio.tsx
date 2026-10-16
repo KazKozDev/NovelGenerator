@@ -53,6 +53,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   const [isRunning, setIsRunning] = useState(false);
   const [appliedCardIds, setAppliedCardIds] = useState<Set<string>>(new Set());
   const [rejectedCardIds, setRejectedCardIds] = useState<Set<string>>(new Set());
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [systemAccordionOpen, setSystemAccordionOpen] = useState(true);
   const [activeSystemTaskId, setActiveSystemTaskId] = useState<string | null>(null);
   const [systemTaskStatus, setSystemTaskStatus] = useState<Record<string, 'pending' | 'working' | 'done'>>({});
@@ -146,10 +147,22 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     );
 
     if (patchResult.success) {
-      onApplyPatch(patchResult.updatedManuscript, card.chapterNum, card.replacementText);
+      onApplyPatch(
+        patchResult.updatedManuscript,
+        patchResult.matchedChapter || card.chapterNum,
+        card.replacementText
+      );
       setAppliedCardIds(prev => new Set(prev).add(card.id));
+      setCardErrors(prev => {
+        const next = { ...prev };
+        delete next[card.id];
+        return next;
+      });
     } else {
-      alert(`Could not apply patch: ${patchResult.error || 'Text match failed.'}`);
+      setCardErrors(prev => ({
+        ...prev,
+        [card.id]: patchResult.error || 'Text match failed in chapter.',
+      }));
     }
   };
 
@@ -482,21 +495,29 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                       )}
 
                       {!isApplied && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleApplyDiffCard(card)}
-                            className="h-6 px-2.5 text-xs font-semibold bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
-                          >
-                            Apply Patch
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRejectDiffCard(card.id)}
-                            className="h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded transition-colors"
-                          >
-                            Reject
-                          </button>
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDiffCard(card)}
+                              className="h-6 px-2.5 text-xs font-semibold bg-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded transition-colors"
+                            >
+                              Apply Patch
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectDiffCard(card.id)}
+                              className="h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                          {cardErrors[card.id] && (
+                            <div className="p-2 rounded bg-red-950/40 border border-red-900/60 text-[11px] text-red-300 flex items-start gap-1.5">
+                              <span>⚠️</span>
+                              <span>{cardErrors[card.id]}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

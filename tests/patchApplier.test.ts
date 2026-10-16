@@ -73,4 +73,43 @@ describe('patchApplier', () => {
     expect(popped?.updatedStack.length).toBe(1);
     expect(popped?.updatedStack[0].manuscript).toBe(TEST_MANUSCRIPT);
   });
+
+  it('strips diff markers and trailing ellipsis gracefully', () => {
+    const result = applySearchReplacePatch(
+      TEST_MANUSCRIPT,
+      1,
+      '--Clark adjusted the heavy oxygen canister...',
+      '+ Clark tightened the heavy oxygen tank.'
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.updatedManuscript).toContain('Clark tightened the heavy oxygen tank.');
+  });
+
+  it('automatically resolves target when model points to wrong chapter', () => {
+    // 'cold tile floor' is actually in Chapter 2, but caller specifies Chapter 1
+    const result = applySearchReplacePatch(
+      TEST_MANUSCRIPT,
+      1,
+      'cold tile floor',
+      'polished marble floor'
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.matchedChapter).toBe(2);
+    expect(result.updatedManuscript).toContain('polished marble floor');
+  });
+
+  it('rejects no-op edits with identical search and replacement', () => {
+    const result = applySearchReplacePatch(
+      TEST_MANUSCRIPT,
+      1,
+      '--Clark adjusted the heavy oxygen canister',
+      '++Clark adjusted the heavy oxygen canister'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('identical (no-op edit)');
+  });
 });
+

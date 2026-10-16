@@ -1,5 +1,6 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
+import { cleanDiffArtifacts } from './patchApplier';
 
 export interface ParsedToolCall {
   tool: 'search_manuscript' | 'inspect_dependencies' | 'propose_diff';
@@ -69,24 +70,57 @@ The manuscript has ${chapterList.length} chapters (${chapterList.map(c => `Chapt
 
 CRITICAL OPERATIONAL RULES:
 1. NEVER rewrite whole scenes or chapters. Every edit MUST be an atomic SEARCH/REPLACE patch.
-2. You have access to three tools:
+2. NEVER add diff markers (such as '--', '++', '-', '+', '>>>') into "search" or "replace". Provide ONLY the pure prose text as it appears in the book.
+3. "search" MUST be an EXACT, VERBATIM substring directly from the manuscript. DO NOT truncate it with "..." or ellipsis. If you are not 100% sure of the exact quote, you MUST call "search_manuscript" first.
+4. NEVER propose no-op patches or placeholder edits where "search" and "replace" are identical. If an issue requires author decision or confirmation, explain it in your chat message without emitting propose_diff.
+5. Check cross-text dependencies: If changing a prop, location, or timer, inspect other chapters so you do not introduce plot holes.
+6. Tools:
    - search_manuscript: {"query": "text to find", "chapter": Optional[number]}
    - inspect_dependencies: {"entity": "prop or character or timer"}
    - propose_diff: {"chapter": number, "search": "exact text to replace", "replace": "new text", "rationale": "reason"}
-3. Call tools using markdown code fences:
-\`\`\`tool:search_manuscript
-{"query": "timer", "chapter": 1}
-\`\`\`
-4. When you have the exact text, propose a patch using:
-\`\`\`tool:propose_diff
-{"chapter": 1, "search": "exact quote", "replace": "new text", "rationale": "explanation"}
-\`\`\`
-5. Check cross-text dependencies: If changing a prop or timer, inspect other chapters so you do not introduce plot holes.
 `.trim();
 
   let prompt = `User request: "${params.userPrompt}"\n\nPlease investigate the manuscript using tools or propose the diff patch directly.`;
 
   return { system, prompt };
+}
+
+function createDiffCard(
+  ch: number,
+  rawSearch: string,
+  rawReplace: string,
+  rationale: string,
+  blocks: ManuscriptBlock[],
+  graph: EntityGraph
+): ProposedDiffCard | null {
+  const search = cleanDiffArtifacts(rawSearch || '');
+  const replace = cleanDiffArtifacts(rawReplace || '');
+
+  // Skip no-op patches or empty targets
+  if (!search || search === replace) return null;
+
+  // Verify chapter location: if search is absent from ch, check if it's in another chapter
+  let resolvedChapter = ch;
+  const targetBlock = blocks.find(
+    b => b.chapterNum === ch && (b.text.includes(search) || search.includes(b.text.slice(0, 30)))
+  );
+  if (!targetBlock) {
+    const alternateBlock = blocks.find(b => b.text.includes(search));
+    if (alternateBlock) {
+      resolvedChapter = alternateBlock.chapterNum;
+    }
+  }
+
+  const warnings = checkCrossTextImpact(graph, search, resolvedChapter).map(w => w.warning);
+
+  return {
+    id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    chapterNum: resolvedChapter,
+    searchTarget: search,
+    replacementText: replace,
+    rationale,
+    warnings,
+  };
 }
 
 export async function runEditorialTurn(params: {
@@ -141,24 +175,21 @@ export async function runEditorialTurn(params: {
           (warnings.length > 0 ? warnings.map(w => w.warning).join('\n') : 'No conflicts in other chapters.')
         );
       } else if (tc.tool === 'propose_diff') {
-        const ch = Number(tc.args.chapter || 1);
-        const search = tc.args.search || '';
-        const replace = tc.args.replace || '';
-        const rationale = tc.args.rationale || 'Editorial edit';
-        const warnings = checkCrossTextImpact(graph, search, ch).map(w => w.warning);
-
-        diffCards.push({
-          id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          chapterNum: ch,
-          searchTarget: search,
-          replacementText: replace,
-          rationale,
-          warnings,
-        });
-        executedTools.push({
-          tool: 'propose_diff',
-          summary: `Proposed patch for Chapter ${ch}`,
-        });
+        const card = createDiffCard(
+          Number(tc.args.chapter || 1),
+          tc.args.search || '',
+          tc.args.replace || '',
+          tc.args.rationale || 'Editorial edit',
+          blocks,
+          graph
+        );
+        if (card) {
+          diffCards.push(card);
+          executedTools.push({
+            tool: 'propose_diff',
+            summary: `Proposed patch for Chapter ${card.chapterNum}`,
+          });
+        }
       }
     }
 
@@ -170,24 +201,21 @@ export async function runEditorialTurn(params: {
 
       for (const tc of secondRoundTools) {
         if (tc.tool === 'propose_diff') {
-          const ch = Number(tc.args.chapter || 1);
-          const search = tc.args.search || '';
-          const replace = tc.args.replace || '';
-          const rationale = tc.args.rationale || 'Editorial edit';
-          const warnings = checkCrossTextImpact(graph, search, ch).map(w => w.warning);
-
-          diffCards.push({
-            id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            chapterNum: ch,
-            searchTarget: search,
-            replacementText: replace,
-            rationale,
-            warnings,
-          });
-          executedTools.push({
-            tool: 'propose_diff',
-            summary: `Proposed patch for Chapter ${ch}`,
-          });
+          const card = createDiffCard(
+            Number(tc.args.chapter || 1),
+            tc.args.search || '',
+            tc.args.replace || '',
+            tc.args.rationale || 'Editorial edit',
+            blocks,
+            graph
+          );
+          if (card) {
+            diffCards.push(card);
+            executedTools.push({
+              tool: 'propose_diff',
+              summary: `Proposed patch for Chapter ${card.chapterNum}`,
+            });
+          }
         }
       }
     }
