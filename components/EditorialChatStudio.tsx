@@ -107,7 +107,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
             undefined,
             activeModelConfig,
             4000,
-            true
+            false
           );
         },
       });

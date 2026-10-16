@@ -56,6 +56,38 @@ export function parseToolCallsFromModelResponse(text: string): ParsedToolCall[] 
   return tools;
 }
 
+export function extractTargetChapter(text: string): number | undefined {
+  const numMatch = text.match(/(?:chapter|глав[аеыу])\s*(\d+)/i);
+  if (numMatch) return parseInt(numMatch[1], 10);
+
+  const wordMap: Record<string, number> = {
+    перв: 1,
+    втор: 2,
+    трет: 3,
+    четверт: 4,
+    пят: 5,
+    шест: 6,
+    седьм: 7,
+    восьм: 8,
+    девят: 9,
+    десят: 10,
+    first: 1,
+    second: 2,
+    third: 3,
+    fourth: 4,
+    fifth: 5,
+  };
+
+  const wordMatch =
+    text.match(/(?:в\s+)?(перв\w*|втор\w*|трет\w*|четверт\w*|пят\w*|шест\w*|first|second|third|fourth|fifth)\s+глав\w*/i) ||
+    text.match(/глав[аеыу]\s+(перв\w*|втор\w*|трет\w*|четверт\w*|пят\w*|шест\w*|first|second|third|fourth|fifth)/i);
+  if (wordMatch) {
+    const key = Object.keys(wordMap).find(k => wordMatch[1].toLowerCase().startsWith(k));
+    if (key) return wordMap[key];
+  }
+  return undefined;
+}
+
 export function buildEditorialAgentPrompt(params: {
   userPrompt: string;
   manuscriptBlocks: ManuscriptBlock[];
@@ -63,24 +95,57 @@ export function buildEditorialAgentPrompt(params: {
   history: { role: 'user' | 'assistant'; content: string }[];
 }): { system: string; prompt: string } {
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
+  const targetChapter = extractTargetChapter(params.userPrompt);
 
-  const system = `You are a Literary Co-Author and Surgical Editorial Agent.
+  // Retrieve relevant excerpts from manuscript for the user prompt
+  const initialMatches = hybridSearch(params.manuscriptBlocks, params.userPrompt, targetChapter, 5);
+
+  let contextSnippets = '';
+  if (initialMatches.length > 0) {
+    contextSnippets = `MANUSCRIPT EXCERPTS RELEVANT TO AUTHOR'S REQUEST:\n` +
+      initialMatches.map(m => `[Chapter ${m.chapterNum}, Block ${m.blockId}]:\n"${m.fullText}"`).join('\n\n');
+  }
+
+  // If a specific chapter was targeted, add its content so the model has complete scene context
+  let chapterContext = '';
+  if (targetChapter) {
+    const chBlocks = params.manuscriptBlocks.filter(b => b.chapterNum === targetChapter);
+    if (chBlocks.length > 0) {
+      const excerpt = chBlocks.slice(0, 15).map(b => `[${b.id}]: ${b.text}`).join('\n\n');
+      chapterContext = `FULL SCENE CONTEXT FOR CHAPTER ${targetChapter}:\n${excerpt}`;
+    }
+  }
+
+  const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
 You assist the author with analyzing, fact-checking, and making atomic surgical edits across the manuscript.
 The manuscript has ${chapterList.length} chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).
+Respond in the language used by the author (if Russian, respond in natural Russian).
 
 CRITICAL OPERATIONAL RULES:
-1. NEVER rewrite whole scenes or chapters. Every edit MUST be an atomic SEARCH/REPLACE patch.
-2. NEVER add diff markers (such as '--', '++', '-', '+', '>>>') into "search" or "replace". Provide ONLY the pure prose text as it appears in the book.
-3. "search" MUST be an EXACT, VERBATIM substring directly from the manuscript. DO NOT truncate it with "..." or ellipsis. If you are not 100% sure of the exact quote, you MUST call "search_manuscript" first.
-4. NEVER propose no-op patches or placeholder edits where "search" and "replace" are identical. If an issue requires author decision or confirmation, explain it in your chat message without emitting propose_diff.
-5. Check cross-text dependencies: If changing a prop, location, or timer, inspect other chapters so you do not introduce plot holes.
-6. Tools:
-   - search_manuscript: {"query": "text to find", "chapter": Optional[number]}
-   - inspect_dependencies: {"entity": "prop or character or timer"}
-   - propose_diff: {"chapter": number, "search": "exact text to replace", "replace": "new text", "rationale": "reason"}
+1. You have direct access to the relevant manuscript excerpts and scene text provided below.
+2. NEVER rewrite whole scenes or chapters. Every edit MUST be an atomic SEARCH/REPLACE patch.
+3. In "search", provide the EXACT, VERBATIM quote from the manuscript text provided to you.
+   DO NOT add diff markers ('--', '++', '-', '+'), and DO NOT truncate with '...'.
+4. In "replace", provide your revised prose.
+5. Propose diffs using markdown code fences:
+\`\`\`tool:propose_diff
+{"chapter": ${targetChapter || 1}, "search": "exact quote to replace", "replace": "revised text", "rationale": "reason"}
+\`\`\`
+6. If you need to search for other terms or verify other chapters, you can call:
+\`\`\`tool:search_manuscript
+{"query": "search term", "chapter": Optional[number]}
+\`\`\`
+7. NEVER propose empty or no-op patches. If an issue requires author clarification, explain it clearly in your message.
 `.trim();
 
-  let prompt = `User request: "${params.userPrompt}"\n\nPlease investigate the manuscript using tools or propose the diff patch directly.`;
+  let prompt = `User request: "${params.userPrompt}"\n\n`;
+  if (contextSnippets) {
+    prompt += `${contextSnippets}\n\n`;
+  }
+  if (chapterContext) {
+    prompt += `${chapterContext}\n\n`;
+  }
+  prompt += `Please analyze the provided text, advise the author, and propose surgical diff patches if appropriate.`;
 
   return { system, prompt };
 }
@@ -222,9 +287,27 @@ export async function runEditorialTurn(params: {
   }
 
   // Clean tool tags from message text
-  const cleanMessage = modelResponse
+  let cleanMessage = modelResponse
     .replace(/```(?:tool:[a-z_]+|json\s*\(tool:[a-z_]+\))[\s\S]*?```/gi, '')
     .trim();
+
+  // If the model wrapped its output in a JSON object (e.g. {"type":"object","content":"..."} or {"error":"..."})
+  if (cleanMessage.startsWith('{') && cleanMessage.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(cleanMessage);
+      if (typeof parsed.content === 'string') {
+        cleanMessage = parsed.content;
+      } else if (typeof parsed.message === 'string') {
+        cleanMessage = parsed.message;
+      } else if (typeof parsed.text === 'string') {
+        cleanMessage = parsed.text;
+      } else if (typeof parsed.error === 'string') {
+        cleanMessage = parsed.error;
+      }
+    } catch {
+      // Keep as is if not valid JSON
+    }
+  }
 
   return {
     assistantMessage: cleanMessage || (diffCards.length > 0 ? 'Here is the proposed editorial patch:' : 'Review completed.'),

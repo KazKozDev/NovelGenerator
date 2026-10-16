@@ -85,4 +85,23 @@ Done.`;
     expect(response.diffCards[0].searchTarget).toBe('oxygen canister');
     expect(response.diffCards[0].replacementText).toBe('oxygen cylinder');
   });
+
+  it('unwraps JSON envelope responses cleanly', async () => {
+    const mockCallModel = async () => {
+      return JSON.stringify({
+        type: 'object',
+        content: 'I analyzed Chapter 4 and verified the scanner scene.',
+      });
+    };
+
+    const response = await runEditorialTurn({
+      userPrompt: 'Проверь сканер',
+      bookContent: SAMPLE_MANUSCRIPT,
+      history: [],
+      callModel: mockCallModel,
+    });
+
+    expect(response.assistantMessage).toBe('I analyzed Chapter 4 and verified the scanner scene.');
+  });
 });
+
