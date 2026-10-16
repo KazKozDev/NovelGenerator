@@ -97,32 +97,57 @@ export function buildEditorialAgentPrompt(params: {
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
 
+  const totalLength = params.manuscriptBlocks.reduce((acc, b) => acc + b.text.length, 0);
+
   // Retrieve relevant excerpts from manuscript for the user prompt
   const initialMatches = hybridSearch(params.manuscriptBlocks, params.userPrompt, targetChapter, 5);
-
   let contextSnippets = '';
   if (initialMatches.length > 0) {
-    contextSnippets = `MANUSCRIPT EXCERPTS RELEVANT TO AUTHOR'S REQUEST:\n` +
+    contextSnippets = `RELEVANT SEARCH MATCHES FOR QUERY:\n` +
       initialMatches.map(m => `[Chapter ${m.chapterNum}, Block ${m.blockId}]:\n"${m.fullText}"`).join('\n\n');
   }
 
-  // If a specific chapter was targeted, add its content so the model has complete scene context
-  let chapterContext = '';
-  if (targetChapter) {
-    const chBlocks = params.manuscriptBlocks.filter(b => b.chapterNum === targetChapter);
-    if (chBlocks.length > 0) {
-      const excerpt = chBlocks.slice(0, 15).map(b => `[${b.id}]: ${b.text}`).join('\n\n');
-      chapterContext = `FULL SCENE CONTEXT FOR CHAPTER ${targetChapter}:\n${excerpt}`;
+  // Cross-chapter entity map
+  const multiChapterEntities: string[] = [];
+  for (const [name, ref] of params.entityGraph.entities.entries()) {
+    const chapters = Array.from(new Set(ref.occurrences.map(o => o.chapterNum)));
+    if (chapters.length > 1) {
+      multiChapterEntities.push(`- "${name}" (${ref.category}): appears across Chapters ${chapters.join(', ')}`);
     }
+  }
+  const entitySummary = multiChapterEntities.length > 0
+    ? `CROSS-CHAPTER ENTITY MAP:\n${multiChapterEntities.slice(0, 20).join('\n')}`
+    : '';
+
+  // Manuscript text visibility:
+  // For manuscripts under 120,000 characters (~25,000 words), provide ALL chapters in full.
+  let manuscriptText = '';
+  if (totalLength <= 120000) {
+    const allChapters = chapterList.map(chNum => {
+      const chBlocks = params.manuscriptBlocks.filter(b => b.chapterNum === chNum);
+      const lines = chBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
+      return `### Chapter ${chNum}\n${lines}`;
+    }).join('\n\n---\n\n');
+
+    manuscriptText = `FULL MANUSCRIPT TEXT (All Chapters 1-${chapterList.length}):\n\n${allChapters}`;
+  } else {
+    // For very long books, include targeted chapter + surrounding chapters + search excerpts
+    const focusChapters = targetChapter
+      ? [Math.max(1, targetChapter - 1), targetChapter, targetChapter + 1]
+      : [1, 2];
+    const includedBlocks = params.manuscriptBlocks.filter(b => focusChapters.includes(b.chapterNum));
+    const chLines = includedBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
+
+    manuscriptText = `MANUSCRIPT SCENE TEXT (Chapters ${focusChapters.join(', ')}):\n\n${chLines}`;
   }
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
-You assist the author with analyzing, fact-checking, and making atomic surgical edits across the manuscript.
-The manuscript has ${chapterList.length} chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).
+You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).
+You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
 Respond in the language used by the author (if Russian, respond in natural Russian).
 
 CRITICAL OPERATIONAL RULES:
-1. You have direct access to the relevant manuscript excerpts and scene text provided below.
+1. You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.
 2. NEVER rewrite whole scenes or chapters. Every edit MUST be an atomic SEARCH/REPLACE patch.
 3. In "search", provide the EXACT, VERBATIM quote from the manuscript text provided to you.
    DO NOT add diff markers ('--', '++', '-', '+'), and DO NOT truncate with '...'.
@@ -131,7 +156,7 @@ CRITICAL OPERATIONAL RULES:
 \`\`\`tool:propose_diff
 {"chapter": ${targetChapter || 1}, "search": "exact quote to replace", "replace": "revised text", "rationale": "reason"}
 \`\`\`
-6. If you need to search for other terms or verify other chapters, you can call:
+6. If you need to search for other terms or check additional chapters, you can call:
 \`\`\`tool:search_manuscript
 {"query": "search term", "chapter": Optional[number]}
 \`\`\`
@@ -139,13 +164,16 @@ CRITICAL OPERATIONAL RULES:
 `.trim();
 
   let prompt = `User request: "${params.userPrompt}"\n\n`;
+  if (entitySummary) {
+    prompt += `${entitySummary}\n\n`;
+  }
   if (contextSnippets) {
     prompt += `${contextSnippets}\n\n`;
   }
-  if (chapterContext) {
-    prompt += `${chapterContext}\n\n`;
+  if (manuscriptText) {
+    prompt += `${manuscriptText}\n\n`;
   }
-  prompt += `Please analyze the provided text, advise the author, and propose surgical diff patches if appropriate.`;
+  prompt += `Please analyze the manuscript, advise the author across chapters, and propose surgical diff patches if appropriate.`;
 
   return { system, prompt };
 }
