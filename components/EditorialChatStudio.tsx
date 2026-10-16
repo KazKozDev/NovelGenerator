@@ -154,7 +154,9 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
       bookContent,
       card.chapterNum,
       card.searchTarget,
-      card.replacementText
+      card.replacementText,
+      card.startBlockId,
+      card.endBlockId
     );
 
     if (patchResult.success) {
@@ -470,12 +472,17 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                     >
                       <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 pb-1.5">
                         <span className="font-medium text-zinc-200">
-                          Proposed Edit · Chapter {card.chapterNum}
+                          {card.replacementText === '' ? 'Excision' : 'Proposed Edit'} · Chapter {card.chapterNum}
+                          {card.startBlockId && (
+                            <span className="ml-1 text-[10px] font-mono text-zinc-400">
+                              ({card.startBlockId}{card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''})
+                            </span>
+                          )}
                         </span>
                         {isApplied && (
                           <button
                             type="button"
-                            onClick={() => onScrollToRevision?.(card.replacementText)}
+                            onClick={() => onScrollToRevision?.(card.replacementText || card.searchTarget.slice(0, 40))}
                             className="text-[11px] font-mono text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
                             title="Click to view change in manuscript"
                           >
@@ -490,9 +497,15 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                         <div className="text-red-400/90 line-through break-words">
                           - {card.searchTarget}
                         </div>
-                        <div className="text-emerald-400 break-words">
-                          + {card.replacementText}
-                        </div>
+                        {card.replacementText ? (
+                          <div className="text-emerald-400 break-words">
+                            + {card.replacementText}
+                          </div>
+                        ) : (
+                          <div className="text-zinc-500 italic text-[10px]">
+                            (Block deleted / excised)
+                          </div>
+                        )}
                       </div>
 
                       {card.rationale && (

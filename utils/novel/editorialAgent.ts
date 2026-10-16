@@ -10,6 +10,8 @@ export interface ParsedToolCall {
 export interface ProposedDiffCard {
   id: string;
   chapterNum: number;
+  startBlockId?: string;
+  endBlockId?: string;
   searchTarget: string;
   replacementText: string;
   rationale: string;
@@ -169,19 +171,29 @@ Respond in the language used by the author (if Russian, respond in natural Russi
 
 CRITICAL OPERATIONAL RULES:
 1. You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.
-2. NEVER rewrite whole scenes or chapters. Every edit MUST be an atomic SEARCH/REPLACE patch.
-3. In "search", provide the EXACT, VERBATIM quote from the manuscript text provided to you.
-   DO NOT add diff markers ('--', '++', '-', '+'), and DO NOT truncate with '...'.
-4. In "replace", provide your revised prose.
-5. Propose diffs using markdown code fences:
+2. EDITORIAL SCOPE & MACRO-STITCHING (Eliminating Redundancies):
+   - When text contains duplicated multi-paragraph scenes, repetitive paragraphs, or redundant blocks (e.g., paragraphs ch4_p55 to ch4_p86 repeating an earlier sequence):
+     DO NOT merely trim 3-4 words inside a single paragraph! You MUST propose a BLOCK RANGE DELETION by providing "startBlockId", "endBlockId", and "replace": "" (or revised text). Excise the entire redundant block cleanly!
+3. RESOLVING STRUCTURAL & LOGIC CONTRADICTIONS:
+   - When you detect a plot, factual, or knowledge contradiction (e.g., a character knowing about a trap in one scene vs claiming ignorance in another):
+     DO NOT propose timid cosmetic word-swaps (e.g. changing 'known' to 'suspected'). Prioritize COMPLETE REMOVAL of the contradictory sentence or a CLEAN REWRITE of the conflicting beat so facts and character knowledge stay strictly consistent.
+4. CROSS-CHAPTER RULES & LOCATION TRACKING:
+   - Carefully verify device mechanics and established world rules (e.g., rotating vs static codes, frequencies, protocols). If an earlier chapter establishes a mechanism, subsequent chapters must not contradict it.
+   - Strictly track character physical locations across and at the end of scenes. If characters exit an elevator into the subbasement, subsequent sentences must reflect the subbasement environment, not the previous location.
+5. PROPOSE DIFFS using markdown code fences:
+   - For line/sentence edits:
 \`\`\`tool:propose_diff
-{"chapter": ${targetChapter || 1}, "search": "exact quote to replace", "replace": "revised text", "rationale": "reason"}
+{"chapter": 1, "search": "exact quote to replace", "replace": "revised text", "rationale": "reason"}
 \`\`\`
-6. If you need to search for other terms or check additional chapters, you can call:
+   - For multi-paragraph block deletions or block rewrites:
+\`\`\`tool:propose_diff
+{"chapter": 4, "startBlockId": "ch4_p55", "endBlockId": "ch4_p86", "replace": "", "rationale": "Excise duplicated scanner and elevator sequence"}
+\`\`\`
+6. "replace": "" is VALID and STRONGLY ENCOURAGED when deleting redundant, duplicate, or contradictory text. Do not propose identical no-op edits (where search === replace).
+7. If you need to search for other terms or check additional chapters, you can call:
 \`\`\`tool:search_manuscript
 {"query": "search term", "chapter": Optional[number]}
 \`\`\`
-7. NEVER propose empty or no-op patches. If an issue requires author clarification, explain it clearly in your message.
 8. BE CONCISE. Deliver clear, targeted feedback and minimal surgical diffs. Do NOT reprint entire scenes or recite unasked prose, to respect output token budgets.
 `.trim();
 
@@ -206,23 +218,48 @@ function createDiffCard(
   rawReplace: string,
   rationale: string,
   blocks: ManuscriptBlock[],
-  graph: EntityGraph
+  graph: EntityGraph,
+  startBlockId?: string,
+  endBlockId?: string
 ): ProposedDiffCard | null {
-  const search = cleanDiffArtifacts(rawSearch || '');
   const replace = cleanDiffArtifacts(rawReplace || '');
-
-  // Skip no-op patches or empty targets
-  if (!search || search === replace) return null;
-
-  // Verify chapter location: if search is absent from ch, check if it's in another chapter
+  let search = cleanDiffArtifacts(rawSearch || '');
   let resolvedChapter = ch;
-  const targetBlock = blocks.find(
-    b => b.chapterNum === ch && (b.text.includes(search) || search.includes(b.text.slice(0, 30)))
-  );
-  if (!targetBlock) {
-    const alternateBlock = blocks.find(b => b.text.includes(search));
-    if (alternateBlock) {
-      resolvedChapter = alternateBlock.chapterNum;
+
+  // Resolve search target from blocks if block range is provided
+  if (startBlockId) {
+    const startMatch = startBlockId.match(/_p(\d+)/i) || startBlockId.match(/(\d+)$/);
+    const endMatch = (endBlockId || startBlockId).match(/_p(\d+)/i) || (endBlockId || startBlockId).match(/(\d+)$/);
+
+    if (startMatch) {
+      let startP = parseInt(startMatch[1], 10);
+      let endP = endMatch ? parseInt(endMatch[1], 10) : startP;
+      if (startP > endP) [startP, endP] = [endP, startP];
+
+      const chBlocks = blocks.filter(b => b.chapterNum === ch);
+      const targetBlocks = chBlocks.filter(b => b.pIndex >= startP && b.pIndex <= endP);
+
+      if (targetBlocks.length > 0) {
+        if (!search) {
+          search = targetBlocks.map(b => b.text).join('\n\n');
+        }
+      }
+    }
+  }
+
+  // Skip no-op patches or empty targets (unless replacing/deleting)
+  if (!search || (search === replace && search !== '')) return null;
+
+  // Verify chapter location: if search is absent from ch and no startBlockId, check if it's in another chapter
+  if (!startBlockId) {
+    const targetBlock = blocks.find(
+      b => b.chapterNum === ch && (b.text.includes(search) || search.includes(b.text.slice(0, 30)))
+    );
+    if (!targetBlock) {
+      const alternateBlock = blocks.find(b => b.text.includes(search));
+      if (alternateBlock) {
+        resolvedChapter = alternateBlock.chapterNum;
+      }
     }
   }
 
@@ -231,6 +268,8 @@ function createDiffCard(
   return {
     id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     chapterNum: resolvedChapter,
+    startBlockId,
+    endBlockId,
     searchTarget: search,
     replacementText: replace,
     rationale,
@@ -292,19 +331,28 @@ export async function runEditorialTurn(params: {
           (warnings.length > 0 ? warnings.map(w => w.warning).join('\n') : 'No conflicts in other chapters.')
         );
       } else if (tc.tool === 'propose_diff') {
+        const startBlock = tc.args.startBlockId || tc.args.start_paragraph_id || tc.args.start_block;
+        const endBlock = tc.args.endBlockId || tc.args.end_paragraph_id || tc.args.end_block;
         const card = createDiffCard(
           Number(tc.args.chapter || 1),
           tc.args.search || '',
-          tc.args.replace || '',
+          tc.args.replace !== undefined ? String(tc.args.replace) : '',
           tc.args.rationale || 'Editorial edit',
           blocks,
-          graph
+          graph,
+          startBlock,
+          endBlock
         );
         if (card) {
           diffCards.push(card);
+          const blockDesc = card.startBlockId
+            ? `blocks ${card.startBlockId}${card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''}`
+            : `Chapter ${card.chapterNum}`;
           executedTools.push({
             tool: 'propose_diff',
-            summary: `Proposed patch for Chapter ${card.chapterNum}`,
+            summary: card.replacementText === ''
+              ? `Excised redundant ${blockDesc} in Chapter ${card.chapterNum}`
+              : `Proposed patch for ${blockDesc}`,
           });
         }
       }
@@ -318,19 +366,28 @@ export async function runEditorialTurn(params: {
 
       for (const tc of secondRoundTools) {
         if (tc.tool === 'propose_diff') {
+          const startBlock = tc.args.startBlockId || tc.args.start_paragraph_id || tc.args.start_block;
+          const endBlock = tc.args.endBlockId || tc.args.end_paragraph_id || tc.args.end_block;
           const card = createDiffCard(
             Number(tc.args.chapter || 1),
             tc.args.search || '',
-            tc.args.replace || '',
+            tc.args.replace !== undefined ? String(tc.args.replace) : '',
             tc.args.rationale || 'Editorial edit',
             blocks,
-            graph
+            graph,
+            startBlock,
+            endBlock
           );
           if (card) {
             diffCards.push(card);
+            const blockDesc = card.startBlockId
+              ? `blocks ${card.startBlockId}${card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''}`
+              : `Chapter ${card.chapterNum}`;
             executedTools.push({
               tool: 'propose_diff',
-              summary: `Proposed patch for Chapter ${card.chapterNum}`,
+              summary: card.replacementText === ''
+                ? `Excised redundant ${blockDesc} in Chapter ${card.chapterNum}`
+                : `Proposed patch for ${blockDesc}`,
             });
           }
         }

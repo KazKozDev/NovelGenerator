@@ -111,5 +111,64 @@ describe('patchApplier', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('identical (no-op edit)');
   });
+
+  it('deletes multi-paragraph block ranges by startBlockId and endBlockId', () => {
+    const multiPManuscript = `
+## Chapter 1: The Descent
+
+First paragraph that stays.
+
+Second paragraph to delete.
+
+Third paragraph to delete.
+
+Fourth paragraph that stays.
+    `.trim();
+
+    const result = applySearchReplacePatch(
+      multiPManuscript,
+      1,
+      '',
+      '',
+      'ch1_p1',
+      'ch1_p2'
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.updatedManuscript).toContain('First paragraph that stays.');
+    expect(result.updatedManuscript).toContain('Fourth paragraph that stays.');
+    expect(result.updatedManuscript).not.toContain('Second paragraph to delete.');
+    expect(result.updatedManuscript).not.toContain('Third paragraph to delete.');
+  });
+
+  it('replaces multi-paragraph text across newlines when replacement is empty string', () => {
+    const multiPManuscript = `
+## Chapter 1: The Descent
+
+Keep this first line.
+
+Duplicate scene part 1.
+
+Duplicate scene part 2.
+
+Keep this final line.
+    `.trim();
+
+    const toDelete = `Duplicate scene part 1.\n\nDuplicate scene part 2.`;
+    const result = applySearchReplacePatch(
+      multiPManuscript,
+      1,
+      toDelete,
+      ''
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.updatedManuscript).not.toContain('Duplicate scene part 1');
+    expect(result.updatedManuscript).not.toContain('Duplicate scene part 2');
+    expect(result.updatedManuscript).toContain('Keep this first line.');
+    expect(result.updatedManuscript).toContain('Keep this final line.');
+  });
 });
 

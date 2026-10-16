@@ -87,8 +87,30 @@ function tryReplaceInBody(
     }
   }
 
-  // 4. Whitespace and typography normalized match
+  // 3.5. Multi-paragraph normalized match (spanning multiple paragraphs in body)
   const normTarget = normalizeLenient(withoutTrailingEllipsis || cleanedTarget);
+  const normBody = normalizeLenient(body);
+  if (normTarget.length >= 20 && normBody.includes(normTarget)) {
+    const targetWords = normTarget.split(' ').filter(Boolean);
+    if (targetWords.length >= 4) {
+      const firstW = targetWords[0];
+      const lastW = targetWords[targetWords.length - 1];
+      const startIdx = body.toLowerCase().indexOf(firstW.toLowerCase());
+      if (startIdx !== -1) {
+        const endSearchFrom = Math.min(body.length, startIdx + Math.floor(cleanedTarget.length * 0.7));
+        const endIdx = body.toLowerCase().indexOf(lastW.toLowerCase(), endSearchFrom);
+        if (endIdx !== -1 && endIdx >= startIdx) {
+          const matchedFull = body.slice(startIdx, endIdx + lastW.length);
+          return {
+            updatedBody: body.replace(matchedFull, cleanedReplacement),
+            changed: true,
+          };
+        }
+      }
+    }
+  }
+
+  // 4. Whitespace and typography normalized match
   const paragraphs = body.split(/\n\n+/);
   for (let i = 0; i < paragraphs.length; i++) {
     const p = paragraphs[i];
@@ -157,12 +179,88 @@ function tryReplaceInBody(
   return { updatedBody: body, changed: false };
 }
 
+export function applyBlockRangePatch(
+  manuscript: string,
+  chapterNum: number,
+  startBlockId: string,
+  endBlockId?: string,
+  replacementText: string = ''
+): PatchResult {
+  const chapters = parseBookChapters(manuscript);
+  const targetChapterIndex = chapters.findIndex(c => c.num === chapterNum);
+
+  if (targetChapterIndex === -1) {
+    return {
+      success: false,
+      updatedManuscript: manuscript,
+      changed: false,
+      error: `Chapter ${chapterNum} not found in manuscript.`,
+    };
+  }
+
+  const startMatch = startBlockId.match(/_p(\d+)/i) || startBlockId.match(/(\d+)$/);
+  const endMatch = (endBlockId || startBlockId).match(/_p(\d+)/i) || (endBlockId || startBlockId).match(/(\d+)$/);
+
+  if (!startMatch) {
+    return {
+      success: false,
+      updatedManuscript: manuscript,
+      changed: false,
+      error: `Could not parse paragraph index from start block ID "${startBlockId}".`,
+    };
+  }
+
+  let startP = parseInt(startMatch[1], 10);
+  let endP = endMatch ? parseInt(endMatch[1], 10) : startP;
+  if (startP > endP) [startP, endP] = [endP, startP];
+
+  const ch = chapters[targetChapterIndex];
+  const paragraphs = ch.content.split(/\n\n+/);
+
+  if (startP >= paragraphs.length) {
+    return {
+      success: false,
+      updatedManuscript: manuscript,
+      changed: false,
+      error: `Block ID ${startBlockId} (paragraph ${startP}) is beyond Chapter ${chapterNum} length (${paragraphs.length} paragraphs).`,
+    };
+  }
+
+  const boundedEndP = Math.min(paragraphs.length - 1, endP);
+  const cleanedReplacement = cleanDiffArtifacts(replacementText || '');
+
+  // Delete or replace paragraphs from startP to boundedEndP
+  if (cleanedReplacement) {
+    paragraphs.splice(startP, boundedEndP - startP + 1, cleanedReplacement);
+  } else {
+    paragraphs.splice(startP, boundedEndP - startP + 1);
+  }
+
+  ch.content = paragraphs.join('\n\n');
+
+  const titleMatch = manuscript.match(/^#\s+([^\r\n]+)/m);
+  const title = titleMatch ? titleMatch[1] : undefined;
+
+  return {
+    success: true,
+    updatedManuscript: assembleManuscript(chapters.map(c => ({ chapter: c.num, text: c.content })), title),
+    changed: true,
+    matchedChapter: chapterNum,
+  };
+}
+
 export function applySearchReplacePatch(
   manuscript: string,
   chapterNum: number,
   searchTarget: string,
-  replacementText: string
+  replacementText: string,
+  startBlockId?: string,
+  endBlockId?: string
 ): PatchResult {
+  if (startBlockId) {
+    return applyBlockRangePatch(manuscript, chapterNum, startBlockId, endBlockId, replacementText);
+  }
+
   const cleanedTarget = cleanDiffArtifacts(searchTarget || '');
   const cleanedReplacement = cleanDiffArtifacts(replacementText || '');
 
@@ -176,7 +274,7 @@ export function applySearchReplacePatch(
   }
 
   // Detect no-op edits
-  if (cleanedTarget === cleanedReplacement) {
+  if (cleanedTarget === cleanedReplacement && cleanedTarget !== '') {
     return {
       success: false,
       updatedManuscript: manuscript,

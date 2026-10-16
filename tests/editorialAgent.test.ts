@@ -147,5 +147,51 @@ Done.`;
     expect(ollamaPrompt.prompt).toContain('MANUSCRIPT SCENE TEXT');
     expect(ollamaPrompt.prompt).toContain('CHAPTER INVENTORY');
   });
+
+  it('parses block range diff proposals for macro-stitching deletions', () => {
+    const modelOutput = `
+I found the duplicated sequence in Chapter 4.
+\`\`\`tool:propose_diff
+{
+  "chapter": 4,
+  "startBlockId": "ch4_p55",
+  "endBlockId": "ch4_p86",
+  "replace": "",
+  "rationale": "Excise duplicated scanner and elevator sequence."
+}
+\`\`\`
+    `.trim();
+
+    const tools = parseToolCallsFromModelResponse(modelOutput);
+    expect(tools.length).toBe(1);
+    expect(tools[0].tool).toBe('propose_diff');
+    expect(tools[0].args.chapter).toBe(4);
+    expect(tools[0].args.startBlockId).toBe('ch4_p55');
+    expect(tools[0].args.endBlockId).toBe('ch4_p86');
+    expect(tools[0].args.replace).toBe('');
+  });
+
+  it('tracks rules, mechanics and spatial locations in entity graph', () => {
+    const textWithRulesAndLocations = `
+## Chapter 1: The Code
+
+Bruce verified the rotating override code before entering the batcave.
+
+## Chapter 4: The Breach
+
+The subbasement was dark. The static passcode failed.
+    `.trim();
+
+    const blocks = indexManuscriptBlocks(textWithRulesAndLocations);
+    const graph = buildEntityGraph(blocks);
+
+    const ruleEntity = graph.entities.get('override code') || graph.entities.get('passcode') || graph.entities.get('rotating');
+    expect(ruleEntity).toBeDefined();
+    expect(ruleEntity?.category).toBe('rule');
+
+    const locEntity = graph.entities.get('batcave') || graph.entities.get('subbasement');
+    expect(locEntity).toBeDefined();
+    expect(locEntity?.category).toBe('location');
+  });
 });
 

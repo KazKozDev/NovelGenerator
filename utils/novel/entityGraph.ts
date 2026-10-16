@@ -8,7 +8,7 @@ export interface EntityOccurrence {
 
 export interface EntityReference {
   entity: string;
-  category: 'character' | 'prop' | 'injury' | 'timer' | 'location';
+  category: 'character' | 'prop' | 'injury' | 'timer' | 'location' | 'rule';
   occurrences: EntityOccurrence[];
 }
 
@@ -35,6 +35,17 @@ const COMMON_INJURY_PATTERNS = [
 
 const TIMER_PATTERNS = [
   /\b(?:\d{1,2}:\d{2}(?::\d{2})?|\d+\s*(?:minutes?|hours?|seconds?))\b/gi,
+];
+
+const COMMON_RULE_PATTERNS = [
+  /\b(?:override(?:\s+code)?|passcode|code|cipher|protocol|encryption|failsafe|access\s+code|clearance)\b/gi,
+  /\b(?:rotating|rotates|rotation|static(?:\s+code)?|birthday\s+code|memorized\s+code|biometric|frequency)\b/gi,
+  /\b(?:код(?:\s+доступа)?|пароль|шифр|протокол|статический|ротируемый|ротация|биометри\w*|частота)\b/gi,
+];
+
+const COMMON_LOCATION_PATTERNS = [
+  /\b(?:batcave|subbasement|sub-basement|vault|elevator|corridor|manor|laboratory|rooftop|tunnel|hangar|chamber|bunker)\b/gi,
+  /\b(?:бэтпещера|подвал|цокол\w*|бункер|хранилищ\w*|лифт|коридор|особняк|лаборатори\w*|крыш\w*|туннел\w*|ангар)\b/gi,
 ];
 
 export function buildEntityGraph(blocks: ManuscriptBlock[], dossier?: any): EntityGraph {
@@ -105,6 +116,18 @@ export function buildEntityGraph(blocks: ManuscriptBlock[], dossier?: any): Enti
       const matches = b.text.match(regex);
       if (matches) {
         for (const m of matches) addEntity(m, 'timer', b);
+      }
+    }
+    for (const regex of COMMON_RULE_PATTERNS) {
+      const matches = b.text.match(regex);
+      if (matches) {
+        for (const m of matches) addEntity(m, 'rule', b);
+      }
+    }
+    for (const regex of COMMON_LOCATION_PATTERNS) {
+      const matches = b.text.match(regex);
+      if (matches) {
+        for (const m of matches) addEntity(m, 'location', b);
       }
     }
   }
