@@ -325,6 +325,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           activeModelConfig={editorialModel}
           displayTitle={displayTitle}
           isEditorialRunning={isRunning}
+          editorialStatus={currentStatus}
         />
 
         {/* Column 2 (~35%): Manuscript Reader Card */}

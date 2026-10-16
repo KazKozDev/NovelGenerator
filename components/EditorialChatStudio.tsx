@@ -19,6 +19,7 @@ export interface EditorialChatStudioProps {
   activeModelConfig?: any;
   displayTitle?: string;
   isEditorialRunning?: boolean;
+  editorialStatus?: string;
 }
 
 interface ChatMessage {
@@ -45,6 +46,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   activeModelConfig,
   displayTitle = 'Manuscript Draft',
   isEditorialRunning = false,
+  editorialStatus,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -291,7 +293,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
       {/* 2. Message Feed with Embedded System Audit Accordion */}
       <div className="p-4 space-y-4 flex-1 overflow-y-auto text-xs">
         {/* System Editorial Audit Accordion Card */}
-        {clusteredTasks.length > 0 && (
+        {(clusteredTasks.length > 0 || rawFindings.length > 0) && (
           <div className="border border-zinc-800/80 rounded bg-zinc-950/60 overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 bg-zinc-900/50 border-b border-zinc-800/60">
               <button
@@ -300,7 +302,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 className="flex items-center gap-2 text-left font-medium text-zinc-200 hover:text-zinc-100 select-none"
               >
                 <span>{systemAccordionOpen ? '▼' : '▶'}</span>
-                <span>System Editorial Tasks ({clusteredTasks.length} tasks)</span>
+                <span>System Editorial Tasks ({clusteredTasks.length || rawFindings.length} {clusteredTasks.length ? 'tasks' : 'findings'})</span>
               </button>
               <button
                 type="button"
@@ -308,50 +310,77 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 disabled={activeRunning}
                 className="inline-flex items-center h-5 px-2 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700/60 rounded transition-colors"
               >
-                {activeRunning ? 'Applying…' : 'Apply All'}
+                {activeRunning ? (editorialStatus || 'Applying Review…') : 'Apply Review'}
               </button>
             </div>
 
             {systemAccordionOpen && (
               <div className="p-3 space-y-2 max-h-56 overflow-y-auto">
-                {clusteredTasks.map(task => {
-                  const status = systemTaskStatus[task.id] || 'pending';
-                  const isCurrent = activeSystemTaskId === task.id;
+                {clusteredTasks.length > 0 ? (
+                  clusteredTasks.map(task => {
+                    const status = systemTaskStatus[task.id] || 'pending';
+                    const isCurrent = activeSystemTaskId === task.id;
 
-                  return (
+                    return (
+                      <div
+                        key={task.id}
+                        className="p-2 rounded bg-zinc-900/60 border border-zinc-800/60 flex items-start justify-between gap-2"
+                      >
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400">
+                              Ch. {task.chapterNumber}
+                            </span>
+                            <span className="text-zinc-200 font-medium truncate">{task.title}</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 line-clamp-1">{task.problemSummary}</p>
+                        </div>
+
+                        <div className="shrink-0 flex items-center gap-1">
+                          {status === 'done' ? (
+                            <span className="text-[11px] text-zinc-400">✓ Done</span>
+                          ) : isCurrent ? (
+                            <span className="text-[11px] text-zinc-300 animate-pulse">Working…</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleApplySingleSystemTask(task)}
+                              disabled={activeRunning}
+                              className="h-5 px-2 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
+                            >
+                              Apply
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  rawFindings.map((finding: any, idx: number) => (
                     <div
-                      key={task.id}
+                      key={idx}
                       className="p-2 rounded bg-zinc-900/60 border border-zinc-800/60 flex items-start justify-between gap-2"
                     >
                       <div className="space-y-0.5 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400">
-                            Ch. {task.chapterNumber}
+                          {finding.severity && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400">
+                              {finding.severity}
+                            </span>
+                          )}
+                          <span className="text-zinc-200 font-medium truncate">
+                            {finding.description || finding.finding || 'Audit Finding'}
                           </span>
-                          <span className="text-zinc-200 font-medium truncate">{task.title}</span>
                         </div>
-                        <p className="text-[11px] text-zinc-400 line-clamp-1">{task.problemSummary}</p>
-                      </div>
-
-                      <div className="shrink-0 flex items-center gap-1">
-                        {status === 'done' ? (
-                          <span className="text-[11px] text-zinc-400">✓ Done</span>
-                        ) : isCurrent ? (
-                          <span className="text-[11px] text-zinc-300 animate-pulse">Working…</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleApplySingleSystemTask(task)}
-                            disabled={activeRunning}
-                            className="h-5 px-2 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
-                          >
-                            Apply
-                          </button>
+                        {finding.evidence_refs && (
+                          <p className="text-[11px] text-zinc-400 line-clamp-1">
+                            {Array.isArray(finding.evidence_refs) ? finding.evidence_refs.join(', ') : finding.evidence_refs}
+                          </p>
                         )}
                       </div>
                     </div>
-                  );
-                })}
+                  ))
+                )}
               </div>
             )}
           </div>
@@ -481,7 +510,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         {activeRunning && (
           <div className="flex items-center gap-2 text-zinc-400 text-xs py-2 italic">
             <span className="inline-block animate-spin">↻</span>
-            <span>Editorial assistant is analyzing manuscript…</span>
+            <span>{editorialStatus || 'Editorial assistant is analyzing manuscript…'}</span>
           </div>
         )}
 
