@@ -504,8 +504,8 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
   // Helper to paginate paragraphs of chapters into discrete A4 pages
   const CHARS_PER_LINE = 75;
-  const MAX_LINES_FIRST_PAGE = 30; // space reserved for h2 chapter-title
-  const MAX_LINES_OTHER_PAGES = 34;
+  const MAX_LINES_FIRST_PAGE = 36; // space reserved for h2 chapter-title
+  const MAX_LINES_OTHER_PAGES = 43;
 
   const chapterStartPages: Record<number, number> = {};
   let runningPageNumber = initialChapterPage;
@@ -573,7 +573,7 @@ export function buildPdfHtml(content: string, metadata: any): string {
     } else {
       for (const block of blocks) {
         const isSceneBreak = /^\s*(?:\*\s*){3,}\s*$/.test(block);
-        const cost = isSceneBreak ? 3 : Math.max(1, Math.ceil(block.length / CHARS_PER_LINE)) + 0.8;
+        const cost = isSceneBreak ? 3 : Math.max(1, Math.ceil(block.length / CHARS_PER_LINE)) + 0.5;
         const maxLines = pageIndexInChapter === 0 ? MAX_LINES_FIRST_PAGE : MAX_LINES_OTHER_PAGES;
 
         if (currentLines + cost > maxLines && currentPageParagraphsHtml.length > 0) {
@@ -694,6 +694,8 @@ export function buildPdfHtml(content: string, metadata: any): string {
       .chapter-table, .toc-table {
         page-break-before: always;
         break-before: page;
+        min-height: 100vh !important;
+        height: 100vh !important;
       }
       .chapter-table thead, .toc-table thead {
         display: table-header-group !important;
@@ -701,8 +703,12 @@ export function buildPdfHtml(content: string, metadata: any): string {
       .chapter-table tfoot, .toc-table tfoot {
         display: table-footer-group !important;
       }
-      .page-top-margin, .page-bottom-margin {
-        height: 2.8cm !important;
+      .page-top-margin {
+        height: 1.8cm !important;
+      }
+      .page-bottom-margin {
+        height: 1.8cm !important;
+        vertical-align: bottom !important;
       }
       .cover-page {
         page-break-after: always;
@@ -933,6 +939,8 @@ export function buildPdfHtml(content: string, metadata: any): string {
     /* 5. Chapters & TOC Table-based Multi-page Margins */
     .chapter-table, .toc-table {
       width: 100%;
+      min-height: 297mm;
+      height: 297mm;
       border-collapse: collapse;
       border-spacing: 0;
       page-break-before: always;
@@ -945,29 +953,30 @@ export function buildPdfHtml(content: string, metadata: any): string {
       display: table-footer-group;
     }
     .page-top-margin {
-      height: 2.8cm;
+      height: 1.8cm;
       padding: 0;
       margin: 0;
       border: none;
     }
     .page-bottom-margin {
-      height: 2.8cm;
+      height: 1.8cm;
       padding: 0;
       margin: 0;
       border: none;
+      vertical-align: bottom;
     }
     .chapter-content-cell, .toc-content-cell {
-      padding: 0 2.6cm;
+      padding: 0 2.4cm;
       border: none;
       vertical-align: top;
     }
     .chapter-title {
       text-align: center;
-      font-size: 1.9em;
+      font-size: 1.8em;
       font-weight: 700;
       letter-spacing: 0.04em;
-      margin-top: 1.5em;
-      margin-bottom: 2em;
+      margin-top: 1.2em;
+      margin-bottom: 1.6em;
       page-break-after: avoid;
       break-after: avoid;
       color: #111111;
@@ -975,10 +984,10 @@ export function buildPdfHtml(content: string, metadata: any): string {
     p {
       text-align: justify;
       text-indent: 1.5em;
-      margin: 0.6em 0;
-      line-height: 1.65;
-      orphans: 3;
-      widows: 3;
+      margin: 0.35em 0;
+      line-height: 1.55;
+      orphans: 2;
+      widows: 2;
     }
     .chapter-title + p {
       text-indent: 0;
@@ -991,19 +1000,20 @@ export function buildPdfHtml(content: string, metadata: any): string {
     }
     .scene-break {
       text-align: center;
-      margin: 2em 0;
+      margin: 1.5em 0;
       letter-spacing: 0.5em;
       color: #666666;
     }
     .page-footer {
       width: 100%;
-      height: 2.8cm;
-      line-height: 2.8cm;
+      height: 1.4cm;
+      line-height: 1.4cm;
       text-align: center;
       font-family: 'Georgia', 'Garamond', 'Palatino Linotype', serif;
       font-size: 10pt;
       color: #666666;
       letter-spacing: 0.05em;
+      padding-bottom: 0.4cm;
     }
     .page-footer span {
       font-variant-numeric: tabular-nums;
