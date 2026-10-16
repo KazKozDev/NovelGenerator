@@ -9,6 +9,7 @@ import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
 import { runEditorialTurn, ProposedDiffCard } from '../utils/novel/editorialAgent';
+import { MarkdownView } from './common/MarkdownView';
 
 export interface EditorialChatStudioProps {
   bookContent: string;
@@ -20,6 +21,7 @@ export interface EditorialChatStudioProps {
   displayTitle?: string;
   isEditorialRunning?: boolean;
   editorialStatus?: string;
+  onScrollToRevision?: (targetText?: string) => void;
 }
 
 interface ChatMessage {
@@ -47,6 +49,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   displayTitle = 'Manuscript Draft',
   isEditorialRunning = false,
   editorialStatus,
+  onScrollToRevision,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -427,7 +430,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 </div>
               )}
 
-              <p className="whitespace-pre-wrap">{msg.text}</p>
+              <MarkdownView content={msg.text} className="text-xs text-inherit break-words space-y-1.5" />
             </div>
 
             {/* Diff Review Cards */}
@@ -462,7 +465,15 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                           Proposed Edit · Chapter {card.chapterNum}
                         </span>
                         {isApplied && (
-                          <span className="text-[11px] font-mono text-zinc-400">✓ Applied</span>
+                          <button
+                            type="button"
+                            onClick={() => onScrollToRevision?.(card.replacementText)}
+                            className="text-[11px] font-mono text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Click to view change in manuscript"
+                          >
+                            <span>✓ Applied</span>
+                            <span className="text-[9px] underline opacity-80">(show in text)</span>
+                          </button>
                         )}
                       </div>
 

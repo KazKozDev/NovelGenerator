@@ -70,32 +70,48 @@
       html.light { --sheet: 255 255 255; }
       .sheet { background-color: rgb(var(--sheet)); }
       .revision-removed {
-        color: rgb(var(--z-500));
-        background: transparent;
+        color: #fca5a5;
+        background: rgba(239, 68, 68, 0.18);
         text-decoration: line-through;
-        text-decoration-color: rgb(var(--z-500) / .55);
-        text-decoration-thickness: 1px;
-        opacity: .75;
+        text-decoration-color: rgba(239, 68, 68, 0.7);
+        text-decoration-thickness: 1.5px;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        opacity: .9;
       }
       .revision-added {
-        color: inherit;
-        background: rgba(245, 232, 199, .13);
+        color: #86efac;
+        background: rgba(34, 197, 94, 0.2);
         text-decoration: none;
+        padding: 0.1em 0.35em;
         border-radius: 3px;
-        box-shadow: inset 0 -1px 0 rgba(245, 232, 199, .16);
+        box-shadow: inset 0 -1px 0 rgba(34, 197, 94, 0.35);
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;
-        animation: revision-arrival 1.2s ease-out;
+        animation: revision-arrival 1.5s ease-out;
+      }
+      html.light .revision-removed {
+        color: #991b1b;
+        background: rgba(239, 68, 68, 0.16);
+        text-decoration-color: #dc2626;
       }
       html.light .revision-added {
-        background: rgba(245, 232, 199, .42);
-        box-shadow: inset 0 -1px 0 rgba(205, 186, 145, .18);
+        color: #15803d;
+        background: rgba(34, 197, 94, 0.2);
+        box-shadow: inset 0 -1px 0 rgba(22, 101, 52, 0.25);
       }
       .manuscript-changes > * + * { margin-top: 1rem; }
       .revision-markdown { display: block; padding: .55rem .65rem; margin: 0; }
       .revision-markdown + .revision-markdown { margin-top: .75rem; }
       @keyframes revision-arrival {
-        from { background-color: rgba(245, 232, 199, .22); }
+        from {
+          background-color: rgba(34, 197, 94, 0.45);
+          box-shadow: 0 0 14px rgba(34, 197, 94, 0.55);
+        }
+        to {
+          background-color: rgba(34, 197, 94, 0.2);
+          box-shadow: inset 0 -1px 0 rgba(34, 197, 94, 0.35);
+        }
       }
       @media (prefers-reduced-motion: reduce) {
         .revision-added { animation: none; }

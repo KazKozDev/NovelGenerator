@@ -135,6 +135,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [localRunning, setLocalRunning] = useState(false);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const activeTaskRef = React.useRef<HTMLLIElement | null>(null);
+  const readerContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   // Author model detection: use the model that wrote this manuscript (e.g. DeepSeek v4.1 flash)
   const [editorialModel, setEditorialModel] = useState<any>(() => {
@@ -289,12 +290,37 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     }
   };  const [undoStack, setUndoStack] = useState<UndoStackEntry[]>([]);
 
+  const scrollToRevisionTarget = (targetSnippet?: string) => {
+    setViewMode('changes');
+    setTimeout(() => {
+      const scroller = readerContainerRef.current;
+      if (!scroller) return;
+
+      if (targetSnippet) {
+        const elements = scroller.querySelectorAll<HTMLElement>('.revision-added, .revision-removed');
+        for (const el of Array.from(elements)) {
+          const text = el.textContent || '';
+          const snippetPrefix = targetSnippet.slice(0, 25);
+          if (text.includes(snippetPrefix) || targetSnippet.includes(text.slice(0, 25))) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+        }
+      }
+
+      const firstTarget = scroller.querySelector<HTMLElement>('.revision-added, .revision-removed');
+      if (firstTarget) {
+        firstTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
+  };
+
   const handleApplyStudioPatch = (newContent: string, targetChapter?: number, patchSnippet?: string) => {
     setUndoStack(prev => pushUndoState(prev, bookContent, patchSnippet || 'Editorial patch', targetChapter));
     setLastDiff({ before: bookContent, after: newContent });
     setEditableContent(newContent);
     onManualSave?.(newContent);
-    setViewMode('changes');
+    scrollToRevisionTarget(patchSnippet);
   };
 
   const handleUndoStudioPatch = () => {
@@ -305,7 +331,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       setLastDiff({ before: bookContent, after: restored });
       setEditableContent(restored);
       onManualSave?.(restored);
-      setViewMode('changes');
+      scrollToRevisionTarget(popResult.previous.description);
     }
   };
 
@@ -326,6 +352,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           displayTitle={displayTitle}
           isEditorialRunning={isRunning}
           editorialStatus={currentStatus}
+          onScrollToRevision={scrollToRevisionTarget}
         />
 
         {/* Column 2 (~35%): Manuscript Reader Card */}
@@ -405,7 +432,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             </div>
           </div>
 
-          <div className="p-6 sm:p-8 flex-1 overflow-y-auto">
+          <div ref={readerContainerRef} className="p-6 sm:p-8 flex-1 overflow-y-auto scroll-smooth">
             {saveError && (
               <p className="text-xs text-red-400 mb-3">{saveError}</p>
             )}
