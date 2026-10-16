@@ -3,7 +3,10 @@ import {
   parseToolCallsFromModelResponse,
   buildEditorialAgentPrompt,
   runEditorialTurn,
+  getMaxFullManuscriptChars,
 } from '../utils/novel/editorialAgent';
+import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
+import { buildEntityGraph } from '../utils/novel/entityGraph';
 
 const SAMPLE_MANUSCRIPT = `
 ## Chapter 1: The Vault
@@ -102,6 +105,47 @@ Done.`;
     });
 
     expect(response.assistantMessage).toBe('I analyzed Chapter 4 and verified the scanner scene.');
+  });
+
+  it('adjusts manuscript char limits based on provider capabilities', () => {
+    expect(getMaxFullManuscriptChars('anthropic')).toBe(1_500_000);
+    expect(getMaxFullManuscriptChars('gemini')).toBe(1_500_000);
+    expect(getMaxFullManuscriptChars('qwen')).toBe(400_000);
+    expect(getMaxFullManuscriptChars('ollama')).toBe(120_000);
+  });
+
+  it('provides complete text of all chapters to Claude even for large manuscripts', () => {
+    // Construct a ~150k character manuscript (exceeds Ollama 120k limit, but well within Claude 1.5M limit)
+    const longManuscript = Array.from({ length: 6 }, (_, i) => {
+      const chNum = i + 1;
+      const text = `Paragraph in chapter ${chNum}. `.repeat(1500); // ~45k chars each
+      return `## Chapter ${chNum}\n\n${text}`;
+    }).join('\n\n');
+
+    const blocks = indexManuscriptBlocks(longManuscript);
+    const graph = buildEntityGraph(blocks);
+
+    // With Claude (anthropic)
+    const claudePrompt = buildEditorialAgentPrompt({
+      userPrompt: 'Проверь сюжет в главе 6',
+      manuscriptBlocks: blocks,
+      entityGraph: graph,
+      history: [],
+      provider: 'anthropic',
+    });
+    expect(claudePrompt.prompt).toContain('FULL MANUSCRIPT TEXT (All Chapters 1-6)');
+    expect(claudePrompt.prompt).toContain('Chapter 6');
+
+    // With local Ollama, the same manuscript exceeds 120k and falls back to focused chapters
+    const ollamaPrompt = buildEditorialAgentPrompt({
+      userPrompt: 'Проверь сюжет в главе 6',
+      manuscriptBlocks: blocks,
+      entityGraph: graph,
+      history: [],
+      provider: 'ollama',
+    });
+    expect(ollamaPrompt.prompt).toContain('MANUSCRIPT SCENE TEXT');
+    expect(ollamaPrompt.prompt).toContain('CHAPTER INVENTORY');
   });
 });
 

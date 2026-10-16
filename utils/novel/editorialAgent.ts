@@ -88,16 +88,30 @@ export function extractTargetChapter(text: string): number | undefined {
   return undefined;
 }
 
+export function getMaxFullManuscriptChars(provider?: string): number {
+  if (provider === 'anthropic' || provider === 'gemini') {
+    // Claude (200k-1M context) & Gemini (1M-2M context) can comfortably handle complete novels
+    return 1_500_000;
+  }
+  if (provider === 'qwen' || provider === 'compatible') {
+    return 400_000;
+  }
+  // Local Ollama default
+  return 120_000;
+}
+
 export function buildEditorialAgentPrompt(params: {
   userPrompt: string;
   manuscriptBlocks: ManuscriptBlock[];
   entityGraph: EntityGraph;
   history: { role: 'user' | 'assistant'; content: string }[];
+  provider?: string;
 }): { system: string; prompt: string } {
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
 
   const totalLength = params.manuscriptBlocks.reduce((acc, b) => acc + b.text.length, 0);
+  const maxFullChars = getMaxFullManuscriptChars(params.provider);
 
   // Retrieve relevant excerpts from manuscript for the user prompt
   const initialMatches = hybridSearch(params.manuscriptBlocks, params.userPrompt, targetChapter, 5);
@@ -120,9 +134,9 @@ export function buildEditorialAgentPrompt(params: {
     : '';
 
   // Manuscript text visibility:
-  // For manuscripts under 120,000 characters (~25,000 words), provide ALL chapters in full.
+  // For Claude/Gemini, novels up to 1.5M chars (~300k words) are fed 100% in full.
   let manuscriptText = '';
-  if (totalLength <= 120000) {
+  if (totalLength <= maxFullChars) {
     const allChapters = chapterList.map(chNum => {
       const chBlocks = params.manuscriptBlocks.filter(b => b.chapterNum === chNum);
       const lines = chBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
@@ -131,14 +145,21 @@ export function buildEditorialAgentPrompt(params: {
 
     manuscriptText = `FULL MANUSCRIPT TEXT (All Chapters 1-${chapterList.length}):\n\n${allChapters}`;
   } else {
-    // For very long books, include targeted chapter + surrounding chapters + search excerpts
+    // For exceedingly massive texts exceeding provider budget, focus on query-matched / target chapters
+    const matchChapters = Array.from(new Set(initialMatches.map(m => m.chapterNum)));
     const focusChapters = targetChapter
       ? [Math.max(1, targetChapter - 1), targetChapter, targetChapter + 1]
-      : [1, 2];
+      : (matchChapters.length > 0 ? matchChapters.slice(0, 3) : [1, 2]);
+
     const includedBlocks = params.manuscriptBlocks.filter(b => focusChapters.includes(b.chapterNum));
     const chLines = includedBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
 
-    manuscriptText = `MANUSCRIPT SCENE TEXT (Chapters ${focusChapters.join(', ')}):\n\n${chLines}`;
+    const chapterOutline = chapterList.map(ch => {
+      const b = params.manuscriptBlocks.filter(x => x.chapterNum === ch);
+      return `- Chapter ${ch}: ${b.length} paragraphs (~${b.reduce((s, x) => s + x.text.length, 0)} characters)`;
+    }).join('\n');
+
+    manuscriptText = `MANUSCRIPT SCENE TEXT (Chapters ${focusChapters.join(', ')}):\n\n${chLines}\n\nCHAPTER INVENTORY (Call search_manuscript to query any other chapter):\n${chapterOutline}`;
   }
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
@@ -222,6 +243,7 @@ export async function runEditorialTurn(params: {
   bookContent: string;
   metadata?: any;
   history: { role: 'user' | 'assistant'; content: string }[];
+  provider?: string;
   callModel: (prompt: string, system: string) => Promise<string>;
 }): Promise<EditorialAgentResponse> {
   const blocks = indexManuscriptBlocks(params.bookContent);
@@ -232,6 +254,7 @@ export async function runEditorialTurn(params: {
     manuscriptBlocks: blocks,
     entityGraph: graph,
     history: params.history,
+    provider: params.provider,
   });
 
   const executedTools: { tool: string; summary: string }[] = [];

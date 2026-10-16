@@ -101,6 +101,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         bookContent,
         metadata,
         history,
+        provider: activeModelConfig?.provider,
         callModel: async (prompt, system) => {
           return await withOllamaOutputRoom(
             async (maxTokens) => {
