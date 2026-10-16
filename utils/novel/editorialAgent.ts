@@ -161,6 +161,7 @@ CRITICAL OPERATIONAL RULES:
 {"query": "search term", "chapter": Optional[number]}
 \`\`\`
 7. NEVER propose empty or no-op patches. If an issue requires author clarification, explain it clearly in your message.
+8. BE CONCISE. Deliver clear, targeted feedback and minimal surgical diffs. Do NOT reprint entire scenes or recite unasked prose, to respect output token budgets.
 `.trim();
 
   let prompt = `User request: "${params.userPrompt}"\n\n`;

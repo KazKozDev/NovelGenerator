@@ -9,6 +9,7 @@ import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
 import { runEditorialTurn, ProposedDiffCard } from '../utils/novel/editorialAgent';
+import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { MarkdownView } from './common/MarkdownView';
 
 export interface EditorialChatStudioProps {
@@ -101,16 +102,22 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         metadata,
         history,
         callModel: async (prompt, system) => {
-          return await generateText(
-            prompt,
-            system,
-            undefined,
-            0.2,
-            undefined,
-            undefined,
-            activeModelConfig,
-            4000,
-            false
+          return await withOllamaOutputRoom(
+            async (maxTokens) => {
+              return await generateText(
+                prompt,
+                system,
+                undefined,
+                0.2,
+                undefined,
+                undefined,
+                activeModelConfig,
+                maxTokens,
+                false
+              );
+            },
+            8192,
+            8192
           );
         },
       });
