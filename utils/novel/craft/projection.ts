@@ -4,10 +4,48 @@ import { jsonObject } from './editorial';
 import { extractJson } from './state';
 
 /** Clean and normalize scene cards from LLM output so valid models never fail on minor formatting drift. */
-export function sanitizePacket(packet: Packet): Packet {
+export function sanitizePacket(packet: Packet, chapterCount?: number): Packet {
   if (!packet || !Array.isArray(packet.scenes)) return packet;
+  const facts = new Map<string, number>();
+  for (const f of packet.facts || []) {
+    if (f && f.id && Number.isInteger(f.learnsAt)) facts.set(f.id, f.learnsAt);
+  }
+  const sceneIds = new Set<string>();
+  let runningChapter = 1;
   for (const [index, card] of packet.scenes.entries()) {
     if (!card) continue;
+    card.order = index + 1;
+    if (!card.id || typeof card.id !== 'string') card.id = `SC${index + 1}`;
+    if (chapterCount !== undefined && chapterCount > 0) {
+      if (!Number.isInteger(card.chapter) || card.chapter < 1 || card.chapter > chapterCount) {
+        card.chapter = Math.min(chapterCount, Math.max(runningChapter, card.chapter || 1));
+      }
+    }
+    if (card.chapter) runningChapter = card.chapter;
+
+    // Sanitize causal & knowledge graph links to prevent validation failures on model drift
+    if (Array.isArray(card.dependsOn)) {
+      card.dependsOn = card.dependsOn.filter(id => sceneIds.has(id));
+    } else {
+      card.dependsOn = [];
+    }
+    if (Array.isArray(card.povKnows)) {
+      card.povKnows = card.povKnows.filter(id => facts.has(id) && facts.get(id)! < card.order);
+    } else {
+      card.povKnows = [];
+    }
+    if (Array.isArray(card.newFacts)) {
+      card.newFacts = card.newFacts.filter(id => facts.has(id) && facts.get(id) === card.order);
+    } else {
+      card.newFacts = [];
+    }
+    sceneIds.add(card.id);
+
+    // Fallbacks for action, choice, change
+    if (!card.action?.trim()) card.action = card.purpose?.trim() || (card as any).goal?.trim() || 'acts';
+    if (!card.choice?.trim()) card.choice = card.action?.trim() || 'chooses to proceed';
+    if (!card.change?.trim()) card.change = (card as any).outcome?.trim() || (card as any).consequence?.trim() || card.purpose?.trim() || 'altered state';
+
     // 1. Normalize sceneType
     if (typeof card.sceneType === 'string') {
       const t = card.sceneType.toLowerCase().trim();
@@ -83,7 +121,7 @@ export function sanitizePacket(packet: Packet): Packet {
 
 /** Bound each projection response, even when a full novel needs dozens of cards. */
 export async function projectPacket(prompt: string, system: string, sceneCount: number, chapterCount: number, llm: NovelLLM): Promise<Packet> {
-  if (sceneCount <= 8) return sanitizePacket(jsonObject(await llm(prompt, system, { stage: 'craft-cards', temperature: 0.7, json: true, maxTokens: 12000 })) as Packet);
+  if (sceneCount <= 8) return sanitizePacket(jsonObject(await llm(prompt, system, { stage: 'craft-cards', temperature: 0.7, json: true, maxTokens: 12000 })) as Packet, chapterCount);
   const packet: Packet = { names: {}, initialProtagonistKnowledge: [], facts: [], scenes: [] };
   for (let start = 1; start <= sceneCount; start += 8) {
     const end = Math.min(sceneCount, start + 7);
@@ -98,7 +136,7 @@ export async function projectPacket(prompt: string, system: string, sceneCount: 
     }
     packet.scenes.push(...part.scenes);
   }
-  return sanitizePacket(packet);
+  return sanitizePacket(packet, chapterCount);
 }
 
 export function validatePacket(packet: Packet, chapterCount: number, expectedScenes?: number, layout: 'classic-three-scenes' | 'flexible' = 'classic-three-scenes'): void {
