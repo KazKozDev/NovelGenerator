@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { findSuspects, keysOf, parseRecords, recordsPrompt, renderRecords, type ChapterRecords } from '../utils/novel/chapterRecords';
+import { findSuspects, keysOf, openQuestions, pacingSuspects, parseRecords, recordsPrompt, renderRecords, type ChapterRecords } from '../utils/novel/chapterRecords';
 import { cachedRecords, chapterSkeleton, chapterSkeletons, clearSkeletonCache, knowledgeByPair } from '../utils/novel/editorialTools';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
 import { buildEditorialAgentPrompt } from '../utils/novel/editorialAgent';
@@ -121,5 +121,37 @@ describe('chapter records', () => {
     expect(prompt).toContain('SUSPICIONS FOUND BY CODE');
     expect(prompt).toContain('### Suspect 1: "body found" is given two times');
     expect(prompt).toContain('[ch2_p0]: Daniel had been found at noon.');
+  });
+
+  it('finds long quiet scenes and events shown then told again, for Pacing', () => {
+    const chapter1 = records({
+      scenes: [
+        { place: 'office', present: ['Nora'], what: 'Nora waits', when: '', paragraphs: ['ch1_p0'] },
+        { place: 'hall', present: ['Nora'], what: 'Nora meets Claire', when: '', paragraphs: ['ch1_p10'] },
+      ],
+      events: [{ key: 'meeting', what: 'Nora meets Claire in the hall', when: '', told: 'now', paragraph: 'ch1_p12' }],
+      open: [{ question: 'Who sent the letter?', paragraph: 'ch1_p3' }],
+    });
+    const chapter2 = records({ events: [{ key: 'meeting', what: 'Nora remembers meeting Claire in the hall', when: '', told: 'remembered', paragraph: 'ch2_p4' }] });
+    const suspects = pacingSuspects([chapter1, chapter2], chapter => (chapter === 1 ? 15 : 9));
+    expect(suspects).toEqual([
+      { claim: 'A scene of 10 paragraphs where the records show no event, nothing learned, and no object changing hands: "Nora waits" (ch1_p0..ch1_p9)', places: ['ch1_p0-ch1_p9'] },
+      { claim: '"meeting" is shown (ch1_p12) and told again as remembered (ch2_p4)', places: ['ch1_p12', 'ch2_p4'] },
+    ]);
+    expect(openQuestions([chapter1, chapter2])).toBe('- ch1_p3: Who sent the letter?');
+  });
+
+  it('gives Pacing its own suspicions and the open questions, not the plot sections', async () => {
+    const book = `## Chapter 1\n\n${Array.from({ length: 9 }, (_, i) => `Nora sat and waited, paragraph ${i}.`).join('\n\n')}`;
+    const blocks = indexManuscriptBlocks(book);
+    await chapterSkeletons(blocks, [1], async () => JSON.stringify({
+      scenes: [{ place: 'office', present: ['Nora'], what: 'Nora waits', paragraphs: ['ch1_p0'] }],
+      open: [{ question: 'Will Claire come?', paragraph: 'ch1_p2' }],
+    }));
+    const { prompt, system } = buildEditorialAgentPrompt({ userPrompt: 'Check', manuscriptBlocks: blocks, entityGraph: buildEntityGraph(blocks), history: [], view: 'pacing' });
+    expect(system).toContain('whether the story moves shows in what changes from scene to scene');
+    expect(prompt).toContain('### Suspect 1: A scene of 9 paragraphs');
+    expect(prompt).toContain('- ch1_p2: Will Claire come?');
+    expect(prompt).not.toContain('SPANS OF TIME STATED IN THE BOOK');
   });
 });

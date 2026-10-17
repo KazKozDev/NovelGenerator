@@ -190,3 +190,62 @@ export function findSuspects(records: ChapterRecords[], most = 15): Suspect[] {
     return true;
   }).slice(0, most);
 }
+
+// ---- Pacing: code names stretches where the records show nothing changing, and events shown then told again.
+
+const QUIET_SCENE_PARAGRAPHS = 8;
+const CHANGES = /taken|given|found|lost|broken|used|handed|stolen|взя|дал|наш[её]л|потерял|сломал/i;
+const LEARNS = /learn|discover|finds out|realis|realiz|told|узна|понял|догада/i;
+const at = (id: string) => { const m = id.match(/ch(\d+)_p(\d+)/); return m ? { chapter: Number(m[1]), p: Number(m[2]) } : undefined; };
+
+/** A scene of eight paragraphs or more in which the records show no event, nothing learned, and no object changing hands. */
+function quietScenes(records: ChapterRecords[], lastParagraph: (chapter: number) => number): Suspect[] {
+  const suspects: Suspect[] = [];
+  for (const r of records) {
+    const scenes = r.scenes.flatMap(s => {
+      const places = s.paragraphs.map(at).filter((x): x is { chapter: number; p: number } => !!x);
+      return places.length ? [{ scene: s, chapter: places[0].chapter, start: Math.min(...places.map(x => x.p)), end: Math.max(...places.map(x => x.p)) }] : [];
+    }).sort((a, b) => a.start - b.start);
+    const changes = [
+      ...r.events.filter(e => e.told === 'now').map(e => e.paragraph),
+      ...r.knowledge.filter(k => k.knows && LEARNS.test(k.how)).map(k => k.paragraph),
+      ...r.objects.filter(o => CHANGES.test(o.action)).map(o => o.paragraph),
+    ].map(at).filter((x): x is { chapter: number; p: number } => !!x);
+    scenes.forEach((s, i) => {
+      const end = Math.max(s.end, (scenes[i + 1]?.start ?? lastParagraph(s.chapter) + 1) - 1);
+      const length = end - s.start + 1;
+      if (length < QUIET_SCENE_PARAGRAPHS || changes.some(c => c.chapter === s.chapter && c.p >= s.start && c.p <= end)) return;
+      suspects.push({
+        claim: `A scene of ${length} paragraphs where the records show no event, nothing learned, and no object changing hands: "${s.scene.what}" (ch${s.chapter}_p${s.start}..ch${s.chapter}_p${end})`,
+        places: [`ch${s.chapter}_p${s.start}-ch${s.chapter}_p${end}`],
+      });
+    });
+  }
+  return suspects;
+}
+
+/** An event the book shows, then tells again later as a memory or a report. */
+function retoldEvents(events: (ChapterRecords['events'][number])[]): Suspect[] {
+  const suspects: Suspect[] = [];
+  for (const [, list] of groupBy(events, e => e.key)) {
+    const sorted = [...list].sort((a, b) => order(a.paragraph) - order(b.paragraph));
+    const shown = sorted.find(e => e.told === 'now');
+    if (!shown) continue;
+    for (const again of sorted.filter(e => e.told !== 'now' && order(e.paragraph) > order(shown.paragraph) && alike(e.what, shown.what))) {
+      suspects.push({ claim: `"${shown.key}" is shown (${shown.paragraph}) and told again as ${again.told} (${again.paragraph})`, places: [shown.paragraph, again.paragraph] });
+    }
+  }
+  return suspects;
+}
+
+/** Every pacing check over the records of the whole book: long quiet scenes first, then events told again. */
+export function pacingSuspects(records: ChapterRecords[], lastParagraph: (chapter: number) => number, most = 15): Suspect[] {
+  const quiet = quietScenes(records, lastParagraph).sort((a, b) => Number(b.claim.match(/\d+/)?.[0]) - Number(a.claim.match(/\d+/)?.[0]));
+  return [...quiet.slice(0, 10), ...retoldEvents(records.flatMap(r => r.events))].slice(0, most);
+}
+
+/** The questions and promises the chapters leave open, in book order, for a reader to see which the book never answers. */
+export function openQuestions(records: ChapterRecords[]): string {
+  return records.flatMap(r => r.open).sort((a, b) => order(a.paragraph) - order(b.paragraph))
+    .map(o => `- ${o.paragraph || 'no paragraph'}: ${o.question}`).join('\n');
+}

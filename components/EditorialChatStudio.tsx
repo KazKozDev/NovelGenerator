@@ -84,10 +84,19 @@ End with the kept repeats ranked by how much they slow the story, and ask which 
   },
   {
     label: '03 · Pacing',
+    view: 'pacing',
     prompt: `Check whether the story moves. Do not change the text yet.
-Start with chapter_skeleton {} for every chapter. For each scene say in one line what is different at its end, and whether it follows from the scene before because of it, despite it, or only after it.
-Name the stretches where nothing changes for a whole chapter or longer, the questions the book raises and never answers, and the promises made early that the ending does not keep.
-Read the passages (read_blocks) before you call a scene idle. Give paragraph ids. If the story moves well, say so. Answer in the language of the manuscript.`,
+Code has already checked the chapter records and lists its suspicions below, each with its passages: long scenes where no event is shown, nothing is learned, and no object changes hands, and events shown and then told again. Decide each from the passages given; do not read whole chapters. Keep it only if the passages show the story standing still or going over what the reader already has; a scene that turns a relation, raises the stakes, or plants what a later chapter needs is not idle.
+You may add up to 3 suspicions of your own: a question or promise in the open list that no later chapter answers, a stretch of a chapter or longer where nothing is different at the end, or an ending that does not keep a promise made early. Code's suspicions already come with their passages: do not send them to check_suspects again. Use at most one check_suspects call, for your own suspicions only. Keep only suspicions that were checked: code's, or your own sent through check_suspects; a new problem noticed while writing goes through check_suspects first.
+For each kept problem give the quotes with paragraph ids, say what the reader already has there, and one or two ways the author could close it (cut or compress the stretch, merge it with the scene around it, give it a turn that changes something, answer the open question), then one block:
+\`\`\`problem
+{"title": "short name of the problem", "places": ["ch3_p10-ch3_p24"], "ways": ["first way to close it", "second way"]}
+\`\`\`
+Drop a suspect only with a quote that clears it: a sentence from the book that shows what the scene changes, where the question is answered, or why the event is told again, or a sentence from the author's notes that shows it is intended. Your reading of the context is not a reason; a suspect with no such quote stays kept. For each dropped suspect write one line, then one block:
+\`\`\`dropped
+{"title": "short name of the suspect", "places": ["ch1_p21"], "quote": "the exact sentence from the book or the author's notes that clears it"}
+\`\`\`
+End with the kept problems ranked by how much they slow the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
 ];
 

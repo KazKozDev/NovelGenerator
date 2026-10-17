@@ -1,7 +1,7 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
-import { findSuspects } from './chapterRecords';
+import { findSuspects, openQuestions, pacingSuspects } from './chapterRecords';
 import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, cachedRecords, knowledgeByPair, linesAbout, formatRepeats, readBlocks, readBookNotes, durationMentions, durationSuspects, formatDurations } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
@@ -37,8 +37,8 @@ export interface EditorialAgentResponse {
   problems: EditorialProblem[];
 }
 
-/** 'skeletons': the plot review; 'repeats': the review of what the book tells twice. Both show skeletons, not prose. */
-export type EditorialView = 'full' | 'skeletons' | 'repeats';
+/** 'skeletons': the plot review; 'repeats': what the book tells twice; 'pacing': whether the story moves. All show skeletons, not prose. */
+export type EditorialView = 'full' | 'skeletons' | 'repeats' | 'pacing';
 
 const PROBLEM_BLOCK = /```problem\s*\r?\n([\s\S]*?)\r?\n```/gi;
 const DROPPED_BLOCK = /```dropped\s*\r?\n([\s\S]*?)\r?\n```/gi;
@@ -113,8 +113,24 @@ export function codeRepeatSuspects(blocks: ManuscriptBlock[]): { claim: string; 
 }
 
 /** A review view: the book comes as chapter skeletons, code's suspicions come with their passages, and kept problems must be checked. */
-const isReview = (view?: EditorialView) => view === 'skeletons' || view === 'repeats';
-const suspectsFor = (blocks: ManuscriptBlock[], view?: EditorialView) => (view === 'repeats' ? codeRepeatSuspects(blocks) : codeSuspects(blocks));
+const isReview = (view?: EditorialView) => view === 'skeletons' || view === 'repeats' || view === 'pacing';
+const lastParagraph = (blocks: ManuscriptBlock[]) => (chapter: number) => Math.max(-1, ...blocks.filter(b => b.chapterNum === chapter).map(b => b.pIndex));
+const suspectsFor = (blocks: ManuscriptBlock[], view?: EditorialView) =>
+  view === 'repeats' ? codeRepeatSuspects(blocks)
+    : view === 'pacing' ? pacingSuspects(cachedRecords(blocks), lastParagraph(blocks))
+      : codeSuspects(blocks);
+
+// What each review looks for, in the words its prompt uses.
+const REVIEW_FOCUS: Record<string, string> = {
+  skeletons: 'a plot hole hides in prose',
+  repeats: 'a scene told twice shows in what the chapters state',
+  pacing: 'whether the story moves shows in what changes from scene to scene',
+};
+const SUSPECTS_FOUND: Record<string, string> = {
+  skeletons: 'a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new',
+  repeats: 'passages standing twice in the text, and sentences said more than once',
+  pacing: 'checks over the chapter records: a long scene where no event is shown, nothing is learned, and no object changes hands, and an event shown and then told again',
+};
 
 export function parseProblems(text: string): EditorialProblem[] {
   const problems: EditorialProblem[] = [];
@@ -229,6 +245,7 @@ export function buildEditorialAgentPrompt(params: {
 }): { system: string; prompt: string } {
   const skeletonView = isReview(params.view);
   const repeatsView = params.view === 'repeats';
+  const view = params.view || 'full';
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
 
@@ -297,7 +314,7 @@ export function buildEditorialAgentPrompt(params: {
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
 ${skeletonView
-    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: ${repeatsView ? 'a scene told twice shows in what the chapters state' : 'a plot hole hides in prose'}. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
+    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: ${REVIEW_FOCUS[view]}. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
     : `You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).`}
 You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
 Respond in the language used by the author (if Russian, respond in natural Russian).
@@ -359,14 +376,15 @@ ${repeatsView ? '' : `   - find_repeats {"chapter": Optional[number]} — passag
   // Code checks the chapter records and names suspicions; the passages come with them, to be read.
   if (skeletonView) {
     const suspects = suspectsFor(params.manuscriptBlocks, params.view);
-    const found = repeatsView
-      ? 'passages standing twice in the text, and sentences said more than once'
-      : 'a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new';
     prompt += suspects.length
-      ? `SUSPICIONS FOUND BY CODE (${found}). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
+      ? `SUSPICIONS FOUND BY CODE (${SUSPECTS_FOUND[view]}). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
       : `SUSPICIONS FOUND BY CODE: none.\n\n`;
   }
-  if (skeletonView && !repeatsView) {
+  if (view === 'pacing') {
+    const open = openQuestions(cachedRecords(params.manuscriptBlocks));
+    if (open) prompt += `QUESTIONS AND PROMISES THE CHAPTERS LEAVE OPEN (code lists them in book order; one the later chapters never answer is a suspicion):\n${open}\n\n`;
+  }
+  if (view === 'skeletons') {
     const durations = durationMentions(params.manuscriptBlocks);
     if (durations.length) prompt += `SPANS OF TIME STATED IN THE BOOK (code lists every span in book order; two different spans for one relation, habit, or stretch of time are a suspicion):\n${formatDurations(durations)}\n\n`;
     const knowledge = knowledgeByPair(skeletons);
