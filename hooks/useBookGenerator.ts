@@ -1,3 +1,10 @@
+import {restoreModelEvents} from '../utils/novel/promptBook/telemetry';
+import {setPromptWorkspaceStage,savePromptStoryManuscript,type PromptWorkspaceStage} from '../utils/novel/promptBook/editing';
+import {prepareWritingStyle,saveWritingStyle,type StyleInputs} from '../utils/novel/promptBook/style';
+import {fixPromptIssue,writePromptStory} from '../utils/novel/promptBook/actions';
+import {checkPromptConsistency} from '../utils/novel/promptBook/review';
+import { initializePromptBook, generatePromptBook, editBlueprint, editChapterPrompt, type PromptBook, type BookBlueprint } from '../utils/novel/promptBook';
+import { livePreview } from '../utils/livePreview';
 import { AUDIT_STAGES } from '../utils/novel/craft/craftOrchestrator';
 import {addTokenUsage,emptyTokenTotals,savedTokenTotals,type TokenTotals} from '../utils/tokenUsage';
 import { useState, useRef, useEffect } from 'react';
@@ -29,6 +36,12 @@ export function stepName(prompt: string): string {
 }
 
 const STAGES: Record<string, string> = {
+  'prompt-blueprint': 'Shared book outline',
+  'prompt-chapters': 'Chapter writing prompts',
+  'prompt-consistency': 'Prompt consistency review',
+  'prompt-fix': 'Fix prompt issue',
+  'prompt-story': 'Write story chapter',
+  'style-profile': 'Create writing style profile',
   'craft-preparation': 'Author Dossier: 4 Layers of Truth & Backstory',
   'craft-cards': 'Scene Projection: Scene Cards & Knowledge Registry',
   'craft-preflight': 'Preflight: Causal Consistency Audit',
@@ -130,6 +143,7 @@ export default function useBookGenerator() {
   const [developmentLabel, setDevelopmentLabel] = useState<string | undefined>();
   const [hasUnfinished, setHasUnfinished] = useState(false);
   const [storeReady, setStoreReady] = useState(false);
+  const [promptBook, setPromptBook] = useState<PromptBook | null>(null);
   const [isEditorialRunning, setIsEditorialRunning] = useState(false);
   const editorialRunningRef = useRef(false);
 
@@ -143,6 +157,15 @@ export default function useBookGenerator() {
     setTokenTotals(savedTokenTotals(store.runLog()));
     const manuscript = store.manuscript();
     const author = store.loadAuthor();
+    setPromptBook(author?.promptPlanning || null);
+    if (author?.promptPlanning) {
+      const planning = author.promptPlanning;
+      setStorySettings(planning.brief.settings);
+      setHasUnfinished(planning.phase !== 'ready');
+      setDevelopmentLabel(planning.phase === 'blueprint' ? 'Planning book outline' : planning.phase === 'prompts' ? 'Preparing chapter prompts' : undefined);
+      if (planning.phase === 'ready') setCurrentStep(GenerationStep.Done);
+      return;
+    }
     setGeneratedChapters(manuscript.map(({ chapter, text }) => ({ title: `Chapter ${chapter}`, content: normalizeChapterBody(text, chapter), ...(author?.chapters[chapter - 1] ? { plan: `${author.chapters[chapter - 1].card ? `**What the author noted on closing it**\n\n${author.chapters[chapter - 1].card}\n\n` : ''}**What a reader said**\n\n${author.chapters[chapter - 1].reader || '(the author has not asked a reader about this chapter)'}` } : {}) })));
     setDeskTools(author?.desk ? deskTabs(author.desk) : []);
     if (author) {
@@ -192,6 +215,8 @@ export default function useBookGenerator() {
       craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
       premise: input.premise,
       genre: input.genre,
+      author_requirements: input.author_requirements,
+      dossier: store.loadAuthor()?.notebook,
       models: modelDetail || undefined,
     }));
     setCurrentStep(GenerationStep.Done);
@@ -210,7 +235,7 @@ export default function useBookGenerator() {
     else if (stage === 'done') refreshFromStore();
   }
 
-  async function run(input: ProjectInput, fresh: boolean, editorial = false) {
+  async function run(input: ProjectInput, fresh: boolean, editorial = false, reviewChapters?: number[], action?: {kind:'fix';review:string;index:number}|{kind:'story';restart:boolean}|{kind:'style';inputs:StyleInputs}) {
     if (busy.current) return;
     busy.current = true;
     const token = epoch.current;
@@ -225,7 +250,7 @@ export default function useBookGenerator() {
       setFinalBookContent(null);
       setFinalMetadataJson(null);
       setGeneratedChapters([]);
-      setCurrentChapterProcessing(0);
+      currentChapterRef.current=0;setCurrentChapterProcessing(0);
     }
     setCurrentStep(GenerationStep.GeneratingOutline);
     setError(null);
@@ -239,7 +264,7 @@ export default function useBookGenerator() {
     const second = getStoredSecondWriterConfig();
     const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'compatible' ? config.compatibleModel || '?' : config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
-    store.log('models', `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
+    store.log('models', input.generation_mode === 'prompts' ? `planner: ${modelOf(writer)}` : `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
       checkActive();
       // Search by meaning, asked quietly of a small network. Without a token it fails, and the engine searches by words instead.
@@ -252,17 +277,20 @@ export default function useBookGenerator() {
       const call = describeCall(options.stage, prompt);
       const details = [`stage: ${options.stage || 'unlabelled'} · role: ${options.route === 'writer2' ? 'second writer' : options.route || 'writer'} · sent ${size(prompt.length + system.length)} characters`,
         call.reason ? `refused for: ${call.reason}` : '', `the request ends:\n…${prompt.slice(-700)}`].filter(Boolean).join('\n\n');
-      const finish = (type: 'success' | 'warning', outcome: string) => setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.type === 'execution' && entry.details === details ? { ...entry, type: type === 'warning' ? type : entry.type, finished: true, outcome } : entry));
+      const eventId=`${start}:${options.stage||'model'}:${currentChapterRef.current}`;
+      const finish = (type: 'success' | 'warning', outcome: string) => {if(epoch.current!==token)return;const finishedAt=Date.now();if(input.generation_mode==='prompts')store.log('model_result',JSON.stringify({id:eventId,result:{type:type==='warning'?'warning':'execution',finished:true,finishedAt,outcome}}));setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.type === 'execution' && entry.details === details ? { ...entry, type: type === 'warning' ? type : entry.type, finished: true,finishedAt,outcome } : entry));};
       const role = options.route === 'validator' && validator ? validator : options.route === 'writer2' && second ? second : writer;
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
       const servingTag = role.provider === 'compatible' ? `API:${role.compatibleModel || '?'}` : role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
         ? `Ollama:${role.ollamaModel || '?'}` : `Gemini:${role.geminiModel || 'default'}`;
-      setAgentLogs(previous => [...previous, { timestamp: start, chapterNumber: currentChapterRef.current, type: 'execution', message: `${call.title} · ${servingTag}`, details, ...(call.reason ? { outcome: `Refused for: ${call.reason}` } : {}) }]);
+      const event:AgentLogEntry={timestamp:start,chapterNumber:currentChapterRef.current,type:'execution',message:`${call.title} · ${servingTag}`,details,finished:false,...(call.reason?{outcome:`Refused for: ${call.reason}`}:{})};
+      if(input.generation_mode==='prompts')store.log('model_call',JSON.stringify({id:eventId,entry:event}));
+      setAgentLogs(previous=>[...previous,event]);
       // While an answer arrives: the inspector says how much has come and how fast, and a
       // writer's prose is shown as it is written. Both are refreshed a few times a second at most.
-      const writing = /^(author-step|author-chapter|craft-write|craft-repair|thesis-(block-write|block-repair|expand|polish|seam-repair|rough-repair|audit-repair))$/.test(options.stage || '');
+      const writing = /^(prompt-story|author-step|author-chapter|craft-write|craft-repair|thesis-(block-write|block-repair|expand|polish|seam-repair|rough-repair|audit-repair))$/.test(options.stage || '');
       let arrived = '', shown = 0;
       const progress = (force = false) => {
         if (epoch.current !== token || (!force && Date.now() - shown < 400)) return;
@@ -283,7 +311,7 @@ export default function useBookGenerator() {
           if (body || !desk) setLiveDraft({ label: desk ? `The author is writing ${now.match(/^\**FILE\**\s*:\**\s*[`"']?(chapter-\d+)/mi)?.[1].replace('-', ' ') || 'a chapter'}` : call.title, text: body });
         }
       };
-      const boundedAudit = AUDIT_STAGES.has(options.stage || '');
+      const boundedAudit = AUDIT_STAGES.has(options.stage || '') || options.stage === 'prompt-story';
       const live = { retryOutputLimit: !boundedAudit, onChunk: (chunk: string) => { arrived += chunk; progress(); }, onRestart: (why: string) => { arrived = ''; progress(true); setAgentLogs(previous => previous.map(entry => entry.timestamp === start && entry.details === details && !entry.finished ? { ...entry, outcome: `Asking again: ${why}` } : entry)); } };
       const ask = async (maxTokens: number | undefined, retry = false) => {
         checkActive();
@@ -325,6 +353,19 @@ export default function useBookGenerator() {
     };
     const poll = setInterval(() => { if (epoch.current === token) refreshFromStore(); }, 1500);
     try {
+      if (input.generation_mode === 'prompts') {
+        if (action?.kind === 'style') await prepareWritingStyle(store,llm,checkActive,true,action.inputs);
+        else if (action?.kind === 'fix') await fixPromptIssue(store,llm,action.review,action.index,checkActive);
+        else if (action?.kind === 'story') await writePromptStory(store,llm,checkActive,chapter=>{currentChapterRef.current=chapter;setCurrentChapterProcessing(chapter);},action.restart);
+        else if (reviewChapters) await checkPromptConsistency(store, llm, reviewChapters, checkActive);
+        else await generatePromptBook(store, llm, checkActive);
+        checkActive();
+        await store.flush();
+        refreshFromStore();
+        setCurrentStep(GenerationStep.Done);
+        playSuccessSound();
+        return;
+      }
       const orchestrator = new Orchestrator(store, budgetFor(input.chapter_count), (stage, chapter) => {
         if (epoch.current !== token) return;
         handleProgress(stage, chapter);
@@ -365,12 +406,15 @@ export default function useBookGenerator() {
     PersistentProjectStore.open().then(store => {
       if (!live) return;
       storeRef.current = store;
+      setAgentLogs(restoreModelEvents(store.runLog()));
       store.onSaveStatus = status => { if (live) { setAutosaveStatus(status); setLastSavedAt(status.savedAt); } };
       setAutosaveStatus(store.saveStatus); setLastSavedAt(store.saveStatus.savedAt);
       if (store.saveStatus.state === 'error') { setError(store.saveStatus.error || 'Project storage failed'); setCurrentStep(GenerationStep.Error); }
       const input = store.loadInput();
       if (input) {
         inputRef.current = input;
+        const savedPromptSettings = store.loadAuthor()?.promptPlanning?.brief.settings;
+        if (savedPromptSettings) setStorySettings(savedPromptSettings);
         if (input.title) setBookTitleInput(input.title);
         setStoryPremise(input.premise);
         setNumChapters(input.chapter_count);
@@ -393,8 +437,9 @@ export default function useBookGenerator() {
   async function startGeneration(premise: string, count: number, customTitle?: string) {
     if (busy.current || !storeRef.current) return;
     const title = customTitle !== undefined ? customTitle : bookTitleInput;
-    const input: ProjectInput = { ...buildProjectInput(premise, count, storySettings, title), generation_mode: 'craft' };
+    const input: ProjectInput = { ...buildProjectInput(premise, count, storySettings, title), generation_mode: 'prompts' };
     getStore().clearAll();
+    setPromptBook(initializePromptBook(input, storySettings, getStore()));
     inputRef.current = input;
     if (title) setBookTitleInput(title);
     setStoryPremise(premise);
@@ -469,6 +514,8 @@ export default function useBookGenerator() {
       craft: { landmarks: latestReview('structure')?.landmarks, readerMap: latestReview('reader-promises')?.readerMap },
       premise: input?.premise,
       genre: input?.genre,
+      author_requirements: input?.author_requirements,
+      dossier: draft?.notebook,
       models: modelDetail || undefined,
     }));
     refreshFromStore();
@@ -478,6 +525,10 @@ export default function useBookGenerator() {
 
   async function continueGeneration() {
     if (busy.current || !inputRef.current || !storeRef.current) return;
+    if (inputRef.current.generation_mode === 'prompts') {
+      await run(inputRef.current, false);
+      return;
+    }
     let configured:ProjectInput;
     try { configured=buildProjectInput(storyPremise,numChapters,storySettings,bookTitleInput); }
     catch(error){setError(error instanceof Error?error.message:String(error));setCurrentStep(GenerationStep.Error);return;}
@@ -513,12 +564,16 @@ export default function useBookGenerator() {
       throw new Error('Not a JSON file.');
     }
     restoreSnapshot(store, parsed);
+    setAgentLogs(restoreModelEvents(store.runLog()));
     await store.flush();
     const input = store.loadInput();
     inputRef.current = input;
     if (input) {
+      setBookTitleInput(input.title || '');
       setStoryPremise(input.premise);
       setNumChapters(input.chapter_count);
+      const settings = store.loadAuthor()?.promptPlanning?.brief.settings;
+      if (settings) setStorySettings(settings);
     }
     setFinalBookContent(null);
     setFinalMetadataJson(null);
@@ -541,6 +596,7 @@ export default function useBookGenerator() {
     setIsLoading(false);
     setError(null);
     setHasUnfinished(false);
+    setPromptBook(null);
     setCurrentStep(GenerationStep.Idle);
   }
 
@@ -560,6 +616,7 @@ export default function useBookGenerator() {
     store.clearAll();
     await store.flush().catch(() => undefined);
     inputRef.current = null;
+    setPromptBook(null);
     setStoryPremise('');
     setNumChapters(3);
     setAgentLogs([]);
@@ -577,6 +634,19 @@ export default function useBookGenerator() {
     setHasUnfinished(false);
   }
 
+  async function updatePromptBlueprint(plan: BookBlueprint) {
+    if (busy.current) throw new Error('Wait for planning to finish.');
+    editBlueprint(getStore(), plan);
+    refreshFromStore();
+    await getStore().flush();
+  }
+  async function updateChapterPrompt(chapter: number, system: string, prompt: string) {
+    if (busy.current) throw new Error('Wait for planning to finish.');
+    editChapterPrompt(getStore(), chapter, system, prompt);
+    refreshFromStore();
+    await getStore().flush();
+  }
+
   // Derive from the durable history even when an in-flight poll was started
   // before a hot update; remounting the text view must not erase its baseline.
   const report = storeRef.current?.loadReport();
@@ -584,6 +654,15 @@ export default function useBookGenerator() {
   const workspaceChapters = generatedChapters.map(chapter => ({ ...chapter, revisionStatus }));
 
   return {
+    promptBook, updatePromptBlueprint, updateChapterPrompt,
+    changePromptStage: (stage:PromptWorkspaceStage) => {try{setPromptWorkspaceStage(getStore(),stage);setError(null);refreshFromStore();void getStore().flush().catch(err=>setError(String(err)));}catch(err){setError(err instanceof Error?err.message:String(err));}},
+    savePromptStory: (content:string,expected:string) => {if(busy.current)return false;try{savePromptStoryManuscript(getStore(),content,expected);setError(null);refreshFromStore();void getStore().flush().catch(err=>setError(String(err)));return true;}catch(err){setError(err instanceof Error?err.message:String(err));return false;}},
+    updateWritingStyle: async (profile:string,inputs:StyleInputs) => {if(busy.current)throw new Error('Wait for the current operation to finish.');saveWritingStyle(getStore(),profile,inputs);refreshFromStore();await getStore().flush();},
+    generateWritingStyle: (inputs:StyleInputs) => inputRef.current ? run(inputRef.current,false,false,undefined,{kind:'style',inputs}) : Promise.resolve(),
+    fixPromptIssue: (review:string,index:number) => inputRef.current ? run(inputRef.current,false,false,undefined,{kind:'fix',review,index}) : Promise.resolve(),
+    generatePromptStory: (restart=false) => inputRef.current ? run(inputRef.current,false,false,undefined,{kind:'story',restart}) : Promise.resolve(),
+    stopPromptOperation: () => { epoch.current++; busy.current=false;setIsLoading(false);setLiveDraft(null);refreshFromStore(); },
+    checkPrompts: (chapters: number[]) => inputRef.current ? run(inputRef.current, false, false, chapters) : Promise.resolve(),
     storyPremise, setStoryPremise, numChapters, setNumChapters, storySettings, setStorySettings,
     bookTitleInput, setBookTitleInput,
     isLoading, currentStep, error, developmentLabel,

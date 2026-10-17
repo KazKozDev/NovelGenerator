@@ -59,7 +59,7 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
   }, [content, texture]);
 
   return (
-    <div data-testid="zone-checks" className="shrink-0 flex flex-col pb-5">
+    <div data-testid="zone-checks" title="Text statistics and heuristic indicators, not a model review or plagiarism check." className="shrink-0 flex flex-col pb-5">
       {/* Header: Chapter title + status + word count */}
       <div className="shrink-0 flex flex-col gap-1.5 pb-2.5 border-b border-zinc-800">
         <div className="flex items-center justify-between gap-2">

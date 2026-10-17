@@ -1,3 +1,5 @@
+import PromptBookWorkspace from './components/PromptBookWorkspace';
+import { canEditPromptStory, promptStoryContent, promptStoryMetadata } from './utils/novel/promptBook/editing';
 
 
 
@@ -20,6 +22,7 @@ import { installConsoleBridge, logToTerminal, watchMainThreadStalls } from './ut
 
 const App: React.FC = () => {
   const {
+    promptBook, updatePromptBlueprint, updateChapterPrompt, checkPrompts, fixPromptIssue, generatePromptStory, stopPromptOperation, updateWritingStyle, generateWritingStyle, changePromptStage, savePromptStory,
     storyPremise,
     setStoryPremise,
     numChapters,
@@ -98,7 +101,7 @@ const App: React.FC = () => {
     resetGenerator();
   };
 
-  const showProgress = (isLoading && !isEditorialRunning) || (isResumable && currentStep !== GenerationStep.Done);
+  const showProgress = !promptBook && ((isLoading && !isEditorialRunning) || (isResumable && currentStep !== GenerationStep.Done));
 
   const isStudioLayout = showProgress;
 
@@ -170,8 +173,30 @@ const App: React.FC = () => {
       return base;
     }
   }, [finalMetadataJson, authorName, imprintData, coverImageUrl]);
+
+  const promptManuscript = promptBook?.story?.chapters?.length ? promptStoryContent(promptBook) : '';
+  const promptMetadata = React.useMemo(() => {
+    if (!promptBook?.story?.chapters?.length) return null;
+    try {
+      const meta = promptStoryMetadata(promptBook) as Record<string, unknown>;
+      if (authorName.trim()) meta.author = authorName.trim();
+      if (imprintData) meta.imprint = imprintData;
+      if (coverImageUrl) meta.coverImage = coverImageUrl;
+      return meta;
+    } catch {
+      return savedMetadata;
+    }
+  }, [promptBook, authorName, imprintData, coverImageUrl, savedMetadata]);
+
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
+  ) : promptManuscript ? (
+    <SaveBook
+      draft={!canEditPromptStory(promptBook!)}
+      content={promptManuscript}
+      metadata={promptMetadata || savedMetadata}
+      onExportProject={exportProject}
+    />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
     <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} onExportProject={exportProject} />
   ) : null;
@@ -235,12 +260,12 @@ const App: React.FC = () => {
           </div>
         ) : null;
 
-  const isMainPage = currentStep === GenerationStep.Idle && !finalBookContent;
+  const isMainPage = currentStep === GenerationStep.Idle && !finalBookContent && !promptBook;
 
   return (
-    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
+    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : (finalBookContent || promptBook) ? 'min-h-screen p-2 md:p-4' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
-      <header className={`w-full ${finalBookContent ? 'max-w-[1700px]' : 'max-w-4xl'} mb-6 px-4 md:px-8 transition-all duration-300`}>
+      <header className={`w-full ${(finalBookContent || promptBook) ? 'max-w-[1700px] mb-2 px-2 md:px-4' : 'max-w-4xl mb-6 px-4 md:px-8'} transition-all duration-300`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col">
             <h1 className="text-xl font-semibold wordmark">
@@ -265,7 +290,7 @@ const App: React.FC = () => {
               Reset Project
             </button>
 
-            {saveControl}
+            {!promptBook && saveControl}
 
             <span className="w-px h-4 bg-zinc-800 mx-1 hidden sm:inline-block" aria-hidden="true" />
 
@@ -279,10 +304,12 @@ const App: React.FC = () => {
       </header>
       )}
 
-      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : (finalBookContent ? 'max-w-[1700px] p-4 md:p-6' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
-        {!showProgress && errorPanel}
+      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : ((finalBookContent || promptBook) ? 'max-w-[1700px] px-2 md:px-4 py-1' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
+        {!showProgress && !promptBook && errorPanel}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && !showProgress && (
+        {promptBook && <PromptBookWorkspace value={promptBook} busy={isLoading} label={developmentLabel} error={error} onContinue={handleContinue} onSaveBlueprint={updatePromptBlueprint} onSavePrompt={updateChapterPrompt} onCheck={checkPrompts} onFix={fixPromptIssue} onStageChange={changePromptStage} publication={{author:authorName,onAuthorChange:handleAuthorChange,imprint:imprintData,onImprintChange:handleImprintChange,coverImage:coverImageUrl,onCoverChange:setCoverImageUrl}} onSaveStory={savePromptStory} agentLogs={agentLogs} tokenTotals={tokenTotals} lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus} onReset={handleReset} onSaveStyle={updateWritingStyle} onGenerateStyle={generateWritingStyle} onGenerateStory={generatePromptStory} onStop={stopPromptOperation} writingChapter={currentChapterProcessing} liveText={liveDraft?.text} onExport={exportProject} onSettings={editSettings} saveStatus={autosaveStatus?.state} />}
+
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && isResumable && !showProgress && (
           <div className="border border-zinc-800 bg-zinc-900/40 rounded p-4 md:p-5 text-sm text-zinc-300 space-y-3">
             <div>
               <p className="font-medium text-zinc-200">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
@@ -330,12 +357,13 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !storeReady && (
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && !storeReady && (
           <p className="text-zinc-500 text-xs">Opening project storage…</p>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && storeReady && (
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && !isResumable && storeReady && (
           <UserInput
+            planningOnly
             bookTitle={bookTitleInput}
             setBookTitle={setBookTitleInput}
             storyPremise={storyPremise}
@@ -395,6 +423,7 @@ const App: React.FC = () => {
               onImprintChange={handleImprintChange}
               coverImage={coverImageUrl}
               onCoverChange={setCoverImageUrl}
+              onExportProject={exportProject}
             />
           </>
         )}

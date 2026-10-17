@@ -295,6 +295,9 @@ export interface StorySettings {
   tone?: string;
   targetAudience?: string;
   writingStyle?: string;
+  /** Preferences and reference excerpts used to build a shared prose-style profile. */
+  styleInstructions?: string;
+  proseSamples?: string;
   /** How intimate scenes are written; passed to the writer verbatim. */
   intimacy?: string;
   generationSpeedMode?: GenerationSpeedMode;
@@ -313,6 +316,7 @@ export interface AgentLogEntry {
   /** How the call ended: time taken, sizes, and the reason when it failed. */
   outcome?: string;
   finished?: boolean;
+  finishedAt?: number;
   // For diff visualization
   beforeText?: string;
   afterText?: string;

@@ -1,3 +1,4 @@
+import {WritingStyleFields} from './WritingStyleFields';
 import React, { useState, useEffect } from 'react';
 import { Button } from './common/Button';
 import { TextArea } from './common/TextArea';
@@ -6,6 +7,7 @@ import { Combo } from './common/Combo';
 import { GEMINI_MODEL_NAME, MIN_CHAPTERS, MAX_CHAPTERS } from '../constants';
 import { GENRE_CHOICES } from '../utils/genreList';
 import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
+import { fetchHuggingFaceModels } from '../services/hfBrowserService';
 import { fetchOllamaModels } from '../services/ollamaService';
 import { fetchProviderModels } from '../services/qwenBrowserService';
 import { LLMProviderConfig, StorySettings } from '../types';
@@ -23,11 +25,12 @@ interface UserInputProps {
   setStorySettings: (settings: StorySettings) => void;
   onSubmit: () => void;
   isLoading: boolean;
+  planningOnly?: boolean;
 }
 
 const UserInput: React.FC<UserInputProps> = ({
-  bookTitle: _bookTitle,
-  setBookTitle: _setBookTitle,
+  bookTitle,
+  setBookTitle,
   storyPremise,
   setStoryPremise,
   numChapters,
@@ -38,6 +41,7 @@ const UserInput: React.FC<UserInputProps> = ({
   setStorySettings,
   onSubmit,
   isLoading,
+  planningOnly = false,
 }) => {
   const [providerConfig, setProviderConfig] = useState<LLMProviderConfig>(() => getStoredProviderConfig());
   const [validator, setValidator] = useState<LLMProviderConfig & { enabled: boolean }>(() => {
@@ -138,7 +142,7 @@ const UserInput: React.FC<UserInputProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((providerConfig.provider === 'compatible' || (validator.enabled && validator.provider === 'compatible')) && !await saveCompatibleUrl()) return;
+    if ((providerConfig.provider === 'compatible' || (!planningOnly && validator.enabled && validator.provider === 'compatible')) && !await saveCompatibleUrl()) return;
     if (numChapters >= MIN_CHAPTERS && numChapters <= MAX_CHAPTERS) {
       onSubmit();
     } else {
@@ -149,7 +153,7 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI Model Provider Section */}
-      <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 text-left">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
           <h2 className="text-sm font-medium text-zinc-200">AI Models</h2>
         </div>
@@ -243,8 +247,8 @@ const UserInput: React.FC<UserInputProps> = ({
             </div>
           )}
 
-          {/* Editor (critic) model */}
-          <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2">
+          {/* Reader settings belong to the legacy prose workflow. */}
+          {!planningOnly && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-2">
             <label className="flex items-center gap-2 text-xs font-medium text-zinc-200 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -298,17 +302,18 @@ const UserInput: React.FC<UserInputProps> = ({
                 )}
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
 
       {/* Story Setup Section */}
-      <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left">
+      <div className="border border-zinc-800 rounded bg-zinc-900/40 text-left">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
           <h2 className="text-sm font-medium text-zinc-200">Story Setup</h2>
         </div>
 
         <div className="p-4 md:p-5 space-y-4">
+          {setBookTitle && <div><label htmlFor="bookTitle" className="block text-xs font-medium text-zinc-300 mb-1.5">Book title (optional)</label><Input id="bookTitle" value={bookTitle || ''} onChange={e=>setBookTitle(e.target.value)} placeholder="Leave blank to let the model suggest a title" /></div>}
           <div>
             <label htmlFor="storyPremise" className="block text-xs font-medium text-zinc-300 mb-1.5">
               Story premise
@@ -325,7 +330,7 @@ const UserInput: React.FC<UserInputProps> = ({
             <p className="text-[11px] text-zinc-500 mt-1">Maximum 1200 characters.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="genre" className="block text-xs font-medium text-zinc-300 mb-1.5">
                 Genre
@@ -373,7 +378,7 @@ const UserInput: React.FC<UserInputProps> = ({
                     targetWordsPerChapter: isNaN(val) ? 2000 : Math.max(300, val),
                   });
                 }}
-                step={250}
+                step={1}
                 min={300}
                 max={20000}
                 required
@@ -382,25 +387,14 @@ const UserInput: React.FC<UserInputProps> = ({
                 ~{((storySettings.targetWordsPerChapter ?? 2000) * numChapters).toLocaleString()} total words
               </p>
             </div>
-          </div>
-
-          {/* Narrative Perspective & Grammatical Tense */}
-          <div className="pt-4 border-t border-zinc-800">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Narrative Perspective & Grammatical Tense */}
               <div>
                 <label htmlFor="narrativeVoice" className="block text-xs font-medium text-zinc-300 mb-1.5">
                   Point of view (POV)
                 </label>
-                <select
-                  id="narrativeVoice"
-                  value={storySettings.narrativeVoice || 'third-limited'}
-                  onChange={(e) => setStorySettings({ ...storySettings, narrativeVoice: e.target.value })}
-                  className="w-full h-8 px-2.5 text-xs bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
-                >
-                  <option value="third-limited">Third Person Limited (Recommended)</option>
-                  <option value="first-person">First Person</option>
-                  <option value="third-omniscient">Third Person Omniscient</option>
-                </select>
+                <Combo id="narrativeVoice" selectionOnly value={storySettings.narrativeVoice || 'third-limited'}
+                  onChange={narrativeVoice=>setStorySettings({...storySettings,narrativeVoice})} className="text-xs font-mono"
+                  options={[{value:'third-limited',label:'Third Person Limited (Recommended)'},{value:'first-person',label:'First Person'},{value:'third-omniscient',label:'Third Person Omniscient'}]} />
                 <p className="text-[11px] text-zinc-500 mt-1">
                   Anchored inside viewpoint character senses and immediate consciousness.
                 </p>
@@ -410,31 +404,27 @@ const UserInput: React.FC<UserInputProps> = ({
                 <label htmlFor="tense" className="block text-xs font-medium text-zinc-300 mb-1.5">
                   Grammatical tense
                 </label>
-                <select
-                  id="tense"
-                  value={storySettings.tense || 'past'}
-                  onChange={(e) => setStorySettings({ ...storySettings, tense: e.target.value })}
-                  className="w-full h-8 px-2.5 text-xs bg-zinc-950 border border-zinc-800 hover:border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
-                >
-                  <option value="past">Past Tense (Standard)</option>
-                  <option value="present">Present Tense</option>
-                </select>
+                <Combo id="tense" selectionOnly value={storySettings.tense || 'past'}
+                  onChange={tense=>setStorySettings({...storySettings,tense})} className="text-xs font-mono"
+                  options={[{value:'past',label:'Past Tense (Standard)'},{value:'present',label:'Present Tense'}]} />
                 <p className="text-[11px] text-zinc-500 mt-1">
                   Standard fiction past tense narration.
                 </p>
               </div>
-            </div>
           </div>
         </div>
       </div>
 
+      {planningOnly&&<section aria-label="Writing style" className="border border-zinc-800 rounded bg-zinc-900/40 text-left"><div className="px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80"><h2 className="text-sm font-medium text-zinc-200">Writing style <span className="text-zinc-500">(optional)</span></h2></div><div className="p-4 md:p-5 space-y-3"><p className="text-xs text-zinc-400">Add preferences, prose examples, or both. A shared, editable style profile will be created once before the book outline. You can also enter or change it later in the project.</p><WritingStyleFields id="book-style" inputs={{instructions:storySettings.styleInstructions||'',samples:storySettings.proseSamples||''}} onChange={inputs=>setStorySettings({...storySettings,styleInstructions:inputs.instructions,proseSamples:inputs.samples})} disabled={isLoading}/><button type="button" disabled={isLoading||(!storySettings.styleInstructions&&!storySettings.proseSamples)} className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40" onClick={()=>setStorySettings({...storySettings,styleInstructions:'',proseSamples:''})}>Clear style references</button></div></section>}
+
+      {planningOnly && <p className="text-xs text-zinc-500 mt-4">First, the model prepares a shared outline and prompts for every chapter. Prose generation is a separate step.</p>}
       <div className="flex justify-end pt-1">
         <Button type="submit" disabled={isLoading || !storyPremise || numChapters < MIN_CHAPTERS || numChapters > MAX_CHAPTERS} variant="primary">
-          {isLoading ? 'Starting…' : 'Start Generation'}
+          {isLoading ? 'Preparing…' : planningOnly ? 'Create outline and chapter prompts' : 'Start Generation'}
         </Button>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4 text-zinc-300">
+      {planningOnly ? <div className="mt-8 pt-6 border-t border-zinc-800 text-sm text-zinc-400 space-y-2"><h2 className="font-medium text-zinc-200">How it works</h2><p>1. Prompts: enter your premise and settings, then prepare and review the shared outline and chapter prompts.</p><p>2. Story: generate chapters from your saved prompts and writing style.</p><p>3. Editing: review the completed manuscript with the editorial assistant, edit text, compare changes, and undo revisions.</p></div> : <div className="mt-8 pt-6 border-t border-zinc-800 space-y-4 text-zinc-300">
         <div>
           <h2 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
             How it works · 4 simple steps
@@ -470,7 +460,7 @@ const UserInput: React.FC<UserInputProps> = ({
             </p>
           </div>
         </div>
-      </div>
+      </div>}
     </form>
   );
 };

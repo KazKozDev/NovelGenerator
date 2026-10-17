@@ -1,4 +1,12 @@
-# Architecture: Craft 2.0 Engine
+# Architecture
+
+## Main-page workflow: book plan and chapter prompts
+
+New projects use `generation_mode: prompts`: `App → useBookGenerator → utils/novel/promptBook`. The selected author model first designs one shared blueprint, then expands chapter briefs in batches of four against that blueprint. Four chapters require two successful model calls. This stage never writes manuscript prose or invokes scene observers, readers or editors.
+
+The original `ProjectInput` and complete `StorySettings` are kept separately from model additions. `AuthorDraft.promptPlanning` holds the blueprint, revision and chapter prompts, so normal project autosave, import/export and recovery preserve progress. Structural validation rejects missing chapters, invalid dependencies and misplaced revelation IDs; it does not guarantee literary or semantic consistency. A failed batch leaves earlier valid batches available to resume. Editing the blueprint increments its revision and marks all old prompts stale until regenerated; manual prompt changes are explicitly marked and preserved until that regeneration. The workspace exposes the plan, individual prompts and downloads. Planned starting states will need reconciliation with actual prior prose when chapter writing is implemented.
+
+## Legacy Craft 2.0 engine
 
 A book is crafted using the 2-layer Craft Engine (`utils/novel/craft/craftOrchestrator.ts`).
 
@@ -57,3 +65,9 @@ New projects use `craft/planning.ts`: contract, form, logline, concept, objectiv
 `revision.ts` creates one structural plan for all affected scenes and stages replacements before `ProjectStore.commitRevision` applies a complete book revision. Existing-book recovery distinguishes quoted observations from unknown mechanisms and proposed repairs. Long books use chapter evidence digests, batched structural planning and incremental blind-reader memory. Their summaries remain fallible interpretations, not proof of literary correctness.
 
 The implementation and live-run limitations are recorded in `BESTBOOK_ENGINE_PROGRESS.md`. The user goal remains incomplete until a real full draft has been generated, read and audited against the entire plan.
+
+### Scene continuation integrity
+
+Scene seams are finalized before observation and enacted-state extraction, including after a repair. Checkpoints bind the observation and finalized prose to their text revision and the preceding scene revision; Continue reuses an unchanged seam and rechecks old unbound observations. Raw writer output is saved before seam editing so interruption does not require regeneration. No prose mutation occurs after the scene observation and state commit.
+
+The author writer receives the full committed prefix of its current chapter (the preceding two scenes at a chapter boundary), plus source-bound prior events, resource changes and relationship changes. The execution planner reconciles the current card with evidenced history. Completed milestones come from committed event quotes, or observed paragraph sources in legacy mode, never directly from planned card actions. Resources and relationships require the same prose-evidence validation as events and acquisitions. These checks establish provenance and revision consistency; model judgments still determine whether an event or consequence is semantically correct.

@@ -8,6 +8,7 @@ export type { ImprintData };
 export const getDefaultImprint = getDefaultImprintData;
 
 interface BookCoverUploadProps {
+  className?: string;
   title: string;
   genre?: string;
   author?: string;
@@ -19,6 +20,7 @@ interface BookCoverUploadProps {
 }
 
 export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
+  className,
   title,
   genre,
   author: controlledAuthor,
@@ -210,8 +212,8 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
   };
 
   return (
-    <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+    <div className={`border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col ${className || ''}`}>
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
         <h2 className="text-sm font-medium text-zinc-200">Book Cover</h2>
         {coverUrl && (
           <button
@@ -225,7 +227,7 @@ export const BookCoverUpload: React.FC<BookCoverUploadProps> = ({
         )}
       </div>
 
-      <div className="p-3.5 sm:p-4 flex flex-col items-center">
+      <div className="p-3.5 sm:p-4 flex flex-col items-center flex-1 overflow-y-auto">
         <input
           ref={fileInputRef}
           type="file"

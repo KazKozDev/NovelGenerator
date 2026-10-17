@@ -424,6 +424,30 @@ export async function exportAsEpub(content: string, metadata: any, filename = 'b
 }
 
 /**
+ * Finds candidate split indices between sentences for clean pagination breaks.
+ */
+function findSentenceBreakIndices(text: string): number[] {
+  const indices: number[] = [];
+  const regex = /[.!?…]["»”']?\s+(?=[A-ZА-ЯЁ0-9—"«“])/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    indices.push(match.index + match[0].length);
+  }
+  return indices;
+}
+
+/**
+ * Checks if a string has unbalanced markdown formatting markers (bold/italic).
+ */
+function hasUnbalancedMarkdown(str: string): boolean {
+  const doubleStars = (str.match(/\*\*/g) || []).length;
+  if (doubleStars % 2 !== 0) return true;
+  const stripped = str.replace(/\*\*/g, '');
+  const singleStars = (stripped.match(/\*/g) || []).length;
+  return singleStars % 2 !== 0;
+}
+
+/**
  * Export book as PDF using browser's print functionality
  */
 /**
@@ -498,14 +522,15 @@ export function buildPdfHtml(content: string, metadata: any): string {
   // Calculate front matter page count
   const hasCover = Boolean(coverImage);
   const frontMatterPages = (hasCover ? 1 : 0) + 2; // cover (if any) + title page (1) + colophon page (1)
-  const tocPagesCount = chapters.length > 0 ? Math.max(1, Math.ceil(chapters.length / 22)) : 0;
+  const tocPagesCount = chapters.length > 0 ? Math.max(1, Math.ceil(chapters.length / 26)) : 0;
   const tocStartPage = frontMatterPages + 1;
   const initialChapterPage = frontMatterPages + tocPagesCount + 1;
 
   // Helper to paginate paragraphs of chapters into discrete A4 pages
-  const CHARS_PER_LINE = 75;
-  const MAX_LINES_FIRST_PAGE = 36; // space reserved for h2 chapter-title
-  const MAX_LINES_OTHER_PAGES = 43;
+  // Tuned for fuller, elegant book typesetting with balanced text fill
+  const CHARS_PER_LINE = 82;
+  const MAX_LINES_FIRST_PAGE = 41; // space reserved for h2 chapter-title
+  const MAX_LINES_OTHER_PAGES = 46;
 
   const chapterStartPages: Record<number, number> = {};
   let runningPageNumber = initialChapterPage;
@@ -518,6 +543,11 @@ export function buildPdfHtml(content: string, metadata: any): string {
     paragraphsHtml: string;
   }
 
+  interface BlockItem {
+    text: string;
+    isContinuation?: boolean;
+  }
+
   const paginatedPages: ChapterPageData[] = [];
 
   for (const ch of chapters) {
@@ -526,28 +556,6 @@ export function buildPdfHtml(content: string, metadata: any): string {
       .split(/\n\s*\n/)
       .map(b => b.trim())
       .filter(Boolean);
-
-    // Split any abnormally long block so it never overflows a physical A4 page
-    const blocks: string[] = [];
-    for (const b of rawBlocks) {
-      if (/^\s*(?:\*\s*){3,}\s*$/.test(b)) {
-        blocks.push(b);
-      } else if (b.length > 1800) {
-        const sentences = b.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [b];
-        let chunk = '';
-        for (const s of sentences) {
-          if ((chunk + s).length > 1500 && chunk.length > 0) {
-            blocks.push(chunk.trim());
-            chunk = s;
-          } else {
-            chunk += s;
-          }
-        }
-        if (chunk.trim()) blocks.push(chunk.trim());
-      } else {
-        blocks.push(b);
-      }
-    }
 
     chapterStartPages[ch.num] = runningPageNumber;
     let pageIndexInChapter = 0;
@@ -568,32 +576,100 @@ export function buildPdfHtml(content: string, metadata: any): string {
       currentLines = 0;
     };
 
-    if (blocks.length === 0) {
-      flushPage();
-    } else {
-      for (const block of blocks) {
-        const isSceneBreak = /^\s*(?:\*\s*){3,}\s*$/.test(block);
-        const cost = isSceneBreak ? 3 : Math.max(1, Math.ceil(block.length / CHARS_PER_LINE)) + 0.5;
-        const maxLines = pageIndexInChapter === 0 ? MAX_LINES_FIRST_PAGE : MAX_LINES_OTHER_PAGES;
+    const queue: BlockItem[] = rawBlocks.map(b => ({ text: b }));
 
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      const isSceneBreak = /^\s*(?:\*\s*){3,}\s*$/.test(item.text);
+      const cost = isSceneBreak ? 2.5 : Math.max(1, Math.ceil(item.text.length / CHARS_PER_LINE)) + 0.3;
+      const maxLines = pageIndexInChapter === 0 ? MAX_LINES_FIRST_PAGE : MAX_LINES_OTHER_PAGES;
+
+      if (isSceneBreak) {
         if (currentLines + cost > maxLines && currentPageParagraphsHtml.length > 0) {
           flushPage();
         }
+        currentPageParagraphsHtml.push('<div class="scene-break">* * *</div>');
+        currentLines += cost;
+        continue;
+      }
 
-        if (isSceneBreak) {
-          currentPageParagraphsHtml.push('<div class="scene-break">* * *</div>');
-        } else {
-          const formatted = escape(block)
+      if (currentLines + cost <= maxLines) {
+        const formatted = escape(item.text)
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>');
+        const pClass = item.isContinuation ? ' class="paragraph-continuation"' : '';
+        currentPageParagraphsHtml.push(`<p${pClass}>${formatted}</p>`);
+        currentLines += cost;
+      } else {
+        const remainingLines = maxLines - currentLines;
+        let splitIdx = -1;
+
+        if (remainingLines >= 3 || currentPageParagraphsHtml.length === 0) {
+          const targetLines = currentPageParagraphsHtml.length === 0 ? maxLines : remainingLines;
+          const breakIndices = findSentenceBreakIndices(item.text);
+
+          for (const idx of breakIndices) {
+            const p1 = item.text.slice(0, idx).trim();
+            const p2 = item.text.slice(idx).trim();
+            if (!p1 || !p2) continue;
+            if (hasUnbalancedMarkdown(p1)) continue;
+
+            const p1Cost = Math.ceil(p1.length / CHARS_PER_LINE) + 0.3;
+            const p2Cost = Math.ceil(p2.length / CHARS_PER_LINE) + 0.3;
+
+            if (p1Cost <= targetLines && (p1Cost >= 2 || currentPageParagraphsHtml.length === 0) && p2Cost >= 1.5) {
+              splitIdx = idx;
+            }
+          }
+
+          if (splitIdx === -1 && currentPageParagraphsHtml.length === 0 && cost > maxLines) {
+            const spaceIdx = item.text.lastIndexOf(' ', Math.floor(maxLines * CHARS_PER_LINE * 0.9));
+            if (spaceIdx > 100) {
+              const p1 = item.text.slice(0, spaceIdx).trim();
+              if (!hasUnbalancedMarkdown(p1)) {
+                splitIdx = spaceIdx;
+              }
+            }
+          }
+        }
+
+        if (splitIdx > 0) {
+          const part1 = item.text.slice(0, splitIdx).trim();
+          const part2 = item.text.slice(splitIdx).trim();
+          const p1Cost = Math.ceil(part1.length / CHARS_PER_LINE) + 0.3;
+
+          const formattedPart1 = escape(part1)
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.+?)\*/g, '<em>$1</em>');
-          currentPageParagraphsHtml.push(`<p>${formatted}</p>`);
-        }
-        currentLines += cost;
-      }
+          const pClass = item.isContinuation
+            ? ' class="paragraph-continuation paragraph-split-end"'
+            : ' class="paragraph-split-end"';
 
-      if (currentPageParagraphsHtml.length > 0) {
-        flushPage();
+          currentPageParagraphsHtml.push(`<p${pClass}>${formattedPart1}</p>`);
+          currentLines += p1Cost;
+          flushPage();
+          queue.unshift({ text: part2, isContinuation: true });
+        } else {
+          if (currentPageParagraphsHtml.length > 0) {
+            flushPage();
+            queue.unshift(item);
+          } else {
+            const formatted = escape(item.text)
+              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*(.+?)\*/g, '<em>$1</em>');
+            const pClass = item.isContinuation ? ' class="paragraph-continuation"' : '';
+            currentPageParagraphsHtml.push(`<p${pClass}>${formatted}</p>`);
+            currentLines += cost;
+            flushPage();
+          }
+        }
       }
+    }
+
+    if (currentPageParagraphsHtml.length > 0) {
+      flushPage();
+    } else if (paginatedPages.filter(p => p.chapterNum === ch.num).length === 0) {
+      flushPage();
     }
   }
 
@@ -704,10 +780,10 @@ export function buildPdfHtml(content: string, metadata: any): string {
         display: table-footer-group !important;
       }
       .page-top-margin {
-        height: 1.8cm !important;
+        height: 1.5cm !important;
       }
       .page-bottom-margin {
-        height: 1.8cm !important;
+        height: 1.5cm !important;
         vertical-align: bottom !important;
       }
       .cover-page {
@@ -738,8 +814,8 @@ export function buildPdfHtml(content: string, metadata: any): string {
       background-color: #ffffff;
       color: #1a1a1a;
       font-family: 'Georgia', 'Garamond', 'Palatino Linotype', serif;
-      font-size: 11pt;
-      line-height: 1.65;
+      font-size: 10.5pt;
+      line-height: 1.5;
     }
 
     /* Page container base */
@@ -773,7 +849,7 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
     /* 2. Title Page */
     .title-page {
-      padding: 4.5cm 2.5cm;
+      padding: 3.5cm 2.2cm;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -813,7 +889,7 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
     /* 3. Colophon / Copyright Page - Classic publishing: bottom-left aligned */
     .colophon-page {
-      padding: 3.5cm 2.6cm 2.5cm 2.6cm;
+      padding: 3cm 2.2cm 2.2cm 2.2cm;
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
@@ -886,7 +962,7 @@ export function buildPdfHtml(content: string, metadata: any): string {
 
     /* 4. Table of Contents */
     .toc-page {
-      padding: 3.5cm 2.5cm;
+      padding: 3cm 2.2cm;
     }
     .toc-container {
       max-width: 650px;
@@ -953,44 +1029,51 @@ export function buildPdfHtml(content: string, metadata: any): string {
       display: table-footer-group;
     }
     .page-top-margin {
-      height: 1.8cm;
+      height: 1.5cm;
       padding: 0;
       margin: 0;
       border: none;
     }
     .page-bottom-margin {
-      height: 1.8cm;
+      height: 1.5cm;
       padding: 0;
       margin: 0;
       border: none;
       vertical-align: bottom;
     }
     .chapter-content-cell, .toc-content-cell {
-      padding: 0 2.4cm;
+      padding: 0 1.85cm;
       border: none;
       vertical-align: top;
     }
     .chapter-title {
       text-align: center;
-      font-size: 1.8em;
+      font-size: 1.7em;
       font-weight: 700;
       letter-spacing: 0.04em;
-      margin-top: 1.2em;
-      margin-bottom: 1.6em;
+      margin-top: 0.8em;
+      margin-bottom: 1.2em;
       page-break-after: avoid;
       break-after: avoid;
       color: #111111;
     }
     p {
       text-align: justify;
-      text-indent: 1.5em;
-      margin: 0.35em 0;
-      line-height: 1.55;
+      text-indent: 1.4em;
+      margin: 0.22em 0;
+      line-height: 1.5;
       orphans: 2;
       widows: 2;
     }
     .chapter-title + p {
       text-indent: 0;
+    }
+    p.paragraph-continuation {
+      text-indent: 0 !important;
+      margin-top: 0 !important;
+    }
+    p.paragraph-split-end {
+      margin-bottom: 0 !important;
     }
     strong {
       font-weight: bold;
@@ -1000,20 +1083,20 @@ export function buildPdfHtml(content: string, metadata: any): string {
     }
     .scene-break {
       text-align: center;
-      margin: 1.5em 0;
+      margin: 1.1em 0;
       letter-spacing: 0.5em;
       color: #666666;
     }
     .page-footer {
       width: 100%;
-      height: 1.4cm;
-      line-height: 1.4cm;
+      height: 1.2cm;
+      line-height: 1.2cm;
       text-align: center;
       font-family: 'Georgia', 'Garamond', 'Palatino Linotype', serif;
-      font-size: 10pt;
+      font-size: 9.5pt;
       color: #666666;
       letter-spacing: 0.05em;
-      padding-bottom: 0.4cm;
+      padding-bottom: 0.25cm;
     }
     .page-footer span {
       font-variant-numeric: tabular-nums;

@@ -118,7 +118,7 @@ export class Orchestrator {
     if (!editorial && authored?.completed && !authored.desk?.editorial?.active && existingReport) {
       return { status: existingReport.status, report: existingReport, callsUsed: 0, tokensUsed: 0, stoppedReason: existingReport.status === 'COMPLETE' ? null : existingReport.summary };
     }
-    this.store.saveInput({ ...input, generation_mode: 'craft' });
+    this.store.saveInput({ ...input, generation_mode: input.generation_mode || (authored?.desk?.files['packet.json'] && !authored.desk.files['engine-state.json'] ? 'craft' : 'author') });
     this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. 2-layer craft engine active.`);
     try {
       if (editorial || authored?.desk?.editorial?.active) await runCraftEditorial(input, this.store, this.counted(llm), this.onProgress);

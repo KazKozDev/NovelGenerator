@@ -30,3 +30,5 @@ it('enforces third-limited and past tense as absolute standard defaults when omi
  expect(settings.tense).toBe('past');
 });
 
+
+it('restores writing-style references without injecting excerpt text into plot requirements',()=>{const values=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>values.get(k)||null,setItem:(k:string,v:string)=>values.set(k,v)});saveGenerationSettings({styleInstructions:'Terse dialogue',proseSamples:'An unrelated reference character',targetWordsPerChapter:1000});const settings=readGenerationSettings({});expect(settings.styleInstructions).toBe('Terse dialogue');expect(settings.proseSamples).toBe('An unrelated reference character');expect(JSON.stringify(buildProjectInput('A missing key',3,settings))).not.toContain('An unrelated reference character');});

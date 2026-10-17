@@ -23,7 +23,7 @@ export interface ProjectInput {
   writing_method?: 'outliner' | 'hybrid' | 'discovery';
   story_structure?: string;
   planning_version?: 2;
-  generation_mode?: 'author' | 'craft';
+  generation_mode?: 'author' | 'craft' | 'prompts';
   title?: string;
   premise: string;
   chapter_count: number;

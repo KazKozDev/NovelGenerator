@@ -2,7 +2,7 @@ import type { Packet, Card, Fact } from './craftOrchestrator';
 import type { NovelLLM } from '../v2/llm';
 import { CraftSession, revision } from './state';
 import { extractLastWords } from './craftRules';
-import type { TrackedPropState } from './types';
+import type { TrackedPropState, WorldContinuityState } from './types';
 
 /** An explicit allowlist: never serialize the global plan or the full scene card. */
 export function blindWriterContext(
@@ -15,6 +15,8 @@ export function blindWriterContext(
   options?: {
     usedImagery?: string[];
     objectStates?: Record<string, TrackedPropState>;
+    continuityState?: WorldContinuityState;
+    completedMilestones?: string[];
   }
 ): string {
   const known = available.filter(f => card.povKnows.includes(f.id) && f.learnsAt < card.order);
@@ -31,21 +33,22 @@ export function blindWriterContext(
   // Fact provenance can refer to later author-only explanations; expose text only.
   const facts = (items: Fact[]) => items.map(({ id, text, kind }) => ({ id, text, kind }));
 
-  // 1. Tail-Head Handoff (Seamless Scene Splicing)
+  // 1. Tail-Head Handoff (Seamless Scene Splicing with Zero Boundary Duplication)
   let handoffSection = '';
   if (pages.length) {
     const lastPage = pages[pages.length - 1];
-    const lastEnding = extractLastWords(lastPage, 180);
+    const lastEnding = extractLastWords(lastPage, 40);
     if (lastEnding) {
       handoffSection = `\n\nLAST_SCENE_ENDING (The immediately preceding scene ended with these exact words):
 """
 ...${lastEnding}
 """
 
-TAIL-HEAD HANDOFF DIRECTIVE:
-Scene ${card.id} begins in direct, immediate real-time succession after the exact closing moment above.
+TAIL-HEAD HANDOFF DIRECTIVE (ZERO BOUNDARY DUPLICATION):
+Scene ${card.id} begins strictly in real-time succession AFTER the exact closing beat above.
 DO NOT reset the timeline, rewind, or re-narrate events, dialogue, or entrances that already occurred in the closing text above.
-If a character already entered, asked a question, or picked up an item in the passage above, DO NOT re-describe that arrival or question. Begin immediately with the reaction, silence, beat, or subsequent physical response.`;
+CRITICAL: DO NOT repeat, quote, paraphrase, or re-narrate the final sentence, action, dialogue line, or status update above. The reader has just read it. Repeating it creates an embarrassing double-print defect.
+Begin immediately with the very next physical action, spoken response, or environmental beat.`;
     }
   }
 
@@ -116,8 +119,41 @@ The following props are in their 'setup' phase. DO NOT draw dramatic attention o
 ${setups.map(p => {
   const camo = p.camouflage?.length ? ` in a triad alongside ${p.camouflage.join(', ')}` : ' in a triad alongside two mundane domestic items';
   const instruction = p.focusInstruction ? ` (${p.focusInstruction})` : '';
-  return `- "${p.name}": Mention casually${camo}, without narrative emphasis or foreshadowing${instruction}.`;
+  return `- "${p.name}": Mention casually${camo}, without narrative emphasis or foreshadowing${instruction}. DO NOT pause active dialogue or physical tension to list ordinary items.`;
 }).join('\n')}`;
+    }
+  }
+
+  // 6. Already Completed Milestones in Chapter (Zero Beat Re-execution)
+  let milestonesSection = '';
+  if (options?.completedMilestones?.length) {
+    milestonesSection = `\n\nALREADY COMPLETED IN THIS CHAPTER (DO NOT RE-ENACT):
+The following physical actions / beats were already enacted in earlier scenes of this chapter:
+${options.completedMilestones.map(m => `- ${m}`).join('\n')}
+DIRECTIVE: If this scene's card mentions any action or milestone above (e.g. scanner access, elevator opening, security code entry), IT IS ALREADY COMPLETE. DO NOT re-narrate or re-enact the mechanical process. Begin immediately with the consequences or next physical step.`;
+  }
+
+  // 7. World Continuity & Physical Reality Lock (Footwear, Rules, Spatial Exclusions)
+  let continuitySection = '';
+  if (options?.continuityState) {
+    const cs = options.continuityState;
+    const lines: string[] = [];
+    if (cs.footwear) {
+      for (const [char, shoe] of Object.entries(cs.footwear)) {
+        lines.push(`- Character Footwear (${char}): Wearing ${shoe}. DO NOT describe bare feet, bare toes, or walking barefoot on cold floors unless barefoot status was explicitly enacted.`);
+      }
+    }
+    if (cs.worldRules?.length) {
+      lines.push(`- Binding World Rules & Mechanics:\n${cs.worldRules.map(r => `  * ${r}`).join('\n')}\n  Any mechanical action (codes, access, timing) MUST strictly conform to these rules without contradiction.`);
+    }
+    if (cs.currentLocation && cs.previousLocation && cs.currentLocation.toLowerCase() !== cs.previousLocation.toLowerCase()) {
+      lines.push(`- Spatial Transition: Character has moved from "${cs.previousLocation}" to "${cs.currentLocation}". Features of "${cs.previousLocation}" (e.g. cavern rock, exterior weather, previous fixtures) DO NOT exist inside "${cs.currentLocation}".`);
+    }
+    if (cs.excludedFeatures?.length) {
+      lines.push(`- Excluded Spatial Features (NOT present in this location): ${cs.excludedFeatures.join(', ')}.`);
+    }
+    if (lines.length) {
+      continuitySection = `\n\nCONTINUITY & PHYSICAL REALITY LOCK:\n${lines.join('\n')}`;
     }
   }
 
@@ -138,7 +174,7 @@ FACTS ALREADY AVAILABLE TO POV:
 ${JSON.stringify(facts(known))}
 
 FACTS TO ACQUIRE THROUGH THIS SCENE:
-${JSON.stringify(facts(newlyAcquired))}${povSection}${subtextAndEndWeightSection}${bannedImagerySection}${propStateSection}${dramaticIronySection}${propCamouflageSection}`;
+${JSON.stringify(facts(newlyAcquired))}${povSection}${subtextAndEndWeightSection}${bannedImagerySection}${propStateSection}${dramaticIronySection}${propCamouflageSection}${milestonesSection}${continuitySection}`;
 }
 
 /** Reader input contains only prose already committed, including for the first scene. */

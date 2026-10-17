@@ -6,13 +6,13 @@ import { cleanChapter, wornPhrases } from '../utils/novel/author';
 const input = { premise: 'Nora hides a notebook.', author_requirements: 'Voice: third-limited.', genre: 'thriller', chapter_count: 4, target_total_words: 1200, planning_version: 2 as const };
 
 describe('the author at the desk', () => {
-  it('writes a new book via craft engine', async () => {
+  it('preserves the selected author engine for a new book and Continue', async () => {
     const store = new MemoryProjectStore(); const stages: string[] = [];
     const result = await new Orchestrator(store).runBook(input, async (_prompt, _system, options) => { stages.push(options?.stage || ''); throw new Error('stop'); });
     expect(result.status).toBe('FAILED');
     expect(stages).toEqual(['craft-author-contract', 'craft-author-contract']);
     expect(JSON.parse(store.loadAuthor()!.desk!.files['engine-state.json']).operations.contract.status).toBe('failed');
-    expect(store.loadInput()!.generation_mode).toBe('craft');
+    expect(store.loadInput()!.generation_mode).toBe('author');
     expect(store.runLog().some(entry => entry.detail.includes('2-layer craft engine active'))).toBe(true);
   });
 

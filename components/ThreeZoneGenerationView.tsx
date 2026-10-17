@@ -17,6 +17,7 @@ import { LoadingSpinner } from './common/LoadingSpinner';
 import { Button } from './common/Button';
 import { MarkdownView } from './common/MarkdownView';
 export interface ThreeZoneGenerationViewProps {
+  embedded?: boolean;
   proseContent?: (chapter: number) => React.ReactNode;
   inspectorContent?: React.ReactNode;
   selectedChapterNumber?: number;
@@ -50,7 +51,7 @@ export interface ThreeZoneGenerationViewProps {
 }
 
 export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = ({
-  proseContent, inspectorContent, selectedChapterNumber, onChapterSelect, followActiveChapter = true,
+  embedded = false, proseContent, inspectorContent, selectedChapterNumber, onChapterSelect, followActiveChapter = true,
   developmentLabel,
   targetWordsPerChapter,
   currentStep,
@@ -73,7 +74,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   onResumeGeneration,
 }) => {
   // Track selected chapter for viewing (defaults to active processing chapter)
-  const [selectedChapterIdx, setSelectedChapterIdx] = useState<number>(0);
+  const [selectedChapterIdx, setSelectedChapterIdx] = useState<number>(() => Math.max(0, (selectedChapterNumber || 1) - 1));
   const [showOutline, setShowOutline] = useState<boolean>(false);
 
   // Sync selected chapter with currently processing chapter
@@ -102,13 +103,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   const activeTitle = titleBody || (activeChapterNum === currentChapterProcessing ? 'Generating...' : '');
   const proseHeading = activeTitle ? `Chapter ${activeChapterNum}: ${activeTitle}` : `Chapter ${activeChapterNum}`;
   const activeContent = activeChapter?.content || '';
+  const checkedContent = liveHere?.text || activeContent;
   // Measured live from the shown text: stored texture (when present) wins,
   // otherwise Checks computes over whatever prose is on screen.
   const liveTexture = useMemo(
-    () => (activeContent.trim() ? measureTexture(activeContent) : null),
-    [activeContent],
+    () => (checkedContent.trim() ? measureTexture(checkedContent) : null),
+    [checkedContent],
   );
-  const texture = activeChapter?.texture
+  const texture = !liveHere && activeChapter?.texture
     ? {
         dialogueShare: activeChapter.texture.dialogueShare,
         medianParagraphWords: activeChapter.texture.medianParagraphWords,
@@ -130,7 +132,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
   return (
     <div className="studio-layout w-full h-full flex-1 min-h-0 flex flex-col gap-2.5 animate-fade-in text-zinc-300 overflow-hidden">
       {/* Brand, slogan and global actions; runtime status belongs to the inspector. */}
-      <div className="studio-header shrink-0 flex items-start gap-3 border-b border-zinc-800 pb-1.5">
+      {!embedded?<div className="studio-header shrink-0 flex items-start gap-3 border-b border-zinc-800 pb-1.5">
         <div className="flex flex-1 min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="studio-heading flex flex-wrap items-baseline gap-2 min-w-0">
           <span className="text-xl font-semibold shrink-0 wordmark">NovelGenerator</span>
@@ -165,6 +167,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         </div>
       </div>
 
+      :<div className="flex justify-end shrink-0"><SaveStatusIndicator generatedChapters={generatedChapters.filter(c=>!!c.content)} savedAt={lastSavedAt||undefined} status={autosaveStatus}/></div>}
+
       {/* 3-Zone Studio Grid */}
       <div className="studio-grid grid grid-cols-1 lg:grid-cols-12 gap-3 w-full flex-1 min-h-0 items-stretch overflow-hidden">
         
@@ -173,102 +177,105 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-pipeline"
-          className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 pr-4 text-left overflow-hidden"
+          className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 text-left overflow-hidden rounded border border-zinc-800 bg-zinc-900/40"
         >
-          <div className="shrink-0 flex items-baseline justify-between pb-2">
-            <h3 className="text-xs font-semibold uppercase text-zinc-500">Chapters</h3>
-            <span className="text-xs text-zinc-500">
-              {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : 'Preparing'}
+          <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+            <h3 className="text-xs font-semibold uppercase text-zinc-300">Chapters</h3>
+            <span className="text-xs text-zinc-400">
+              {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : embedded?`${generatedChapters.filter(c=>c.content).length} of ${totalChaptersToProcess} saved`:'Preparing'}
             </span>
           </div>
 
-          {/* Chapter List Navigation */}
-          <div className="shrink-0 flex flex-col gap-1.5 pt-2">
-            <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1">
-              {Array.from({ length: Math.max(totalChaptersToProcess, generatedChapters.length) }).map((_, idx) => {
-                const chapter = generatedChapters[idx];
-                const chapterNum = idx + 1;
-                const isSelected = selectedChapterIdx === idx;
-                const isProcessing = currentChapterProcessing === chapterNum && isLoading;
-                const isCompleted = chapter?.generationStage === ChapterGenerationStage.Complete;
+          <div className="p-3 flex flex-col flex-1 min-h-0 gap-2 overflow-hidden">
+            {/* Chapter List Navigation */}
+            <div className="shrink-0 flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1">
+                {Array.from({ length: Math.max(totalChaptersToProcess, generatedChapters.length) }).map((_, idx) => {
+                  const chapter = generatedChapters[idx];
+                  const chapterNum = idx + 1;
+                  const isSelected = selectedChapterIdx === idx;
+                  const isProcessing = currentChapterProcessing === chapterNum && isLoading;
+                  const chapterWords = isProcessing&&liveDraft?.text?liveDraft.text:chapter?.content;
+                  const isCompleted = chapter?.generationStage === ChapterGenerationStage.Complete;
 
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => { setSelectedChapterIdx(idx); onChapterSelect?.(idx + 1); }}
-                    className={`flex items-center justify-between p-2 rounded text-xs transition-colors text-left w-full border ${
-                      isSelected
-                        ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 font-medium'
-                        : 'border-transparent hover:bg-zinc-900/60 text-zinc-400'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate pr-2">
-                      <span className="font-mono text-zinc-500 w-5">#{chapterNum}</span>
-                      <span className="truncate">
-                        {chapter?.title || (isProcessing ? 'Generating...' : `Chapter ${chapterNum}`)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {chapter?.content && (
-                        <span className="text-zinc-500 text-[10px] tabular-nums font-mono">
-                          {chapter.content.trim().split(/\s+/).filter(Boolean).length}w
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => { setSelectedChapterIdx(idx); onChapterSelect?.(idx + 1); }}
+                      className={`flex items-center justify-between p-2 rounded text-xs transition-colors text-left w-full border ${
+                        isSelected
+                          ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 font-medium'
+                          : 'border-transparent hover:bg-zinc-900/60 text-zinc-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <span className="font-mono text-zinc-500 w-5">#{chapterNum}</span>
+                        <span className="truncate">
+                          {chapter?.title || (isProcessing ? 'Generating...' : `Chapter ${chapterNum}`)}
                         </span>
-                      )}
-                      {isProcessing ? (
-                        <span className="flex items-center gap-1 text-xs text-zinc-300">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          Live
-                        </span>
-                      ) : isCompleted ? (
-                        <span className="text-zinc-400 text-xs">Accepted</span>
-                      ) : (
-                        <span className="text-zinc-600 text-xs">{chapter?.content ? (isLoading ? 'Draft' : 'Written') : 'Pending'}</span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                      </div>
 
-          {/* Active Chapter Plan */}
-          <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase text-zinc-500">
-                {isCraftMode ? 'Scene Cards' : 'Plan'} · Ch {activeChapterNum}
-              </span>
-            </div>
-            <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto">
-              <PlanView
-                content={activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...'}
-              />
-            </div>
-          </div>
-
-          {/* Collapsible Story Outline */}
-          <div className={`border-t border-zinc-800 pt-2 flex flex-col gap-1.5 ${showOutline ? 'flex-1 min-h-0 overflow-hidden' : 'shrink-0'}`}>
-            <button
-              type="button"
-              onClick={() => setShowOutline(!showOutline)}
-              className="shrink-0 flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <span>{isCraftMode ? 'Dossier & Outline' : 'Story Outline'}</span>
-                <span className="text-xs text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {chapterWords && (
+                          <span className="text-zinc-500 text-[10px] tabular-nums font-mono">
+                            {chapterWords.trim().split(/\s+/).filter(Boolean).length}w
+                          </span>
+                        )}
+                        {isProcessing ? (
+                          <span className="flex items-center gap-1 text-xs text-zinc-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Live
+                          </span>
+                        ) : isCompleted ? (
+                          <span className="text-zinc-400 text-xs">Accepted</span>
+                        ) : (
+                          <span className="text-zinc-600 text-xs">{chapter?.content ? (isLoading ? 'Draft' : 'Written') : 'Pending'}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <span className="text-xs">{showOutline ? '[-]' : '[+]'}</span>
-            </button>
+            </div>
 
-            {showOutline && (
-              <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto animate-fade-in">
-                <MarkdownView
-                  content={currentStoryOutline ? currentStoryOutline.replace(/\r\n/g, '\n').replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n') : 'No outline generated yet.'}
-                  className="text-xs compact-outline"
+            {/* Active Chapter Plan */}
+            <div className="flex-1 min-h-0 border-t border-zinc-800 pt-2 flex flex-col gap-1.5 overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase text-zinc-500">
+                  {isCraftMode ? 'Scene Cards' : 'Plan'} · Ch {activeChapterNum}
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto">
+                <PlanView
+                  content={activeChapter?.plan || currentChapterPlan || 'Drafting scene breakdown and pacing objectives...'}
                 />
               </div>
-            )}
+            </div>
+
+            {/* Collapsible Story Outline */}
+            <div className={`border-t border-zinc-800 pt-2 flex flex-col gap-1.5 ${showOutline ? 'flex-1 min-h-0 overflow-hidden' : 'shrink-0'}`}>
+              <button
+                type="button"
+                onClick={() => setShowOutline(!showOutline)}
+                className="shrink-0 flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>{isCraftMode ? 'Dossier & Outline' : 'Story Outline'}</span>
+                  <span className="text-xs text-zinc-500 lowercase">({currentStoryOutline ? `${currentStoryOutline.length} chars` : 'empty'})</span>
+                </div>
+                <span className="text-xs">{showOutline ? '[-]' : '[+]'}</span>
+              </button>
+
+              {showOutline && (
+                <div className="flex-1 min-h-0 pr-1 text-xs text-zinc-400 overflow-y-auto animate-fade-in">
+                  <MarkdownView
+                    content={currentStoryOutline ? currentStoryOutline.replace(/\r\n/g, '\n').replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n') : 'No outline generated yet.'}
+                    className="text-xs compact-outline"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -277,7 +284,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {/* ======================================================== */}
         <div
           data-testid="zone-prose"
-          className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} studio-manuscript min-w-0 flex flex-col w-full h-full min-h-0 overflow-hidden border-x border-zinc-800 sheet`}
+          className={`${showInspector ? 'lg:col-span-8' : 'lg:col-span-10'} studio-manuscript min-w-0 flex flex-col w-full h-full min-h-0 overflow-hidden border border-zinc-800 rounded bg-zinc-900/40 sheet`}
         >
           {proseContent ? proseContent(activeChapterNum) : isWritingProse || activeContent || liveHere || tools?.length ? (
             <StreamingContentView
@@ -301,18 +308,22 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         {showInspector && (
           <div
             data-testid="zone-agent-inspector"
-            className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 pl-4 text-left overflow-hidden"
+            className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 text-left overflow-hidden rounded border border-zinc-800 bg-zinc-900/40"
           >
-            {(inspectorContent || isWritingProse || activeContent) && (
-              <div className="shrink-0 max-h-[50%] min-h-0 overflow-y-auto pr-1">
-                {inspectorContent}
-                {(isWritingProse || activeContent) && (
-                  <ChapterChecks content={activeContent} chapterNum={activeChapterNum} revisionStatus={activeChapter?.revisionStatus} texture={texture} targetWords={targetWordsPerChapter} />
-                )}
-              </div>
-            )}
-            {isResumable && !isLoading && onResumeGeneration && (
-              <Button onClick={onResumeGeneration} variant="secondary" size="sm" className="shrink-0 w-full !h-7 !py-0 !px-2.5 mt-3 mb-2 inline-flex items-center justify-center">
+            <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+              <h3 className="text-xs font-semibold uppercase text-zinc-300">Inspector</h3>
+            </div>
+            <div className="p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
+              {(inspectorContent || isWritingProse || checkedContent) && (
+                <div className="shrink-0 max-h-[50%] min-h-0 overflow-y-auto pr-1">
+                  {inspectorContent}
+                  {(isWritingProse || checkedContent) && (
+                    <ChapterChecks content={checkedContent} chapterNum={activeChapterNum} revisionStatus={activeChapter?.revisionStatus} texture={texture} targetWords={targetWordsPerChapter} />
+                  )}
+                </div>
+              )}
+              {isResumable && !isLoading && onResumeGeneration && (
+                <Button onClick={onResumeGeneration} variant="secondary" size="sm" className="shrink-0 w-full !h-7 !py-0 !px-2.5 mt-3 mb-2 inline-flex items-center justify-center">
                 Resume Generation
               </Button>
             )}
@@ -321,7 +332,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
                 <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
                 <div className="text-xs text-zinc-400">
                   {isLoading ? (
-                    <RunClock agentLogs={agentLogs} isLoading={isLoading} className="tabular-nums" />
+                    <RunClock agentLogs={agentLogs} callCount={tokenTotals?.calls||undefined} isLoading={isLoading} className="tabular-nums" />
                   ) : (
                     <span className="text-zinc-500">{agentLogs.length} events</span>
                   )}
@@ -383,7 +394,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       </div>
     </div>

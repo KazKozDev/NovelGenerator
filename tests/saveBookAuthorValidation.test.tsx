@@ -228,6 +228,42 @@ Morning arrived with gray skies and damp earth.`;
     expect(html).toContain('<span class="toc-number" id="toc-page-ch-1">5</span>');
     expect(html).toContain('<span class="toc-number" id="toc-page-ch-2">6</span>');
   });
+
+  it('buildPdfHtml fills pages densely and splits long paragraphs across page boundaries at sentence breaks', () => {
+    // Generate sentences to make a chapter that exceeds a single page
+    const sentences = [
+      'The morning brought a chilling silence over the frosted valley.',
+      'Elena stepped outside into the crisp winter air, wrapping her woolen scarf tight around her neck.',
+      'Down in the village below, the chimney smoke rose in thin gray spirals towards the overcast sky.',
+      'She knew the courier would arrive before noon if the mountain pass remained clear of snowdrifts.',
+      'Her father had warned her about the northern trail, but time was slipping away faster than expected.',
+      'Every step through the deep powder required deliberate effort, yet she kept a steady, determined pace.',
+      'The pine branches bowed heavily under the weight of freshly fallen snow, dropping white clumps as birds took flight.',
+      'In the distance, the faint rumble of a thaw echoed through the granite canyons of the high peaks.',
+      'She paused at the crossroads where the old milestone stood half-buried near the frozen creek.',
+      'A lone crow called out from atop the weathered telegraph pole, watching her with dark inquisitive eyes.',
+    ];
+    // Create multiple paragraphs where one paragraph spans across the page transition
+    const paragraph1 = sentences.slice(0, 5).join(' ');
+    const paragraph2 = Array(6).fill(sentences.join(' ')).join('\n\n'); // large body of text
+    const bookContent = `# Alpine Whispers\n\n## Chapter 1: The Mountain Trail\n\n${paragraph1}\n\n${paragraph2}`;
+
+    const html = buildPdfHtml(bookContent, { author: 'Elena Gray' });
+
+    // Verify optimized dense styling tokens
+    expect(html).toContain('font-size: 10.5pt');
+    expect(html).toContain('line-height: 1.5');
+    expect(html).toContain('padding: 0 1.85cm');
+    expect(html).toContain('height: 1.5cm');
+
+    // Verify multiple pages were generated for Chapter 1 (page 1 is title, page 2 is colophon, page 3 is TOC)
+    expect(html).toContain('data-chapter="1" data-page-number="4"');
+    expect(html).toContain('data-chapter="1" data-page-number="5"');
+
+    // Verify sentence-level continuation classes are used to seamlessly fill pages
+    expect(html).toContain('paragraph-continuation');
+    expect(html).toContain('paragraph-split-end');
+  });
 });
 
 

@@ -63,6 +63,8 @@ export function executionBase(plan: AuthorArchitecture, node: SceneNode, enacted
       conflict: { external: node.sceneContract.external, interpersonal: node.sceneContract.interpersonal, internal: node.sceneContract.internal }, valueTurn: { start: node.sceneContract.startValue, end: node.sceneContract.endValue } },
     profiles: presentProfiles(plan, node),
     pacing: pace, directives: [],
+    continuity: prefix.scenes.map(scene => ({ sceneId: scene.id, textRevision: scene.textRevision,
+      events: scene.events, resources: scene.resources, relationships: scene.relationships })),
   };
 }
 
@@ -85,7 +87,7 @@ export async function prepareExecution(plan: AuthorArchitecture, node: SceneNode
     value => validateReaderDecision(plan, node.order, value));
   const task = await session.run<{ goal: string; action: string; obstacle: string; choice: string; outcome: string; cost: string; location: string; time: string; dialogueAims: Record<string, string>; directives: string[] }>(
     `execution/${node.id}`, `scenes/${node.id}/execution-task.json`, 'execution', [baseFile, stateFile, `scenes/${node.id}/author-direction.json`, `scenes/${node.id}/reader-decision.json`, `scenes/${node.id}/presentation-input.json`, 'book-contract.json'], taskSchema,
-    `Build the concrete present-scene execution task. Method: ${plan.form.method}. Honor required current action/outcome and acquisitions. Use actual lost resources, relationships and prior consequences. Develop the opposing move from the supplied agent knowledge and limits; a planned knowledge requirement is not proof the agent knows it. Apply reader adjustments for ${node.id}. Translate applicable user style requirements into safe directives without copying future plot secrets. In hybrid/discovery choose fresh connective tactics within the known tentpoles. Never put later reveals or author explanations into the writer output.`, llm);
+    `Build the concrete present-scene execution task. Method: ${plan.form.method}. Honor required current action/outcome and acquisitions. Reconcile the card against the evidenced events in before-state: never require an already enacted action to happen again; start from its consequences. If a planned action was not evidenced, do not mark it completed. Use actual lost resources, relationships and prior consequences. Develop the opposing move from the supplied agent knowledge and limits; a planned knowledge requirement is not proof the agent knows it. Apply reader adjustments for ${node.id}. Translate applicable user style requirements into safe directives without copying future plot secrets. In hybrid/discovery choose fresh connective tactics within the known tentpoles. Never put later reveals or author explanations into the writer output.`, llm);
   // IDs, permitted factual text and future knowledge never come from this free-text operation.
   const execution = { ...base, current: { ...base.current, goal: task.goal, action: task.action, obstacle: task.obstacle, choice: task.choice, outcome: task.outcome, cost: task.cost, location: task.location, time: task.time, dialogueAims: task.dialogueAims }, directives: task.directives };
   // Future-scene adjustments survive until their target is prepared; they do not mutate canon.
@@ -106,9 +108,9 @@ export async function commitEnacted(plan: AuthorArchitecture, node: SceneNode, p
   const scheduled = plan.revelations.facts.flatMap(f => f.acquisitions.filter(a => a.scene === node.id).map(a => ({ ...a, fact: f.id })));
   const scheduledDesc = scheduled.length ? scheduled.map(s => `${s.character} learns ${s.fact}`).join(', ') : 'none scheduled (return acquisitions: [])';
   const sourceFile = `scenes/${node.id}/event-contract.json`;
-  await session.put(sourceFile, { events: plan.world.events.filter(e => node.events.includes(e.id)), scheduledAcquisitions: scheduled, resources: plan.world.resources.map(r => r.id), characters: plan.characters.characters.map(c => c.id) });
+  await session.put(sourceFile, { events: plan.world.events.filter(e => node.events.includes(e.id)), scheduledAcquisitions: scheduled.map(acquisition => ({ ...acquisition, truth: plan.revelations.facts.find(f => f.id === acquisition.fact)!.truth })), resources: plan.world.resources.map(resource => ({ ...resource, availableBefore: prefixState(plan, state, node.id).scenes.flatMap(scene => scene.resources).filter(change => change.resource === resource.id).at(-1)?.available ?? resource.available })), characters: plan.characters.characters.map(c => ({ id: c.id, name: c.name })) });
   const result = await session.run<Omit<EnactedScene, 'id' | 'textRevision'>>(`enact/${node.id}`, `scenes/${node.id}/enacted.json`, 'enact', [textFile, sourceFile], referenceSchema(enactedSchema, { event: node.events, character: plan.characters.characters.map(c => c.id), characters: plan.characters.characters.map(c => c.id), ...(plan.world.resources.length ? { resource: plan.world.resources.map(r => r.id) } : {}) }),
-    `Extract actual visible events and acquisitions from this exact prose. Use only IDs from the current event contract. Never fill an event because it was planned. Scheduled acquisitions for this scene: ${scheduledDesc}. Do not record acquisitions for any other facts. For each state change cite a verbatim quote copied directly from the prose (5 to 15 consecutive words). Defer style defects for later editing. options describe concrete remaining actions, not hypothetical facts.`, llm,
+    `Extract actual visible events and acquisitions from this exact prose. Use only IDs from the current event contract. Never fill an event because it was planned. Scheduled acquisitions for this scene: ${scheduledDesc}. Do not record acquisitions for any other facts. For each state change cite ONE contiguous verbatim span copied directly from the prose (5 to 15 consecutive words). Copy the words in their original order with original punctuation. Never concatenate separate sentences, reverse their order, summarize, or compose a quote from memory. If no exact supporting span exists, omit that change rather than inventing evidence. Return resources only when the current prose explicitly establishes a change to that particular resource; omit uninvolved resources and do not infer loss merely because an item is offstage. Resource IDs refer to the supplied specific descriptions: never support a key state with a quote about a ledger or another object. available means usable for its described function; a snapped or jammed key is unavailable even if its fragments remain in a pocket. Preserve already lost resources unless the prose explicitly restores their function. Defer style defects for later editing. options describe concrete remaining actions, not hypothetical facts.`, llm,
     value => {
       const isPlaceholder = (q: unknown) => typeof q !== 'string' || !q.trim() || /^(?:none|n\/?a|not\s+applicable|implied|unspecified|off-page|-)$/i.test(q.trim());
       value.acquisitions = value.acquisitions.filter(acq => scheduled.some(s => s.fact === acq.fact && s.character === acq.character));
@@ -117,6 +119,9 @@ export async function commitEnacted(plan: AuthorArchitecture, node: SceneNode, p
       }
       for (const acq of value.acquisitions) {
         if (isPlaceholder(acq.quote) || !hasProseQuote(prose, acq.quote)) throw new Error(`Enacted change requires exact prose evidence for acquisition ${acq.fact}: ${JSON.stringify(acq.quote)}`);
+      }
+      for (const change of [...value.resources, ...value.relationships]) {
+        if (isPlaceholder(change.quote) || !hasProseQuote(prose, change.quote)) throw new Error(`State change requires exact prose evidence: ${JSON.stringify(change.quote)}`);
       }
       if (value.events.some(e => !node.events.includes(e.event))) throw new Error('Unassigned event cannot become canon.');
       if (value.resources.some(r => !plan.world.resources.some(p => p.id === r.resource))) throw new Error('Unknown resource change.');

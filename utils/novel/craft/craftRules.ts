@@ -40,9 +40,18 @@ export const STOCK_SENSORY_CLICHES = [
   'cold iron', 'silver cup', 'second pulse', 'throat tight as wire',
   'hollowed out', 'bone-dry', 'jaw worked', 'air went thin', 'swallowed hard',
   'breath hitched', 'pulse leaped', 'bile rose', 'stomach dropped',
+  'split knuckles', 'knuckles split', 'raw knuckles',
+  'break the wrist', 'drive the elbow', 'take the knee',
+  'red, dark, red', 'red dark red',
+  'tendon snapped', 'sinew stretched',
 ];
 
-/** Extracts unique similes, sensory clichés, and tropes from previously written scenes. */
+/** Visceral and somatic crutches that loop across action and tension chunks. */
+export const SOMATIC_CRUTCH_WORDS = [
+  'tendon', 'grate', 'sinew', 'knuckle', 'knuckles', 'cartilage', 'gristle',
+];
+
+/** Extracts unique similes, sensory clichés, and somatic tropes from previously written scenes. */
 export function extractUsedImagery(pages: string[]): string[] {
   if (!pages.length) return [];
   const found = new Set<string>();
@@ -55,7 +64,16 @@ export function extractUsedImagery(pages: string[]): string[] {
     }
   }
 
-  // 2. Simile extraction ("like a ...", "as though ...", "as a ...")
+  // 2. High-frequency visceral/somatic crutch words (if appearing >= 2 times)
+  for (const word of SOMATIC_CRUTCH_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const matches = combined.match(regex);
+    if (matches && matches.length >= 2) {
+      found.add(word);
+    }
+  }
+
+  // 3. Simile extraction ("like a ...", "as though ...", "as a ...")
   const simileRegex = /\b(?:like|as though|as if)\s+(?:a|an|the)\s+([a-z-]+(?:\s+[a-z-]+){1,2})\b/gi;
   let match: RegExpExecArray | null;
   while ((match = simileRegex.exec(combined)) !== null) {
@@ -146,22 +164,34 @@ export function computeSentenceSimilarity(sentenceA: string, sentenceB: string):
 /**
  * Deterministic Dedup Filter (Part 2):
  * When joining Scene A and Scene B with \n\n (same POV, no * * * separator):
- * Extracts last sentence of Scene A (from last paragraph) and first sentence of Scene B (from first paragraph).
- * Normalizes both and if similarity >= 0.70, strips first sentence from the beginning of Scene B.
+ * 1. Checks if first paragraph of Scene B duplicates the final paragraph of Scene A (paragraph-level echo).
+ * 2. Checks if first sentence of Scene B duplicates the last sentence of Scene A.
+ * 3. Checks if second sentence of Scene B duplicates the last sentence of Scene A (when an incidental clause was added).
  */
 export function applyDeterministicDedup(sceneA: string, sceneB: string): string {
   const parasA = sceneA.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-  const parasB = sceneB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  let parasB = sceneB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
 
   if (!parasA.length || !parasB.length) return sceneB;
 
   const tailA = parasA[parasA.length - 1];
   const headB = parasB[0];
 
-  const sentencesA = extractSentences(tailA);
-  const sentencesB = extractSentences(headB);
+  // 1. Paragraph-Level Boundary Dedup:
+  // If paragraph 0 of Scene B is a repeated closing beat paragraph of Scene A (e.g. status update or dialogue repetition)
+  if (parasB.length > 1) {
+    const paraSimilarity = computeSentenceSimilarity(tailA, headB);
+    if (paraSimilarity >= 0.70) {
+      parasB.shift();
+      return parasB.join('\n\n');
+    }
+  }
 
-  if (!sentencesA.length || !sentencesB.length) return sceneB;
+  // 2. Sentence-Level Boundary Dedup:
+  const sentencesA = extractSentences(tailA);
+  const sentencesB = extractSentences(parasB[0]);
+
+  if (!sentencesA.length || !sentencesB.length) return parasB.join('\n\n');
 
   const lastSentenceA = sentencesA[sentencesA.length - 1];
   const firstSentenceB = sentencesB[0];

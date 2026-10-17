@@ -155,6 +155,7 @@ export interface ReaderDecision {
   adjustments: { scene: string; action: string; intendedEffect: string }[];
 }
 export interface SceneExecution {
+  continuity?: { sceneId: string; textRevision: string; events: EnactedScene['events']; resources: EnactedScene['resources']; relationships: EnactedScene['relationships'] }[];
   sceneId: string;
   viewpoint: string;
   narrativePerson: string;
@@ -195,4 +196,21 @@ export interface TrackedPropState {
   condition?: string;
   inscriptions?: PropInscription[];
   lastModifiedScene?: string;
+}
+
+export interface CharacterContinuityState {
+  footwear?: string;
+  attire?: string;
+  location?: string;
+  injuries?: string[];
+}
+
+export interface WorldContinuityState {
+  /** Footwear map used by existing continuity-state.json files. */
+  footwear?: Record<string, string>;
+  characters?: Record<string, CharacterContinuityState>;
+  worldRules?: string[];
+  currentLocation?: string;
+  previousLocation?: string;
+  excludedFeatures?: string[];
 }

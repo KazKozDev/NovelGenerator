@@ -5,16 +5,8 @@ import { extractBookTitle } from '../utils/exportUtils';
 import { MarkdownView } from './common/MarkdownView';
 import MarkdownChangesView from './MarkdownChangesView';
 import BookCoverUpload, { ImprintData } from './BookCoverUpload';
-import {
-  repairSingleFinding,
-  repairSurgicalTask,
-  clusterEditorialFindings,
-  ClusteredEditorialTask,
-  parseModelConfigFromTag,
-  formatModelDisplayLabel,
-} from '../utils/novel/targetedEditorial';
-import { parseBookChapters } from '../utils/novel/manuscript';
-import { generateText, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
+import { parseModelConfigFromTag } from '../utils/novel/targetedEditorial';
+import { getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import EditorialChatStudio from './EditorialChatStudio';
 import { pushUndoState, popUndoState, UndoStackEntry } from '../utils/novel/patchApplier';
 
@@ -25,6 +17,7 @@ interface BookDisplayProps {
   onEdit?: () => void;
   isEditorialRunning?: boolean;
   editorialStatus?: string;
+  onEditingStateChange?: (editing: boolean) => void;
   onManualSave?: (newContent: string) => boolean;
   author?: string;
   onAuthorChange?: (author: string) => void;
@@ -32,6 +25,7 @@ interface BookDisplayProps {
   onImprintChange?: (imprint: ImprintData) => void;
   coverImage?: string | null;
   onCoverChange?: (coverUrl: string | null) => void;
+  onExportProject?: () => void;
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({
@@ -42,12 +36,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   isEditorialRunning,
   editorialStatus,
   onManualSave,
+  onEditingStateChange,
   author,
   onAuthorChange,
   imprint,
   onImprintChange,
   coverImage,
   onCoverChange,
+  onExportProject,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -92,12 +88,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     return extracted && extracted !== 'Untitled Book' ? extracted : 'Manuscript Draft';
   }, [metadata?.title, bookContent]);
 
-  const findingsCount = metadata?.audit?.findings?.length || 0;
-  const landmarksCount = metadata?.craft?.landmarks?.length || 0;
-  const unavailableCount = metadata?.audit?.need_more_evidence?.length || 0;
-  const chapterMatches = bookContent.match(/^##\s+Chapter\s+\d+/gm);
-  const chapterCount = chapterMatches ? chapterMatches.length : (metadata?.chapters_count || 1);
-
   const handleCopyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
       setIsCopied(true);
@@ -116,25 +106,13 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   }, [bookContent, displayTitle]);
 
   const [isEditing, setIsEditing] = useState(false);
+  useEffect(()=>{onEditingStateChange?.(isEditing);return()=>onEditingStateChange?.(false);},[isEditing,onEditingStateChange]);
   const [editableContent, setEditableContent] = useState(manuscriptWithTitle);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Targeted editorial execution state
-  const rawFindings = useMemo(() => metadata?.audit?.findings || [], [metadata]);
-  const parsedChapters = useMemo(() => parseBookChapters(bookContent), [bookContent]);
-  const clusteredTasks = useMemo(() => {
-    return clusterEditorialFindings(rawFindings, parsedChapters, metadata?.dossier);
-  }, [rawFindings, parsedChapters, metadata?.dossier]);
-
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [fixedTaskIds, setFixedTaskIds] = useState<Set<string>>(new Set());
-  const [taskExplanations, setTaskExplanations] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'clean' | 'changes'>('clean');
   const [lastDiff, setLastDiff] = useState<{ before: string; after: string } | null>(null);
-  const [localRunning, setLocalRunning] = useState(false);
-  const [localStatus, setLocalStatus] = useState<string | null>(null);
-  const activeTaskRef = React.useRef<HTMLLIElement | null>(null);
   const readerContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   // Author model detection: use the model that wrote this manuscript (e.g. DeepSeek v4.1 flash)
@@ -172,12 +150,6 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   }, [metadataJson]);
 
   useEffect(() => {
-    if (activeTaskId !== null && activeTaskRef.current) {
-      activeTaskRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [activeTaskId]);
-
-  useEffect(() => {
     if (!isEditing) {
       setEditableContent(manuscriptWithTitle);
     }
@@ -208,87 +180,9 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     }
   };
 
-  const isRunning = isEditorialRunning || localRunning;
-  const currentStatus = localStatus || editorialStatus;
-
-  const handleApplyReview = async () => {
-    if (clusteredTasks.length === 0) {
-      if (rawFindings.length === 0) {
-        onEdit?.();
-        return;
-      }
-    }
-
-    // Use the author model that wrote the manuscript (e.g. DeepSeek v4.1 flash)
-    const modelConfig = editorialModel;
-
-    setLocalRunning(true);
-    setFixedTaskIds(new Set());
-    setTaskExplanations({});
-
-    let currentManuscript = bookContent;
-
-    try {
-      // Top-to-bottom processing across prioritized tasks
-      for (let i = 0; i < clusteredTasks.length; i++) {
-        const task = clusteredTasks[i];
-        setActiveTaskId(task.id);
-        setLocalStatus(`Task ${i + 1}/${clusteredTasks.length}: ${task.title}…`);
-
-        const result = await repairSurgicalTask(
-          task,
-          currentManuscript,
-          displayTitle,
-          async (prompt, system) => {
-            return await generateText(
-              prompt,
-              system,
-              undefined,
-              0.2,
-              undefined,
-              undefined,
-              modelConfig,
-              4000,
-              true
-            );
-          }
-        );
-
-        if (result.changed) {
-          const beforeText = currentManuscript;
-          currentManuscript = result.updatedManuscript;
-          onManualSave?.(result.updatedManuscript);
-          setEditableContent(result.updatedManuscript);
-          setLastDiff({ before: beforeText, after: result.updatedManuscript });
-          setViewMode('changes');
-          setFixedTaskIds(prev => new Set(prev).add(task.id));
-          setTaskExplanations(prev => ({
-            ...prev,
-            [task.id]: result.explanation || 'Targeted edit applied',
-          }));
-        } else {
-          setFixedTaskIds(prev => new Set(prev).add(task.id));
-          setTaskExplanations(prev => ({
-            ...prev,
-            [task.id]: result.explanation || 'Verified: compliant with canon (no edit needed)',
-          }));
-        }
-
-        // Pacing delay so author can visually follow the active item highlighted and text changes
-        await new Promise(r => setTimeout(r, 600));
-      }
-
-      setLocalStatus('All editorial tasks applied.');
-      setTimeout(() => setLocalStatus(null), 4000);
-    } catch (err: any) {
-      console.error('Targeted review failed:', err);
-      setLocalStatus(`Error: ${err?.message || 'Failed to apply review'}`);
-      setTimeout(() => setLocalStatus(null), 5000);
-    } finally {
-      setActiveTaskId(null);
-      setLocalRunning(false);
-    }
-  };  const [undoStack, setUndoStack] = useState<UndoStackEntry[]>([]);
+  const isRunning = isEditorialRunning;
+  const currentStatus = editorialStatus;
+  const [undoStack, setUndoStack] = useState<UndoStackEntry[]>([]);
 
   const scrollToRevisionTarget = (targetSnippet?: string) => {
     setViewMode('changes');
@@ -316,21 +210,25 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   };
 
   const handleApplyStudioPatch = (newContent: string, targetChapter?: number, patchSnippet?: string) => {
+    if (!onManualSave || onManualSave(newContent) === false) return false;
     setUndoStack(prev => pushUndoState(prev, bookContent, patchSnippet || 'Editorial patch', targetChapter));
     setLastDiff({ before: bookContent, after: newContent });
     setEditableContent(newContent);
-    onManualSave?.(newContent);
     scrollToRevisionTarget(patchSnippet);
+    return true;
   };
 
   const handleUndoStudioPatch = () => {
     const popResult = popUndoState(undoStack);
     if (popResult) {
       const restored = popResult.previous.manuscript;
+      if (!onManualSave || onManualSave(restored) === false) {
+        setSaveError("Could not restore manuscript changes.");
+        return;
+      }
       setUndoStack(popResult.updatedStack);
       setLastDiff({ before: bookContent, after: restored });
       setEditableContent(restored);
-      onManualSave?.(restored);
       scrollToRevisionTarget(popResult.previous.description);
     }
   };
@@ -340,23 +238,25 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       {/* Three-zone layout: Column 1 (33% Review), Column 2 (47% Manuscript), Column 3 (1fr Cover) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[33%_47%_1fr] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[33%_47%_1fr] gap-6 items-stretch">
         {/* Column 1 (~33%): Interactive Editorial Assistant Studio */}
         <EditorialChatStudio
-          bookContent={bookContent}
+          className="h-[calc(100vh-215px)] min-h-[520px]"
+          bookContent={isEditing ? editableContent : bookContent}
           metadata={metadata}
           onApplyPatch={handleApplyStudioPatch}
           onUndoPatch={handleUndoStudioPatch}
           canUndo={undoStack.length > 0}
           activeModelConfig={editorialModel}
+          onModelChange={setEditorialModel}
           displayTitle={displayTitle}
-          isEditorialRunning={isRunning}
-          editorialStatus={currentStatus}
+          isEditorialRunning={isRunning || isEditing}
+          editorialStatus={isEditing?'Manual editing — save or cancel manuscript changes.':currentStatus}
           onScrollToRevision={scrollToRevisionTarget}
         />
 
-        {/* Column 2 (~35%): Manuscript Reader Card */}
-        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-280px)] min-h-[460px]">
+        {/* Column 2 (~47%): Manuscript Reader Card */}
+        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
             <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
@@ -493,8 +393,9 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         </div>
 
         {/* Column 3 (~20%): Book Cover & Imprint */}
-        <div className="flex flex-col">
+        <div className="flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
           <BookCoverUpload
+            className="h-full"
             title={displayTitle}
             genre={metadata?.genre}
             author={currentAuthor}

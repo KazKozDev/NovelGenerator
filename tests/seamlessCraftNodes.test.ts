@@ -107,4 +107,44 @@ describe('5 Algorithmic Craft Nodes (Seamless Pipeline)', () => {
     expect(context).toContain('And yet he used it. What does that make him?');
     expect(context).toContain('quote existing inscriptions verbatim');
   });
+
+  it('Node 6: suppresses already enacted milestones within the same chapter', () => {
+    const context = blindWriterContext(dummyPacket, dummyCard, [], [], [], 'thriller', {
+      completedMilestones: [
+        'Biometric scanner bypassed',
+        'Elevator doors opened to subbasement level',
+      ],
+    });
+
+    expect(context).toContain('ALREADY COMPLETED IN THIS CHAPTER (DO NOT RE-ENACT)');
+    expect(context).toContain('Biometric scanner bypassed');
+    expect(context).toContain('Elevator doors opened to subbasement level');
+    expect(context).toContain('IT IS ALREADY COMPLETE. DO NOT re-narrate or re-enact');
+  });
+
+  it('Node 7: enforces physical continuity state for footwear, world rules, and spatial boundaries', () => {
+    const context = blindWriterContext(dummyPacket, dummyCard, [], [], [], 'thriller', {
+      continuityState: {
+        footwear: { bruce: 'combat boots (laced)' },
+        worldRules: ['Override cipher changes every 24 hours dynamically'],
+        currentLocation: 'Manor Subbasement',
+        previousLocation: 'Batcave Cavern',
+        excludedFeatures: ['limestone cave formations', 'cavern rock'],
+      },
+    });
+
+    expect(context).toContain('CONTINUITY & PHYSICAL REALITY LOCK');
+    expect(context).toContain('Wearing combat boots (laced)');
+    expect(context).toContain('DO NOT describe bare feet, bare toes, or walking barefoot');
+    expect(context).toContain('Override cipher changes every 24 hours dynamically');
+    expect(context).toContain('Character has moved from "Batcave Cavern" to "Manor Subbasement"');
+    expect(context).toContain('Excluded Spatial Features (NOT present in this location): limestone cave formations, cavern rock');
+  });
+
+  it('detects somatic crutches and loops across scenes', () => {
+    const text = 'The tendon in his arm tightened. Bruce felt another tendon pull as his raw knuckles split against the grate.';
+    const imagery = extractUsedImagery([text]);
+    expect(imagery).toContain('tendon');
+    expect(imagery).toContain('knuckles split');
+  });
 });

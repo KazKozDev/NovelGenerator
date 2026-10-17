@@ -16,7 +16,7 @@ import { validateReceipt, sceneNeedsRepair, observeScene, type Observation } fro
 import { preflightPacket, projectPacket, validatePacket } from './projection';
 import { blindWriterContext, readBlind, readBlindPrefix } from './blindContext';
 import { extractUsedImagery, stripSubtextDecoding, joinScenesWithCameraBreaks, smoothSceneTransition, smoothAndJoinChapterScenes } from './craftRules';
-import type { TrackedPropState } from './types';
+import type { TrackedPropState, WorldContinuityState } from './types';
 import type { ProgressStage } from '../v2/orchestrator';
 import { reviseManuscript, editorialReport, manuscriptText, EDITORIAL_FOCUSES, CORE_EDITORIAL_FOCUSES } from './editorial';
 
@@ -24,7 +24,7 @@ export const AUDIT_STAGES = new Set(['craft-dev-review', 'craft-lit-review', 'cr
 export const AUDIT_CALLS = 16;
 
 /** Edit saved prose; never call preparation, projection or scene drafting here. */
-export async function runCraftEditorial(input: ProjectInput, store: ProjectStore, llm: NovelLLM, onProgress: (stage: ProgressStage, chapter?: number) => void, legacyDraft = false, editorialFocuses = EDITORIAL_FOCUSES): Promise<void> {
+export async function runCraftEditorial(input: ProjectInput, store: ProjectStore, llm: NovelLLM, onProgress: (stage: ProgressStage, chapter?: number) => void, legacyDraft = false, editorialFocuses = (input as any)?.editorial_mode === 'core' ? CORE_EDITORIAL_FOCUSES : EDITORIAL_FOCUSES, auditOnly = false): Promise<void> {
   repairStoredFormatting(store);
   const draft = store.loadAuthor();
   const source = store.manuscript();
@@ -82,7 +82,8 @@ export async function runCraftEditorial(input: ProjectInput, store: ProjectStore
     context: chapters => wholeBookContext(chapters, session, llm),
     structural: async (chapters, review) => { const revision = await restructureBook(input, chapters, session, llm, review); pendingScenes = revision.scenes; return revision.chapters; },
     phase: async focus => { await session.phase(focus === 'proofread' ? 'proofread' : focus === 'copyedit' ? 'copyedit' : ['baseline-literary', 'line'].includes(focus) ? 'line-edit' : 'structural-revision'); },
-  } : undefined);
+    auditOnly,
+  } : { auditOnly });
   desk.files[`${archive}-history.json`] = JSON.stringify(edited.history);
   const readers = await betaReaders(input, edited.chapters, llm, review => {
     desk.answers.push({ who: review.focus, step: ++desk.step, about: 'current complete book', text: JSON.stringify(review) });
@@ -640,6 +641,20 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
     files['object-states.json'] = JSON.stringify(objectStates);
   }
 
+  let continuityState: WorldContinuityState = {};
+  try {
+    if (files['continuity-state.json']) continuityState = JSON.parse(files['continuity-state.json']);
+  } catch { /* use empty */ }
+  if (!continuityState.footwear) {
+    const protag = packet.names?.protagonist?.toLowerCase() || 'protagonist';
+    continuityState.footwear = { [protag]: 'combat boots (laced) / sturdy footwear' };
+  }
+  if (!continuityState.worldRules?.length && packet.facts) {
+    continuityState.worldRules = packet.facts
+      .filter(f => f.kind === 'objective' && /(?:code|cipher|rotate|security|protocol|lock|access|frequency|rule)/i.test(f.text))
+      .map(f => f.text);
+  }
+
   const chaptersData: { text: string; card: string; facts: string; reader: string }[] = [];
 
   for (let cIdx = 0; cIdx < numChapters; cIdx++) {
@@ -649,6 +664,7 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
 
     const chScenes = packet.scenes.filter(s => s.chapter === chNum);
     const chSceneProse: string[] = [];
+    const chCompletedMilestones: string[] = [];
 
     for (let sceneIdx = 0; sceneIdx < chScenes.length; sceneIdx++) {
       const plannedCard = chScenes[sceneIdx];
@@ -658,9 +674,9 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
       const availableFacts = packet.facts.filter(f => card.povKnows.includes(f.id) && f.learnsAt < card.order && knownFacts.has(f.id));
       const newSceneFacts = packet.facts.filter(f => card.newFacts?.includes(f.id));
 
-      const worn = wornPhrases(pages);
+      const worn = wornPhrases(pages, 30, 2);
       const wornWarning = worn.length > 0 
-        ? `\n- BANNED REPETITIVE PHRASES (already overused in prior scenes; DO NOT USE):\n  ${worn.slice(0, 15).join(', ')}`
+        ? `\n- BANNED REPETITIVE PHRASES (already overused in prior scenes; DO NOT USE):\n  ${worn.slice(0, 30).join(', ')}`
         : '';
 
       // Part 1: Prompt Prevention in craft-write (When generating Scene B, index > 0)
@@ -699,7 +715,12 @@ ${s.openLoopsIntroduced?.length ? `- **Open Loops Introduced:** ${s.openLoopsInt
 
       // No premise, dossier, future cards, review advice or global author directives
       // cross this boundary. Only the current scene and permitted knowledge do.
-      let context = `${blindWriterContext(packet, card, availableFacts, newSceneFacts, pages, input.genre, { usedImagery, objectStates })}
+      let context = `${blindWriterContext(packet, card, availableFacts, newSceneFacts, pages, input.genre, {
+        usedImagery,
+        objectStates,
+        continuityState,
+        completedMilestones: chCompletedMilestones,
+      })}
 
 INSTRUCTIONS FOR WRITER:
 - Write ONE continuous, complete fiction scene of ~${sceneWords} words (${Math.round(sceneWords * 0.85)}–${Math.round(sceneWords * 1.15)} words).
@@ -734,7 +755,7 @@ INSTRUCTIONS FOR WRITER:
         const node = architecture.graph.scenes.find(s => s.id === card.id)!;
         execution = await prepareExecution(architecture, node, enacted, files[beforeReader], session, llm);
         card = applyExecutionToCard(card, execution);
-        context = executionPrompt(execution, pages);
+        context = executionPrompt(execution, chSceneProse.length ? chSceneProse : pages.slice(-2));
         if (transitionRule) {
           context += `\n\n${transitionRule}`;
         }
@@ -746,15 +767,16 @@ INSTRUCTIONS FOR WRITER:
         : sceneNeedsRepair(receipt, prose, sceneWords);
       const sceneFile = `scene-${card.order}.md`;
       const stateFile = `scene-${card.order}-state.json`;
-      let checkpoint: { sceneId?: string; phase?: string; repairAttempted?: boolean; observation?: Observation } = {};
+      let checkpoint: { sceneId?: string; phase?: string; repairAttempted?: boolean; observation?: Observation; observationRevision?: string; finalizedRevision?: string; handoffRevision?: string } = {};
       try { checkpoint = JSON.parse(files[stateFile] || '{}'); } catch { /* Re-observe saved prose if its checkpoint is invalid. */ }
       let sceneText = files[sceneFile]?.trim() ? files[sceneFile] : await llm(context, sceneSystem, { stage: 'craft-write', temperature: 0.8, maxTokens: Math.max(4000, sceneWords * 3) });
       sceneText = normalizeChapterBody(sceneText, chNum);
       sceneText = stripSubtextDecoding(sceneText);
       if (files[sceneFile] && files[sceneFile] !== sceneText) checkpoint.phase = 'written';
+      let finalizedTextRevision = await revision(sceneText);
       const saveScene = (phase: string, observation?: Observation) => {
         files[sceneFile] = sceneText;
-        files[stateFile] = JSON.stringify({ sceneId: card.id, phase, repairAttempted: checkpoint.repairAttempted, observation });
+        files[stateFile] = JSON.stringify({ sceneId: card.id, phase, repairAttempted: checkpoint.repairAttempted, observation, observationRevision: observation ? finalizedTextRevision : undefined, finalizedRevision: checkpoint.finalizedRevision, handoffRevision: checkpoint.handoffRevision });
         const chScenesWithProse = chScenes.slice(0, chSceneProse.length).map((s, idx) => ({ text: chSceneProse[idx], pov: s.pov, location: s.location, time: s.time }));
         chScenesWithProse.push({ text: sceneText, pov: card.pov, location: card.location, time: card.time });
         const partial = joinScenesWithCameraBreaks(chScenesWithProse);
@@ -762,6 +784,31 @@ INSTRUCTIONS FOR WRITER:
         store.saveManuscript(chNum, partial);
         syncAuthorState({ chaptersData: [...chaptersData, { text: partial, card: chScenes.map(s => s.purpose).join('; '), facts: '', reader: '' }] });
       };
+      const finalizeScene = async () => {
+        const previousText = chSceneProse.at(-1) || '';
+        const handoffRevision = await revision(previousText);
+        const currentRevision = await revision(sceneText);
+        if (checkpoint.finalizedRevision !== currentRevision || checkpoint.handoffRevision !== handoffRevision) {
+          if (sceneIdx > 0 && previousText) {
+            const previous = chScenes[sceneIdx - 1];
+            const cameraShift = previous.pov?.trim().toLowerCase() !== card.pov?.trim().toLowerCase();
+            if (!cameraShift) sceneText = await smoothSceneTransition(previousText, sceneText, {
+              locA: previous.location, locB: card.location, timeA: previous.time, timeB: card.time,
+            }, llm);
+          }
+          finalizedTextRevision = await revision(sceneText);
+          checkpoint.finalizedRevision = finalizedTextRevision;
+          checkpoint.handoffRevision = handoffRevision;
+        } else finalizedTextRevision = currentRevision;
+        if (checkpoint.observationRevision !== finalizedTextRevision) {
+          checkpoint.phase = 'written';
+          checkpoint.observation = undefined;
+        }
+      };
+      // Keep raw output recoverable if seam editing is interrupted.
+      if (checkpoint.phase !== 'complete') saveScene('written');
+      // No prose mutation is permitted after observation and enacted-state commit.
+      await finalizeScene();
       // Persist the writer's output before asking a fallible observer to describe it.
       if (checkpoint.phase !== 'complete') saveScene('written');
 
@@ -812,7 +859,7 @@ Return JSON:
 }`;
 
       let observation: Observation | undefined;
-      if (checkpoint.sceneId === card.id && checkpoint.phase === 'complete' && checkpoint.observation) {
+      if (checkpoint.sceneId === card.id && checkpoint.phase === 'complete' && checkpoint.observationRevision === finalizedTextRevision && checkpoint.observation) {
         try {
           if (checkpoint.observation.receipt) validateReceipt(checkpoint.observation.receipt, sceneText, card.id);
           observation = checkpoint.observation;
@@ -839,9 +886,14 @@ Return JSON:
         store.log('craft-repair', `Repairing Scene ${card.id}: ${receipt.event.reason || 'scene findings'}`);
         checkpoint.repairAttempted = true;
         saveScene('written');
-        const repairPrompt = `${context}\nCURRENT DRAFT:\n${sceneText}\nOBSERVER VALIDATION ISSUES:\n${JSON.stringify(receipt)}\nRewrite this scene to enact its required choice, action and consequence. Preserve successful material and the premise. Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors, elliptical evasions, and recycled clichés. Ensure fresh vocabulary and distinct physical staging. Target ~${sceneWords} words. Output corrected fiction prose only.`;
+        const repairMilestones = chCompletedMilestones.length > 0
+          ? `\nNOTE: The following physical milestones were already completed in earlier scenes of this chapter: ${chCompletedMilestones.join('; ')}. Do NOT re-enact them.`
+          : '';
+        const repairPrompt = `${context}\nCURRENT DRAFT:\n${sceneText}\nOBSERVER VALIDATION ISSUES:\n${JSON.stringify(receipt)}${repairMilestones}\nRewrite this scene to enact its required choice, action and consequence. Preserve successful material and the premise. Enact physical bodily presence, dialogue, and concrete actions. Eliminate vague metaphors, elliptical evasions, and recycled clichés. Ensure fresh vocabulary and distinct physical staging. Target ~${sceneWords} words. Output corrected fiction prose only.`;
         sceneText = normalizeChapterBody(await llm(repairPrompt, sceneSystem, { stage: 'craft-repair', temperature: 0.8, maxTokens: Math.max(4000, sceneWords * 3) }), chNum);
         sceneText = stripSubtextDecoding(sceneText);
+        saveScene('written');
+        await finalizeScene();
         saveScene('written');
         observation = await observeScene(llm, obsPrompt(sceneText), sceneText, card.id, architecture ? 'draft' : 'legacy');
         receipt = observation.receipt;
@@ -875,30 +927,19 @@ Return JSON:
         files['packet.json'] = JSON.stringify(packet);
       }
 
-      // Smooth transition with previous scene in chapter if same POV (Parts 2 & 3)
-      if (sceneIdx > 0 && chSceneProse.length > 0) {
-        const prevCard = chScenes[sceneIdx - 1];
-        const prevPov = prevCard.pov?.trim().toLowerCase();
-        const currPov = card.pov?.trim().toLowerCase();
-        const isCameraShift = Boolean(prevPov && currPov && prevPov !== currPov);
-        if (!isCameraShift) {
-          sceneText = await smoothSceneTransition(
-            chSceneProse[sceneIdx - 1],
-            sceneText,
-            {
-              locA: prevCard.location,
-              locB: card.location,
-              timeA: prevCard.time,
-              timeB: card.time,
-            },
-            llm
-          );
-        }
-      }
-
       saveScene('complete', observation);
       pages.push(sceneText);
       chSceneProse.push(sceneText);
+      if (architecture) {
+        const committed = enacted.scenes.find(s => s.id === card.id);
+        chCompletedMilestones.push(...(committed?.events.map(e => e.quote) || []));
+      } else if (receipt.event.status === 'enacted') {
+        const paragraphs = sceneText.split(/\n\s*\n/).filter(Boolean);
+        for (const source of receipt.event.sources) {
+          const index = Number(source.match(/-p(\d+)$/)?.[1]) - 1;
+          if (paragraphs[index]) chCompletedMilestones.push(paragraphs[index]);
+        }
+      }
       for (const f of receipt?.facts || []) {
         if (f.knownBy?.includes('protagonist')) knownFacts.add(f.id);
       }
@@ -909,6 +950,19 @@ Return JSON:
         if (!usedImagery.includes(img)) usedImagery.push(img);
       }
       files['used-imagery.json'] = JSON.stringify(usedImagery);
+
+      if (card.location) {
+        if (continuityState.currentLocation && continuityState.currentLocation.trim().toLowerCase() !== card.location.trim().toLowerCase()) {
+          continuityState.previousLocation = continuityState.currentLocation;
+          if (/cave|cavern|sub-level|grotto/i.test(continuityState.previousLocation) && !/cave|cavern/i.test(card.location)) {
+            continuityState.excludedFeatures = ['limestone cave walls', 'stalactites', 'underground cavern rock'];
+          } else {
+            continuityState.excludedFeatures = [];
+          }
+        }
+        continuityState.currentLocation = card.location;
+        files['continuity-state.json'] = JSON.stringify(continuityState);
+      }
 
       if (card.props?.length && receipt) {
         for (const propName of card.props) {
@@ -934,7 +988,7 @@ Return JSON:
     }
 
     const fullChapterScenes = chScenes.map((s, idx) => ({ text: chSceneProse[idx] || '', pov: s.pov, location: s.location, time: s.time }));
-    const fullChapterText = await smoothAndJoinChapterScenes(fullChapterScenes, llm);
+    const fullChapterText = joinScenesWithCameraBreaks(fullChapterScenes);
     chaptersText.push(fullChapterText);
     files[`chapter-${chNum}.md`] = fullChapterText;
     store.saveManuscript(chNum, fullChapterText);
@@ -956,11 +1010,12 @@ Return JSON:
     syncAuthorState({ chaptersData, waiting: readerFeedbackRaw });
   }
 
-  // Automatic and user-invoked editing share the same saved-book path and resume marker.
+  // Automatic post-draft check runs in audit-only mode: evaluates manuscript and builds report
+  // without entering multi-pass rewrite loops on the newly drafted text.
   files['book.md'] = manuscriptText(chaptersText.map((text, index) => ({ chapter: index + 1, text })));
   syncAuthorState({ chaptersData, completed: false });
   if (session) await session.phase('structural-revision');
-  await runCraftEditorial(input, store, llm, onProgress, !usesAuthorEngine);
+  await runCraftEditorial(input, store, llm, onProgress, !usesAuthorEngine, undefined, true);
   const report = store.loadReport()!;
   return { status: report.status, summary: report.summary };
 }

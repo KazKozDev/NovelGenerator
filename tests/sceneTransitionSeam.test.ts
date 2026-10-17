@@ -63,6 +63,19 @@ A wave of icy wind swept through the threshold.`;
       expect(deduped.trim()).toBe('A wave of icy wind swept through the threshold.');
     });
 
+    it('removes entire first paragraph if it duplicates the closing multi-sentence paragraph beat', () => {
+      const sceneA = `Bruce stepped up to the terminal and plugged in the decryptor module.
+
+The status bar clicked to 41% with a soft electronic tone. The drive continued spinning in the dark subbasement.`;
+
+      const sceneB = `The status bar clicked to 41% with a soft electronic tone. The drive continued spinning in the dark subbasement.
+
+He waited for the remaining sectors to finish mapping.`;
+
+      const deduped = applyDeterministicDedup(sceneA, sceneB);
+      expect(deduped.trim()).toBe('He waited for the remaining sectors to finish mapping.');
+    });
+
     it('preserves Scene B unchanged when sentences are dissimilar', () => {
       const sceneA = `The lock clicked into place.`;
       const sceneB = `Miles away, the siren began to wail across the bay.`;

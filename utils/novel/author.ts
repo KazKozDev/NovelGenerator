@@ -2,6 +2,7 @@ import type { ProjectInput, FinalReport } from './v2/types';
 
 /** The author's draft: notebook, plan, dossier and the desk it is working at. */
 export interface AuthorDraft {
+  promptPlanning?: import('./promptBook').PromptBook;
   version: 1;
   input_key: string;
   notebook?: string;
@@ -71,7 +72,7 @@ const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at
 /**
  * Detects phrases repeated across chapters beyond healthy motifs.
  */
-export function wornPhrases(texts: string[], limit = 14): string[] {
+export function wornPhrases(texts: string[], limit = 14, minUses = 3): string[] {
   const seen = new Map<string, number>();
   for (const sentence of texts.flatMap(text => text.split(/[.!?…\n]+/))) {
     const normalized = sentence.toLowerCase()
@@ -96,7 +97,11 @@ export function wornPhrases(texts: string[], limit = 14): string[] {
     }
   }
 
-  const repeated = [...seen].filter(([, times]) => times >= 3).sort((a, b) => b[1] - a[1]);
+  const repeated = [...seen].filter(([gram, times]) => {
+    const wordCount = gram.split(' ').length;
+    const effectiveMin = wordCount >= 3 ? minUses : Math.max(minUses, 3);
+    return times >= effectiveMin;
+  }).sort((a, b) => b[1] - a[1]);
   if (!repeated.length) return [];
 
   const fiveGrams = repeated.filter(([gram]) => gram.split(' ').length === 5);
