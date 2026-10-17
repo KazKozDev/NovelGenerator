@@ -273,16 +273,25 @@
       .markdown-content.text-xs p,
       .text-xs .markdown-content p,
       .markdown-content.compact-outline p,
-      .compact-outline p {
+      .compact-outline p,
+      .markdown-content.compact-plan p {
         line-height: 1.45;
         margin-bottom: 6px;
       }
       .markdown-content.text-xs li,
       .text-xs .markdown-content li,
       .markdown-content.compact-outline li,
-      .compact-outline li {
+      .compact-outline li,
+      .markdown-content.compact-plan li {
         line-height: 1.45;
         margin-bottom: 3px;
+      }
+      /* The chapter plan and story outline panels: text takes the panel's size, not the reader's 16px. */
+      .markdown-content.compact-plan p,
+      .markdown-content.compact-plan li,
+      .markdown-content.compact-outline p,
+      .markdown-content.compact-outline li {
+        font-size: inherit;
       }
       .markdown-content p:last-child {
         margin-bottom: 0;
