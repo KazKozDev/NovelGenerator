@@ -37,6 +37,9 @@ export interface EditorialAgentResponse {
   problems: EditorialProblem[];
 }
 
+/** 'skeletons': the plot review; 'repeats': the review of what the book tells twice. Both show skeletons, not prose. */
+export type EditorialView = 'full' | 'skeletons' | 'repeats';
+
 const PROBLEM_BLOCK = /```problem\s*\r?\n([\s\S]*?)\r?\n```/gi;
 const DROPPED_BLOCK = /```dropped\s*\r?\n([\s\S]*?)\r?\n```/gi;
 
@@ -97,6 +100,22 @@ export function codeSuspects(blocks: ManuscriptBlock[]) {
   return [...repeatSuspects(blocks), ...findSuspects(cachedRecords(blocks)), ...durationSuspects(durationMentions(blocks))].slice(0, 15);
 }
 
+/** Everything code finds told twice, for the Repeats review: passages of any length, and sentences said more than once. */
+export function codeRepeatSuspects(blocks: ManuscriptBlock[]): { claim: string; places: string[] }[] {
+  const found = findRepeats(blocks);
+  return [
+    ...found.passages.map(p => ({
+      claim: `A passage stands twice in the text: ${p.first[0]}..${p.first[1]} and ${p.second[0]}..${p.second[1]} (${p.paragraphs} paragraph${p.paragraphs > 1 ? 's' : ''})`,
+      places: [`${p.first[0]}-${p.first[1]}`, `${p.second[0]}-${p.second[1]}`],
+    })),
+    ...found.sentences.map(s => ({ claim: `A sentence said ${s.blockIds.length} times: "${s.sentence}"`, places: s.blockIds })),
+  ].slice(0, 15);
+}
+
+/** A review view: the book comes as chapter skeletons, code's suspicions come with their passages, and kept problems must be checked. */
+const isReview = (view?: EditorialView) => view === 'skeletons' || view === 'repeats';
+const suspectsFor = (blocks: ManuscriptBlock[], view?: EditorialView) => (view === 'repeats' ? codeRepeatSuspects(blocks) : codeSuspects(blocks));
+
 export function parseProblems(text: string): EditorialProblem[] {
   const problems: EditorialProblem[] = [];
   for (const match of text.matchAll(PROBLEM_BLOCK)) {
@@ -114,7 +133,7 @@ export function parseProblems(text: string): EditorialProblem[] {
 
 /** What the Close button sends: the problem, the chosen way, and its places, as one linked set of patches. */
 export function buildCloseProblemPrompt(problem: EditorialProblem, way: string): string {
-  return `Fix this plot hole: ${problem.title}
+  return `Fix this problem: ${problem.title}
 Way to close it: ${way}
 Its places: ${problem.places.join(', ') || 'not given'}.
 Read the places first (check_suspects), then propose_diff blocks for every place that has to change, as one linked set. Change only these paragraphs and the sentences around them, keep the author's voice, and leave other scenes alone.`;
@@ -205,10 +224,11 @@ export function buildEditorialAgentPrompt(params: {
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
   metadata?: any;
-  /** 'skeletons': the book is shown as chapter skeletons only; the text is read through tools. */
-  view?: 'full' | 'skeletons';
+  /** 'skeletons' or 'repeats': the book is shown as chapter skeletons only; the text is read through tools. */
+  view?: EditorialView;
 }): { system: string; prompt: string } {
-  const skeletonView = params.view === 'skeletons';
+  const skeletonView = isReview(params.view);
+  const repeatsView = params.view === 'repeats';
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
 
@@ -277,7 +297,7 @@ export function buildEditorialAgentPrompt(params: {
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
 ${skeletonView
-    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: a plot hole hides in prose. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
+    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: ${repeatsView ? 'a scene told twice shows in what the chapters state' : 'a plot hole hides in prose'}. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
     : `You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).`}
 You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
 Respond in the language used by the author (if Russian, respond in natural Russian).
@@ -310,14 +330,14 @@ CRITICAL OPERATIONAL RULES:
    - read_blocks {"chapter": 3, "from": 10, "to": 30} — paragraphs ch3_p10..ch3_p30 in full, to read a passage in order.
    - chapter_skeleton {"chapter": 3} or {} for all chapters — a dry list per chapter: scenes, who learns what and how, stated hours and dates, where each character ends up, objects and injuries, open questions. Each line names its paragraph id. Made once and kept until the chapter changes.
    - check_suspects {"suspects": [{"claim": "Body found at five (ch4) and at noon (ch6)", "places": ["ch4_p18", "ch6_p1"]}]} — every place of every suspicion in full, a paragraph either side, all at once. Places are paragraph ids or ranges like "ch3_p12-ch3_p15".
-   - find_repeats {"chapter": Optional[number]} — passages told twice and sentences said more than once, found by code.
-   - inspect_dependencies {"entity": "name or object", "chapter": 3} — where else the book mentions it.
+${repeatsView ? '' : `   - find_repeats {"chapter": Optional[number]} — passages told twice and sentences said more than once, found by code.
+`}   - inspect_dependencies {"entity": "name or object", "chapter": 3} — where else the book mentions it.
 8. PLOT AND LOGIC REVIEW. A plot hole hides in prose; look at what the chapters state, not how they sound. When the author asks about plot, logic, or continuity, ask these questions, with the skeletons when you have them:
    - Where does each character learn what they know? Does anyone act on a fact before the scene where they get it?
    - Where is each character at the end of a scene? Does anyone appear somewhere without getting there?
    - Do hours, dates, ages, and spans agree across chapters?
    - Does an object (key, card, letter, weapon) reach a hand without being shown how?
-   - Is a scene told twice? (find_repeats)
+   - Is a scene told twice?${repeatsView ? '' : ' (find_repeats)'}
    - Does the book contradict the AUTHOR'S NOTES given with the manuscript?
    - Why does each scene follow from the one before it — because of it, or despite it, or only after it?
    - What would break if a scene were cut?
@@ -338,10 +358,15 @@ CRITICAL OPERATIONAL RULES:
   }
   // Code checks the chapter records and names suspicions; the passages come with them, to be read.
   if (skeletonView) {
-    const suspects = codeSuspects(params.manuscriptBlocks);
+    const suspects = suspectsFor(params.manuscriptBlocks, params.view);
+    const found = repeatsView
+      ? 'passages standing twice in the text, and sentences said more than once'
+      : 'a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new';
     prompt += suspects.length
-      ? `SUSPICIONS FOUND BY CODE (a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
+      ? `SUSPICIONS FOUND BY CODE (${found}). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
       : `SUSPICIONS FOUND BY CODE: none.\n\n`;
+  }
+  if (skeletonView && !repeatsView) {
     const durations = durationMentions(params.manuscriptBlocks);
     if (durations.length) prompt += `SPANS OF TIME STATED IN THE BOOK (code lists every span in book order; two different spans for one relation, habit, or stretch of time are a suspicion):\n${formatDurations(durations)}\n\n`;
     const knowledge = knowledgeByPair(skeletons);
@@ -436,7 +461,7 @@ export async function runEditorialTurn(params: {
   metadata?: any;
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
-  view?: 'full' | 'skeletons';
+  view?: EditorialView;
   /** Set when the turn closes a reviewed problem: after the patches, code re-reads the changed chapters once. */
   closing?: { title: string };
   callModel: (prompt: string, system: string) => Promise<string>;
@@ -446,11 +471,11 @@ export async function runEditorialTurn(params: {
   const executedTools: { tool: string; summary: string }[] = [];
   // Paragraphs of every suspicion checked against the text this turn: code's, and the reader's own through check_suspects.
   const checked = new Set<string>();
-  if (params.view === 'skeletons') {
+  if (isReview(params.view)) {
     const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
     await chapterSkeletons(blocks, chapters, params.callModel);
     executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
-    const suspects = codeSuspects(blocks);
+    const suspects = suspectsFor(blocks, params.view);
     for (const suspect of suspects) for (const id of expandPlaces(suspect.places)) checked.add(id);
     executedTools.push({ tool: 'code_checks', summary: `Code found ${suspects.length} suspicions in the text and the chapter records` });
   }
@@ -469,6 +494,7 @@ export async function runEditorialTurn(params: {
 
   const wantsEdit = asksForEdit(params.userPrompt);
   const observations: string[] = [];
+  const ran = new Set<string>();
   let modelResponse = '';
   let nextPrompt = prompt;
   const rounds = 5;
@@ -477,6 +503,17 @@ export async function runEditorialTurn(params: {
     const toolCalls = parseToolCallsFromModelResponse(modelResponse);
     let invalidPatch = false;
     for (const tc of toolCalls) {
+      // In a review, a call already run is not run again: its result is in the observations.
+      const key = `${tc.tool}:${JSON.stringify(tc.args)}`;
+      if (isReview(params.view) && tc.tool !== 'propose_diff' && ran.has(key)) {
+        observations.push(`${tc.tool} ${JSON.stringify(tc.args)} already ran; its result is above.`);
+        continue;
+      }
+      ran.add(key);
+      if (params.view === 'repeats' && tc.tool === 'find_repeats') {
+        observations.push('find_repeats is not needed: code has already found the repeats, and they are listed above with their passages.');
+        continue;
+      }
       if (tc.tool === 'search_manuscript') {
         const query = String(tc.args.query || '');
         const matches = hybridSearch(blocks, query, tc.args.chapter ? Number(tc.args.chapter) : undefined, 4);
@@ -502,7 +539,7 @@ export async function runEditorialTurn(params: {
         const from = Number(tc.args.from ?? 0);
         const to = tc.args.to === undefined ? undefined : Number(tc.args.to);
         executedTools.push({ tool: tc.tool, summary: `Read Chapter ${chapter} from paragraph ${from}${to === undefined ? '' : ` to ${to}`}` });
-        const most = params.view === 'skeletons' ? 8 : undefined;
+        const most = isReview(params.view) ? 8 : undefined;
         observations.push(`Chapter ${chapter} text:\n${readBlocks(blocks, chapter, from, to, most)}${most ? '\n(In this review read_blocks shows up to 8 paragraphs; put suspicions in check_suspects.)' : ''}`);
       } else if (tc.tool === 'chapter_skeleton') {
         const all = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
@@ -555,7 +592,7 @@ export async function runEditorialTurn(params: {
     if (!dropped.length) dropped = parseDropped(extracted).filter(d => cited(d.places));
   }
   // In a review of suspicions, a kept problem must be one that was checked against the text.
-  const unchecked = params.view === 'skeletons' ? problems.filter(p => !expandPlaces(p.places).some(id => checked.has(id))) : [];
+  const unchecked = isReview(params.view) ? problems.filter(p => !expandPlaces(p.places).some(id => checked.has(id))) : [];
   problems = problems.filter(p => !unchecked.includes(p));
   // A drop stands only on a quote that is in the book or the author's notes word for word; any other drop is kept.
   const notes = params.metadata ? readBookNotes(params.metadata) : '';

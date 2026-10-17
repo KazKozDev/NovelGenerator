@@ -10,7 +10,7 @@ import { reportEditorialFindings, checkEditorialTask, proposeEditorialTask, task
 import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
-import { runEditorialTurn, buildCloseProblemPrompt, ProposedDiffCard, type EditorialProblem } from '../utils/novel/editorialAgent';
+import { runEditorialTurn, buildCloseProblemPrompt, ProposedDiffCard, type EditorialProblem, type EditorialView } from '../utils/novel/editorialAgent';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { MarkdownView } from './common/MarkdownView';
 import EditorialModelModal from './EditorialModelModal';
@@ -44,8 +44,8 @@ interface ChatMessage {
 interface QuickEditorialPrompt {
   label: string;
   prompt: string;
-  /** 'skeletons': the agent sees chapter skeletons instead of prose and reads passages through tools. */
-  view?: 'full' | 'skeletons';
+  /** 'skeletons' or 'repeats': the agent sees chapter skeletons instead of prose and reads passages through tools. */
+  view?: EditorialView;
 }
 
 // Review buttons: they ask for findings with quotes, not changes; the author picks what to work on next.
@@ -68,10 +68,19 @@ End with the kept problems ranked by how much they break the story, and ask whic
   },
   {
     label: '02 · Repeats',
+    view: 'repeats',
     prompt: `Find what the book tells twice. Do not change the text yet.
-Call find_repeats {}, then read each repeated passage in its place (read_blocks). For each one, say whether it is a scene pasted twice, a scene retold with the same facts, or a refrain the author likely meant, and why.
-Also look for events the reader is told twice in different words: the same discovery, the same explanation, the same confession.
-Give paragraph ids for both places and say which one the story needs. If nothing is told twice, say so. Answer in the language of the manuscript.`,
+Code has already found the passages that stand twice in the text and the sentences said more than once, and lists them below, each with its passages. Decide each from the passages given; do not read whole chapters. Keep it if the story tells the same thing twice: a scene pasted twice, a scene retold with the same facts, a sentence repeated where the reader does not need it again.
+You may add up to 3 suspicions of your own from the skeletons: the same discovery, explanation, or confession told twice in different words. Code's suspicions already come with their passages: do not send them to check_suspects again. Use at most one check_suspects call, for your own suspicions only. Keep only suspicions that were checked: code's, or your own sent through check_suspects; a new repeat noticed while writing goes through check_suspects first.
+For each kept repeat give both places with paragraph ids, say which one the story needs, and one or two ways the author could close it (cut the second telling, merge the two, change what the second one adds), then one block:
+\`\`\`problem
+{"title": "short name of the repeat", "places": ["ch4_p55-ch4_p60", "ch2_p10-ch2_p15"], "ways": ["first way to close it", "second way"]}
+\`\`\`
+Drop a suspect only with a quote that clears it: a sentence from the book that shows the second telling is meant (a refrain, a recollection the text marks as one, a different character's account), or a sentence from the author's notes that shows it is intended. Your reading of the context is not a reason; a suspect with no such quote stays kept. For each dropped suspect write one line, then one block:
+\`\`\`dropped
+{"title": "short name of the suspect", "places": ["ch1_p21"], "quote": "the exact sentence from the book or the author's notes that clears it"}
+\`\`\`
+End with the kept repeats ranked by how much they slow the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
   {
     label: '03 · Pacing',
@@ -178,7 +187,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     }
   }, [messages]);
 
-  const handleSendMessage = async (userText: string, view?: 'full' | 'skeletons', closing?: { title: string }) => {
+  const handleSendMessage = async (userText: string, view?: EditorialView, closing?: { title: string }) => {
     const text = userText.trim();
     if (!text || isRunning) return;
 

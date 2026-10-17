@@ -74,6 +74,7 @@ describe('EditorialChatStudio', () => {
   it('review buttons ask for findings, not changes', () => {
     for (const { prompt } of QUICK_PROMPTS) expect(asksForEdit(prompt)).toBe(false);
     expect(QUICK_PROMPTS[0].view).toBe('skeletons');
+    expect(QUICK_PROMPTS[1].view).toBe('repeats');
     expect(asksForEdit('Исправь главу 3')).toBe(true);
   });
 });

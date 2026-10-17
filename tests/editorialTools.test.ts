@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
 import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, durationMentions, durationSuspects, findRepeats, skeletonLines, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
-import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, clearingQuote, codeSuspects, expandPlaces, parseDropped, parseProblems, quoteInBook, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
+import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, clearingQuote, codeRepeatSuspects, codeSuspects, expandPlaces, parseDropped, parseProblems, quoteInBook, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
 const SCENE = [
@@ -240,6 +240,42 @@ describe('editorial agent with reading tools', () => {
     const suspects = codeSuspects(indexManuscriptBlocks(BOOK));
     expect(suspects[0]).toMatchObject({ places: ['ch1_p0-ch1_p2', 'ch2_p1-ch2_p3'] });
     expect(suspects[0].claim).toContain('A passage stands twice in the text');
+  });
+
+  it('reviews repeats like plot holes: code finds them, passages come with them, no plot sections', async () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    expect(codeRepeatSuspects(blocks)[0]).toMatchObject({ places: ['ch1_p0-ch1_p2', 'ch2_p1-ch2_p3'] });
+    const prompts: string[] = [];
+    const callModel = async (prompt: string, system: string) => {
+      if (system.includes('dry skeleton')) return '{}';
+      prompts.push(prompt);
+      return 'Kept one.\n```problem\n{"title": "Archive scene pasted twice", "places": ["ch2_p1-ch2_p3"], "ways": ["Cut the second telling"]}\n```';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Repeats with ```problem blocks', bookContent: BOOK, history: [], view: 'repeats', callModel });
+    expect(result.executedTools.map(t => t.tool)).toEqual(['chapter_skeleton', 'code_checks']);
+    expect(prompts[0]).toContain('passages standing twice in the text, and sentences said more than once');
+    expect(prompts[0]).toContain('### Suspect 1: A passage stands twice in the text');
+    expect(prompts[0]).not.toContain('SPANS OF TIME STATED IN THE BOOK');
+    expect(prompts[0]).not.toContain('FULL MANUSCRIPT TEXT');
+    expect(result.problems.map(p => p.title)).toEqual(['Archive scene pasted twice']);
+  });
+
+  it('runs an identical call once in a review, and no find_repeats in the Repeats review', async () => {
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const call = '```tool:read_blocks\n{"chapter": 1, "from": 0, "to": 2}\n```\n```tool:find_repeats\n{}\n```';
+    const callModel = async (prompt: string, system: string) => {
+      if (system.includes('dry skeleton')) return '{}';
+      prompts.push(prompt);
+      systems.push(system);
+      return prompts.length < 3 ? call : 'Nothing told twice.';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Repeats', bookContent: BOOK, history: [], view: 'repeats', callModel });
+    expect(result.executedTools.filter(t => t.tool === 'read_blocks')).toHaveLength(1);
+    expect(result.executedTools.some(t => t.tool === 'find_repeats')).toBe(false);
+    expect(systems[0]).not.toContain('find_repeats');
+    expect(prompts[2]).toContain('read_blocks {"chapter":1,"from":0,"to":2} already ran');
+    expect(prompts[1]).toContain('find_repeats is not needed');
   });
 
   it('keeps in a skeleton review only problems that were checked against the text', async () => {
