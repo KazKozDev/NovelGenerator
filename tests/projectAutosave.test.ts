@@ -17,28 +17,31 @@ function snapshot(premise = 'Test story premise') {
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe('repository autosave', () => {
-  it('atomically saves, restores, archives resets and rejects cross-origin writes', async () => {
+  it('saves into the book folder, restores, keeps copies, and rejects cross-origin writes', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'novel-autosave-'));
     let handler: any;
     const plugin = projectAutosavePlugin(root);
-    (plugin.configureServer as Function)({middlewares:{use: (_: string, value: any) => {handler=value}}});
+    (plugin.configureServer as Function)({middlewares:{use: (route: string, value: any) => {if(route==='/api/project-autosave')handler=value}}});
     const server = createServer((req,res)=>handler(req,res));
     await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve));
     const url = `http://127.0.0.1:${(server.address() as any).port}`;
+    const books = path.join(root,'Documents','NovelGenerator');
+    const titled = (premise: string) => { const s: any = snapshot(premise); s.files.input.title = 'Тест'; return s; };
     try {
       const save = (value: unknown, origin=url) => fetch(`${url}/api/project-autosave`, {method:'PUT',headers:{origin,'content-type':'application/json'},body:JSON.stringify(value)});
-      expect((await save(snapshot(), 'http://evil.test')).status).toBe(403);
+      expect((await save(titled('Test story premise'), 'http://evil.test')).status).toBe(403);
       expect((await save({version:1})).status).toBe(400);
-      expect((await save(snapshot())).status).toBe(200);
-      expect(JSON.parse(await readFile(path.join(root,'autosaves/latest.project.json'),'utf8')).files.manuscript[0].text).toBe('Completed scene.');
+      expect((await save(titled('Test story premise'))).status).toBe(200);
+      expect(JSON.parse(await readFile(path.join(books,'Тест','Тест.project.json'),'utf8')).files.manuscript[0].text).toBe('Completed scene.');
+      expect(await readdir(root)).toEqual(['Documents']);
       expect((await (await fetch(`${url}/api/project-autosave`)).json()).snapshot.files.input.premise).toBe('Test story premise');
-      expect((await save(snapshotProject(new MemoryProjectStore()))).status).toBe(200);
-      expect((await readdir(path.join(root,'autosaves'))).filter(name=>name.startsWith('project-'))).toHaveLength(1);
-      await writeFile(path.join(root,'autosaves/latest.project.json'),'broken JSON');
+      expect((await save(titled('Another book'))).status).toBe(200);
+      expect((await readdir(path.join(books,'Тест','копии'))).filter(name=>name.startsWith('перед новой книгой'))).toHaveLength(1);
+      await writeFile(path.join(books,'Тест','Тест.project.json'),'broken JSON');
       const recovered=await (await fetch(`${url}/api/project-autosave`)).json();
-      expect(recovered.snapshot).toBeNull();expect(recovered.recoveries[0].files.manuscript[0].text).toBe('Completed scene.');
-      expect((await save(snapshot())).status).toBe(200);
-      expect((await readdir(path.join(root,'autosaves'))).some(name=>name.startsWith('corrupt-'))).toBe(true);
+      expect(recovered.snapshot).toBeNull();expect(recovered.recoveries[0].files.input.premise).toBe('Test story premise');
+      expect((await save(titled('Another book'))).status).toBe(200);
+      expect((await readdir(path.join(books,'Тест','копии'))).some(name=>name.startsWith('повреждённый автосейв'))).toBe(true);
     } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); await rm(root,{recursive:true,force:true}); }
   });
   it('reports failed disk saves instead of claiming success, then can retry', async () => {

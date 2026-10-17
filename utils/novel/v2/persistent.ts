@@ -99,7 +99,7 @@ export class PersistentProjectStore extends MemoryProjectStore {
           const response = await fetch('/api/project-autosave', {
             method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
           });
-          if (!response.ok) throw Error('Cannot save project to autosaves/latest.project.json');
+          if (!response.ok) throw Error('Cannot save the project to its book folder in Documents/NovelGenerator');
           const result = await response.json();
           if (revision === this.revision) this.status({state: 'saved', savedAt: result.savedAt});
           // Browser copy is secondary; a successful disk save remains durable.

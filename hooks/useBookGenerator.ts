@@ -17,7 +17,8 @@ import { SIMILAR_MODEL, type SimilarRequest } from '../utils/novel/similar';
 import { similarHuggingFaceBrowser } from '../services/hfBrowserService';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { budgetFor, Orchestrator, type ProgressStage } from '../utils/novel/v2/orchestrator';
-import { downloadJson, restoreSnapshot, snapshotProject } from '../utils/novel/v2/export';
+import { restoreSnapshot, snapshotProject } from '../utils/novel/v2/export';
+import { saveOrDownload } from '../utils/saveToBookFolder';
 import { PersistentProjectStore } from '../utils/novel/v2/persistent';
 import type { ProjectInput } from '../utils/novel/v2/types';
 import { playSuccessSound } from '../utils/soundUtils';
@@ -549,8 +550,11 @@ export default function useBookGenerator() {
   function exportProject(): void {
     const store = getStore();
     const input = store.loadInput();
-    const name = (input?.premise || 'project').slice(0, 40).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'project';
-    downloadJson(`${name}.project.json`, snapshotProject(store));
+    const draft = store.loadAuthor();
+    const title = input?.title || draft?.title || draft?.promptPlanning?.blueprint?.title || '';
+    const name = (title || 'project').replace(/[^\w\- а-яА-ЯёЁ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'project';
+    const snapshot = JSON.stringify(snapshotProject(store), null, 2);
+    void saveOrDownload({ title, kind: 'backups', label: 'копия проекта', ext: 'project.json', content: snapshot }, `${name}.project.json`, 'application/json');
   }
 
   async function importProject(file: File): Promise<void> {

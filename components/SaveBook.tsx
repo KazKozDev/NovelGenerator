@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { exportAsEpub, exportAsJSON, exportAsPdf, exportAsText, exportAsMarkdown, extractBookTitle, sanitizeFilename } from '../utils/exportUtils';
+import {
+  exportAsPdf,
+  extractBookTitle,
+  sanitizeFilename,
+  formatMarkdownWithMetadata,
+  formatTextWithMetadata,
+  buildEpub,
+  buildPdfHtml,
+} from '../utils/exportUtils';
+import { saveOrDownload, saveToBookFolder } from '../utils/saveToBookFolder';
 
 export default function SaveBook({
   content,
@@ -14,8 +23,16 @@ export default function SaveBook({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [showAuthorAlert, setShowAuthorAlert] = useState(false);
-  const filename = sanitizeFilename(extractBookTitle(content));
+  const rawTitle = (typeof metadata?.title === 'string' && metadata.title.trim()) || extractBookTitle(content) || 'Book';
+  const filename = sanitizeFilename(rawTitle);
+
+  const showSaved = (where: string | null) => {
+    if (!where) return;
+    setSavedNotice(where);
+    setTimeout(() => setSavedNotice(null), 5000);
+  };
 
   const download = async (format: string) => {
     setError('');
@@ -39,12 +56,22 @@ export default function SaveBook({
     }
 
     setBusy(true);
+    const label = draft ? 'черновик' : 'книга';
+    const file = (kind: 'manuscripts' | 'reports', what: string, ext: string, body: string | Blob) => ({ title: rawTitle, kind, label: what, ext, content: body });
     try {
-      if (format === 'txt') exportAsText(content, `${filename}.txt`, metadata);
-      else if (format === 'md') exportAsMarkdown(content, `${filename}.md`, metadata);
-      else if (format === 'report') exportAsJSON(metadata, `${filename}-report.json`);
-      else if (format === 'pdf') exportAsPdf(content, metadata);
-      else await exportAsEpub(content, metadata, `${filename}.epub`);
+      if (format === 'txt') {
+        showSaved(await saveOrDownload(file('manuscripts', label, 'txt', formatTextWithMetadata(content, metadata)), `${filename}.txt`, 'text/plain;charset=utf-8'));
+      } else if (format === 'md') {
+        showSaved(await saveOrDownload(file('manuscripts', label, 'md', formatMarkdownWithMetadata(content, metadata)), `${filename}.md`, 'text/markdown;charset=utf-8'));
+      } else if (format === 'report') {
+        showSaved(await saveOrDownload(file('reports', 'редакторский отчёт', 'json', JSON.stringify(metadata, null, 2)), `${filename}-report.json`, 'application/json;charset=utf-8'));
+      } else if (format === 'pdf') {
+        // The print window makes the PDF; the page it prints is kept in the book folder to print again.
+        exportAsPdf(content, metadata);
+        showSaved(await saveToBookFolder(file('manuscripts', `${label} для печати`, 'html', buildPdfHtml(content, metadata))));
+      } else {
+        showSaved(await saveOrDownload(file('manuscripts', label, 'epub', await buildEpub(content, metadata)), `${filename}.epub`));
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -83,6 +110,11 @@ export default function SaveBook({
           )}
         </div>
       </div>
+      {savedNotice && (
+        <p role="status" className="absolute top-full mt-1 right-0 text-[11px] text-emerald-400 bg-zinc-950 px-2 py-1 rounded border border-emerald-900/60 z-40 whitespace-nowrap shadow-md">
+          ✓ Сохранено в {savedNotice}
+        </p>
+      )}
       {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40 whitespace-nowrap">{error}</p>}
 
       {showAuthorAlert && (

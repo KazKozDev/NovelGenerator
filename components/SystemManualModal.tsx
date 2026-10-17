@@ -265,8 +265,8 @@ const sections = [
       {
         title: 'Atomic Dual-Persistence Autosave',
         paragraphs: [
-          'All project state is automatically saved to autosaves/latest.project.json on the server and mirrored to browser IndexedDB after every chapter.',
-          'Starting a new book automatically archives a dated recovery snapshot in autosaves/. Reloading the page or closing the tab preserves your work completely.'
+          'Each book has its own folder in Documents/NovelGenerator: the project and its text are saved there automatically, and every Save button writes there too. The project is also mirrored to browser IndexedDB.',
+          'Replacing a book with a new one under the same title keeps a dated copy in its копии/ folder. Reloading the page or closing the tab preserves your work completely.'
         ]
       },
       {

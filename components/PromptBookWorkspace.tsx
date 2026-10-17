@@ -11,7 +11,7 @@ import CoverStudio from './CoverStudio';
 import type {BookBlueprint,ChapterPrompt,PromptBook} from '../utils/novel/promptBook';
 import {promptsReady,storyIsCurrent} from '../utils/novel/promptBook/actions';
 import {reviewIsCurrent} from '../utils/novel/promptBook/review';
-import {downloadJson} from '../utils/novel/v2/export';
+import {saveOrDownload} from '../utils/saveToBookFolder';
 
 const field='w-full rounded border border-zinc-700 bg-zinc-950 p-3 text-sm text-zinc-200 focus:outline-none focus:border-zinc-400 disabled:opacity-60';
 const button='rounded border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 disabled:opacity-40';
@@ -71,7 +71,8 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
 
  const storyCurrent=storyIsCurrent(value);
  const storyComplete=storyCount===value.brief.input.chapter_count&&storyCurrent;
- const downloadStory=()=>{const url=URL.createObjectURL(new Blob([manuscript],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='story.md';a.click();URL.revokeObjectURL(url);};
+ const saved=(where:string|null)=>{if(where)setMessage(`Сохранено в ${where}`);};
+ const downloadStory=async()=>saved(await saveOrDownload({title:coverTitle,kind:'manuscripts',label:'книга',ext:'md',content:manuscript},'story.md','text/markdown;charset=utf-8'));
  const valid=value.prompts.filter(p=>p.sourceRevision===value.revision).length;
  const ready=value.phase==='ready'&&valid===value.brief.input.chapter_count;
  const update=(key:'title'|'overview'|'centralConflict'|'ending',text:string)=>setPlan(p=>p?{...p,[key]:text}:p);
@@ -102,7 +103,7 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
     {view!=='editing'&&!storyComplete&&(
       <button className={`${button} bg-zinc-200 text-zinc-950 font-semibold`} disabled={busy||unsaved||!promptsReady(value)||styleNeedsGeneration(value)||!storyCurrent||!onGenerateStory} onClick={async()=>{changeView('story');setActive(storyCount+1);setWriting(true);try{await onGenerateStory?.();}finally{setWriting(false);}}}>{storyCount?'Resume story':'Generate story'}</button>
     )}
-    {view==='prompts'&&<button className={button} disabled={!ready||busy||unsaved||styleNeedsGeneration(value)} onClick={()=>downloadJson('chapter-prompts.json',{brief:value.brief,blueprint:value.blueprint,style:value.style,prompts:value.prompts.map(p=>({...p,system:withWritingStyle(p.system,value.style?.profile)}))})}>Download all prompts</button>}
+    {view==='prompts'&&<button className={button} disabled={!ready||busy||unsaved||styleNeedsGeneration(value)} onClick={async()=>saved(await saveOrDownload({title:coverTitle,kind:'blueprints',label:'промпты глав',ext:'json',content:JSON.stringify({brief:value.brief,blueprint:value.blueprint,style:value.style,prompts:value.prompts.map(p=>({...p,system:withWritingStyle(p.system,value.style?.profile)}))},null,2)},'chapter-prompts.json','application/json'))}>Download all prompts</button>}
     {storyCount>0&&<SaveBook draft={!storyComplete} content={manuscript} metadata={{...promptStoryMetadata(value),author:publication?.author,imprint:publication?.imprint,coverImage:publication?.coverImage}} onExportProject={onExport}/>}
     {view==='story'&&storyCount===0&&<button className={button} disabled={busy} onClick={onExport}>Download project</button>}
    </div>

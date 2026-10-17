@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { saveOrDownload } from '../utils/saveToBookFolder';
 import JSZip from 'jszip';
 import { generateText } from '../services/llmService';
 import { buildCoverPromptRequest, masterPrompt, MASTER_RULES, type CoverBookFacts } from '../utils/cover/coverPrompt';
@@ -114,7 +115,8 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
   async function download(format: CoverFormat) {
     if (!master) return;
     const blob = await canvasBlob(renderCover(master, format, state.text, state.style, state.focus), format.mime);
-    saveBlob(blob, format.file);
+    const where = await saveOrDownload({ title: facts.title, kind: 'covers', label: `обложка ${format.label.split(' · ')[0]} ${format.width}x${format.height}`, ext: 'jpg', content: blob }, format.file);
+    if (where) setNotice(`Сохранено в ${where}`);
   }
 
   async function downloadAll() {
@@ -125,7 +127,8 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
       for (const format of COVER_FORMATS) zip.file(format.file, await canvasBlob(renderCover(master, format, state.text, state.style, state.focus), format.mime));
       zip.file('cover-master.png', selected!.blob);
       zip.file('cover-prompt.txt', selected!.prompt);
-      saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(facts.title)}-covers.zip`);
+      const where = await saveOrDownload({ title: facts.title, kind: 'covers', label: 'все обложки', ext: 'zip', content: await zip.generateAsync({ type: 'blob' }) }, `${slug(facts.title)}-covers.zip`);
+      if (where) setNotice(`Сохранено в ${where}`);
     } finally { setBusy(''); }
   }
 
@@ -234,11 +237,5 @@ function MasterThumb({ blob, active, onSelect, onRemove }: { blob: Blob; active:
   );
 }
 
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
 
 const slug = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'book';
