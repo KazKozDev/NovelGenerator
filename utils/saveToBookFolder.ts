@@ -11,8 +11,10 @@ export interface BookFile {
   label: string;
   ext: string;
   content: string | Blob;
-  /** Add the date and time to the name (default), or replace the file of that name. */
-  stamp?: boolean;
+  /** Add the date and time to the name: now (default), a given moment, or none. */
+  stamp?: boolean | number;
+  /** Replace a file of the same name instead of saving beside it. */
+  replace?: boolean;
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -35,6 +37,7 @@ export async function saveToBookFolder(file: BookFile): Promise<string | null> {
         label: file.label,
         ext: file.ext,
         stamp: file.stamp ?? true,
+        replace: file.replace === true,
         content: binary ? await blobToBase64(file.content as Blob) : file.content,
         base64: binary,
       }),

@@ -4,6 +4,7 @@ import { canEditPromptStory, promptStoryContent, promptStoryMetadata } from './u
 
 
 import React, { useEffect } from 'react';
+import { saveToBookFolder } from './utils/saveToBookFolder';
 import { assembleManuscript } from './utils/novel/manuscript';
 import { MIN_CHAPTERS, MAX_CHAPTERS } from './constants';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
@@ -187,6 +188,25 @@ const App: React.FC = () => {
       return savedMetadata;
     }
   }, [promptBook, authorName, imprintData, coverImageUrl, savedMetadata]);
+
+  // The book's cover and its publication details (author, imprint) live in this browser; a copy goes to the book's folder.
+  const folderTitle = promptBook?.blueprint?.title || promptBook?.story?.title || (typeof savedMetadata?.title === 'string' ? savedMetadata.title : '') || bookTitleInput || '';
+  React.useEffect(() => {
+    if (!coverImageUrl?.startsWith('data:image/')) return;
+    const timer = setTimeout(async () => {
+      const blob = await (await fetch(coverImageUrl)).blob();
+      const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
+      await saveToBookFolder({ title: folderTitle, kind: 'covers', label: 'обложка книги', ext, content: blob, stamp: false, replace: true });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [coverImageUrl, folderTitle]);
+  React.useEffect(() => {
+    if (!authorName.trim() && !imprintData) return;
+    const timer = setTimeout(() => {
+      void saveToBookFolder({ title: folderTitle, kind: 'blueprints', label: 'издание', ext: 'json', content: JSON.stringify({ author: authorName.trim(), imprint: imprintData ?? null }, null, 2), stamp: false, replace: true });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [authorName, imprintData, folderTitle]);
 
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />

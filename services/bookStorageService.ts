@@ -155,11 +155,14 @@ export async function saveBookFile(params: {
   content: string | Buffer;
   ext?: string;
   stamp?: boolean | number;
+  /** Replace a file of the same name: for a file the app keeps in step with one thing, such as a master picture. */
+  replace?: boolean;
   customBase?: string;
 }): Promise<{ fullPath: string; fileName: string; relativePath: string }> {
-  const { title, category, label, content, ext = 'md', stamp = true, customBase } = params;
+  const { title, category, label, content, ext = 'md', stamp = true, replace = false, customBase } = params;
   const { dir } = await ensureBookFolder(title, category, customBase);
-  const fileName = freeName(dir, bookFileName(label, ext, stamp));
+  const name = bookFileName(label, ext, stamp);
+  const fileName = replace ? name : freeName(dir, name);
   const fullPath = path.join(dir, fileName);
   await writeAtomic(fullPath, content);
   return { fullPath, fileName, relativePath: path.relative(path.dirname(getDocumentsRoot(customBase)), fullPath) };

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { saveOrDownload } from '../utils/saveToBookFolder';
+import { saveOrDownload, saveToBookFolder } from '../utils/saveToBookFolder';
 import JSZip from 'jszip';
 import { generateText } from '../services/llmService';
 import { buildCoverPromptRequest, masterPrompt, MASTER_RULES, type CoverBookFacts } from '../utils/cover/coverPrompt';
@@ -43,6 +43,21 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
     });
     return () => { cancelled = true; };
   }, [bookKey]);
+
+  // Each master picture and its prompt also go to the book's обложки/ folder, once per picture and again when it is enhanced.
+  const mastersInFolder = useRef(new Set<string>());
+  useEffect(() => {
+    if (!loaded) return;
+    for (const m of state.masters) {
+      const key = `${m.id}:${m.blob.size}`;
+      if (mastersInFolder.current.has(key)) continue;
+      mastersInFolder.current.add(key);
+      const label = `мастер ${masterStamp(m.createdAt)}`;
+      const ext = m.blob.type === 'image/jpeg' ? 'jpg' : m.blob.type === 'image/webp' ? 'webp' : 'png';
+      void saveToBookFolder({ title: facts.title, kind: 'covers', label, ext, content: m.blob, stamp: false, replace: true });
+      void saveToBookFolder({ title: facts.title, kind: 'covers', label: `${label} — промпт`, ext: 'txt', content: m.prompt, stamp: false, replace: true });
+    }
+  }, [state.masters, loaded, facts.title]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -237,5 +252,12 @@ function MasterThumb({ blob, active, onSelect, onRemove }: { blob: Blob; active:
   );
 }
 
+
+/** "2026-10-17 15.40.07": seconds too, so two pictures made in one minute keep their own files. */
+const masterStamp = (at: number) => {
+  const d = new Date(at || Date.now());
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+};
 
 const slug = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'book';

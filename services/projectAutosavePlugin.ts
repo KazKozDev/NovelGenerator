@@ -45,6 +45,7 @@ export function projectAutosavePlugin(root = process.cwd()): Plugin {
             content,
             ext: body.ext || 'md',
             stamp: body.stamp ?? body.timestamp ?? true,
+            replace: body.replace === true,
             customBase: docsBase,
           });
           finish(200, { ok: true, fullPath: saved.fullPath, fileName: saved.fileName, relativePath: saved.relativePath });

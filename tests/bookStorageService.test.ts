@@ -52,6 +52,15 @@ describe('bookStorageService', () => {
     expect(first.relativePath).toBe(path.join(path.basename(base), 'Chronicles of Solitude', 'текст', 'книга.md'));
   });
 
+  it('replaces a file of the same name when asked, for files kept in step with one thing', async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'novel-storage-'));
+    const save = (content: string) => saveBookFile({ title: 'Остров', category: 'covers', label: 'мастер 2026-10-17 15.40.07', content, ext: 'png', stamp: false, replace: true, customBase: base! });
+    await save('first');
+    const second = await save('enhanced');
+    expect(await readdir(path.join(base, 'Остров', 'обложки'))).toEqual(['мастер 2026-10-17 15.40.07.png']);
+    expect(await readFile(second.fullPath, 'utf8')).toBe('enhanced');
+  });
+
   it('autosaves the project and its text into the book folder, and finds it again', async () => {
     base = await mkdtemp(path.join(tmpdir(), 'novel-storage-'));
     await saveProjectSnapshotToStorage(snapshot('Властелин Времени'), { customBase: base });
