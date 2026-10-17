@@ -7,6 +7,7 @@ import {canEditPromptStory,promptStoryContent,promptStoryMetadata,type PromptWor
 import {WritingStylePanel} from './WritingStylePanel';
 import {withWritingStyle,styleNeedsGeneration,type StyleInputs} from '../utils/novel/promptBook/style';
 import React, {useEffect,useState} from 'react';
+import CoverStudio from './CoverStudio';
 import type {BookBlueprint,ChapterPrompt,PromptBook} from '../utils/novel/promptBook';
 import {promptsReady,storyIsCurrent} from '../utils/novel/promptBook/actions';
 import {reviewIsCurrent} from '../utils/novel/promptBook/review';
@@ -60,6 +61,10 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
  const editableStory=canEditPromptStory(value);
  const [editorOpened,setEditorOpened]=useState(false);
  useEffect(()=>{if(view==='editing'&&editableStory)setEditorOpened(true);},[view,editableStory]);
+ const [coverOpened,setCoverOpened]=useState(false);
+ useEffect(()=>{if(view==='cover')setCoverOpened(true);},[view]);
+ const coverTitle=value.blueprint?.title||value.brief.input.title||'';
+ const coverFacts=React.useMemo(()=>({title:coverTitle,genre:value.brief.input.genre,premise:value.brief.input.premise,requirements:value.brief.input.author_requirements,excerpt:value.story?.chapters?.[0]?.text?.slice(0,3000)}),[coverTitle,value.brief,value.story]);
  const manuscript=React.useMemo(()=>promptStoryContent(value),[value.story,value.blueprint?.title]);
  const editorialMetadata=React.useMemo(()=>JSON.stringify(promptStoryMetadata(value)),[value.story,value.blueprint,value.style?.profile,value.brief]);
  const storyCount=value.story?.chapters.length||0;
@@ -91,6 +96,7 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='prompts'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={unsaved} onClick={()=>changeView('prompts')}>1. Prompts</button>
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='story'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={unsaved} onClick={()=>changeView('story')}>2. Story</button>
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='editing'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved||!editableStory} onClick={()=>changeView('editing')} title={!editableStory?'Editing unlocks after all chapters are written':undefined}>3. Editing</button>
+     <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='cover'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved||!value.blueprint} onClick={()=>changeView('cover')} title={!value.blueprint?'The cover unlocks once the outline exists':undefined}>4. Cover</button>
     </nav>
     {busy&&onStop&&<button className={button} onClick={onStop}>Stop</button>}
     {view!=='editing'&&!storyComplete&&(
@@ -111,7 +117,9 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
   </div>}
   {/* Once opened, the editor stays mounted and is only hidden, so its chat and a running review survive switching stages. */}
   {editableStory&&(view==='editing'||editorOpened)&&<div hidden={view!=='editing'}><BookDisplay {...publication} bookContent={manuscript} metadataJson={editorialMetadata} onManualSave={onSaveStory?(content=>onSaveStory(content,manuscript)):undefined} onEditingStateChange={setEditorDirty} onReset={onReset||onSettings} onExportProject={onExport}/></div>}
-  {view==='editing'&&editableStory?null:view==='story'?<PromptStoryStudio book={value} running={busy&&!!writingChapter} writingChapter={writingChapter} liveText={liveText} selectedChapter={active==='plan'?1:active} onChapterSelect={setActive} logs={agentLogs} tokens={tokenTotals} savedAt={lastSavedAt} saveStatus={autosaveStatus} error={error} onResume={!busy&&!unsaved&&storyCurrent&&!styleNeedsGeneration(value)?async()=>{setWriting(true);try{await onGenerateStory?.();}finally{setWriting(false);}}:undefined}/>:<>
+  {/* Kept mounted once opened, like the editor, so a picture being drawn survives switching stages. */}
+  {(view==='cover'||coverOpened)&&value.blueprint&&<div hidden={view!=='cover'}><CoverStudio bookKey={coverTitle||value.brief.input.premise.slice(0,80)} facts={coverFacts} author={publication?.author||''} onUseAsCover={publication?.onCoverChange?(url=>publication.onCoverChange!(url)):undefined}/></div>}
+  {view==='cover'||(view==='editing'&&editableStory)?null:view==='story'?<PromptStoryStudio book={value} running={busy&&!!writingChapter} writingChapter={writingChapter} liveText={liveText} selectedChapter={active==='plan'?1:active} onChapterSelect={setActive} logs={agentLogs} tokens={tokenTotals} savedAt={lastSavedAt} saveStatus={autosaveStatus} error={error} onResume={!busy&&!unsaved&&storyCurrent&&!styleNeedsGeneration(value)?async()=>{setWriting(true);try{await onGenerateStory?.();}finally{setWriting(false);}}:undefined}/>:<>
   <WritingStylePanel book={value} busy={busy} onSave={onSaveStyle} onGenerate={onGenerateStyle} onDirty={setStyleDirty} blocked={editing||Object.values(dirty).some(Boolean)}/>
   {styleNeedsGeneration(value)&&<p className="text-sm text-amber-200">Generate or save a style profile before writing the story.</p>}
   <div className="grid gap-5 lg:grid-cols-[290px_minmax(0,1fr)] items-start">

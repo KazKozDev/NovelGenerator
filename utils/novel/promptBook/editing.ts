@@ -2,7 +2,7 @@ import type {ProjectStore} from '../v2/store';
 import {assembleManuscript,parseBookChapters} from '../manuscript';
 import {savePromptBook,type PromptBook} from './index';
 import type {PromptStory} from './actions';
-export type PromptWorkspaceStage='prompts'|'story'|'editing';
+export type PromptWorkspaceStage='prompts'|'story'|'editing'|'cover';
 export interface StoryEditRevision {at:string;before:PromptStory}
 export function canEditPromptStory(book:PromptBook):boolean {
  return !!book.story&&book.story.chapters.length===book.brief.input.chapter_count&&book.story.chapters.every((c,i)=>c.chapter===i+1&&!!c.text.trim());
@@ -17,7 +17,7 @@ export function promptStoryMetadata(book:PromptBook) {
 }
 export function setPromptWorkspaceStage(store:ProjectStore,stage:PromptWorkspaceStage) {
  const book=store.loadAuthor()?.promptPlanning;if(!book)throw new Error('Prompt project not found.');
- if(!['prompts','story','editing'].includes(stage))throw new Error('Unknown workspace stage.');
+ if(!['prompts','story','editing','cover'].includes(stage))throw new Error('Unknown workspace stage.');
  if(stage==='editing'&&!canEditPromptStory(book))throw new Error('Finish writing all chapters before opening the editing stage.');
  book.workspaceStage=stage;savePromptBook(store,book);return book;
 }
