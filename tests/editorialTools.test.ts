@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
-import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, knowledgeByPair, objectsBeside, pathsByCharacter, skeletonLines, timesBeside, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
+import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, skeletonLines, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
 import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, parseProblems, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
@@ -75,35 +75,14 @@ describe('editorial reading tools', () => {
     expect(checkSuspects(blocks, [])).toBe('No suspects given.');
   });
 
-  it('groups what each character knows about another, in book order, marking what they do not know', () => {
-    const text = knowledgeByPair([
-      { chapter: 1, skeleton: 'LEARNED:\nNora learns from the email that Claire Whitcombe wants a session [ch1_p21]\n\nKNOWS:\n- Nora knows Daniel\'s wife Claire is at her sister\'s [ch1_p12]\n- Nora does not recognize the name Claire Whitcombe [ch1_p21]\n\nMOVES:\nClaire Whitcombe: at her sister\'s [ch1_p12]' },
-      { chapter: 2, skeleton: 'KNOWS:\nNora knows the room number [ch2_p3]' },
-    ]);
-    expect(text).toContain('### What Nora about Claire');
-    const lines = text.split('\n').filter(l => l.startsWith('- '));
-    expect(lines[0]).toContain('[ch1_p12]');
-    expect(lines[2]).toMatch(/^- ch1 NOT: Nora does not recognize/);
-    expect(text).not.toContain('room number');
+  it('splits a skeleton section written as one line into its items', () => {
+    const lines = skeletonLines([{ chapter: 4, skeleton: 'TIME: Friday at nine, Hale comes [ch4_p4]. About five that morning, Daniel found [ch4_p18].' }]);
+    expect(lines.map(l => l.text)).toEqual(['Friday at nine, Hale comes [ch4_p4]', 'About five that morning, Daniel found [ch4_p18].']);
   });
 
   it('reads at most the given number of paragraphs', () => {
     const blocks = indexManuscriptBlocks(BOOK);
     expect(readBlocks(blocks, 1, 0, 3, 2)).not.toContain('[ch1_p2]');
-  });
-
-  it('sets lines from different chapters side by side: times, paths, objects', () => {
-    const skeletons = [
-      { chapter: 4, skeleton: 'TIME: Friday at nine, Hale comes [ch4_p4]. About five that morning, Daniel Whitcombe found [ch4_p18].\nMOVES:\nIlya: upstairs at the end of the scene [ch4_p2]\nOBJECTS:\nBrass key to the archive, in Ilya\'s pocket [ch4_p3]' },
-      { chapter: 6, skeleton: 'TIME:\n- Daniel found at noon on that Friday [ch6_p1]\nMOVES:\nIlya: in the basement [ch6_p2]\nOBJECTS:\nBrass key to the archive, on Nora\'s desk [ch6_p5]' },
-    ];
-    expect(skeletonLines(skeletons).filter(l => l.section === 'TIME')).toHaveLength(3);
-    const times = timesBeside(skeletons);
-    expect(times).toContain('(daniel, found)');
-    expect(times).toContain('ch6: Daniel found at noon');
-    expect(times).not.toContain('Hale comes');
-    expect(pathsByCharacter(skeletons)).toBe('### Ilya\n- ch4: Ilya: upstairs at the end of the scene [ch4_p2]\n- ch6: Ilya: in the basement [ch6_p2]');
-    expect(objectsBeside(skeletons)).toContain('ch6: Brass key to the archive, on Nora');
   });
 
   it('reads the book notes the author left', () => {
@@ -208,6 +187,8 @@ describe('editorial agent with reading tools', () => {
     expect(calls).toHaveLength(2);
     expect(result.problems.map(p => p.title)).toEqual(['Body found twice']);
     expect(result.assistantMessage).toContain('Kept: the body');
+    const invented = await runEditorialTurn({ userPrompt: 'Review it, then one block:\n```problem\n{}\n```', bookContent: BOOK, history: [], callModel: async (_p, system) => system.includes('copy kept problems') ? '```problem\n{"title": "Unexplained ending", "places": ["ch3_p9"], "ways": []}\n```' : 'I will read the rest first.' });
+    expect(invented.problems).toEqual([]);
     const plain = await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel: async () => 'Nothing found.' });
     expect(plain.problems).toEqual([]);
   });
@@ -228,6 +209,15 @@ describe('editorial agent with reading tools', () => {
     expect(skeletonPrompts[0]).toContain('half past five');
     expect(result.assistantMessage).toContain('With these changes, the skeleton of Chapter 1 says about it');
     expect(result.assistantMessage).toContain('- ch1: Ilya leaves at half past five');
+  });
+
+  it('tells the model its last round is for the answer', async () => {
+    const prompts: string[] = [];
+    const callModel = async (prompt: string) => { prompts.push(prompt); return '```tool:read_blocks\n{"chapter": 1}\n```'; };
+    await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel });
+    expect(prompts).toHaveLength(5);
+    expect(prompts[3]).not.toContain('This is your last step');
+    expect(prompts[4]).toContain('This is your last step: make no more tool calls. Write your answer now');
   });
 
   it('runs the reading tools and hands their results back', async () => {

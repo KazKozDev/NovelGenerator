@@ -53,16 +53,10 @@ export const QUICK_PROMPTS: QuickEditorialPrompt[] = [
   {
     label: '01 · Plot holes',
     view: 'skeletons',
-    prompt: `Check the whole book for plot holes, in two steps. Do not change the text yet.
-Step 1. From the chapter skeletons and the knowledge by pair, list the strongest suspicions, at most 12, in one check_suspects call, each with the paragraph ids of every place it rests on. Look for:
-- a character who knows something before the scene where they learn it, or knows a thing in one place and does not know it in another;
-- a character who acts on a fact before the scene where they learn it;
-- a character who turns up somewhere without getting there;
-- hours, dates, ages or spans that disagree across chapters;
-- an object that reaches a hand without being shown how;
-- the book contradicting the author's notes.
-Write no review in this step.
-Step 2. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it, then one block:
+    prompt: `Check the whole book for plot holes. Do not change the text yet.
+Code has already checked the chapter records and lists its suspicions below, each with its passages. Decide each from the passages given; do not read whole chapters. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, a scene remembered on purpose, or a time the book leaves unstated is not a hole.
+You may add up to 3 suspicions of your own: a NOT line in the knowledge by pair after the same character already knew it, a character who acts on a fact before learning it, or the book contradicting the author's notes. Read them through check_suspects before keeping them.
+For each kept problem give the quotes with paragraph ids and one or two ways the author could close it, then one block:
 \`\`\`problem
 {"title": "short name of the problem", "places": ["ch4_p18", "ch6_p1"], "ways": ["first way to close it", "second way"]}
 \`\`\`

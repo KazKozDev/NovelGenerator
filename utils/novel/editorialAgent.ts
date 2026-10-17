@@ -1,7 +1,8 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
-import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, knowledgeByPair, linesAbout, objectsBeside, pathsByCharacter, timesBeside, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+import { findSuspects } from './chapterRecords';
+import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, cachedRecords, knowledgeByPair, linesAbout, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
 
@@ -277,17 +278,15 @@ CRITICAL OPERATIONAL RULES:
   if (skeletonText) {
     prompt += `${skeletonText}\n\n`;
   }
-  const knowledge = skeletonView ? knowledgeByPair(skeletons) : '';
-  if (knowledge) {
-    prompt += `KNOWLEDGE BY PAIR (code groups the skeletons' LEARNED and KNOWS lines by who knows and whom it is about, in book order; NOT marks a line saying the character does not know). A NOT line after a line where the same character already knows it is a suspicion:\n\n${knowledge}\n\n`;
+  // Code checks the chapter records and names suspicions; the passages come with them, to be read.
+  if (skeletonView) {
+    const suspects = findSuspects(cachedRecords(params.manuscriptBlocks));
+    prompt += suspects.length
+      ? `SUSPICIONS FOUND BY CODE (checks over the chapter records: one event at two times, a fact known then not known, an event shown twice, an object with someone new, a character in two places at once). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
+      : `SUSPICIONS FOUND BY CODE: none.\n\n`;
+    const knowledge = knowledgeByPair(skeletons);
+    if (knowledge) prompt += `KNOWLEDGE BY PAIR (code groups the skeletons' LEARNED and KNOWS lines by who knows and whom it is about, in book order; NOT marks a line saying the character does not know). A NOT line after a line where the same character already knows it is a suspicion:\n\n${knowledge}\n\n`;
   }
-  // Code sets lines side by side; whether they disagree is for the reader.
-  const ledgers = skeletonView ? [
-    ['TIMES BESIDE EACH OTHER (lines from different chapters that state a time and share words; two hours for one event is a suspicion)', timesBeside(skeletons)],
-    ['WHERE EACH CHARACTER IS, IN BOOK ORDER (a character somewhere new with no way there is a suspicion)', pathsByCharacter(skeletons)],
-    ['OBJECTS BESIDE EACH OTHER (an object in a hand with no way there is a suspicion)', objectsBeside(skeletons)],
-  ].filter(([, text]) => text) : [];
-  for (const [title, text] of ledgers) prompt += `${title}:\n${text}\n\n`;
   if (contextSnippets && !skeletonView) {
     prompt += `${contextSnippets}\n\n`;
   }
@@ -389,6 +388,7 @@ export async function runEditorialTurn(params: {
     const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
     await chapterSkeletons(blocks, chapters, params.callModel);
     executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
+    executedTools.push({ tool: 'code_checks', summary: `Code found ${findSuspects(cachedRecords(blocks)).length} suspicions in the chapter records` });
   }
 
   const { system, prompt } = buildEditorialAgentPrompt({
@@ -407,7 +407,8 @@ export async function runEditorialTurn(params: {
   const observations: string[] = [];
   let modelResponse = '';
   let nextPrompt = prompt;
-  for (let round = 0; round < 5; round++) {
+  const rounds = 5;
+  for (let round = 0; round < rounds; round++) {
     modelResponse = await params.callModel(nextPrompt, system);
     const toolCalls = parseToolCallsFromModelResponse(modelResponse);
     let invalidPatch = false;
@@ -465,17 +466,22 @@ export async function runEditorialTurn(params: {
     if (!toolCalls.length && !wantsEdit) break;
     observations.push(`Previous assistant response:\n${modelResponse}\n` +
       (wantsEdit ? 'The author requested edits. Return executable propose_diff tool blocks, not a promise or a claim that changes were applied. If no change is appropriate, explain the concrete reason.' : 'Continue using tools as needed, then provide your review.'));
-    nextPrompt = `${prompt}\n\nTool Observations:\n${observations.join('\n\n')}`;
+    // The last round answers from what has been read; tool calls in it would go unrun.
+    const last = round === rounds - 2
+      ? `\n\nThis is your last step: make no more tool calls. ${wantsEdit ? 'Return your propose_diff blocks now.' : 'Write your answer now from what you have read.'}`
+      : '';
+    nextPrompt = `${prompt}\n\nTool Observations:\n${observations.join('\n\n')}${last}`;
   }
 
   let problems = parseProblems(modelResponse);
   // The review was asked for problem blocks but wrote prose: one call copies its kept problems out, nothing more.
   if (!problems.length && params.userPrompt.includes('```problem') && modelResponse.trim()) {
     const extracted = await params.callModel(
-      `REVIEW:\n${modelResponse}\n\nCopy the problems this review KEEPS (not the dropped ones) as blocks, one per problem, in the review's order:\n\`\`\`problem\n{"title": "short name", "places": ["paragraph ids the review cites for it"], "ways": ["each way the review gives to close it"]}\n\`\`\`\nCopy only what the review says. Output the blocks only.`,
+      `REVIEW:\n${modelResponse}\n\nCopy the problems this review KEEPS (not the dropped ones) as blocks, one per problem, in the review's order:\n\`\`\`problem\n{"title": "short name", "places": ["paragraph ids the review cites for it"], "ways": ["each way the review gives to close it"]}\n\`\`\`\nCopy only what the review says. If the review keeps no problems, output nothing.`,
       'You copy kept problems out of an editorial review into blocks. Do not add, judge, or rewrite. Output the blocks only.',
     );
-    problems = parseProblems(extracted);
+    // A copied problem stands only on paragraphs the review itself cites.
+    problems = parseProblems(extracted).filter(p => p.places.length > 0 && p.places.some(place => modelResponse.includes(place.split(/[-–]/)[0].trim())));
     if (problems.length) executedTools.push({ tool: 'problems', summary: `Copied ${problems.length} kept problems into cards` });
   }
 

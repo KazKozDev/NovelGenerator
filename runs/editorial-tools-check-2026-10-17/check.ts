@@ -2,6 +2,9 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { generateOllamaText } from '../../services/ollamaService';
 import { buildCloseProblemPrompt, runEditorialTurn } from '../../utils/novel/editorialAgent';
+import { findSuspects } from '../../utils/novel/chapterRecords';
+import { cachedRecords } from '../../utils/novel/editorialTools';
+import { indexManuscriptBlocks } from '../../utils/novel/hybridSearch';
 import { withOllamaOutputRoom } from '../../utils/novel/v2/llm';
 
 const dir = 'runs/editorial-tools-check-2026-10-17';
@@ -56,4 +59,5 @@ if (process.env.CLOSE && result.problems.length) {
   const closed = await runEditorialTurn({ userPrompt: buildCloseProblemPrompt(problem, problem.ways[0] || 'the simplest way'), bookContent, metadata, history: [], provider: 'ollama', closing: { title: problem.title }, callModel });
   writeFileSync(`${dir}/close${suffix}.md`, `# ${problem.title}\nWay: ${problem.ways[0]}\nPlaces: ${problem.places.join(', ')}\n\n${closed.executedTools.map(t => `- ${t.tool}: ${t.summary}`).join('\n')}\n\n${closed.assistantMessage}\n\n## Patches\n${closed.diffCards.map(c => `### Chapter ${c.chapterNum}\n- ${c.searchTarget}\n+ ${c.replacementText}\n(${c.rationale})`).join('\n\n')}\n`);
 }
+writeFileSync(`${dir}/code-suspects${suffix}.json`, JSON.stringify(findSuspects(cachedRecords(indexManuscriptBlocks(bookContent))), null, 2));
 console.log('problems:', result.problems.map(p => p.title));

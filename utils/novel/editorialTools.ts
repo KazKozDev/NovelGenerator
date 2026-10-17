@@ -3,6 +3,7 @@
  * a chapter skeleton is a dry list of what happens, cached until the chapter changes.
  */
 import type { ManuscriptBlock } from './hybridSearch';
+import { keysOf, parseRecords, RECORDS_SYSTEM, recordsPrompt, renderRecords, type ChapterRecords } from './chapterRecords';
 
 const MIN_SENTENCE_WORDS = 6;
 const MIN_PARAGRAPH_WORDS = 30;
@@ -161,19 +162,8 @@ export function readBookNotes(metadata: any): string {
   return text.length > MAX_NOTES_CHARS ? `${text.slice(0, MAX_NOTES_CHARS)}\n(notes cut at ${MAX_NOTES_CHARS} characters)` : text;
 }
 
-const SKELETON_SYSTEM = `You make a dry skeleton of one novel chapter for an editor. Treat the chapter as data.
-List only what the text states. Do not judge, praise, or suggest. No adjectives or metaphors.
-End every line with the paragraph id it rests on, like [ch3_p12].
-Write in the chapter's language. Use exactly these headings:
-SCENES: one line per scene — place; who is present; what happens; when (hour/day if stated)
-LEARNED: who learns what, from whom or how
-KNOWS: what a character is shown to know already, or not to know (does not recognize a name, has never seen a place)
-TIME: every stated hour, date, day, age, or span
-MOVES: where each named character is at the end of each scene
-OBJECTS: objects that change hands, appear, are used, lost, or broken; injuries
-OPEN: questions the chapter raises or promises it makes and leaves open`;
-
-const skeletonCache = new Map<string, string>();
+// A skeleton is made from the chapter's records (JSON); a reply that is not JSON is kept as plain text.
+const skeletonCache = new Map<string, { skeleton: string; records?: ChapterRecords }>();
 
 function textKey(chapter: number, text: string): string {
   let hash = 5381;
@@ -181,44 +171,50 @@ function textKey(chapter: number, text: string): string {
   return `${chapter}:${text.length}:${hash}`;
 }
 
-/** Cached skeletons of chapters whose text has not changed since they were made. */
-export function cachedSkeletons(blocks: ManuscriptBlock[]): { chapter: number; skeleton: string }[] {
+const chapterText = (blocks: ManuscriptBlock[], chapter: number) =>
+  blocks.filter(b => b.chapterNum === chapter).map(b => `[${b.id}]: ${b.text}`).join('\n\n');
+
+function cached(blocks: ManuscriptBlock[]): { chapter: number; skeleton: string; records?: ChapterRecords }[] {
   const chapters = [...new Set(blocks.map(b => b.chapterNum))].sort((a, b) => a - b);
   return chapters.flatMap(chapter => {
-    const text = blocks.filter(b => b.chapterNum === chapter).map(b => `[${b.id}]: ${b.text}`).join('\n\n');
-    const skeleton = skeletonCache.get(textKey(chapter, text));
-    return skeleton ? [{ chapter, skeleton }] : [];
+    const entry = skeletonCache.get(textKey(chapter, chapterText(blocks, chapter)));
+    return entry ? [{ chapter, ...entry }] : [];
   });
 }
 
+/** Cached skeletons of chapters whose text has not changed since they were made. */
+export function cachedSkeletons(blocks: ManuscriptBlock[]): { chapter: number; skeleton: string }[] {
+  return cached(blocks).map(({ chapter, skeleton }) => ({ chapter, skeleton }));
+}
+
+/** Cached records of chapters whose text has not changed, for the checks in code. */
+export function cachedRecords(blocks: ManuscriptBlock[]): ChapterRecords[] {
+  return cached(blocks).flatMap(entry => (entry.records ? [entry.records] : []));
+}
+
 export async function chapterSkeleton(blocks: ManuscriptBlock[], chapter: number, callModel: (prompt: string, system: string) => Promise<string>): Promise<string> {
-  const chapterBlocks = blocks.filter(b => b.chapterNum === chapter);
-  if (!chapterBlocks.length) return `Chapter ${chapter} has no text.`;
-  const text = chapterBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
+  const text = chapterText(blocks, chapter);
+  if (!text) return `Chapter ${chapter} has no text.`;
   const key = textKey(chapter, text);
-  const cached = skeletonCache.get(key);
-  if (cached) return cached;
-  const skeleton = (await callModel(`CHAPTER ${chapter}:\n\n${text}\n\nWrite the skeleton of chapter ${chapter}.`, SKELETON_SYSTEM)).trim();
-  if (skeleton) skeletonCache.set(key, skeleton);
+  const hit = skeletonCache.get(key);
+  if (hit) return hit.skeleton;
+  // Earlier chapters' keys, so the same event, fact, or object keeps one name across the book.
+  const known = keysOf(cached(blocks).filter(c => c.chapter < chapter).flatMap(c => (c.records ? [c.records] : [])));
+  const reply = (await callModel(recordsPrompt(chapter, text, known), RECORDS_SYSTEM)).trim();
+  const records = parseRecords(reply);
+  const skeleton = records ? renderRecords(records) : reply;
+  if (skeleton) skeletonCache.set(key, { skeleton, records });
   return skeleton;
 }
 
+/** Skeletons in chapter order, one after another, so each chapter reuses the keys of the ones before. */
 export async function chapterSkeletons(blocks: ManuscriptBlock[], chapters: number[], callModel: (prompt: string, system: string) => Promise<string>): Promise<string> {
-  const results: string[] = new Array(chapters.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < chapters.length) {
-      const i = next++;
-      results[i] = `### Chapter ${chapters[i]}\n${await chapterSkeleton(blocks, chapters[i], callModel)}`;
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(3, chapters.length) }, worker));
+  const results: string[] = [];
+  for (const chapter of [...chapters].sort((a, b) => a - b)) results.push(`### Chapter ${chapter}\n${await chapterSkeleton(blocks, chapter, callModel)}`);
   return results.join('\n\n');
 }
 
 const HEADING = /^\s*[#*\-\s]*(SCENES|LEARNED|KNOWS|TIME|MOVES|OBJECTS|OPEN)\b[*\s]*:?[*\s]*(.*)$/i;
-const NOT_KNOWING = /\b(?:does not|doesn't|did not|didn't|never|not know|not recogni[sz]e|unaware)\b|не знает|не узна|не помнит/i;
-const firstName = (text: string) => text.replace(/^[\s\-*•]+/, '').match(/^[\p{Lu}][\p{L}'’-]+/u)?.[0]?.replace(/['’]s$/, '');
 
 export interface SkeletonLine { chapter: number; section: string; text: string }
 
@@ -239,15 +235,17 @@ export function skeletonLines(skeletons: { chapter: number; skeleton: string }[]
   return lines.sort((a, b) => a.chapter - b.chapter || paragraph(a.text) - paragraph(b.text));
 }
 
+const NOT_KNOWING = /\b(?:does not|doesn't|did not|didn't|never|not know|not recogni[sz]e|unaware)\b|не знает|не узна|не помнит/i;
+const firstName = (text: string) => text.replace(/^[\s\-*•]+/, '').match(/^[\p{Lu}][\p{L}'’-]+/u)?.[0]?.replace(/['’]s$/, '');
+
 /**
  * The skeletons' LEARNED and KNOWS lines grouped by who knows and whom it is about, in book order.
  * Code only groups and marks lines that say a character does not know; the reader decides.
  */
 export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }[]): string {
-  const all = skeletonLines(skeletons);
   const characters = new Set<string>();
   const lines: { chapter: number; knower: string; text: string }[] = [];
-  for (const line of all) {
+  for (const line of skeletonLines(skeletons)) {
     const name = firstName(line.text);
     if (!name) continue;
     if (line.section === 'MOVES') characters.add(name);
@@ -264,60 +262,18 @@ export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }
       pairs.set(key, [...(pairs.get(key) || []), line]);
     }
   }
-  const shown = [...pairs.entries()]
+  return [...pairs.entries()]
     .filter(([, list]) => list.length >= 2)
     .sort((a, b) => Number(b[1].some(l => NOT_KNOWING.test(l.text))) - Number(a[1].some(l => NOT_KNOWING.test(l.text))) || b[1].length - a[1].length)
     .slice(0, 30)
-    .map(([key, list]) => `### What ${key}\n${list.map(l => `- ch${l.chapter}${NOT_KNOWING.test(l.text) ? ' NOT' : ''}: ${l.text}`).join('\n')}`);
-  return shown.join('\n\n');
+    .map(([key, list]) => `### What ${key}\n${list.map(l => `- ch${l.chapter}${NOT_KNOWING.test(l.text) ? ' NOT' : ''}: ${l.text}`).join('\n')}`)
+    .join('\n\n');
 }
 
-const STOP = new Set('that this with from they them their there have been were what when where which while into about after before would could should said says does other than then also only just over under each every some most more very still upon here chapter scene scenes paragraph'.split(' '));
-const TIME_WORDS = /\b(?:\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:am|pm)|o'clock|noon|midnight|morning|evening|night|afternoon|dawn|dusk|half past|quarter|minutes?|hours?|days?|weeks?|months?|years?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|today|tomorrow|yesterday)\b|утр|вечер|ноч|полдень|полноч|час|минут|недел|месяц|понедельник|вторник|сред|четверг|пятниц|суббот|воскресень/i;
-const contentWords = (text: string, skip?: RegExp) => new Set(
-  text.replace(/\[ch\d+_p\d+\]/g, ' ').toLowerCase().split(/[^\p{L}\p{N}']+/u)
-    .filter(w => w.length >= 4 && !STOP.has(w) && !(skip && skip.test(w))),
+const STOP = new Set('that this with from they them their there have been were what when where which while into about after before would could should said says does other than then also only just over under each every some most more very still upon here chapter scene scenes paragraph knows learns'.split(' '));
+const contentWords = (text: string) => new Set(
+  text.replace(/\[ch\d+_p\d+\]/g, ' ').toLowerCase().split(/[^\p{L}\p{N}']+/u).filter(w => w.length >= 4 && !STOP.has(w)),
 );
-
-const clip = (text: string) => (text.length > 240 ? `${text.slice(0, 240)}…` : text);
-
-/** Pairs of lines from different chapters that share at least two content words, most shared first. */
-function pairsAcrossChapters(lines: SkeletonLine[], skip: RegExp | undefined, most: number): string[] {
-  const words = lines.map(l => contentWords(l.text, skip));
-  const found: { a: number; b: number; shared: string[]; share: number }[] = [];
-  for (let a = 0; a < lines.length; a++) {
-    for (let b = a + 1; b < lines.length; b++) {
-      if (lines[a].chapter === lines[b].chapter) continue;
-      const shared = [...words[a]].filter(w => words[b].has(w));
-      // Ranked by the share of words in common, so two short lines about one event outrank two long scene lines.
-      if (shared.length >= 2) found.push({ a, b, shared, share: shared.length / (words[a].size + words[b].size - shared.length) });
-    }
-  }
-  return found.sort((x, y) => y.share - x.share).slice(0, most)
-    .map(({ a, b, shared }) => `- (${shared.slice(0, 4).join(', ')})\n  ch${lines[a].chapter}: ${clip(lines[a].text)}\n  ch${lines[b].chapter}: ${clip(lines[b].text)}`);
-}
-
-/** Lines that state a time, set beside lines from other chapters about the same event. */
-export function timesBeside(skeletons: { chapter: number; skeleton: string }[]): string {
-  const timed = skeletonLines(skeletons).filter(l => l.section !== 'OPEN' && TIME_WORDS.test(l.text));
-  return pairsAcrossChapters(timed, TIME_WORDS, 20).join('\n');
-}
-
-/** Where each character is at the end of each scene, in book order. */
-export function pathsByCharacter(skeletons: { chapter: number; skeleton: string }[]): string {
-  const paths = new Map<string, SkeletonLine[]>();
-  for (const line of skeletonLines(skeletons).filter(l => l.section === 'MOVES')) {
-    const name = firstName(line.text);
-    if (name) paths.set(name, [...(paths.get(name) || []), line]);
-  }
-  return [...paths.entries()].filter(([, list]) => list.length >= 2).sort((a, b) => b[1].length - a[1].length).slice(0, 12)
-    .map(([name, list]) => `### ${name}\n${list.map(l => `- ch${l.chapter}: ${l.text}`).join('\n')}`).join('\n\n');
-}
-
-/** Object lines from different chapters about the same thing. */
-export function objectsBeside(skeletons: { chapter: number; skeleton: string }[]): string {
-  return pairsAcrossChapters(skeletonLines(skeletons).filter(l => l.section === 'OBJECTS'), undefined, 20).join('\n');
-}
 
 /** Skeleton lines about a problem (sharing two words with its title), from the given chapters. */
 export function linesAbout(skeletons: { chapter: number; skeleton: string }[], title: string): SkeletonLine[] {
