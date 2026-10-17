@@ -111,6 +111,37 @@ export function readBlocks(blocks: ManuscriptBlock[], chapter: number, from = 0,
   return shown.map(b => `[${b.id}]: ${b.text}`).join('\n\n') + more;
 }
 
+export interface Suspect { claim: string; places: string[] }
+
+const MAX_SUSPECTS = 15;
+const MAX_PLACES = 4;
+const MAX_RANGE = 6;
+
+/** Each suspect's places in full, a paragraph either side, so a suspicion is read before it is reported. */
+export function checkSuspects(blocks: ManuscriptBlock[], suspects: Suspect[]): string {
+  if (!Array.isArray(suspects) || !suspects.length) return 'No suspects given.';
+  const byId = new Map(blocks.map((b, i) => [b.id, i]));
+  const parts = suspects.slice(0, MAX_SUSPECTS).map((suspect, n) => {
+    const shown = new Set<number>();
+    const missing: string[] = [];
+    for (const place of (Array.isArray(suspect?.places) ? suspect.places : []).slice(0, MAX_PLACES)) {
+      const [from, to = from] = String(place).split(/\s*(?:-|–|\.\.)\s*/);
+      const start = byId.get(from.trim());
+      const end = byId.get(to.trim());
+      if (start === undefined) { missing.push(String(place)); continue; }
+      const last = end !== undefined && end >= start && blocks[end].chapterNum === blocks[start].chapterNum ? Math.min(end, start + MAX_RANGE - 1) : start;
+      for (let i = start - 1; i <= last + 1; i++) {
+        if (i >= 0 && i < blocks.length && blocks[i].chapterNum === blocks[start].chapterNum) shown.add(i);
+      }
+    }
+    const text = [...shown].sort((a, b) => a - b).map(i => `[${blocks[i].id}]: ${blocks[i].text}`).join('\n\n');
+    const unknown = missing.length ? `\n(No paragraph with id ${missing.join(', ')}; ids look like ch3_p12.)` : '';
+    return `### Suspect ${n + 1}: ${String(suspect?.claim || '').trim()}\n${text || '(no places given)'}${unknown}`;
+  });
+  const more = suspects.length > MAX_SUSPECTS ? `\n\n(${suspects.length - MAX_SUSPECTS} more suspects not shown; send them again.)` : '';
+  return parts.join('\n\n') + more;
+}
+
 /** What the author meant the book to be: premise, requirements, dossier, structure notes. */
 export function readBookNotes(metadata: any): string {
   if (!metadata) return 'This book has no saved notes.';

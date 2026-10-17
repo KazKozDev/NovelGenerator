@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
-import { chapterSkeleton, cachedSkeletons, clearSkeletonCache, findRepeats, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
+import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
 import { buildEditorialAgentPrompt, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
@@ -59,6 +59,22 @@ describe('editorial reading tools', () => {
     expect(readBlocks(blocks, 9)).toContain('no text');
   });
 
+  it('shows each suspect\'s places with a paragraph either side', () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    const text = checkSuspects(blocks, [
+      { claim: 'Who signed for the crate', places: ['ch2_p0', 'ch1_p1-ch1_p2'] },
+      { claim: 'A wrong id', places: ['ch9_p1'] },
+    ]);
+    expect(text).toContain('### Suspect 1: Who signed for the crate');
+    expect(text).toContain('[ch2_p0]');
+    expect(text).toContain('[ch2_p1]');
+    expect(text).toContain('[ch1_p0]');
+    expect(text).toContain('[ch1_p3]');
+    expect(text).toContain('### Suspect 2: A wrong id');
+    expect(text).toContain('No paragraph with id ch9_p1');
+    expect(checkSuspects(blocks, [])).toBe('No suspects given.');
+  });
+
   it('reads the book notes the author left', () => {
     const notes = readBookNotes({ premise: 'A pump fails in an archive.', dossier: { truth: 'Nora signed first.' }, craft: {} });
     expect(notes).toContain('## Premise');
@@ -91,7 +107,7 @@ describe('editorial agent with reading tools', () => {
 
     const blocks = indexManuscriptBlocks(BOOK);
     const { system } = buildEditorialAgentPrompt({ userPrompt: 'Check the plot', manuscriptBlocks: blocks, entityGraph: buildEntityGraph(blocks), history: [] });
-    for (const tool of ['inspect_dependencies', 'read_blocks', 'chapter_skeleton', 'find_repeats']) expect(system).toContain(tool);
+    for (const tool of ['inspect_dependencies', 'read_blocks', 'chapter_skeleton', 'find_repeats', 'check_suspects']) expect(system).toContain(tool);
     expect(system).toContain('do not invent problems');
     expect(system).toContain('A reply that calls tools holds only the tool calls');
   });
@@ -111,6 +127,19 @@ describe('editorial agent with reading tools', () => {
     expect(prompt).toContain("AUTHOR'S NOTES");
     expect(prompt).toContain('A pump fails in an archive.');
     expect(buildEditorialAgentPrompt({ userPrompt: 'x', manuscriptBlocks: blocks, entityGraph: graph, history: [] }).prompt).not.toContain("AUTHOR'S NOTES");
+  });
+
+  it('reads suspects in one round and hands their passages back', async () => {
+    const prompts: string[] = [];
+    const callModel = async (prompt: string) => {
+      prompts.push(prompt);
+      if (prompts.length === 1) return '```tool:check_suspects\n{"suspects": [{"claim": "Ilya leaves at twenty to six", "places": ["ch1_p3"]}]}\n```';
+      return 'Nothing in the text makes it a hole.';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel });
+    expect(result.executedTools.map(t => t.tool)).toEqual(['check_suspects']);
+    expect(prompts[1]).toContain('### Suspect 1: Ilya leaves at twenty to six');
+    expect(prompts[1]).toContain('[ch1_p3]: Ilya waited upstairs');
   });
 
   it('runs the reading tools and hands their results back', async () => {

@@ -1,9 +1,9 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
-import { cachedSkeletons, chapterSkeletons, findRepeats, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+import { cachedSkeletons, chapterSkeletons, checkSuspects, findRepeats, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
 
-const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton'] as const;
+const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
 
 export interface ParsedToolCall {
   tool: typeof EDITORIAL_TOOLS[number];
@@ -205,6 +205,7 @@ CRITICAL OPERATIONAL RULES:
 \`\`\`
    - read_blocks {"chapter": 3, "from": 10, "to": 30} — paragraphs ch3_p10..ch3_p30 in full, to read a passage in order.
    - chapter_skeleton {"chapter": 3} or {} for all chapters — a dry list per chapter: scenes, who learns what and how, stated hours and dates, where each character ends up, objects and injuries, open questions. Each line names its paragraph id. Made once and kept until the chapter changes.
+   - check_suspects {"suspects": [{"claim": "Body found at five (ch4) and at noon (ch6)", "places": ["ch4_p18", "ch6_p1"]}]} — every place of every suspicion in full, a paragraph either side, all at once. Places are paragraph ids or ranges like "ch3_p12-ch3_p15".
    - find_repeats {"chapter": Optional[number]} — passages told twice and sentences said more than once, found by code.
    - inspect_dependencies {"entity": "name or object", "chapter": 3} — where else the book mentions it.
 8. PLOT AND LOGIC REVIEW. A plot hole hides in prose; look at what the chapters state, not how they sound. When the author asks about plot, logic, or continuity, ask these questions, with the skeletons when you have them:
@@ -359,6 +360,10 @@ export async function runEditorialTurn(params: {
         const found = findRepeats(blocks, chapter);
         executedTools.push({ tool: tc.tool, summary: `Found ${found.passages.length} repeated passages and ${found.sentences.length} repeated sentences${chapter ? ` touching Chapter ${chapter}` : ''}` });
         observations.push(`Repeats${chapter ? ` touching Chapter ${chapter}` : ''}:\n${formatRepeats(found)}`);
+      } else if (tc.tool === 'check_suspects') {
+        const suspects = Array.isArray(tc.args.suspects) ? tc.args.suspects : [];
+        executedTools.push({ tool: tc.tool, summary: `Read the places of ${suspects.length} suspected problems` });
+        observations.push(`Suspects with their passages. Keep a suspect only if these passages show it; a character's lie, a move between rooms, or a time left unstated is not a hole:\n${checkSuspects(blocks, suspects)}`);
       } else if (tc.tool === 'read_blocks') {
         const chapter = Number(tc.args.chapter || 1);
         const from = Number(tc.args.from ?? 0);

@@ -49,15 +49,17 @@ interface QuickEditorialPrompt {
 export const QUICK_PROMPTS: QuickEditorialPrompt[] = [
   {
     label: '01 · Plot holes',
-    prompt: `Check the whole book for plot holes. Do not change the text yet.
-Start with chapter_skeleton {} for every chapter, then work from the skeletons:
-- where each character learns what they know, and whether anyone acts on a fact before the scene where they get it;
-- where each character is at the end of each scene, and whether anyone turns up somewhere without getting there;
-- whether hours, dates, ages and spans agree across chapters;
-- whether an object reaches a hand without being shown how;
-- whether the book contradicts the author's notes.
-Read the passages themselves (read_blocks) before you report anything. For each problem give the quotes that show it, with paragraph ids, and one or two ways the author could close it. A character's lie or mistake is not an error. If a check finds nothing, say so in one line.
-End with the problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
+    prompt: `Check the whole book for plot holes, in three steps. Do not change the text yet.
+Step 1. Call chapter_skeleton {} and nothing else.
+Step 2. From the skeletons, list every suspicion in one check_suspects call, each with the paragraph ids of every place it rests on. Look for:
+- a character who acts on a fact before the scene where they learn it;
+- a character who turns up somewhere without getting there;
+- hours, dates, ages or spans that disagree across chapters;
+- an object that reaches a hand without being shown how;
+- the book contradicting the author's notes.
+Write no review in this step.
+Step 3. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it. Then list the dropped suspects, one line each, with why the text clears them.
+End with the kept problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
   {
     label: '02 · Repeats',
