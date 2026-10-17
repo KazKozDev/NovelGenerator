@@ -101,10 +101,10 @@ export function formatRepeats(found: ReturnType<typeof findRepeats>): string {
 }
 
 /** Paragraphs from..to of one chapter, with their ids. */
-export function readBlocks(blocks: ManuscriptBlock[], chapter: number, from = 0, to?: number): string {
+export function readBlocks(blocks: ManuscriptBlock[], chapter: number, from = 0, to?: number, most = MAX_READ_BLOCKS): string {
   const chapterBlocks = blocks.filter(b => b.chapterNum === chapter);
   if (!chapterBlocks.length) return `Chapter ${chapter} has no text.`;
-  const last = Math.min(to ?? from + MAX_READ_BLOCKS - 1, from + MAX_READ_BLOCKS - 1, chapterBlocks.length - 1);
+  const last = Math.min(to ?? from + most - 1, from + most - 1, chapterBlocks.length - 1);
   const shown = chapterBlocks.filter(b => b.pIndex >= from && b.pIndex <= last);
   if (!shown.length) return `Chapter ${chapter} has paragraphs ch${chapter}_p0..ch${chapter}_p${chapterBlocks.length - 1}.`;
   const more = last < chapterBlocks.length - 1 ? `\n(Chapter ${chapter} continues to ch${chapter}_p${chapterBlocks.length - 1}.)` : '';
@@ -167,6 +167,7 @@ End every line with the paragraph id it rests on, like [ch3_p12].
 Write in the chapter's language. Use exactly these headings:
 SCENES: one line per scene — place; who is present; what happens; when (hour/day if stated)
 LEARNED: who learns what, from whom or how
+KNOWS: what a character is shown to know already, or not to know (does not recognize a name, has never seen a place)
 TIME: every stated hour, date, day, age, or span
 MOVES: where each named character is at the end of each scene
 OBJECTS: objects that change hands, appear, are used, lost, or broken; injuries
@@ -213,6 +214,50 @@ export async function chapterSkeletons(blocks: ManuscriptBlock[], chapters: numb
   };
   await Promise.all(Array.from({ length: Math.min(3, chapters.length) }, worker));
   return results.join('\n\n');
+}
+
+const HEADING = /^\s*[#*\-\s]*(SCENES|LEARNED|KNOWS|TIME|MOVES|OBJECTS|OPEN)\b[*\s]*:?[*\s]*(.*)$/i;
+const NOT_KNOWING = /\b(?:does not|doesn't|did not|didn't|never|not know|not recogni[sz]e|unaware)\b|не знает|не узна|не помнит/i;
+const firstName = (text: string) => text.replace(/^[\s\-*•]+/, '').match(/^[\p{Lu}][\p{L}'’-]+/u)?.[0]?.replace(/['’]s$/, '');
+
+/**
+ * The skeletons' LEARNED and KNOWS lines grouped by who knows and whom it is about, in book order.
+ * Code only groups and marks lines that say a character does not know; the reader decides.
+ */
+export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }[]): string {
+  const characters = new Set<string>();
+  const lines: { chapter: number; knower: string; text: string }[] = [];
+  for (const { chapter, skeleton } of skeletons) {
+    let section = '';
+    for (const raw of skeleton.split('\n')) {
+      const heading = raw.match(HEADING);
+      const text = (heading ? heading[2] : raw).trim().replace(/^[\-*•]\s*/, '');
+      if (heading) section = heading[1].toUpperCase();
+      if (!text) continue;
+      const name = firstName(text);
+      if (section === 'MOVES' && name) characters.add(name);
+      if ((section === 'LEARNED' || section === 'KNOWS') && name) {
+        characters.add(name);
+        lines.push({ chapter, knower: name, text });
+      }
+    }
+  }
+  const paragraph = (text: string) => Number(text.match(/_p(\d+)/)?.[1] ?? Infinity);
+  lines.sort((a, b) => a.chapter - b.chapter || paragraph(a.text) - paragraph(b.text));
+  const pairs = new Map<string, { chapter: number; text: string }[]>();
+  for (const line of lines) {
+    for (const subject of characters) {
+      if (subject === line.knower || !new RegExp(`\\b${subject}\\b`, 'u').test(line.text)) continue;
+      const key = `${line.knower} about ${subject}`;
+      pairs.set(key, [...(pairs.get(key) || []), line]);
+    }
+  }
+  const shown = [...pairs.entries()]
+    .filter(([, list]) => list.length >= 2)
+    .sort((a, b) => Number(b[1].some(l => NOT_KNOWING.test(l.text))) - Number(a[1].some(l => NOT_KNOWING.test(l.text))) || b[1].length - a[1].length)
+    .slice(0, 30)
+    .map(([key, list]) => `### What ${key}\n${list.map(l => `- ch${l.chapter}${NOT_KNOWING.test(l.text) ? ' NOT' : ''}: ${l.text}`).join('\n')}`);
+  return shown.join('\n\n');
 }
 
 export function clearSkeletonCache(): void {

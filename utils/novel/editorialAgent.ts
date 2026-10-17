@@ -1,7 +1,7 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
-import { cachedSkeletons, chapterSkeletons, checkSuspects, findRepeats, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+import { cachedSkeletons, chapterSkeletons, checkSuspects, findRepeats, knowledgeByPair, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
 
@@ -112,7 +112,10 @@ export function buildEditorialAgentPrompt(params: {
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
   metadata?: any;
+  /** 'skeletons': the book is shown as chapter skeletons only; the text is read through tools. */
+  view?: 'full' | 'skeletons';
 }): { system: string; prompt: string } {
+  const skeletonView = params.view === 'skeletons';
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
 
@@ -142,7 +145,13 @@ export function buildEditorialAgentPrompt(params: {
   // Manuscript text visibility:
   // For Claude/Gemini, novels up to 1.5M chars (~300k words) are fed 100% in full.
   let manuscriptText = '';
-  if (totalLength <= maxFullChars) {
+  if (skeletonView) {
+    const inventory = chapterList.map(ch => {
+      const b = params.manuscriptBlocks.filter(x => x.chapterNum === ch);
+      return `- Chapter ${ch}: paragraphs ch${ch}_p0..ch${ch}_p${b.length - 1}`;
+    }).join('\n');
+    manuscriptText = `CHAPTER INVENTORY (read any text through check_suspects or read_blocks):\n${inventory}`;
+  } else if (totalLength <= maxFullChars) {
     const allChapters = chapterList.map(chNum => {
       const chBlocks = params.manuscriptBlocks.filter(b => b.chapterNum === chNum);
       const lines = chBlocks.map(b => `[${b.id}]: ${b.text}`).join('\n\n');
@@ -174,12 +183,14 @@ export function buildEditorialAgentPrompt(params: {
     : '';
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
-You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).
+${skeletonView
+    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: a plot hole hides in prose. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
+    : `You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).`}
 You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
 Respond in the language used by the author (if Russian, respond in natural Russian).
 
 CRITICAL OPERATIONAL RULES:
-1. You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.
+1. ${skeletonView ? 'You have the chapter skeletons, the author\'s notes, and the cross-chapter entity map below; the manuscript text is one tool call away.' : 'You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.'}
 2. EDITORIAL SCOPE & MACRO-STITCHING (Eliminating Redundancies):
    - When text contains duplicated multi-paragraph scenes, repetitive paragraphs, or redundant blocks (e.g., paragraphs ch4_p55 to ch4_p86 repeating an earlier sequence):
      DO NOT merely trim 3-4 words inside a single paragraph! You MUST propose a BLOCK RANGE DELETION by providing "startBlockId", "endBlockId", and "replace": "" (or revised text). Excise the entire redundant block cleanly!
@@ -232,13 +243,19 @@ CRITICAL OPERATIONAL RULES:
   if (skeletonText) {
     prompt += `${skeletonText}\n\n`;
   }
-  if (contextSnippets) {
+  const knowledge = skeletonView ? knowledgeByPair(skeletons) : '';
+  if (knowledge) {
+    prompt += `KNOWLEDGE BY PAIR (code groups the skeletons' LEARNED and KNOWS lines by who knows and whom it is about, in book order; NOT marks a line saying the character does not know). A NOT line after a line where the same character already knows it is a suspicion:\n\n${knowledge}\n\n`;
+  }
+  if (contextSnippets && !skeletonView) {
     prompt += `${contextSnippets}\n\n`;
   }
   if (manuscriptText) {
     prompt += `${manuscriptText}\n\n`;
   }
-  prompt += `Please analyze the manuscript, advise the author across chapters, and propose surgical diff patches if appropriate.`;
+  prompt += skeletonView
+    ? `Work from the skeletons, and read the passages before you report anything.`
+    : `Please analyze the manuscript, advise the author across chapters, and propose surgical diff patches if appropriate.`;
 
   return { system, prompt };
 }
@@ -319,10 +336,17 @@ export async function runEditorialTurn(params: {
   metadata?: any;
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
+  view?: 'full' | 'skeletons';
   callModel: (prompt: string, system: string) => Promise<string>;
 }): Promise<EditorialAgentResponse> {
   const blocks = indexManuscriptBlocks(params.bookContent);
   const graph = buildEntityGraph(blocks, params.metadata?.dossier);
+  const executedTools: { tool: string; summary: string }[] = [];
+  if (params.view === 'skeletons') {
+    const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
+    await chapterSkeletons(blocks, chapters, params.callModel);
+    executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
+  }
 
   const { system, prompt } = buildEditorialAgentPrompt({
     userPrompt: params.userPrompt,
@@ -331,9 +355,9 @@ export async function runEditorialTurn(params: {
     history: params.history,
     provider: params.provider,
     metadata: params.metadata,
+    view: params.view,
   });
 
-  const executedTools: { tool: string; summary: string }[] = [];
   const diffCards: ProposedDiffCard[] = [];
 
   const wantsEdit = asksForEdit(params.userPrompt);
@@ -369,7 +393,8 @@ export async function runEditorialTurn(params: {
         const from = Number(tc.args.from ?? 0);
         const to = tc.args.to === undefined ? undefined : Number(tc.args.to);
         executedTools.push({ tool: tc.tool, summary: `Read Chapter ${chapter} from paragraph ${from}${to === undefined ? '' : ` to ${to}`}` });
-        observations.push(`Chapter ${chapter} text:\n${readBlocks(blocks, chapter, from, to)}`);
+        const most = params.view === 'skeletons' ? 8 : undefined;
+        observations.push(`Chapter ${chapter} text:\n${readBlocks(blocks, chapter, from, to, most)}${most ? '\n(In this review read_blocks shows up to 8 paragraphs; put suspicions in check_suspects.)' : ''}`);
       } else if (tc.tool === 'chapter_skeleton') {
         const all = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
         const chapters = tc.args.chapter ? [Number(tc.args.chapter)] : all;

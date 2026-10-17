@@ -43,22 +43,25 @@ interface ChatMessage {
 interface QuickEditorialPrompt {
   label: string;
   prompt: string;
+  /** 'skeletons': the agent sees chapter skeletons instead of prose and reads passages through tools. */
+  view?: 'full' | 'skeletons';
 }
 
 // Review buttons: they ask for findings with quotes, not changes; the author picks what to work on next.
 export const QUICK_PROMPTS: QuickEditorialPrompt[] = [
   {
     label: '01 · Plot holes',
-    prompt: `Check the whole book for plot holes, in three steps. Do not change the text yet.
-Step 1. Call chapter_skeleton {} and nothing else.
-Step 2. From the skeletons, list every suspicion in one check_suspects call, each with the paragraph ids of every place it rests on. Look for:
+    view: 'skeletons',
+    prompt: `Check the whole book for plot holes, in two steps. Do not change the text yet.
+Step 1. From the chapter skeletons and the knowledge by pair, list the strongest suspicions, at most 12, in one check_suspects call, each with the paragraph ids of every place it rests on. Look for:
+- a character who knows something before the scene where they learn it, or knows a thing in one place and does not know it in another;
 - a character who acts on a fact before the scene where they learn it;
 - a character who turns up somewhere without getting there;
 - hours, dates, ages or spans that disagree across chapters;
 - an object that reaches a hand without being shown how;
 - the book contradicting the author's notes.
 Write no review in this step.
-Step 3. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it. Then list the dropped suspects, one line each, with why the text clears them.
+Step 2. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it. Then list the dropped suspects, one line each, with why the text clears them.
 End with the kept problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
   {
@@ -173,7 +176,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     }
   }, [messages]);
 
-  const handleSendMessage = async (userText: string) => {
+  const handleSendMessage = async (userText: string, view?: 'full' | 'skeletons') => {
     const text = userText.trim();
     if (!text || isRunning) return;
 
@@ -194,6 +197,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         bookContent,
         metadata,
         history,
+        view,
         provider: effectiveModel?.provider,
         callModel: async (prompt, system) => {
           return await withOllamaOutputRoom(
@@ -673,7 +677,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
               key={idx}
               type="button"
               disabled={activeRunning}
-              onClick={() => handleSendMessage(item.prompt)}
+              onClick={() => handleSendMessage(item.prompt, item.view)}
               title={item.prompt}
               className="h-5 px-2.5 text-[10px] font-medium whitespace-nowrap bg-zinc-950 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-700 rounded transition-colors disabled:opacity-50 tracking-tight"
             >

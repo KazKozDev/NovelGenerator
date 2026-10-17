@@ -27,7 +27,7 @@ const suffix = process.env.BUTTON ? `-${process.env.BUTTON.replace(/\W+/g, '-').
 
 const calls: any[] = [];
 const result = await runEditorialTurn({
-  userPrompt, bookContent, metadata, history: [], provider: 'ollama',
+  userPrompt, bookContent, metadata, history: [], provider: 'ollama', view: button?.view,
   callModel: async (prompt, system) => {
     const start = Date.now();
     const kind = system.includes('dry skeleton') ? `skeleton ${prompt.match(/CHAPTER (\d+)/)?.[1]}` : 'editor';
@@ -42,6 +42,7 @@ const result = await runEditorialTurn({
       throw error;
     }
     appendFileSync(`${dir}/calls${suffix}.log`, `${kind} ok ${Date.now() - start}ms, ${response.length} chars\n`);
+    if (kind !== 'editor') appendFileSync(`${dir}/skeletons${suffix}.md`, `\n\n===== ${kind} =====\n${response}`);
     if (kind === 'editor') appendFileSync(`${dir}/editor-replies${suffix}.md`, `\n\n===== editor reply (${response.length} chars) =====\n${response}`);
     calls.push({ system: system.slice(0, 80), prompt: prompt.slice(-6000), promptChars: prompt.length, ms: Date.now() - start, response });
     return response;
