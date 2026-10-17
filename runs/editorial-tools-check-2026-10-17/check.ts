@@ -1,7 +1,7 @@
 // One live check of the editorial chat's reading tools on a Nora book with three planted holes.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { generateOllamaText } from '../../services/ollamaService';
-import { runEditorialTurn } from '../../utils/novel/editorialAgent';
+import { buildCloseProblemPrompt, runEditorialTurn } from '../../utils/novel/editorialAgent';
 import { withOllamaOutputRoom } from '../../utils/novel/v2/llm';
 
 const dir = 'runs/editorial-tools-check-2026-10-17';
@@ -26,9 +26,7 @@ const userPrompt = button?.prompt || 'Проверь сюжет книги: ло
 const suffix = process.env.BUTTON ? `-${process.env.BUTTON.replace(/\W+/g, '-').toLowerCase()}` : '';
 
 const calls: any[] = [];
-const result = await runEditorialTurn({
-  userPrompt, bookContent, metadata, history: [], provider: 'ollama', view: button?.view,
-  callModel: async (prompt, system) => {
+const callModel = async (prompt: string, system: string) => {
     const start = Date.now();
     const kind = system.includes('dry skeleton') ? `skeleton ${prompt.match(/CHAPTER (\d+)/)?.[1]}` : 'editor';
     let response: string;
@@ -46,8 +44,16 @@ const result = await runEditorialTurn({
     if (kind === 'editor') appendFileSync(`${dir}/editor-replies${suffix}.md`, `\n\n===== editor reply (${response.length} chars) =====\n${response}`);
     calls.push({ system: system.slice(0, 80), prompt: prompt.slice(-6000), promptChars: prompt.length, ms: Date.now() - start, response });
     return response;
-  },
-});
+};
+const result = await runEditorialTurn({ userPrompt, bookContent, metadata, history: [], provider: 'ollama', view: button?.view, callModel });
 writeFileSync(`${dir}/result${suffix}.json`, JSON.stringify({ userPrompt, result, calls }, null, 2));
 writeFileSync(`${dir}/answer${suffix}.md`, `${result.executedTools.map(t => `- ${t.tool}: ${t.summary}`).join('\n')}\n\n${result.assistantMessage}\n`);
 console.log(result.executedTools, '\n\n', result.assistantMessage);
+
+// Close the first kept problem its first way, as the Close button does.
+if (process.env.CLOSE && result.problems.length) {
+  const problem = result.problems[0];
+  const closed = await runEditorialTurn({ userPrompt: buildCloseProblemPrompt(problem, problem.ways[0] || 'the simplest way'), bookContent, metadata, history: [], provider: 'ollama', closing: { title: problem.title }, callModel });
+  writeFileSync(`${dir}/close${suffix}.md`, `# ${problem.title}\nWay: ${problem.ways[0]}\nPlaces: ${problem.places.join(', ')}\n\n${closed.executedTools.map(t => `- ${t.tool}: ${t.summary}`).join('\n')}\n\n${closed.assistantMessage}\n\n## Patches\n${closed.diffCards.map(c => `### Chapter ${c.chapterNum}\n- ${c.searchTarget}\n+ ${c.replacementText}\n(${c.rationale})`).join('\n\n')}\n`);
+}
+console.log('problems:', result.problems.map(p => p.title));

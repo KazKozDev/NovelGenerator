@@ -1,7 +1,7 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
-import { cachedSkeletons, chapterSkeletons, checkSuspects, findRepeats, knowledgeByPair, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, knowledgeByPair, linesAbout, objectsBeside, pathsByCharacter, timesBeside, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
 
@@ -21,10 +21,44 @@ export interface ProposedDiffCard {
   warnings: string[];
 }
 
+/** A kept problem from a review, with the places it rests on and the ways the author could close it. */
+export interface EditorialProblem {
+  id: string;
+  title: string;
+  places: string[];
+  ways: string[];
+}
+
 export interface EditorialAgentResponse {
   assistantMessage: string;
   diffCards: ProposedDiffCard[];
   executedTools: { tool: string; summary: string }[];
+  problems: EditorialProblem[];
+}
+
+const PROBLEM_BLOCK = /```problem\s*\r?\n([\s\S]*?)\r?\n```/gi;
+
+export function parseProblems(text: string): EditorialProblem[] {
+  const problems: EditorialProblem[] = [];
+  for (const match of text.matchAll(PROBLEM_BLOCK)) {
+    try {
+      const raw = JSON.parse(match[1]);
+      const strings = (value: unknown) => (Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : []);
+      if (typeof raw?.title !== 'string' || !raw.title.trim()) continue;
+      problems.push({ id: `problem_${problems.length + 1}_${Math.random().toString(36).slice(2, 6)}`, title: raw.title.trim(), places: strings(raw.places), ways: strings(raw.ways) });
+    } catch {
+      // A malformed block stays out of the cards; its prose is still in the review.
+    }
+  }
+  return problems;
+}
+
+/** What the Close button sends: the problem, the chosen way, and its places, as one linked set of patches. */
+export function buildCloseProblemPrompt(problem: EditorialProblem, way: string): string {
+  return `Fix this plot hole: ${problem.title}
+Way to close it: ${way}
+Its places: ${problem.places.join(', ') || 'not given'}.
+Read the places first (check_suspects), then propose_diff blocks for every place that has to change, as one linked set. Change only these paragraphs and the sentences around them, keep the author's voice, and leave other scenes alone.`;
 }
 
 export function parseToolCallsFromModelResponse(text: string): ParsedToolCall[] {
@@ -247,6 +281,13 @@ CRITICAL OPERATIONAL RULES:
   if (knowledge) {
     prompt += `KNOWLEDGE BY PAIR (code groups the skeletons' LEARNED and KNOWS lines by who knows and whom it is about, in book order; NOT marks a line saying the character does not know). A NOT line after a line where the same character already knows it is a suspicion:\n\n${knowledge}\n\n`;
   }
+  // Code sets lines side by side; whether they disagree is for the reader.
+  const ledgers = skeletonView ? [
+    ['TIMES BESIDE EACH OTHER (lines from different chapters that state a time and share words; two hours for one event is a suspicion)', timesBeside(skeletons)],
+    ['WHERE EACH CHARACTER IS, IN BOOK ORDER (a character somewhere new with no way there is a suspicion)', pathsByCharacter(skeletons)],
+    ['OBJECTS BESIDE EACH OTHER (an object in a hand with no way there is a suspicion)', objectsBeside(skeletons)],
+  ].filter(([, text]) => text) : [];
+  for (const [title, text] of ledgers) prompt += `${title}:\n${text}\n\n`;
   if (contextSnippets && !skeletonView) {
     prompt += `${contextSnippets}\n\n`;
   }
@@ -337,6 +378,8 @@ export async function runEditorialTurn(params: {
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
   view?: 'full' | 'skeletons';
+  /** Set when the turn closes a reviewed problem: after the patches, code re-reads the changed chapters once. */
+  closing?: { title: string };
   callModel: (prompt: string, system: string) => Promise<string>;
 }): Promise<EditorialAgentResponse> {
   const blocks = indexManuscriptBlocks(params.bookContent);
@@ -425,9 +468,21 @@ export async function runEditorialTurn(params: {
     nextPrompt = `${prompt}\n\nTool Observations:\n${observations.join('\n\n')}`;
   }
 
-  // Clean tool tags from message text
+  let problems = parseProblems(modelResponse);
+  // The review was asked for problem blocks but wrote prose: one call copies its kept problems out, nothing more.
+  if (!problems.length && params.userPrompt.includes('```problem') && modelResponse.trim()) {
+    const extracted = await params.callModel(
+      `REVIEW:\n${modelResponse}\n\nCopy the problems this review KEEPS (not the dropped ones) as blocks, one per problem, in the review's order:\n\`\`\`problem\n{"title": "short name", "places": ["paragraph ids the review cites for it"], "ways": ["each way the review gives to close it"]}\n\`\`\`\nCopy only what the review says. Output the blocks only.`,
+      'You copy kept problems out of an editorial review into blocks. Do not add, judge, or rewrite. Output the blocks only.',
+    );
+    problems = parseProblems(extracted);
+    if (problems.length) executedTools.push({ tool: 'problems', summary: `Copied ${problems.length} kept problems into cards` });
+  }
+
+  // Clean tool tags and problem blocks from message text
   let cleanMessage = modelResponse
     .replace(/```(?:tool:[a-z_]+|json\s*\(tool:[a-z_]+\))[\s\S]*?```/gi, '')
+    .replace(PROBLEM_BLOCK, '')
     .trim();
 
   // If the model wrapped its output in a JSON object (e.g. {"type":"object","content":"..."} or {"error":"..."})
@@ -448,6 +503,23 @@ export async function runEditorialTurn(params: {
     }
   }
 
+  // Closing a problem: show once how the changed chapters read, by their new skeletons. Shown, not judged.
+  if (params.closing && diffCards.length > 0) {
+    let updated = params.bookContent;
+    for (const card of diffCards) {
+      const applied = applySearchReplacePatch(updated, card.chapterNum, card.searchTarget, card.replacementText, card.startBlockId, card.endBlockId);
+      if (applied.success) updated = applied.updatedManuscript;
+    }
+    const changedBlocks = indexManuscriptBlocks(updated);
+    const chapters = Array.from(new Set(diffCards.map(c => c.chapterNum))).sort((a, b) => a - b);
+    const skeletons: { chapter: number; skeleton: string }[] = [];
+    for (const chapter of chapters) skeletons.push({ chapter, skeleton: await chapterSkeleton(changedBlocks, chapter, params.callModel) });
+    const lines = linesAbout(skeletons, params.closing.title);
+    executedTools.push({ tool: 'chapter_skeleton', summary: `Re-read Chapter ${chapters.join(', ')} with the changes` });
+    cleanMessage += `\n\n**With these changes, the skeleton of Chapter ${chapters.join(', ')} says about it:**\n` +
+      (lines.length ? lines.map(l => `- ch${l.chapter}: ${l.text}`).join('\n') : '- nothing about it any more.');
+  }
+
   if (wantsEdit && diffCards.length === 0) {
     cleanMessage = `Изменения не подготовлены: агент не вернул применимую правку. Текст рукописи не изменён.\n\n${cleanMessage}`;
   }
@@ -456,5 +528,6 @@ export async function runEditorialTurn(params: {
     assistantMessage: cleanMessage || (diffCards.length > 0 ? 'Here is the proposed editorial patch:' : 'Review completed.'),
     diffCards,
     executedTools,
+    problems,
   };
 }

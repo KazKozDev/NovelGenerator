@@ -10,7 +10,7 @@ import { reportEditorialFindings, checkEditorialTask, proposeEditorialTask, task
 import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
-import { runEditorialTurn, ProposedDiffCard } from '../utils/novel/editorialAgent';
+import { runEditorialTurn, buildCloseProblemPrompt, ProposedDiffCard, type EditorialProblem } from '../utils/novel/editorialAgent';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { MarkdownView } from './common/MarkdownView';
 import EditorialModelModal from './EditorialModelModal';
@@ -37,6 +37,7 @@ interface ChatMessage {
   text: string;
   tools?: { tool: string; summary: string }[];
   diffCards?: ProposedDiffCard[];
+  problems?: EditorialProblem[];
   timestamp: number;
 }
 
@@ -61,7 +62,11 @@ Step 1. From the chapter skeletons and the knowledge by pair, list the strongest
 - an object that reaches a hand without being shown how;
 - the book contradicting the author's notes.
 Write no review in this step.
-Step 2. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it. Then list the dropped suspects, one line each, with why the text clears them.
+Step 2. Read each suspect's passages. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, or a time the book leaves unstated is not a hole. For each kept problem give the quotes with paragraph ids and one or two ways the author could close it, then one block:
+\`\`\`problem
+{"title": "short name of the problem", "places": ["ch4_p18", "ch6_p1"], "ways": ["first way to close it", "second way"]}
+\`\`\`
+Then list the dropped suspects, one line each, with why the text clears them.
 End with the kept problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
   {
@@ -176,7 +181,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     }
   }, [messages]);
 
-  const handleSendMessage = async (userText: string, view?: 'full' | 'skeletons') => {
+  const handleSendMessage = async (userText: string, view?: 'full' | 'skeletons', closing?: { title: string }) => {
     const text = userText.trim();
     if (!text || isRunning) return;
 
@@ -198,6 +203,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         metadata,
         history,
         view,
+        closing,
         provider: effectiveModel?.provider,
         callModel: async (prompt, system) => {
           return await withOllamaOutputRoom(
@@ -226,6 +232,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         text: response.assistantMessage,
         tools: response.executedTools,
         diffCards: response.diffCards,
+        problems: response.problems,
         timestamp: Date.now(),
       };
 
@@ -540,6 +547,33 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
 
               <MarkdownView content={msg.text} className="text-xs text-inherit break-words space-y-1.5" />
             </div>
+
+            {/* Problems kept by a review, each with its ways to close it */}
+            {msg.problems && msg.problems.length > 0 && (
+              <div className="space-y-2 w-full mt-2">
+                {msg.problems.map(problem => (
+                  <div key={problem.id} className="p-3 rounded-md border border-zinc-800 bg-zinc-950/90 text-left space-y-1.5">
+                    <div className="font-medium text-zinc-200 text-xs">{problem.title}</div>
+                    {problem.places.length > 0 && (
+                      <div className="text-[10px] font-mono text-zinc-500">{problem.places.join(', ')}</div>
+                    )}
+                    {problem.ways.map((way, i) => (
+                      <div key={i} className="flex items-start justify-between gap-2 text-[11px] text-zinc-400">
+                        <span>{way}</span>
+                        <button
+                          type="button"
+                          disabled={isRunning}
+                          onClick={() => handleSendMessage(buildCloseProblemPrompt(problem, way), undefined, { title: problem.title })}
+                          className="shrink-0 px-2 py-0.5 rounded border border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+                        >
+                          Close this way
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Diff Review Cards */}
             {msg.diffCards && msg.diffCards.length > 0 && (

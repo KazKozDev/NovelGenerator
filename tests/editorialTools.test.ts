@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
-import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, knowledgeByPair, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
-import { buildEditorialAgentPrompt, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
+import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, knowledgeByPair, objectsBeside, pathsByCharacter, skeletonLines, timesBeside, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
+import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, parseProblems, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
 const SCENE = [
@@ -92,6 +92,20 @@ describe('editorial reading tools', () => {
     expect(readBlocks(blocks, 1, 0, 3, 2)).not.toContain('[ch1_p2]');
   });
 
+  it('sets lines from different chapters side by side: times, paths, objects', () => {
+    const skeletons = [
+      { chapter: 4, skeleton: 'TIME: Friday at nine, Hale comes [ch4_p4]. About five that morning, Daniel Whitcombe found [ch4_p18].\nMOVES:\nIlya: upstairs at the end of the scene [ch4_p2]\nOBJECTS:\nBrass key to the archive, in Ilya\'s pocket [ch4_p3]' },
+      { chapter: 6, skeleton: 'TIME:\n- Daniel found at noon on that Friday [ch6_p1]\nMOVES:\nIlya: in the basement [ch6_p2]\nOBJECTS:\nBrass key to the archive, on Nora\'s desk [ch6_p5]' },
+    ];
+    expect(skeletonLines(skeletons).filter(l => l.section === 'TIME')).toHaveLength(3);
+    const times = timesBeside(skeletons);
+    expect(times).toContain('(daniel, found)');
+    expect(times).toContain('ch6: Daniel found at noon');
+    expect(times).not.toContain('Hale comes');
+    expect(pathsByCharacter(skeletons)).toBe('### Ilya\n- ch4: Ilya: upstairs at the end of the scene [ch4_p2]\n- ch6: Ilya: in the basement [ch6_p2]');
+    expect(objectsBeside(skeletons)).toContain('ch6: Brass key to the archive, on Nora');
+  });
+
   it('reads the book notes the author left', () => {
     const notes = readBookNotes({ premise: 'A pump fails in an archive.', dossier: { truth: 'Nora signed first.' }, craft: {} });
     expect(notes).toContain('## Premise');
@@ -172,6 +186,48 @@ describe('editorial agent with reading tools', () => {
     expect(prompts[0]).toContain('ch1_p0..ch1_p3');
     expect(prompts[0]).not.toContain('Ilya waited upstairs');
     expect(prompts[0]).not.toContain('FULL MANUSCRIPT TEXT');
+  });
+
+  it('turns problem blocks into cards and keeps them out of the message', async () => {
+    const review = 'One hole.\n```problem\n{"title": "Body found at five and at noon", "places": ["ch4_p18", "ch6_p1"], "ways": ["Make both five", "Make both noon"]}\n```\n```problem\nnot json\n```\nDone.';
+    expect(parseProblems(review)).toMatchObject([{ title: 'Body found at five and at noon', places: ['ch4_p18', 'ch6_p1'], ways: ['Make both five', 'Make both noon'] }]);
+    const result = await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel: async () => review });
+    expect(result.problems).toHaveLength(1);
+    expect(result.assistantMessage).not.toContain('```problem');
+    expect(result.assistantMessage).toContain('Done.');
+  });
+
+  it('copies kept problems out of a prose review when the request asked for problem blocks', async () => {
+    const calls: string[] = [];
+    const callModel = async (prompt: string, system: string) => {
+      calls.push(system);
+      if (system.includes('copy kept problems')) return '```problem\n{"title": "Body found twice", "places": ["ch4_p18"], "ways": ["Make both five"]}\n```';
+      return 'Kept: the body is found at five and at noon (ch4_p18).';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Review it, then one block:\n```problem\n{}\n```', bookContent: BOOK, history: [], callModel });
+    expect(calls).toHaveLength(2);
+    expect(result.problems.map(p => p.title)).toEqual(['Body found twice']);
+    expect(result.assistantMessage).toContain('Kept: the body');
+    const plain = await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel: async () => 'Nothing found.' });
+    expect(plain.problems).toEqual([]);
+  });
+
+  it('closes a problem with linked patches and re-reads the changed chapter once', async () => {
+    const problem = parseProblems('```problem\n{"title": "Ilya leaves at twenty to six", "places": ["ch1_p3"], "ways": ["Make it half past five"]}\n```')[0];
+    const prompt = buildCloseProblemPrompt(problem, problem.ways[0]);
+    expect(asksForEdit(prompt)).toBe(true);
+    expect(prompt).toContain('ch1_p3');
+    const skeletonPrompts: string[] = [];
+    const callModel = async (text: string, system: string) => {
+      if (system.includes('dry skeleton')) { skeletonPrompts.push(text); return 'TIME: Ilya leaves at half past five [ch1_p3]'; }
+      return '```tool:propose_diff\n{"chapter": 1, "search": "until twenty to six", "replace": "until half past five", "rationale": "One hour for Ilya"}\n```';
+    };
+    const result = await runEditorialTurn({ userPrompt: prompt, bookContent: BOOK, history: [], closing: { title: problem.title }, callModel });
+    expect(result.diffCards).toHaveLength(1);
+    expect(skeletonPrompts).toHaveLength(1);
+    expect(skeletonPrompts[0]).toContain('half past five');
+    expect(result.assistantMessage).toContain('With these changes, the skeleton of Chapter 1 says about it');
+    expect(result.assistantMessage).toContain('- ch1: Ilya leaves at half past five');
   });
 
   it('runs the reading tools and hands their results back', async () => {

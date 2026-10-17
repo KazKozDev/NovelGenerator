@@ -220,30 +220,42 @@ const HEADING = /^\s*[#*\-\s]*(SCENES|LEARNED|KNOWS|TIME|MOVES|OBJECTS|OPEN)\b[*
 const NOT_KNOWING = /\b(?:does not|doesn't|did not|didn't|never|not know|not recogni[sz]e|unaware)\b|не знает|не узна|не помнит/i;
 const firstName = (text: string) => text.replace(/^[\s\-*•]+/, '').match(/^[\p{Lu}][\p{L}'’-]+/u)?.[0]?.replace(/['’]s$/, '');
 
-/**
- * The skeletons' LEARNED and KNOWS lines grouped by who knows and whom it is about, in book order.
- * Code only groups and marks lines that say a character does not know; the reader decides.
- */
-export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }[]): string {
-  const characters = new Set<string>();
-  const lines: { chapter: number; knower: string; text: string }[] = [];
+export interface SkeletonLine { chapter: number; section: string; text: string }
+
+/** Every line of every skeleton with the section it stands under. */
+export function skeletonLines(skeletons: { chapter: number; skeleton: string }[]): SkeletonLine[] {
+  const lines: SkeletonLine[] = [];
   for (const { chapter, skeleton } of skeletons) {
     let section = '';
     for (const raw of skeleton.split('\n')) {
       const heading = raw.match(HEADING);
       const text = (heading ? heading[2] : raw).trim().replace(/^[\-*•]\s*/, '');
       if (heading) section = heading[1].toUpperCase();
-      if (!text) continue;
-      const name = firstName(text);
-      if (section === 'MOVES' && name) characters.add(name);
-      if ((section === 'LEARNED' || section === 'KNOWS') && name) {
-        characters.add(name);
-        lines.push({ chapter, knower: name, text });
-      }
+      // One item per paragraph reference: some skeletons run a whole section into one line.
+      if (text && section) for (const item of text.split(/(?<=\])[.;]?\s+(?=[^\s\[])/)) lines.push({ chapter, section, text: item.trim() });
     }
   }
   const paragraph = (text: string) => Number(text.match(/_p(\d+)/)?.[1] ?? Infinity);
-  lines.sort((a, b) => a.chapter - b.chapter || paragraph(a.text) - paragraph(b.text));
+  return lines.sort((a, b) => a.chapter - b.chapter || paragraph(a.text) - paragraph(b.text));
+}
+
+/**
+ * The skeletons' LEARNED and KNOWS lines grouped by who knows and whom it is about, in book order.
+ * Code only groups and marks lines that say a character does not know; the reader decides.
+ */
+export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }[]): string {
+  const all = skeletonLines(skeletons);
+  const characters = new Set<string>();
+  const lines: { chapter: number; knower: string; text: string }[] = [];
+  for (const line of all) {
+    const name = firstName(line.text);
+    if (!name) continue;
+    if (line.section === 'MOVES') characters.add(name);
+    if (line.section === 'LEARNED' || line.section === 'KNOWS') {
+      characters.add(name);
+      lines.push({ chapter: line.chapter, knower: name, text: line.text });
+    }
+  }
   const pairs = new Map<string, { chapter: number; text: string }[]>();
   for (const line of lines) {
     for (const subject of characters) {
@@ -258,6 +270,59 @@ export function knowledgeByPair(skeletons: { chapter: number; skeleton: string }
     .slice(0, 30)
     .map(([key, list]) => `### What ${key}\n${list.map(l => `- ch${l.chapter}${NOT_KNOWING.test(l.text) ? ' NOT' : ''}: ${l.text}`).join('\n')}`);
   return shown.join('\n\n');
+}
+
+const STOP = new Set('that this with from they them their there have been were what when where which while into about after before would could should said says does other than then also only just over under each every some most more very still upon here chapter scene scenes paragraph'.split(' '));
+const TIME_WORDS = /\b(?:\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:am|pm)|o'clock|noon|midnight|morning|evening|night|afternoon|dawn|dusk|half past|quarter|minutes?|hours?|days?|weeks?|months?|years?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|today|tomorrow|yesterday)\b|утр|вечер|ноч|полдень|полноч|час|минут|недел|месяц|понедельник|вторник|сред|четверг|пятниц|суббот|воскресень/i;
+const contentWords = (text: string, skip?: RegExp) => new Set(
+  text.replace(/\[ch\d+_p\d+\]/g, ' ').toLowerCase().split(/[^\p{L}\p{N}']+/u)
+    .filter(w => w.length >= 4 && !STOP.has(w) && !(skip && skip.test(w))),
+);
+
+const clip = (text: string) => (text.length > 240 ? `${text.slice(0, 240)}…` : text);
+
+/** Pairs of lines from different chapters that share at least two content words, most shared first. */
+function pairsAcrossChapters(lines: SkeletonLine[], skip: RegExp | undefined, most: number): string[] {
+  const words = lines.map(l => contentWords(l.text, skip));
+  const found: { a: number; b: number; shared: string[]; share: number }[] = [];
+  for (let a = 0; a < lines.length; a++) {
+    for (let b = a + 1; b < lines.length; b++) {
+      if (lines[a].chapter === lines[b].chapter) continue;
+      const shared = [...words[a]].filter(w => words[b].has(w));
+      // Ranked by the share of words in common, so two short lines about one event outrank two long scene lines.
+      if (shared.length >= 2) found.push({ a, b, shared, share: shared.length / (words[a].size + words[b].size - shared.length) });
+    }
+  }
+  return found.sort((x, y) => y.share - x.share).slice(0, most)
+    .map(({ a, b, shared }) => `- (${shared.slice(0, 4).join(', ')})\n  ch${lines[a].chapter}: ${clip(lines[a].text)}\n  ch${lines[b].chapter}: ${clip(lines[b].text)}`);
+}
+
+/** Lines that state a time, set beside lines from other chapters about the same event. */
+export function timesBeside(skeletons: { chapter: number; skeleton: string }[]): string {
+  const timed = skeletonLines(skeletons).filter(l => l.section !== 'OPEN' && TIME_WORDS.test(l.text));
+  return pairsAcrossChapters(timed, TIME_WORDS, 20).join('\n');
+}
+
+/** Where each character is at the end of each scene, in book order. */
+export function pathsByCharacter(skeletons: { chapter: number; skeleton: string }[]): string {
+  const paths = new Map<string, SkeletonLine[]>();
+  for (const line of skeletonLines(skeletons).filter(l => l.section === 'MOVES')) {
+    const name = firstName(line.text);
+    if (name) paths.set(name, [...(paths.get(name) || []), line]);
+  }
+  return [...paths.entries()].filter(([, list]) => list.length >= 2).sort((a, b) => b[1].length - a[1].length).slice(0, 12)
+    .map(([name, list]) => `### ${name}\n${list.map(l => `- ch${l.chapter}: ${l.text}`).join('\n')}`).join('\n\n');
+}
+
+/** Object lines from different chapters about the same thing. */
+export function objectsBeside(skeletons: { chapter: number; skeleton: string }[]): string {
+  return pairsAcrossChapters(skeletonLines(skeletons).filter(l => l.section === 'OBJECTS'), undefined, 20).join('\n');
+}
+
+/** Skeleton lines about a problem (sharing two words with its title), from the given chapters. */
+export function linesAbout(skeletons: { chapter: number; skeleton: string }[], title: string): SkeletonLine[] {
+  const wanted = contentWords(title);
+  return skeletonLines(skeletons).filter(l => [...contentWords(l.text)].filter(w => wanted.has(w)).length >= 2);
 }
 
 export function clearSkeletonCache(): void {
