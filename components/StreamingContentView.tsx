@@ -60,15 +60,15 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
   }, [content, previousContent, viewMode, beforeRevision]);
 
   return (
-    <div className={`p-3 md:p-4 rounded border border-zinc-800 flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'mt-6'}`}>
-      <div className="shrink-0 flex flex-wrap gap-2 items-center justify-between border-b border-zinc-800 pb-2.5 mb-2.5">
-        <h3 className="font-semibold text-zinc-300 text-xs  flex items-center gap-2 uppercase">
+    <div className={`flex flex-col ${fullHeight ? 'h-full flex-1 min-h-0 overflow-hidden' : 'p-3 md:p-4 rounded border border-zinc-800 mt-6'}`}>
+      <div className={`shrink-0 flex flex-wrap gap-2 items-center justify-between border-b border-zinc-800 bg-zinc-900/80 ${fullHeight ? 'px-4 py-2.5' : 'pb-2.5 mb-2.5'}`}>
+        <h2 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
           <span>{title}</span>
-        </h3>
+        </h2>
         <div className="flex flex-wrap items-center gap-3">
           {!!tools?.length && (
-            <div className="flex items-center border border-zinc-800 rounded p-0.5 text-xs" data-testid="tool-tabs">
+            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs" data-testid="tool-tabs">
               {tools.map(item => (
                 <button key={item.name} type="button" aria-pressed={tool?.name === item.name} onClick={() => setToolName(tool?.name === item.name ? null : item.name)}
                   className={`px-2 py-0.5 rounded transition-colors ${tool?.name === item.name ? 'bg-zinc-800 text-zinc-100 font-medium' : item.count ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}>
@@ -77,26 +77,26 @@ const StreamingContentView: React.FC<StreamingContentViewProps> = ({ title, cont
               ))}
             </div>
           )}
-          <div className="flex items-center border border-zinc-800 rounded p-0.5 text-xs">
-            <button type="button" onClick={()=>view('changes')} aria-pressed={!tool&&viewMode==='changes'} className={`px-2 py-0.5 rounded ${!tool&&viewMode==='changes'?'bg-zinc-800 text-zinc-100':'text-zinc-500'}`}>Changes</button>
+          <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded p-0.5 text-xs">
+            <button type="button" onClick={()=>view('changes')} aria-pressed={!tool&&viewMode==='changes'} className={`px-2 py-0.5 rounded transition-colors ${!tool&&viewMode==='changes'?'bg-zinc-800 text-zinc-100 font-medium':'text-zinc-400 hover:text-zinc-200'}`}>Changes</button>
             <button
               type="button"
               onClick={() => view('markdown')}
-              className={`px-2 py-0.5 rounded transition-colors ${!tool && viewMode === 'markdown' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`px-2 py-0.5 rounded transition-colors ${!tool && viewMode === 'markdown' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-400 hover:text-zinc-200'}`}
             >
               Clean text
             </button>
             <button
               type="button"
               onClick={() => view('raw')}
-              className={`px-2 py-0.5 rounded transition-colors ${!tool && viewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`px-2 py-0.5 rounded transition-colors ${!tool && viewMode === 'raw' ? 'bg-zinc-800 text-zinc-100 font-medium' : 'text-zinc-400 hover:text-zinc-200'}`}
             >
               Raw
             </button>
           </div>
         </div>
       </div>
-      <div ref={contentEndRef} className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? '' : 'max-h-[600px]'}`}>
+      <div ref={contentEndRef} className={`overflow-y-auto text-left pr-2 flex-1 min-h-0 ${fullHeight ? 'p-4' : 'max-h-[600px]'}`}>
         {tool ? (
           <div data-testid="tool-text">
             <MarkdownView content={tool.text} className="font-serif text-prose max-w-[62ch] mx-auto" />

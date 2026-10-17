@@ -55,14 +55,14 @@ export const QUICK_PROMPTS: QuickEditorialPrompt[] = [
     view: 'skeletons',
     prompt: `Check the whole book for plot holes. Do not change the text yet.
 Code has already checked the chapter records and lists its suspicions below, each with its passages. Decide each from the passages given; do not read whole chapters. Keep it only if the passages show it; a character's lie or mistake, a move between rooms, a scene remembered on purpose, or a time the book leaves unstated is not a hole.
-You may add up to 3 suspicions of your own: a NOT line in the knowledge by pair after the same character already knew it, a character who acts on a fact before learning it, or the book contradicting the author's notes. Code's suspicions already come with their passages: do not send them to check_suspects again. Use at most one check_suspects call, for your own suspicions only.
+You may add up to 3 suspicions of your own: two different spans of time for one relation or habit in the spans list, a NOT line in the knowledge by pair after the same character already knew it, a character who acts on a fact before learning it, or the book contradicting the author's notes. Code's suspicions already come with their passages: do not send them to check_suspects again. Use at most one check_suspects call, for your own suspicions only. Keep only suspicions that were checked: code's, or your own sent through check_suspects; a new problem noticed while writing goes through check_suspects first.
 For each kept problem give the quotes with paragraph ids and one or two ways the author could close it, then one block:
 \`\`\`problem
 {"title": "short name of the problem", "places": ["ch4_p18", "ch6_p1"], "ways": ["first way to close it", "second way"]}
 \`\`\`
-Drop a suspect only with a quote from the book that clears it: a sentence that explains it, resolves it, or shows it is meant. Your reading of the context ("in this context", "it could mean") is not a reason; a suspect with no such quote stays kept. For each dropped suspect write one line, then one block:
+Drop a suspect only with a quote that clears it: a sentence from the book that explains it, resolves it, or shows it is meant, or a sentence from the author's notes that shows it is intended (a planned lie or secret). Your reading of the context ("in this context", "it could mean") is not a reason; a suspect with no such quote stays kept. For each dropped suspect write one line, then one block:
 \`\`\`dropped
-{"title": "short name of the suspect", "places": ["ch1_p21"], "quote": "the exact sentence from the book that clears it"}
+{"title": "short name of the suspect", "places": ["ch1_p21"], "quote": "the exact sentence from the book or the author's notes that clears it"}
 \`\`\`
 End with the kept problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },

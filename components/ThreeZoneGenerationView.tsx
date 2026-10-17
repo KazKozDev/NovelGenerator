@@ -179,8 +179,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
           data-testid="zone-pipeline"
           className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 text-left overflow-hidden rounded border border-zinc-800 bg-zinc-900/40"
         >
-          <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
-            <h3 className="text-xs font-semibold uppercase text-zinc-300">Chapters</h3>
+          <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+            <h2 className="text-sm font-medium text-zinc-200">Chapters</h2>
             <span className="text-xs text-zinc-400">
               {currentChapterProcessing > 0 ? `Ch ${currentChapterProcessing} of ${totalChaptersToProcess || generatedChapters.length}` : embedded?`${generatedChapters.filter(c=>c.content).length} of ${totalChaptersToProcess} saved`:'Preparing'}
             </span>
@@ -218,7 +218,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         {chapterWords && (
-                          <span className="text-zinc-500 text-[10px] tabular-nums font-mono">
+                          <span className="text-zinc-500 text-xs tabular-nums font-mono">
                             {chapterWords.trim().split(/\s+/).filter(Boolean).length}w
                           </span>
                         )}
@@ -310,8 +310,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             data-testid="zone-agent-inspector"
             className="studio-side lg:col-span-2 min-w-0 flex flex-col h-full min-h-0 text-left overflow-hidden rounded border border-zinc-800 bg-zinc-900/40"
           >
-            <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
-              <h3 className="text-xs font-semibold uppercase text-zinc-300">Inspector</h3>
+            <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80">
+              <h2 className="text-sm font-medium text-zinc-200">Inspector</h2>
             </div>
             <div className="p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
               {(inspectorContent || isWritingProse || checkedContent) && (
@@ -329,12 +329,12 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
             )}
             <div className="border-t border-zinc-800 mt-2 pt-3 flex flex-col min-h-[8rem] flex-1 overflow-hidden">
               <div className="shrink-0 flex items-baseline justify-between gap-2 pb-2">
-                <h3 className="text-xs font-semibold uppercase text-zinc-500">Agent Inspector</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Agent Telemetry</h3>
                 <div className="text-xs text-zinc-400">
                   {isLoading ? (
                     <RunClock agentLogs={agentLogs} callCount={tokenTotals?.calls||undefined} isLoading={isLoading} className="tabular-nums" />
                   ) : (
-                    <span className="text-zinc-500">{agentLogs.length} events</span>
+                    <span className="text-zinc-500 font-mono text-xs">{agentLogs.length} events</span>
                   )}
                 </div>
               </div>
@@ -356,14 +356,14 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               {/* Quick Agent Status Telemetry */}
               <div className="shrink-0 flex flex-col gap-1.5 my-2 pt-2 pb-2 border-y border-zinc-800/60">
                 <div className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="text-zinc-500 uppercase tracking-wider text-[10px]">Pipeline</span>
+                  <span className="text-zinc-500 uppercase tracking-wider text-[11px] font-medium">Pipeline</span>
                   <div className="text-zinc-300 flex items-center justify-end gap-1.5 text-right text-xs">
                     <span className={`w-1.5 h-1.5 rounded-full ${isLoading && currentStep !== GenerationStep.Error && currentStep !== GenerationStep.Done ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
                     {currentStep === GenerationStep.Error ? 'Stopped' : currentStep === GenerationStep.Done ? 'Complete' : isLoading ? 'Active' : 'Idle'}
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="text-zinc-500 uppercase tracking-wider text-[10px]">Target</span>
+                  <span className="text-zinc-500 uppercase tracking-wider text-[11px] font-medium">Target</span>
                   <span className="text-zinc-300 font-mono text-right tabular-nums text-xs">
                     Ch #{currentChapterProcessing || 1}
                   </span>
@@ -374,8 +374,8 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
               <div className="shrink-0 mb-2 flex flex-col gap-1" aria-label="Total token usage" title="Project totals, including writer, editor and reported retries. ~ marks an estimate; older calls without usage may be missing.">
                 {(['input', 'output'] as const).map(direction => (
                   <div key={direction} className="flex items-baseline justify-between gap-2 text-xs">
-                    <span className="text-zinc-500 uppercase tracking-wider text-[10px]">{direction} tokens</span>
-                    <span className="text-zinc-300 font-mono tabular-nums text-right">
+                    <span className="text-zinc-500 uppercase tracking-wider text-[11px] font-medium">{direction} tokens</span>
+                    <span className="text-zinc-300 font-mono tabular-nums text-right text-xs">
                       {tokenTotals?.calls ? `${tokenTotals[direction === 'input' ? 'estimatedInput' : 'estimatedOutput'] ? '~ ' : ''}${tokenTotals[direction].toLocaleString('en-US')}` : '—'}
                     </span>
                   </div>

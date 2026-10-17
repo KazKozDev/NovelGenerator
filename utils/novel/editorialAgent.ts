@@ -2,7 +2,7 @@ import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSe
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
 import { findSuspects } from './chapterRecords';
-import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, cachedRecords, knowledgeByPair, linesAbout, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, cachedRecords, knowledgeByPair, linesAbout, formatRepeats, readBlocks, readBookNotes, durationMentions, durationSuspects, formatDurations } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
 
@@ -64,6 +64,37 @@ export function quoteInBook(quote: string, book: string): boolean {
   const text = plainQuote(book);
   const fragments = plainQuote(quote).replace(/^["'\s]+|["'\s]+$/g, '').split(/…|\.\.\./).map(f => f.trim().replace(/^["'\s,;:]+|["'\s,;:]+$/g, '')).filter(f => f.length >= 8);
   return plainQuote(quote).length >= 15 && fragments.length > 0 && fragments.every(f => text.includes(f));
+}
+
+/** Paragraph ids a list of places covers; "ch3_p12-ch3_p15" stands for every paragraph between. */
+export function expandPlaces(places: string[]): string[] {
+  return places.flatMap(place => {
+    const [from, to] = String(place).split(/\s*(?:-|–|\.\.)\s*/);
+    const a = from?.match(/ch(\d+)_p(\d+)/);
+    const b = to?.match(/ch(\d+)_p(\d+)/);
+    if (!a) return [];
+    if (!b || a[1] !== b[1]) return [`ch${a[1]}_p${a[2]}`];
+    const [start, end] = [Number(a[2]), Number(b[2])].sort((x, y) => x - y);
+    return Array.from({ length: Math.min(end - start + 1, 50) }, (_, i) => `ch${a[1]}_p${start + i}`);
+  });
+}
+
+/** A drop stands when its quote is in the book, or in the author's notes (what the author meant, such as a planned lie). */
+export function clearingQuote(drop: { quote: string }, book: string, notes = ''): 'ok' | 'missing' {
+  return quoteInBook(drop.quote, book) || (notes !== '' && quoteInBook(drop.quote, notes)) ? 'ok' : 'missing';
+}
+
+/** Passages that stand twice in the text itself (two paragraphs or more): a pasted scene. */
+export function repeatSuspects(blocks: ManuscriptBlock[]): { claim: string; places: string[] }[] {
+  return findRepeats(blocks).passages.filter(p => p.paragraphs >= 2).map(p => ({
+    claim: `A passage stands twice in the text: ${p.first[0]}..${p.first[1]} and ${p.second[0]}..${p.second[1]} (${p.paragraphs} paragraphs)`,
+    places: [`${p.first[0]}-${p.first[1]}`, `${p.second[0]}-${p.second[1]}`],
+  }));
+}
+
+/** Every suspicion code makes before the reader: checks over the chapter records, and passages repeated in the text. */
+export function codeSuspects(blocks: ManuscriptBlock[]) {
+  return [...repeatSuspects(blocks), ...findSuspects(cachedRecords(blocks)), ...durationSuspects(durationMentions(blocks))].slice(0, 15);
 }
 
 export function parseProblems(text: string): EditorialProblem[] {
@@ -307,10 +338,12 @@ CRITICAL OPERATIONAL RULES:
   }
   // Code checks the chapter records and names suspicions; the passages come with them, to be read.
   if (skeletonView) {
-    const suspects = findSuspects(cachedRecords(params.manuscriptBlocks));
+    const suspects = codeSuspects(params.manuscriptBlocks);
     prompt += suspects.length
-      ? `SUSPICIONS FOUND BY CODE (checks over the chapter records: one event at two times, a fact known then not known, an event shown twice, an object with someone new, a character in two places at once). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
+      ? `SUSPICIONS FOUND BY CODE (a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
       : `SUSPICIONS FOUND BY CODE: none.\n\n`;
+    const durations = durationMentions(params.manuscriptBlocks);
+    if (durations.length) prompt += `SPANS OF TIME STATED IN THE BOOK (code lists every span in book order; two different spans for one relation, habit, or stretch of time are a suspicion):\n${formatDurations(durations)}\n\n`;
     const knowledge = knowledgeByPair(skeletons);
     if (knowledge) prompt += `KNOWLEDGE BY PAIR (code groups the skeletons' LEARNED and KNOWS lines by who knows and whom it is about, in book order; NOT marks a line saying the character does not know). A NOT line after a line where the same character already knows it is a suspicion:\n\n${knowledge}\n\n`;
   }
@@ -411,11 +444,15 @@ export async function runEditorialTurn(params: {
   const blocks = indexManuscriptBlocks(params.bookContent);
   const graph = buildEntityGraph(blocks, params.metadata?.dossier);
   const executedTools: { tool: string; summary: string }[] = [];
+  // Paragraphs of every suspicion checked against the text this turn: code's, and the reader's own through check_suspects.
+  const checked = new Set<string>();
   if (params.view === 'skeletons') {
     const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
     await chapterSkeletons(blocks, chapters, params.callModel);
     executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
-    executedTools.push({ tool: 'code_checks', summary: `Code found ${findSuspects(cachedRecords(blocks)).length} suspicions in the chapter records` });
+    const suspects = codeSuspects(blocks);
+    for (const suspect of suspects) for (const id of expandPlaces(suspect.places)) checked.add(id);
+    executedTools.push({ tool: 'code_checks', summary: `Code found ${suspects.length} suspicions in the text and the chapter records` });
   }
 
   const { system, prompt } = buildEditorialAgentPrompt({
@@ -457,6 +494,7 @@ export async function runEditorialTurn(params: {
         observations.push(`Repeats${chapter ? ` touching Chapter ${chapter}` : ''}:\n${formatRepeats(found)}`);
       } else if (tc.tool === 'check_suspects') {
         const suspects = Array.isArray(tc.args.suspects) ? tc.args.suspects : [];
+        for (const suspect of suspects) for (const id of expandPlaces(Array.isArray(suspect?.places) ? suspect.places : [])) checked.add(id);
         executedTools.push({ tool: tc.tool, summary: `Read the places of ${suspects.length} suspected problems` });
         observations.push(`Suspects with their passages. Keep a suspect only if these passages show it; a character's lie, a move between rooms, or a time left unstated is not a hole:\n${checkSuspects(blocks, suspects)}`);
       } else if (tc.tool === 'read_blocks') {
@@ -516,8 +554,12 @@ export async function runEditorialTurn(params: {
     }
     if (!dropped.length) dropped = parseDropped(extracted).filter(d => cited(d.places));
   }
-  // A drop stands only on a quote that is in the book word for word; any other drop is kept.
-  const unproven = dropped.filter(d => !quoteInBook(d.quote, params.bookContent));
+  // In a review of suspicions, a kept problem must be one that was checked against the text.
+  const unchecked = params.view === 'skeletons' ? problems.filter(p => !expandPlaces(p.places).some(id => checked.has(id))) : [];
+  problems = problems.filter(p => !unchecked.includes(p));
+  // A drop stands only on a quote that is in the book or the author's notes word for word; any other drop is kept.
+  const notes = params.metadata ? readBookNotes(params.metadata) : '';
+  const unproven = dropped.filter(d => clearingQuote(d, params.bookContent, notes) !== 'ok');
   for (const d of unproven) {
     problems.push({ id: `problem_${problems.length + 1}_${Math.random().toString(36).slice(2, 6)}`, title: `${d.title} (dropped without a quote that clears it)`, places: d.places, ways: [] });
   }
@@ -549,7 +591,10 @@ export async function runEditorialTurn(params: {
   }
 
   if (unproven.length) {
-    cleanMessage += `\n\n**Kept after all: dropped without a quote from the book that clears them:**\n${unproven.map(d => `- ${d.title}${d.quote ? ` (the quote given is not in the book: "${d.quote}")` : ''}`).join('\n')}`;
+    cleanMessage += `\n\n**Kept after all: dropped without a quote from the book that clears them:**\n${unproven.map(d => `- ${d.title}${d.quote ? ` (the quote given is not in the book or the author's notes: "${d.quote}")` : ''}`).join('\n')}`;
+  }
+  if (unchecked.length) {
+    cleanMessage += `\n\n**Not kept: not among the suspicions checked against the text** (send it through check_suspects first):\n${unchecked.map(p => `- ${p.title}${p.places.length ? ` (${p.places.join(', ')})` : ''}`).join('\n')}`;
   }
 
   // Closing a problem: show once how the changed chapters read, by their new skeletons. Shown, not judged.

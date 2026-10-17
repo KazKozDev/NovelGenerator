@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
-import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, skeletonLines, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
-import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, parseDropped, parseProblems, quoteInBook, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
+import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, durationMentions, durationSuspects, findRepeats, skeletonLines, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
+import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, clearingQuote, codeSuspects, expandPlaces, parseDropped, parseProblems, quoteInBook, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
 const SCENE = [
@@ -85,6 +85,16 @@ describe('editorial reading tools', () => {
     expect(readBlocks(blocks, 1, 0, 3, 2)).not.toContain('[ch1_p2]');
   });
 
+  it('lists spans of time, leaving out moments and ages, and pairs spans told of one thing', () => {
+    const blocks = indexManuscriptBlocks([
+      '## Chapter 1', 'She had carried the keycard to Room 412 for eleven weeks.', 'That was two weeks ago.', 'A nineteen-year-old clerk smiled.',
+      '## Chapter 2', '"Just over a year," she said of the keycard she carried to Room 412.', 'They had been married nine years.',
+    ].join('\n\n'));
+    const mentions = durationMentions(blocks);
+    expect(mentions.map(m => [m.id, m.phrase, m.days])).toEqual([['ch1_p0', 'eleven weeks', 77], ['ch2_p0', 'a year', 365], ['ch2_p1', 'nine years', 3285]]);
+    expect(durationSuspects(mentions)).toEqual([{ claim: 'Two spans for what may be one thing: "eleven weeks" (ch1_p0) and "a year" (ch2_p0)', places: ['ch1_p0', 'ch2_p0'] }]);
+  });
+
   it('reads the book notes the author left', () => {
     const notes = readBookNotes({ premise: 'A pump fails in an archive.', dossier: { truth: 'Nora signed first.' }, craft: {} });
     expect(notes).toContain('## Premise');
@@ -163,7 +173,9 @@ describe('editorial agent with reading tools', () => {
     expect(result.executedTools[0]).toEqual({ tool: 'chapter_skeleton', summary: 'Skeletons of 3 chapters' });
     expect(prompts[0]).toContain('KNOWS: skeleton line of chapter 2');
     expect(prompts[0]).toContain('ch1_p0..ch1_p3');
-    expect(prompts[0]).not.toContain('Ilya waited upstairs');
+    expect(prompts[0]).toContain('SPANS OF TIME STATED IN THE BOOK');
+    // Only the passages of code's suspicions appear, never the whole text.
+    expect(prompts[0]).not.toContain('the river was rising fast');
     expect(prompts[0]).not.toContain('FULL MANUSCRIPT TEXT');
   });
 
@@ -204,7 +216,7 @@ describe('editorial agent with reading tools', () => {
   it('keeps a dropped suspect whose clearing quote is not in the book', async () => {
     const review = [
       'Kept: none.',
-      '```dropped\n{"title": "Ilya leaves early", "places": ["ch1_p3"], "quote": "Ilya waited upstairs until twenty to six"}\n```',
+      '```dropped\n{"title": "Ilya leaves early", "places": ["ch2_p0"], "quote": "Ilya waited upstairs until twenty to six"}\n```',
       '```dropped\n{"title": "Inspector at nine", "places": ["ch2_p0"], "quote": "in this context the hour is a guess"}\n```',
       '```problem\n{"title": "Seal cut", "places": ["ch1_p2"], "ways": ["Show who cut it"]}\n```',
     ].join('\n');
@@ -213,6 +225,37 @@ describe('editorial agent with reading tools', () => {
     expect(result.problems.map(p => p.title)).toEqual(['Seal cut', 'Inspector at nine (dropped without a quote that clears it)']);
     expect(result.assistantMessage).toContain('Kept after all');
     expect(result.assistantMessage).not.toContain('```dropped');
+  });
+
+  it('accepts a clearing quote from the book or from the author\'s notes', () => {
+    expect(expandPlaces(['ch1_p1-ch1_p3', 'ch2_p0'])).toEqual(['ch1_p1', 'ch1_p2', 'ch1_p3', 'ch2_p0']);
+    expect(clearingQuote({ quote: 'Ilya waited upstairs until twenty to six' }, BOOK)).toBe('ok');
+    const notes = readBookNotes({ premise: 'Claire planned the frame-up and hides it until the climax.' });
+    expect(clearingQuote({ quote: 'Claire planned the frame-up and hides it' }, BOOK, notes)).toBe('ok');
+    expect(clearingQuote({ quote: 'Claire planned the frame-up and hides it' }, BOOK)).toBe('missing');
+    expect(clearingQuote({ quote: 'Ilya waited downstairs all night' }, BOOK, notes)).toBe('missing');
+  });
+
+  it('turns a passage standing twice in the text into a code suspicion', () => {
+    const suspects = codeSuspects(indexManuscriptBlocks(BOOK));
+    expect(suspects[0]).toMatchObject({ places: ['ch1_p0-ch1_p2', 'ch2_p1-ch2_p3'] });
+    expect(suspects[0].claim).toContain('A passage stands twice in the text');
+  });
+
+  it('keeps in a skeleton review only problems that were checked against the text', async () => {
+    const callModel = async (prompt: string, system: string) => {
+      if (system.includes('dry skeleton')) return '{}';
+      if (prompt.includes('Tool Observations')) return [
+        'Kept two.',
+        '```problem\n{"title": "Checked hole", "places": ["ch1_p3"], "ways": ["Fix the hour"]}\n```',
+        '```problem\n{"title": "New idea", "places": ["ch3_p0"], "ways": ["Rewrite"]}\n```',
+      ].join('\n');
+      return '```tool:check_suspects\n{"suspects": [{"claim": "Ilya leaves", "places": ["ch1_p3"]}]}\n```';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Review with ```problem blocks', bookContent: BOOK, history: [], view: 'skeletons', callModel });
+    expect(result.problems.map(p => p.title)).toEqual(['Checked hole']);
+    expect(result.assistantMessage).toContain('Not kept: not among the suspicions checked against the text');
+    expect(result.assistantMessage).toContain('- New idea (ch3_p0)');
   });
 
   it('closes a problem with linked patches and re-reads the changed chapter once', async () => {

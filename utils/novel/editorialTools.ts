@@ -101,6 +101,59 @@ export function formatRepeats(found: ReturnType<typeof findRepeats>): string {
   ].filter(Boolean).join('\n\n');
 }
 
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  один: 1, одна: 1, два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7, восемь: 8, девять: 9, десять: 10, одиннадцать: 11, двенадцать: 12,
+};
+const UNIT_DAYS: [RegExp, number][] = [[/^(day|days|день|дня|дней)$/i, 1], [/^(week|weeks|неделя|недели|недель|неделю)$/i, 7], [/^(month|months|месяц|месяца|месяцев)$/i, 30], [/^(year|years|год|года|лет)$/i, 365]];
+const DURATION = /\b(a|an|\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)[\s-]+(days?|weeks?|months?|years?|день|дня|дней|неделя|недели|недель|неделю|месяц|месяца|месяцев|год|года|лет)\b/giu;
+const DURATION_STOP = new Set('that this with from they them their there have been were what when where which while into about after before would could should said says does other than then also only just over under each every some more very still upon here since last ago long'.split(' '));
+
+export interface DurationMention { id: string; sentence: string; phrase: string; days: number }
+
+/** Every stated span of time (eleven weeks, just over a year, sixteen years), with its sentence and paragraph. */
+export function durationMentions(blocks: ManuscriptBlock[]): DurationMention[] {
+  const mentions: DurationMention[] = [];
+  for (const b of blocks) {
+    for (const sentence of b.text.split(/(?<=[.!?…])\s+/)) {
+      for (const m of sentence.matchAll(DURATION)) {
+        // "a week ago" is a moment and "a nineteen-year-old" an age, not a span.
+        const after = sentence.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 6);
+        if (/^\s*ago\b|^-?old\b|^\s+old\b|^\s*назад/i.test(after) || /-$/.test(sentence.slice(0, m.index ?? 0))) continue;
+        const count = /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1].toLowerCase()];
+        const unit = UNIT_DAYS.find(([pattern]) => pattern.test(m[2]))?.[1];
+        if (count && unit) mentions.push({ id: b.id, sentence: sentence.trim(), phrase: m[0], days: count * unit });
+      }
+    }
+  }
+  return mentions;
+}
+
+const spanWords = (sentence: string) => new Set(sentence.replace(DURATION, ' ').toLowerCase().split(/[^\p{L}\p{N}']+/u).filter(w => w.length >= 4 && !DURATION_STOP.has(w)));
+
+/** Two spans in different paragraphs whose sentences share three words or more but whose lengths differ at least twofold. */
+export function durationSuspects(mentions: DurationMention[], most = 5): Suspect[] {
+  const found: { a: DurationMention; b: DurationMention; shared: number }[] = [];
+  for (let i = 0; i < mentions.length; i++) for (let j = i + 1; j < mentions.length; j++) {
+    const [a, b] = [mentions[i], mentions[j]];
+    if (a.id === b.id || Math.max(a.days, b.days) / Math.min(a.days, b.days) < 2) continue;
+    const [x, y] = [spanWords(a.sentence), spanWords(b.sentence)];
+    const shared = [...x].filter(w => y.has(w)).length;
+    if (shared >= 3) found.push({ a, b, shared });
+  }
+  return found.sort((p, q) => q.shared - p.shared).slice(0, most).map(({ a, b }) => ({
+    claim: `Two spans for what may be one thing: "${a.phrase}" (${a.id}) and "${b.phrase}" (${b.id})`,
+    places: [a.id, b.id],
+  }));
+}
+
+/** The spans in book order, for a reader to set side by side. */
+export function formatDurations(mentions: DurationMention[]): string {
+  const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}…` : text);
+  return mentions.map(m => `- ${m.id} "${m.phrase}": ${clip(m.sentence)}`).join('\n');
+}
+
 /** Paragraphs from..to of one chapter, with their ids. */
 export function readBlocks(blocks: ManuscriptBlock[], chapter: number, from = 0, to?: number, most = MAX_READ_BLOCKS): string {
   const chapterBlocks = blocks.filter(b => b.chapterNum === chapter);

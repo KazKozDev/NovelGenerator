@@ -52,7 +52,7 @@ describe('chapter records', () => {
     expect(recordsPrompt(3, 'text', { events: [], facts: [], objects: [] })).not.toContain('KEYS');
   });
 
-  it('finds one event at two times, a name known then not recognized, a scene told twice, an object jump, two places at once', () => {
+  it('finds one event at two times, a name known then not recognized, an object jump', () => {
     const book = [
       records({
         events: [
@@ -77,12 +77,10 @@ describe('chapter records', () => {
       records({ scenes: [{ place: 'Legare Street', present: ['Nora'], what: 'The Whitcombes arrive eleven minutes early for the first session; Daniel shakes hands', when: '', paragraphs: ['ch2_p0'] }] }),
     ];
     const claims = findSuspects(book).map(s => s.claim);
-    expect(claims).toHaveLength(5);
-    expect(claims.some(c => c.startsWith('Two scenes read alike') && c.includes('(ch4_p29)') && c.includes('(ch2_p0)'))).toBe(true);
+    expect(claims).toHaveLength(3);
     expect(claims[0]).toContain('"Body found" is given two times');
     expect(claims.some(c => c.startsWith('Nora knows "Daniel\'s wife is Claire" (ch1_p12) but later does not know'))).toBe(true);
     expect(claims.some(c => c.includes('"key card" is with Ilya (ch2_p3), then with Nora (ch3_p8)'))).toBe(true);
-    expect(claims.some(c => c.includes('Tom is at the kitchen (ch4_p0) and at the Meridian (ch4_p6)'))).toBe(true);
   });
 
   it('stays quiet where the book agrees or tells how a thing moved', () => {
@@ -104,12 +102,20 @@ describe('chapter records', () => {
     expect(findSuspects(book)).toEqual([]);
   });
 
+  it('does not join two different events that were given one key', () => {
+    const book = [records({ events: [
+      { key: 'Claire session', what: 'Claire describes the hotel room in a session', when: 'Thursday', told: 'now', paragraph: 'ch2_p0' },
+      { key: 'Claire session', what: 'Claire moves her appointment by phone', when: 'Wednesday night', told: 'now', paragraph: 'ch2_p107' },
+    ] })];
+    expect(findSuspects(book)).toEqual([]);
+  });
+
   it('gives Plot holes the code suspicions with their passages', async () => {
     const book = '## Chapter 1\n\nDaniel was found at five that morning.\n\n## Chapter 2\n\nDaniel had been found at noon.';
     const blocks = indexManuscriptBlocks(book);
     await chapterSkeletons(blocks, [1, 2], async prompt => {
       const chapter = prompt.match(/CHAPTER (\d+)/)![1];
-      return JSON.stringify({ events: [{ key: 'body found', what: 'found', when: chapter === '1' ? 'five' : 'noon', told: 'now', paragraph: `ch${chapter}_p0` }] });
+      return JSON.stringify({ events: [{ key: 'body found', what: 'Daniel found dead', when: chapter === '1' ? 'five' : 'noon', told: 'now', paragraph: `ch${chapter}_p0` }] });
     });
     const { prompt } = buildEditorialAgentPrompt({ userPrompt: 'Check', manuscriptBlocks: blocks, entityGraph: buildEntityGraph(blocks), history: [], view: 'skeletons' });
     expect(prompt).toContain('SUSPICIONS FOUND BY CODE');

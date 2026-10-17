@@ -109,13 +109,22 @@ const DAYS = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|пон
 const words = (text: string, pattern: RegExp) => new Set((text.match(pattern) || []).map(w => w.toLowerCase()));
 const disagree = (a: Set<string>, b: Set<string>) => a.size > 0 && b.size > 0 && ![...a].some(x => b.has(x));
 
+const sceneWords = (text: string) => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4));
+
+/** Two descriptions of one event share most of their words; a shared key alone can join different events. */
+const alike = (a: string, b: string) => {
+  const [x, y] = [sceneWords(a), sceneWords(b)];
+  const shared = [...x].filter(w => y.has(w)).length;
+  return shared >= 3 || (shared >= 2 && shared / Math.min(x.size, y.size) >= 0.5);
+};
+
 /** One event given two different hours or days. */
 function eventTimes(events: (ChapterRecords['events'][number])[]): Suspect[] {
   const suspects: Suspect[] = [];
   for (const [, list] of groupBy(events.filter(e => e.when), e => e.key)) {
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
       const [a, b] = [list[i], list[j]];
-      if (a.paragraph === b.paragraph) continue;
+      if (a.paragraph === b.paragraph || !alike(a.what, b.what)) continue;
       if (disagree(words(a.when, CLOCK), words(b.when, CLOCK)) || disagree(words(a.when, DAYS), words(b.when, DAYS))) {
         suspects.push({ claim: `"${a.key}" is given two times: ${a.when} (${a.paragraph}) and ${b.when} (${b.paragraph})`, places: [a.paragraph, b.paragraph] });
       }
@@ -165,47 +174,13 @@ function objectJumps(objects: (ChapterRecords['objects'][number])[]): Suspect[] 
   return suspects;
 }
 
-/** A character in two places at the same stated time. */
-function twoPlaces(positions: (ChapterRecords['positions'][number])[]): Suspect[] {
-  const suspects: Suspect[] = [];
-  for (const [, list] of groupBy(positions.filter(p => p.when), p => `${p.character}|${p.when}`)) {
-    for (let i = 1; i < list.length; i++) {
-      const [a, b] = [list[0], list[i]];
-      if (!sameKey(a.place, b.place) && a.paragraph !== b.paragraph) suspects.push({ claim: `${a.character} is at ${a.place} (${a.paragraph}) and at ${b.place} (${b.paragraph}) at the same time, ${a.when}`, places: [a.paragraph, b.paragraph] });
-    }
-  }
-  return suspects;
-}
-
-const sceneWords = (text: string) => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4));
-
-/** Two scenes in different chapters described in mostly the same words: a scene told twice. */
-function scenesTwice(records: ChapterRecords[]): Suspect[] {
-  const scenes = records.flatMap(r => r.scenes).filter(s => s.paragraphs.length);
-  const suspects: Suspect[] = [];
-  const chapter = (s: { paragraphs: string[] }) => s.paragraphs[0].match(/ch(\d+)_/)?.[1];
-  for (let i = 0; i < scenes.length; i++) for (let j = i + 1; j < scenes.length; j++) {
-    const [a, b] = [scenes[i], scenes[j]];
-    if (chapter(a) === chapter(b)) continue;
-    const [x, y] = [sceneWords(a.what), sceneWords(b.what)];
-    const shared = [...x].filter(w => y.has(w)).length;
-    // Measured against the shorter description: a pasted scene is summed up once briefly, once at length.
-    if (shared >= 5 && shared / Math.min(x.size, y.size) >= 0.5) {
-      suspects.push({ claim: `Two scenes read alike: "${a.what}" (${a.paragraphs[0]}) and "${b.what}" (${b.paragraphs[0]})`, places: [a.paragraphs[0], b.paragraphs[0]] });
-    }
-  }
-  return suspects;
-}
-
 /** Every check over the records of the whole book, most specific first. */
 export function findSuspects(records: ChapterRecords[], most = 15): Suspect[] {
   const events = records.flatMap(r => r.events);
   const all = [
     ...eventTimes(events),
     ...knowledgeLost(records.flatMap(r => r.knowledge)),
-    ...scenesTwice(records),
     ...objectJumps(records.flatMap(r => r.objects)),
-    ...twoPlaces(records.flatMap(r => r.positions)),
   ];
   const seen = new Set<string>();
   return all.filter(s => {
