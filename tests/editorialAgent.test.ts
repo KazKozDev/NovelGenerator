@@ -195,3 +195,42 @@ The subbasement was dark. The static passcode failed.
   });
 });
 
+
+describe('editorial task completion', () => {
+  const patch = '```tool:propose_diff\n{"chapter":1,"search":"oxygen canister","replace":"oxygen cylinder"}\n```';
+  it('continues through search and dependency tools before preparing edits', async () => {
+    const replies = [
+      '```tool:search_manuscript\n{"query":"oxygen canister"}\n```',
+      '```tool:inspect_dependencies\n{"entity":"oxygen canister","chapter":1}\n```',
+      patch,
+    ];
+    let calls = 0;
+    const result = await runEditorialTurn({ userPrompt: 'Замени canister на cylinder', bookContent: SAMPLE_MANUSCRIPT, history: [], callModel: async () => replies[calls++] });
+    expect(calls).toBe(3);
+    expect(result.diffCards).toHaveLength(1);
+    expect(result.executedTools.map(t => t.tool)).toEqual(['search_manuscript', 'inspect_dependencies', 'propose_diff']);
+  });
+  it('asks for an executable edit when the model only promises to do the work', async () => {
+    let calls = 0;
+    const result = await runEditorialTurn({ userPrompt: 'Исправь canister', bookContent: SAMPLE_MANUSCRIPT, history: [], callModel: async () => ++calls === 1 ? 'Сейчас исправлю.' : patch });
+    expect(calls).toBe(2);
+    expect(result.diffCards).toHaveLength(1);
+  });
+  it('returns rejected patch evidence to the model for correction', async () => {
+    let calls = 0;
+    const result = await runEditorialTurn({ userPrompt: 'Исправь canister', bookContent: SAMPLE_MANUSCRIPT, history: [], callModel: async (prompt) => {
+      if (++calls === 1) return patch.replace('oxygen canister', 'invented missing quote');
+      expect(prompt).toContain('Patch rejected');
+      return patch;
+    } });
+    expect(result.diffCards).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+  it('bounds retries and explicitly reports that no edits were prepared', async () => {
+    let calls = 0;
+    const result = await runEditorialTurn({ userPrompt: 'Исправь текст', bookContent: SAMPLE_MANUSCRIPT, history: [], callModel: async () => { calls++; return 'Готово.'; } });
+    expect(calls).toBe(5);
+    expect(result.diffCards).toEqual([]);
+    expect(result.assistantMessage).toContain('Изменения не подготовлены');
+  });
+});

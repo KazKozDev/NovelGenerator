@@ -5,6 +5,7 @@ export interface PatchResult {
   updatedManuscript: string;
   changed: boolean;
   matchedBlockId?: string;
+  matchedChapter?: number;
   error?: string;
 }
 

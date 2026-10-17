@@ -1,9 +1,12 @@
 import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSearch';
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
-import { cleanDiffArtifacts } from './patchApplier';
+import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
+import { cachedSkeletons, chapterSkeletons, findRepeats, formatRepeats, readBlocks, readBookNotes } from './editorialTools';
+
+const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton'] as const;
 
 export interface ParsedToolCall {
-  tool: 'search_manuscript' | 'inspect_dependencies' | 'propose_diff';
+  tool: typeof EDITORIAL_TOOLS[number];
   args: Record<string, any>;
 }
 
@@ -34,7 +37,7 @@ export function parseToolCallsFromModelResponse(text: string): ParsedToolCall[] 
     const rawArgs = match[3].trim();
     try {
       const args = JSON.parse(rawArgs);
-      if (['search_manuscript', 'inspect_dependencies', 'propose_diff'].includes(toolName)) {
+      if ((EDITORIAL_TOOLS as readonly string[]).includes(toolName)) {
         tools.push({ tool: toolName as any, args });
       }
     } catch {
@@ -48,7 +51,7 @@ export function parseToolCallsFromModelResponse(text: string): ParsedToolCall[] 
     while ((match = jsonBlockRegex.exec(text)) !== null) {
       try {
         const parsed = JSON.parse(match[1].trim());
-        if (parsed?.tool && ['search_manuscript', 'inspect_dependencies', 'propose_diff'].includes(parsed.tool)) {
+        if (parsed?.tool && (EDITORIAL_TOOLS as readonly string[]).includes(parsed.tool)) {
           tools.push({ tool: parsed.tool, args: parsed.args || parsed });
         }
       } catch {}
@@ -108,6 +111,7 @@ export function buildEditorialAgentPrompt(params: {
   entityGraph: EntityGraph;
   history: { role: 'user' | 'assistant'; content: string }[];
   provider?: string;
+  metadata?: any;
 }): { system: string; prompt: string } {
   const chapterList = Array.from(new Set(params.manuscriptBlocks.map(b => b.chapterNum))).sort((a, b) => a - b);
   const targetChapter = extractTargetChapter(params.userPrompt);
@@ -164,6 +168,11 @@ export function buildEditorialAgentPrompt(params: {
     manuscriptText = `MANUSCRIPT SCENE TEXT (Chapters ${focusChapters.join(', ')}):\n\n${chLines}\n\nCHAPTER INVENTORY (Call search_manuscript to query any other chapter):\n${chapterOutline}`;
   }
 
+  const skeletons = cachedSkeletons(params.manuscriptBlocks);
+  const skeletonText = skeletons.length
+    ? `CHAPTER SKELETONS (dry lists of what each chapter states; paragraph ids point to the text):\n\n${skeletons.map(s => `### Chapter ${s.chapter}\n${s.skeleton}`).join('\n\n')}`
+    : '';
+
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
 You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).
 You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
@@ -190,16 +199,37 @@ CRITICAL OPERATIONAL RULES:
 {"chapter": 4, "startBlockId": "ch4_p55", "endBlockId": "ch4_p86", "replace": "", "rationale": "Excise duplicated scanner and elevator sequence"}
 \`\`\`
 6. "replace": "" is VALID and STRONGLY ENCOURAGED when deleting redundant, duplicate, or contradictory text. Do not propose identical no-op edits (where search === replace).
-7. If you need to search for other terms or check additional chapters, you can call:
+7. READING TOOLS. Call any of them as a fenced block; results come back in the next round. A reply that calls tools holds only the tool calls: write your review after the results come back, not before:
 \`\`\`tool:search_manuscript
 {"query": "search term", "chapter": Optional[number]}
 \`\`\`
-8. BE CONCISE. Deliver clear, targeted feedback and minimal surgical diffs. Do NOT reprint entire scenes or recite unasked prose, to respect output token budgets.
+   - read_blocks {"chapter": 3, "from": 10, "to": 30} — paragraphs ch3_p10..ch3_p30 in full, to read a passage in order.
+   - chapter_skeleton {"chapter": 3} or {} for all chapters — a dry list per chapter: scenes, who learns what and how, stated hours and dates, where each character ends up, objects and injuries, open questions. Each line names its paragraph id. Made once and kept until the chapter changes.
+   - find_repeats {"chapter": Optional[number]} — passages told twice and sentences said more than once, found by code.
+   - inspect_dependencies {"entity": "name or object", "chapter": 3} — where else the book mentions it.
+8. PLOT AND LOGIC REVIEW. A plot hole hides in prose; look at what the chapters state, not how they sound. When the author asks about plot, logic, or continuity, ask these questions, with the skeletons when you have them:
+   - Where does each character learn what they know? Does anyone act on a fact before the scene where they get it?
+   - Where is each character at the end of a scene? Does anyone appear somewhere without getting there?
+   - Do hours, dates, ages, and spans agree across chapters?
+   - Does an object (key, card, letter, weapon) reach a hand without being shown how?
+   - Is a scene told twice? (find_repeats)
+   - Does the book contradict the AUTHOR'S NOTES given with the manuscript?
+   - Why does each scene follow from the one before it — because of it, or despite it, or only after it?
+   - What would break if a scene were cut?
+   Report a problem only with the quotes that show it: two passages that contradict, or the passage where something is missing. A character's lie or mistake is not the author's error. If you find nothing, say so; do not invent problems to have something to report. Confirm what a skeleton suggests in the text itself (read_blocks) before reporting it.
+9. BE CONCISE. Deliver clear, targeted feedback and minimal surgical diffs. Do NOT reprint entire scenes or recite unasked prose, to respect output token budgets.
 `.trim();
 
   let prompt = `User request: "${params.userPrompt}"\n\n`;
   if (entitySummary) {
     prompt += `${entitySummary}\n\n`;
+  }
+  const notes = readBookNotes(params.metadata);
+  if (params.metadata && !notes.startsWith('This book has no saved notes')) {
+    prompt += `AUTHOR'S NOTES (premise, requirements, dossier: what the author meant the book to be):\n${notes}\n\n`;
+  }
+  if (skeletonText) {
+    prompt += `${skeletonText}\n\n`;
   }
   if (contextSnippets) {
     prompt += `${contextSnippets}\n\n`;
@@ -277,6 +307,11 @@ function createDiffCard(
   };
 }
 
+/** Whether the author asked for changes, so the turn must end in patches rather than a review. */
+export function asksForEdit(text: string): boolean {
+  return /(?:исправ|замен|удал|перепиш|перепис|отредакт|внеси|выполни|почини|убери|сократи|добав|rewrite|replace|remove|delete|fix|edit|apply)/i.test(text);
+}
+
 export async function runEditorialTurn(params: {
   userPrompt: string;
   bookContent: string;
@@ -294,105 +329,70 @@ export async function runEditorialTurn(params: {
     entityGraph: graph,
     history: params.history,
     provider: params.provider,
+    metadata: params.metadata,
   });
 
   const executedTools: { tool: string; summary: string }[] = [];
   const diffCards: ProposedDiffCard[] = [];
 
-  // Round 1
-  let modelResponse = await params.callModel(prompt, system);
-  let toolCalls = parseToolCallsFromModelResponse(modelResponse);
-
-  // If tool calls emitted, execute them locally and run Round 2
-  if (toolCalls.length > 0) {
-    const observations: string[] = [];
-
+  const wantsEdit = asksForEdit(params.userPrompt);
+  const observations: string[] = [];
+  let modelResponse = '';
+  let nextPrompt = prompt;
+  for (let round = 0; round < 5; round++) {
+    modelResponse = await params.callModel(nextPrompt, system);
+    const toolCalls = parseToolCallsFromModelResponse(modelResponse);
+    let invalidPatch = false;
     for (const tc of toolCalls) {
       if (tc.tool === 'search_manuscript') {
-        const query = tc.args.query || '';
-        const ch = tc.args.chapter ? Number(tc.args.chapter) : undefined;
-        const matches = hybridSearch(blocks, query, ch, 4);
-        executedTools.push({
-          tool: 'search_manuscript',
-          summary: `Searched "${query}" (${matches.length} matches found)`,
-        });
-        observations.push(`Tool 'search_manuscript' result for "${query}":\n` +
-          matches.map(m => `[Chapter ${m.chapterNum}, Block ${m.blockId}]: "${m.fullText}"`).join('\n\n')
-        );
+        const query = String(tc.args.query || '');
+        const matches = hybridSearch(blocks, query, tc.args.chapter ? Number(tc.args.chapter) : undefined, 4);
+        executedTools.push({ tool: tc.tool, summary: `Searched "${query}" (${matches.length} matches found)` });
+        observations.push(`Search "${query}":\n` + matches.map(m => `[Chapter ${m.chapterNum}, Block ${m.blockId}]: "${m.fullText}"`).join('\n\n'));
       } else if (tc.tool === 'inspect_dependencies') {
-        const entity = tc.args.entity || '';
-        const ch = tc.args.chapter ? Number(tc.args.chapter) : 1;
-        const warnings = checkCrossTextImpact(graph, entity, ch);
-        executedTools.push({
-          tool: 'inspect_dependencies',
-          summary: `Checked dependencies for "${entity}"`,
-        });
-        observations.push(`Tool 'inspect_dependencies' result for "${entity}":\n` +
-          (warnings.length > 0 ? warnings.map(w => w.warning).join('\n') : 'No conflicts in other chapters.')
-        );
+        const entity = String(tc.args.entity || '');
+        const warnings = checkCrossTextImpact(graph, entity, Number(tc.args.chapter || 1));
+        executedTools.push({ tool: tc.tool, summary: `Checked dependencies for "${entity}"` });
+        observations.push(`Dependencies for "${entity}":\n` + (warnings.map(w => w.warning).join('\n') || 'No conflicts in other chapters.'));
+      } else if (tc.tool === 'find_repeats') {
+        const chapter = tc.args.chapter ? Number(tc.args.chapter) : undefined;
+        const found = findRepeats(blocks, chapter);
+        executedTools.push({ tool: tc.tool, summary: `Found ${found.passages.length} repeated passages and ${found.sentences.length} repeated sentences${chapter ? ` touching Chapter ${chapter}` : ''}` });
+        observations.push(`Repeats${chapter ? ` touching Chapter ${chapter}` : ''}:\n${formatRepeats(found)}`);
+      } else if (tc.tool === 'read_blocks') {
+        const chapter = Number(tc.args.chapter || 1);
+        const from = Number(tc.args.from ?? 0);
+        const to = tc.args.to === undefined ? undefined : Number(tc.args.to);
+        executedTools.push({ tool: tc.tool, summary: `Read Chapter ${chapter} from paragraph ${from}${to === undefined ? '' : ` to ${to}`}` });
+        observations.push(`Chapter ${chapter} text:\n${readBlocks(blocks, chapter, from, to)}`);
+      } else if (tc.tool === 'chapter_skeleton') {
+        const all = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
+        const chapters = tc.args.chapter ? [Number(tc.args.chapter)] : all;
+        const text = await chapterSkeletons(blocks, chapters, params.callModel);
+        executedTools.push({ tool: tc.tool, summary: chapters.length === 1 ? `Skeleton of Chapter ${chapters[0]}` : `Skeletons of ${chapters.length} chapters` });
+        observations.push(`Chapter skeletons:\n${text}`);
       } else if (tc.tool === 'propose_diff') {
-        const startBlock = tc.args.startBlockId || tc.args.start_paragraph_id || tc.args.start_block;
-        const endBlock = tc.args.endBlockId || tc.args.end_paragraph_id || tc.args.end_block;
-        const card = createDiffCard(
-          Number(tc.args.chapter || 1),
-          tc.args.search || '',
-          tc.args.replace !== undefined ? String(tc.args.replace) : '',
-          tc.args.rationale || 'Editorial edit',
-          blocks,
-          graph,
-          startBlock,
-          endBlock
+        const card = tc.args.replace === undefined ? null : createDiffCard(
+          Number(tc.args.chapter || 1), tc.args.search || '', String(tc.args.replace),
+          tc.args.rationale || 'Editorial edit', blocks, graph,
+          tc.args.startBlockId || tc.args.start_paragraph_id || tc.args.start_block,
+          tc.args.endBlockId || tc.args.end_paragraph_id || tc.args.end_block,
         );
-        if (card) {
+        if (card && applySearchReplacePatch(params.bookContent, card.chapterNum, card.searchTarget, card.replacementText, card.startBlockId, card.endBlockId).success) {
           diffCards.push(card);
-          const blockDesc = card.startBlockId
-            ? `blocks ${card.startBlockId}${card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''}`
-            : `Chapter ${card.chapterNum}`;
-          executedTools.push({
-            tool: 'propose_diff',
-            summary: card.replacementText === ''
-              ? `Excised redundant ${blockDesc} in Chapter ${card.chapterNum}`
-              : `Proposed patch for ${blockDesc}`,
-          });
+          executedTools.push({ tool: tc.tool, summary: `Proposed patch for Chapter ${card.chapterNum}` });
+        } else {
+          invalidPatch = true;
+          observations.push('Patch rejected: supply an exact manuscript search quote or valid block range and an explicit replace field. Read the relevant text and propose a corrected patch.');
         }
       }
     }
-
-    // If propose_diff was already in round 1, no need for second call if clear
-    if (diffCards.length === 0 && observations.length > 0) {
-      const followUpPrompt = `${prompt}\n\nTool Observations:\n${observations.join('\n\n')}\n\nPlease provide your final response and propose diff patches if needed.`;
-      modelResponse = await params.callModel(followUpPrompt, system);
-      const secondRoundTools = parseToolCallsFromModelResponse(modelResponse);
-
-      for (const tc of secondRoundTools) {
-        if (tc.tool === 'propose_diff') {
-          const startBlock = tc.args.startBlockId || tc.args.start_paragraph_id || tc.args.start_block;
-          const endBlock = tc.args.endBlockId || tc.args.end_paragraph_id || tc.args.end_block;
-          const card = createDiffCard(
-            Number(tc.args.chapter || 1),
-            tc.args.search || '',
-            tc.args.replace !== undefined ? String(tc.args.replace) : '',
-            tc.args.rationale || 'Editorial edit',
-            blocks,
-            graph,
-            startBlock,
-            endBlock
-          );
-          if (card) {
-            diffCards.push(card);
-            const blockDesc = card.startBlockId
-              ? `blocks ${card.startBlockId}${card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''}`
-              : `Chapter ${card.chapterNum}`;
-            executedTools.push({
-              tool: 'propose_diff',
-              summary: card.replacementText === ''
-                ? `Excised redundant ${blockDesc} in Chapter ${card.chapterNum}`
-                : `Proposed patch for ${blockDesc}`,
-            });
-          }
-        }
-      }
-    }
+    if (invalidPatch) diffCards.length = 0;
+    if (diffCards.length > 0) break;
+    if (!toolCalls.length && !wantsEdit) break;
+    observations.push(`Previous assistant response:\n${modelResponse}\n` +
+      (wantsEdit ? 'The author requested edits. Return executable propose_diff tool blocks, not a promise or a claim that changes were applied. If no change is appropriate, explain the concrete reason.' : 'Continue using tools as needed, then provide your review.'));
+    nextPrompt = `${prompt}\n\nTool Observations:\n${observations.join('\n\n')}`;
   }
 
   // Clean tool tags from message text
@@ -416,6 +416,10 @@ export async function runEditorialTurn(params: {
     } catch {
       // Keep as is if not valid JSON
     }
+  }
+
+  if (wantsEdit && diffCards.length === 0) {
+    cleanMessage = `Изменения не подготовлены: агент не вернул применимую правку. Текст рукописи не изменён.\n\n${cleanMessage}`;
   }
 
   return {

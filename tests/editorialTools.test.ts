@@ -1,0 +1,133 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
+import { chapterSkeleton, cachedSkeletons, clearSkeletonCache, findRepeats, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
+import { buildEditorialAgentPrompt, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
+import { buildEntityGraph } from '../utils/novel/entityGraph';
+
+const SCENE = [
+  'Nora pushed the archive door open with her shoulder and the cold air of the basement met her at once.',
+  'The pump stood behind the grille, silent, its red lamp dark for the first time in eleven years of service.',
+  'She counted the seals on the crate twice before she let herself believe that one of them had been cut.',
+];
+
+const BOOK = `
+## Chapter 1
+
+${SCENE.join('\n\n')}
+
+Ilya waited upstairs until twenty to six and then left without a word to anyone in the building.
+
+## Chapter 2
+
+The inspector arrived at nine in the morning and asked who had signed for the crate on Thursday.
+
+${SCENE.join('\n\n')}
+
+## Chapter 3
+
+The rain had not stopped since Thursday and the river was rising fast against the old stone embankment.
+
+The rain had not stopped since Thursday and the river was rising fast against the old stone embankment.
+`.trim();
+
+describe('editorial reading tools', () => {
+  beforeEach(() => clearSkeletonCache());
+
+  it('finds a passage told twice and a sentence said twice', () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    const found = findRepeats(blocks);
+    expect(found.passages[0]).toMatchObject({ first: ['ch1_p0', 'ch1_p2'], second: ['ch2_p1', 'ch2_p3'], paragraphs: 3 });
+    expect(found.passages.some(p => p.first[0] === 'ch3_p0' && p.second[0] === 'ch3_p1')).toBe(true);
+    expect(findRepeats(blocks, 3).passages).toHaveLength(1);
+  });
+
+  it('does not call a refrain inside different paragraphs a repeated passage', () => {
+    const refrain = 'The clock in the hall struck the hour once again tonight.';
+    const blocks = indexManuscriptBlocks(`## Chapter 1\n\nShe sat by the window and waited for the letter that never came. ${refrain}\n\n## Chapter 2\n\nHe walked to the station in the snow and bought a ticket south. ${refrain}`);
+    const found = findRepeats(blocks);
+    expect(found.passages).toHaveLength(0);
+    expect(found.sentences[0].blockIds).toEqual(['ch1_p0', 'ch2_p0']);
+  });
+
+  it('reads paragraphs of a chapter in order and says where the chapter continues', () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    const text = readBlocks(blocks, 1, 1, 2);
+    expect(text).toContain('[ch1_p1]');
+    expect(text).toContain('[ch1_p2]');
+    expect(text).not.toContain('[ch1_p0]');
+    expect(text).toContain('continues to ch1_p3');
+    expect(readBlocks(blocks, 9)).toContain('no text');
+  });
+
+  it('reads the book notes the author left', () => {
+    const notes = readBookNotes({ premise: 'A pump fails in an archive.', dossier: { truth: 'Nora signed first.' }, craft: {} });
+    expect(notes).toContain('## Premise');
+    expect(notes).toContain('Nora signed first.');
+    expect(readBookNotes(undefined)).toContain('no saved notes');
+  });
+
+  it('keeps a skeleton until its chapter changes', async () => {
+    let calls = 0;
+    const callModel = async () => { calls++; return `SCENES: archive; Nora; finds a cut seal [ch1_p2]`; };
+    const blocks = indexManuscriptBlocks(BOOK);
+    await chapterSkeleton(blocks, 1, callModel);
+    await chapterSkeleton(blocks, 1, callModel);
+    expect(calls).toBe(1);
+    expect(cachedSkeletons(blocks).map(s => s.chapter)).toEqual([1]);
+
+    const changed = indexManuscriptBlocks(BOOK.replace('eleven years', 'twelve years'));
+    expect(cachedSkeletons(changed)).toEqual([]);
+    await chapterSkeleton(changed, 1, callModel);
+    expect(calls).toBe(2);
+  });
+});
+
+describe('editorial agent with reading tools', () => {
+  beforeEach(() => clearSkeletonCache());
+
+  it('parses the new tools and describes every tool in the prompt', () => {
+    const tools = parseToolCallsFromModelResponse('```tool:find_repeats\n{}\n```\n```tool:read_blocks\n{"chapter": 2, "from": 0, "to": 3}\n```');
+    expect(tools.map(t => t.tool)).toEqual(['find_repeats', 'read_blocks']);
+
+    const blocks = indexManuscriptBlocks(BOOK);
+    const { system } = buildEditorialAgentPrompt({ userPrompt: 'Check the plot', manuscriptBlocks: blocks, entityGraph: buildEntityGraph(blocks), history: [] });
+    for (const tool of ['inspect_dependencies', 'read_blocks', 'chapter_skeleton', 'find_repeats']) expect(system).toContain(tool);
+    expect(system).toContain('do not invent problems');
+    expect(system).toContain('A reply that calls tools holds only the tool calls');
+  });
+
+  it('puts cached skeletons into the next prompt', async () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    await chapterSkeleton(blocks, 2, async () => 'LEARNED: inspector asks who signed [ch2_p0]');
+    const { prompt } = buildEditorialAgentPrompt({ userPrompt: 'Check the plot', manuscriptBlocks: blocks, entityGraph: buildEntityGraph(blocks), history: [] });
+    expect(prompt).toContain('CHAPTER SKELETONS');
+    expect(prompt).toContain('inspector asks who signed');
+  });
+
+  it('gives the author\'s notes with the manuscript', () => {
+    const blocks = indexManuscriptBlocks(BOOK);
+    const graph = buildEntityGraph(blocks);
+    const { prompt } = buildEditorialAgentPrompt({ userPrompt: 'Check the plot', manuscriptBlocks: blocks, entityGraph: graph, history: [], metadata: { premise: 'A pump fails in an archive.' } });
+    expect(prompt).toContain("AUTHOR'S NOTES");
+    expect(prompt).toContain('A pump fails in an archive.');
+    expect(buildEditorialAgentPrompt({ userPrompt: 'x', manuscriptBlocks: blocks, entityGraph: graph, history: [] }).prompt).not.toContain("AUTHOR'S NOTES");
+  });
+
+  it('runs the reading tools and hands their results back', async () => {
+    const prompts: string[] = [];
+    const callModel = async (prompt: string, system: string) => {
+      if (system.includes('dry skeleton')) return `SCENES: skeleton of ${prompt.match(/CHAPTER (\d+)/)![1]}`;
+      prompts.push(prompt);
+      if (prompts.length === 1) return '```tool:find_repeats\n{}\n```\n```tool:chapter_skeleton\n{}\n```\n```tool:read_blocks\n{"chapter": 1, "from": 3}\n```';
+      return 'Chapter 2 repeats the archive scene of Chapter 1.';
+    };
+    const result = await runEditorialTurn({ userPrompt: 'Проверь сюжет', bookContent: BOOK, metadata: { premise: 'A pump fails.' }, history: [], callModel });
+    expect(result.executedTools.map(t => t.tool)).toEqual(['find_repeats', 'chapter_skeleton', 'read_blocks']);
+    const observed = prompts[1];
+    expect(observed).toContain('ch1_p0..ch1_p2 and ch2_p1..ch2_p3');
+    expect(observed).toContain('skeleton of 3');
+    expect(observed).toContain('A pump fails.');
+    expect(observed).toContain('[ch1_p3]: Ilya waited upstairs');
+    expect(result.assistantMessage).toContain('repeats the archive scene');
+  });
+});

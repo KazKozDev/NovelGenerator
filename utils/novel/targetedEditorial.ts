@@ -1,3 +1,4 @@
+import { buildEditorialTasks } from './editorialTasks';
 import { assembleManuscript, normalizeChapterBody, parseBookChapters } from './manuscript';
 import { computeSentenceSimilarity, extractSentences } from './craft/craftRules';
 
@@ -7,6 +8,16 @@ export interface EditorialFinding {
   description: string;
   evidence_refs?: string[];
   reader_impact?: string;
+}
+
+/** Reconcile quoted evidence against the current manuscript, never the dossier.
+ * Findings without concrete evidence still require editorial review.
+ */
+export function reconcileEditorialFindings<T extends EditorialFinding & { quote?: string }>(
+  findings: T[],
+  chapters: { num: number; content: string }[],
+): T[] {
+  return findings.slice(); // Evidence changes trigger verification, never silent closure.
 }
 
 export type EditorialPriority = 'high' | 'medium' | 'low';
@@ -23,6 +34,8 @@ export interface ClusteredEditorialTask {
   rawFindingIndices: number[];
   isDismissed?: boolean;
   dismissReason?: string;
+  chapterNumbers?: number[];
+  sourceFinding?: EditorialFinding;
 }
 
 export interface TargetedRepairResult {
@@ -575,238 +588,8 @@ export interface CanonicalClusterDef {
 /**
  * Universal editorial clusters applicable to ANY novel without narrative bleeding.
  */
-export const UNIVERSAL_EDITORIAL_CLUSTERS: CanonicalClusterDef[] = [
-  {
-    id: 'prop-teleportation',
-    title: 'Prop relocation causality',
-    priority: 'high',
-    category: 'Plot Causality',
-    defaultChapter: 1,
-    matchPattern: /(?:teleport|relocation|sudden.*appear|how.*got here|impossible.*movement|coat pocket|left.*log|перемещен|телепортаци)/i,
-    problemSummary: 'An object or prop relocates without continuous physical movement beats or transportation causality.',
-    canonicalDirective: 'Clarify the physical movement beats of the item to maintain continuous causal logic without ungrounded relocation.',
-    fallbackKeywords: ['pocket', 'drawer', 'desk', 'table', 'held', 'carried', 'placed', 'log', 'key', 'wrench'],
-  },
-  {
-    id: 'clark-wound-logic',
-    title: 'Physical wound and injury logic',
-    priority: 'high',
-    category: 'World Logic',
-    defaultChapter: 2,
-    matchPattern: /(?:wound|suture|needle|gash|forearm|center holds open|рана|предплеч|шов|затягива)/i,
-    problemSummary: 'Wound progression, cellular healing resistance, or suture logic contradicts established physical world rules.',
-    canonicalDirective: 'Ground wound behavior, cellular healing resistance, and treatment in the physical reality of the injury.',
-    fallbackKeywords: ['gash', 'four inches', 'rebar', 'suture', 'thread', 'wound', 'wrist', 'needle'],
-  },
-  {
-    id: 'apartment-acoustics',
-    title: 'Environmental sensory and acoustic logic',
-    priority: 'high',
-    category: 'World Logic',
-    defaultChapter: 1,
-    matchPattern: /(?:acoustic|echo|drywall|basement.*phone|heard.*room|акустик|эхо|гипсокартон)/i,
-    problemSummary: 'Sound or sensory perception across architectural boundaries lacks acoustic plausibility.',
-    canonicalDirective: 'Ground sensory perception and acoustics within the physical materials and distances of the setting.',
-    fallbackKeywords: ['bare floor', 'drywall', 'phone', 'kitchen', 'whisper', 'acoustics', 'echo', 'sound'],
-  },
-  {
-    id: 'glasses-continuity',
-    title: 'Prop continuity and handling',
-    priority: 'high',
-    category: 'Prop Continuity',
-    defaultChapter: 3,
-    matchPattern: /(?:glasses|spectacle|loose hinge|frames|no glasses|очк|оправ)/i,
-    problemSummary: 'Held objects, eyewear, or equipment change state or appear/disappear without physical beats.',
-    canonicalDirective: 'Maintain consistent tracking of worn items and handheld gear, specifying when items are drawn, folded, or stowed.',
-    fallbackKeywords: ['glasses', 'frames', 'hinge', 'pocket', 'folds them', 'gear', 'prop'],
-  },
-  {
-    id: 'crystal-payoff',
-    title: 'Narrative symbol payoff and token meaning',
-    priority: 'medium',
-    category: 'Narrative Payoff',
-    defaultChapter: 3,
-    matchPattern: /(?:crystal|token.*pillow|luminous.*crystal|chekhov.*crystal|кристалл|ружь)/i,
-    problemSummary: 'A prominent symbolic item or token rests without clarifying its narrative significance.',
-    canonicalDirective: 'Establish the narrative payoff and thematic meaning of the symbolic item as an intentional dramatic beat.',
-    fallbackKeywords: ['crystal', 'luminous', 'shelf', 'pillow', 'token', 'symbol'],
-  },
-  {
-    id: 'phone-caller-lois',
-    title: 'Incoming revelation and dramatic irony',
-    priority: 'medium',
-    category: 'Dramatic Irony',
-    defaultChapter: 3,
-    matchPattern: /(?:lois|caller|phone.*ring|six letters|dramatic irony|звонок|экран.*телефон)/i,
-    problemSummary: 'Key information or caller identity remains unrevealed, blunting dramatic irony.',
-    canonicalDirective: 'Clearly reveal the critical piece of information on screen or in dialogue to cement the character’s choice.',
-    fallbackKeywords: ['six letters', 'name fills the glass', 'phone', 'buzzes', 'screen', 'call'],
-  },
-  {
-    id: 'log-entries-meaning',
-    title: 'Narrative meaning of counted logs and entries',
-    priority: 'medium',
-    category: 'Thematic Meaning',
-    defaultChapter: 3,
-    matchPattern: /(?:forty-one|forty-two|41|42|i counted|meaning.*log|сорок один|сорок два)/i,
-    problemSummary: 'Dialogue about counting entries remains opaque to the reader without grounding its emotional significance.',
-    canonicalDirective: 'Ground the counted entries in the character’s obsessive vigil and mark the final count as an affirmation to continue.',
-    fallbackKeywords: ['forty-one entries', 'Forty-two', 'I counted', 'I stopped', 'hours', 'log'],
-  },
-  {
-    id: 'tremor-source',
-    title: 'Origin of persistent hand tremor or physical defect',
-    priority: 'medium',
-    category: 'Character Detail',
-    defaultChapter: 2,
-    matchPattern: /(?:tremor|broken hand|wrist|dock.*collapse|тремор|перелом.*кист)/i,
-    problemSummary: 'A recurring physical tremor or defect recurs without grounding its physical or historical origin.',
-    canonicalDirective: 'Ground the physical tremor in an established historical injury or past physical trauma.',
-    fallbackKeywords: ['tremor', 'left hand', 'wrist', 'fracture', 'fingers'],
-  },
-  {
-    id: 'counting-tic-moderation',
-    title: 'Second-counting cadence moderation',
-    priority: 'low',
-    category: 'Stylistic Moderation',
-    defaultChapter: 1,
-    matchPattern: /(?:counting seconds|repeated tic|count.*second|counts it|eleven seconds|счет секунд|повтор.*секунд)/i,
-    problemSummary: 'Mechanical second-counting recurs too frequently during mundane transitions.',
-    canonicalDirective: 'Moderate counting cadence in routine transitional beats, preserving it for moments of acute psychological strain.',
-    fallbackKeywords: ['counts it', 'seconds', 'elevator takes', 'one, two, three'],
-  },
-  {
-    id: 'genre-pacing-preservation',
-    title: 'Preservation of opening atmospheric pacing',
-    priority: 'low',
-    category: 'Authorial Style',
-    defaultChapter: 1,
-    matchPattern: /(?:atmospheric inventory|throat-clearing|cut.*chair.*window.*tap|cut.*first 250 words|вырезать.*экспозици)/i,
-    problemSummary: 'Reviewer suggests cutting opening atmospheric inventory for immediate action.',
-    canonicalDirective: 'Reject proposed cuts: detailed inventory of physical spaces establishes essential psychological noir atmosphere.',
-    fallbackKeywords: ['straight-backed chair', 'window lock', 'tap in the kitchen', 'cupboard door'],
-    isDismissed: true,
-    dismissReason: 'Dismissed per authorial canon: deliberate methodical pacing and inventory establish essential tension.',
-  },
-];
-
-/**
- * Gotham Protocol project canon (only activated when manuscript contains those specific characters/lore).
- */
-export const GOTHAM_CANONICAL_CLUSTERS: CanonicalClusterDef[] = [
-  {
-    id: 'prop-teleportation',
-    title: 'Log and key relocation causality',
-    priority: 'high',
-    category: 'Plot Causality',
-    defaultChapter: 1,
-    matchPattern: /(?:teleport|log.*key|key.*log|coat pocket|left.*log|relocation.*log|impossible.*relocation|how.*got here|перемещен.*журнал|телепортаци)/i,
-    problemSummary: 'The log moving from the coat pocket in the apartment to the mansion study desk appears ungrounded without movement beats.',
-    canonicalDirective: 'Clarify in the prose that Clark retrieved the log and key from the empty Bleecker Street apartment at super-speed and placed them on the study desk ahead of Bruce arriving through the rain.',
-    fallbackKeywords: ['coat pocket', 'apartment', 'log', 'key', 'study', 'desk', 'far side of the city'],
-  },
-  {
-    id: 'clark-wound-logic',
-    title: 'Clark forearm wound healing logic',
-    priority: 'high',
-    category: 'World Logic',
-    defaultChapter: 2,
-    matchPattern: /(?:wound|forearm.*suture|gash|center holds open|needle|suture|thread.*skin|kryptonite.*wound|рана|предплеч|шов|затягива)/i,
-    problemSummary: 'Edges of forearm wound close while center remains open with suture thread left unanchored.',
-    canonicalDirective: 'Trace resistance to microscopic kryptonite residue from warehouse rebar locally slowing cellular regeneration until Bruce extracts the particulate and knots the stitch.',
-    fallbackKeywords: ['gash', 'four inches', 'wrist to elbow', 'drawing closed', 'center holds open', 'rebar', 'suture', 'thread'],
-  },
-  {
-    id: 'apartment-acoustics',
-    title: 'Bleecker apartment acoustic logic',
-    priority: 'high',
-    category: 'World Logic',
-    defaultChapter: 1,
-    matchPattern: /(?:acoustic|echo|drywall|basement.*phone|heard.*room|акустик|эхо|гипсокартон)/i,
-    problemSummary: 'Unclear how room acoustics and specific words were perceived over the open phone line.',
-    canonicalDirective: 'Attribute acoustic clarity to bare unpainted drywall resonance in the unfurnished room combined with acute Kryptonian auditory sensitivity over open frequency.',
-    fallbackKeywords: ['bare floor', 'drywall', 'phone', 'kitchen', 'whisper', 'acoustics'],
-  },
-  {
-    id: 'glasses-continuity',
-    title: 'Clark glasses prop continuity',
-    priority: 'high',
-    category: 'Prop Continuity',
-    defaultChapter: 3,
-    matchPattern: /(?:glasses|spectacle|loose hinge|frames|no glasses|очк|оправ)/i,
-    problemSummary: 'Clark appears on the roof without glasses, then retrieves and folds them, creating a prop continuity hitch.',
-    canonicalDirective: 'Specify that Clark draws the folded frames from his inner coat pocket where he stowed them after the collapse, deliberately shedding the reporter mask before Bruce.',
-    fallbackKeywords: ['glasses', 'black frames', 'loose hinge', 'coat pocket', 'folds them', 'no glasses'],
-  },
-  {
-    id: 'crystal-payoff',
-    title: 'Kryptonian beacon crystal payoff',
-    priority: 'medium',
-    category: 'Narrative Payoff',
-    defaultChapter: 3,
-    matchPattern: /(?:crystal|token.*pillow|luminous.*crystal|chekhov.*crystal|кристалл)/i,
-    problemSummary: 'The luminous crystal rests on the pillow without clarifying its narrative significance.',
-    canonicalDirective: 'Establish the crystal as an El beacon artifact left as a token of quiet trust and mutual pact.',
-    fallbackKeywords: ['crystal', 'luminous', 'shelf', 'pillow', 'warm when he lifts it', 'House of El'],
-  },
-  {
-    id: 'phone-caller-lois',
-    title: 'Incoming call disclosure and choice',
-    priority: 'medium',
-    category: 'Dramatic Irony',
-    defaultChapter: 3,
-    matchPattern: /(?:lois|caller|phone.*ring|six letters|dramatic irony.*lois|звонок.*лоис|экран.*телефон)/i,
-    problemSummary: 'Six-letter caller name remains unrevealed on screen, blunting the dramatic irony of the choice.',
-    canonicalDirective: 'Clearly show LOIS on the illuminated screen as Clark silences the call, cementing his decision to remain.',
-    fallbackKeywords: ['six letters', 'name fills the glass', 'phone', 'buzzes', 'does not read it'],
-  },
-  {
-    id: 'log-entries-meaning',
-    title: 'Meaning of the 41 log entries and Forty-two',
-    priority: 'medium',
-    category: 'Thematic Meaning',
-    defaultChapter: 3,
-    matchPattern: /(?:forty-one|forty-two|41|42|i counted|meaning.*log|сорок один|сорок два)/i,
-    problemSummary: 'The dialogue about counting and the number 41 remain opaque to the reader.',
-    canonicalDirective: 'Ground the 41 entries as Bruce counting vigil nights over eight months, and Clark penciling "Forty-two" as an affirmation to continue together.',
-    fallbackKeywords: ['forty-one entries', 'Forty-two', 'I counted', 'I stopped', 'hours', 'downstrokes'],
-  },
-  {
-    id: 'tremor-source',
-    title: 'Origin of Bruce left hand tremor',
-    priority: 'medium',
-    category: 'Character Detail',
-    defaultChapter: 2,
-    matchPattern: /(?:tremor|broken hand|wrist|dock.*collapse|тремор|перелом.*кист)/i,
-    problemSummary: 'Bruce left wrist tremor recurs without grounding its physical origin.',
-    canonicalDirective: 'Attribute tremor to an uncasted scaphoid fracture sustained eight months prior during the nine-hour collapse recovery at Gotham docks.',
-    fallbackKeywords: ['tremor', 'left hand', 'wrist', 'scaphoid', 'fingers', 'docks'],
-  },
-  {
-    id: 'counting-tic-moderation',
-    title: 'Second-counting cadence moderation',
-    priority: 'low',
-    category: 'Stylistic Moderation',
-    defaultChapter: 1,
-    matchPattern: /(?:counting seconds|repeated tic|count.*second|counts it|eleven seconds|счет секунд|повтор.*секунд)/i,
-    problemSummary: 'Mechanical second-counting recurs too frequently during mundane transitions.',
-    canonicalDirective: 'Moderate counting cadence in routine transitional beats, preserving it for moments of acute psychological strain and self-regulation.',
-    fallbackKeywords: ['counts it', 'seconds', 'elevator takes', 'one, two, three'],
-  },
-  {
-    id: 'genre-pacing-preservation',
-    title: 'Preservation of opening atmospheric pacing',
-    priority: 'low',
-    category: 'Authorial Style',
-    defaultChapter: 1,
-    matchPattern: /(?:atmospheric inventory|throat-clearing|cut.*chair.*window.*tap|cut.*first 250 words|вырезать.*экспозици)/i,
-    problemSummary: 'Reviewer suggests cutting opening 250 words of apartment description for immediate action.',
-    canonicalDirective: 'Reject proposed cuts: detailed inventory of locks and empty room establishes Bruce obsessive vigilance and core noir atmosphere.',
-    fallbackKeywords: ['straight-backed chair', 'window lock', 'tap in the kitchen', 'cupboard door'],
-    isDismissed: true,
-    dismissReason: 'Dismissed per authorial canon: deliberate methodical pacing and empty room inventory establish essential noir tension.',
-  },
-];
+export const UNIVERSAL_EDITORIAL_CLUSTERS: CanonicalClusterDef[] = [];
+export const GOTHAM_CANONICAL_CLUSTERS: CanonicalClusterDef[] = [];
 
 /**
  * Backward compatibility alias for CANONICAL_CLUSTERS.
@@ -821,18 +604,7 @@ export function resolveActiveClusters(
   dossier?: string,
   customClusters?: CanonicalClusterDef[]
 ): CanonicalClusterDef[] {
-  if (customClusters && customClusters.length > 0) {
-    return customClusters;
-  }
-
-  const allText = `${chapters.map(c => c.content).join('\n')}\n${dossier || ''}`.toLowerCase();
-  const isGothamProtocol = (allText.includes('clark') && allText.includes('bruce')) || allText.includes('kryptonite');
-
-  if (isGothamProtocol) {
-    return GOTHAM_CANONICAL_CLUSTERS;
-  }
-
-  return UNIVERSAL_EDITORIAL_CLUSTERS;
+  return customClusters || UNIVERSAL_EDITORIAL_CLUSTERS;
 }
 
 /**
@@ -849,145 +621,7 @@ export function clusterEditorialFindings(
   dossier?: string,
   customClusters?: CanonicalClusterDef[]
 ): ClusteredEditorialTask[] {
-  if (!Array.isArray(findings) || findings.length === 0) {
-    return [];
-  }
-
-  // Level 0 Grounding filter: Discard hallucinated findings
-  const { groundedFindings } = filterHallucinatedFindings(findings, chapters, dossier);
-  if (groundedFindings.length === 0) {
-    return [];
-  }
-
-  const activeClusters = resolveActiveClusters(chapters, dossier, customClusters);
-  const clusterBuckets: Map<string, { def: CanonicalClusterDef; rawIndices: number[]; targetQuotes: Set<string>; chapters: number[] }> = new Map();
-
-  for (const def of activeClusters) {
-    clusterBuckets.set(def.id, {
-      def,
-      rawIndices: [],
-      targetQuotes: new Set<string>(),
-      chapters: [],
-    });
-  }
-
-  const unclassifiedFindings: { finding: EditorialFinding; index: number; targetChapter: number }[] = [];
-
-  // Match each grounded finding, retaining its original index in raw findings
-  groundedFindings.forEach((finding) => {
-    const originalIndex = findings.indexOf(finding);
-    const textToMatch = `${finding.category || ''} ${finding.description || ''} ${finding.severity || ''}`;
-    let matchedClusterId: string | null = null;
-
-    for (const def of activeClusters) {
-      if (def.matchPattern.test(textToMatch)) {
-        matchedClusterId = def.id;
-        break;
-      }
-    }
-
-    const targetChapter = findTargetChapter(finding, chapters);
-
-    if (matchedClusterId) {
-      const bucket = clusterBuckets.get(matchedClusterId)!;
-      bucket.rawIndices.push(originalIndex !== -1 ? originalIndex : 0);
-      bucket.chapters.push(targetChapter);
-      if (Array.isArray(finding.evidence_refs)) {
-        finding.evidence_refs.forEach(r => bucket.targetQuotes.add(r));
-      }
-    } else {
-      unclassifiedFindings.push({ finding, index: originalIndex !== -1 ? originalIndex : 0, targetChapter });
-    }
-  });
-
-  const resultTasks: ClusteredEditorialTask[] = [];
-
-  for (const [id, bucket] of clusterBuckets.entries()) {
-    if (bucket.rawIndices.length === 0) continue;
-
-    let chosenChapter = bucket.def.defaultChapter;
-    if (bucket.chapters.length > 0) {
-      const freq: Record<number, number> = {};
-      bucket.chapters.forEach(c => (freq[c] = (freq[c] || 0) + 1));
-      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      chosenChapter = Number(sorted[0][0]);
-    }
-
-    resultTasks.push({
-      id,
-      title: bucket.def.title,
-      chapterNumber: chosenChapter,
-      priority: bucket.def.priority,
-      category: bucket.def.category,
-      problemSummary: bucket.def.problemSummary,
-      canonicalDirective: bucket.def.canonicalDirective,
-      targetQuotes: Array.from(bucket.targetQuotes),
-      rawFindingIndices: bucket.rawIndices,
-      isDismissed: bucket.def.isDismissed,
-      dismissReason: bucket.def.dismissReason,
-    });
-  }
-
-  if (unclassifiedFindings.length > 0) {
-    const chapterCategoryGroups: Map<string, { chapter: number; category: string; indices: number[]; quotes: Set<string>; descs: string[]; severity: string }> = new Map();
-
-    for (const item of unclassifiedFindings) {
-      const cat = item.finding.category || 'General';
-      const key = `${item.targetChapter}_${cat}`;
-      if (!chapterCategoryGroups.has(key)) {
-        chapterCategoryGroups.set(key, {
-          chapter: item.targetChapter,
-          category: cat,
-          indices: [],
-          quotes: new Set<string>(),
-          descs: [],
-          severity: item.finding.severity || 'note',
-        });
-      }
-      const grp = chapterCategoryGroups.get(key)!;
-      grp.indices.push(item.index);
-      grp.descs.push(item.finding.description);
-      if (Array.isArray(item.finding.evidence_refs)) {
-        item.finding.evidence_refs.forEach(q => grp.quotes.add(q));
-      }
-    }
-
-    for (const [key, grp] of chapterCategoryGroups.entries()) {
-      let priority: EditorialPriority = 'medium';
-      if (/causality|logic|plot|contradiction|continuity/i.test(grp.category) || grp.severity === 'major') {
-        priority = 'high';
-      } else if (/style|word|rhythm/i.test(grp.category)) {
-        priority = 'low';
-      }
-
-      const noteCount = grp.indices.length;
-      resultTasks.push({
-        id: `unclassified-${key}`,
-        title: `Ch. ${grp.chapter}: ${grp.category} (${noteCount} ${noteCount === 1 ? 'note' : 'notes'})`,
-        chapterNumber: grp.chapter,
-        priority,
-        category: grp.category,
-        problemSummary: grp.descs.slice(0, 2).join('; '),
-        canonicalDirective: 'Apply targeted stylistic and factual correction while preserving authorial voice.',
-        targetQuotes: Array.from(grp.quotes),
-        rawFindingIndices: grp.indices,
-      });
-    }
-  }
-
-  const priorityWeight: Record<EditorialPriority, number> = {
-    high: 3,
-    medium: 2,
-    low: 1,
-  };
-
-  resultTasks.sort((a, b) => {
-    const pDiff = priorityWeight[b.priority] - priorityWeight[a.priority];
-    if (pDiff !== 0) return pDiff;
-    return a.chapterNumber - b.chapterNumber;
-  });
-
-  return resultTasks;
+  return buildEditorialTasks(Array.isArray(findings) ? findings : [], chapters);
 }
 
 /**

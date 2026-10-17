@@ -138,46 +138,16 @@ describe('targetedEditorial', () => {
 
       const tasks = clusterEditorialFindings(rawFindings, chapters);
 
-      // Verify consolidation into distinct canonical tasks
-      expect(tasks.length).toBe(5);
-
-      // Verify the teleportation bucket grouped 3 findings
-      const teleportTask = tasks.find(t => t.id === 'prop-teleportation');
-      expect(teleportTask).toBeDefined();
-      expect(teleportTask?.rawFindingIndices.length).toBe(3);
-      expect(teleportTask?.priority).toBe('high');
-      expect(teleportTask?.canonicalDirective).toContain('super-speed');
-
-      // Verify wound task grouped 2 findings
-      const woundTask = tasks.find(t => t.id === 'clark-wound-logic');
-      expect(woundTask).toBeDefined();
-      expect(woundTask?.rawFindingIndices.length).toBe(2);
-      expect(woundTask?.priority).toBe('high');
-      expect(woundTask?.canonicalDirective).toContain('kryptonite');
-
-      // Verify crystal task has medium priority
-      const crystalTask = tasks.find(t => t.id === 'crystal-payoff');
-      expect(crystalTask?.priority).toBe('medium');
-
-      // Verify Lois phone call has medium priority
-      const phoneTask = tasks.find(t => t.id === 'phone-caller-lois');
-      expect(phoneTask?.priority).toBe('medium');
-
-      // Verify counting seconds has low priority
-      const countingTask = tasks.find(t => t.id === 'counting-tic-moderation');
-      expect(countingTask?.priority).toBe('low');
-
-      // Verify strict priority hierarchy ordering: all 'high' tasks must precede all 'medium' and 'low' tasks
-      const priorities = tasks.map(t => t.priority);
-      const highIndices = priorities.map((p, i) => (p === 'high' ? i : -1)).filter(i => i !== -1);
-      const medIndices = priorities.map((p, i) => (p === 'medium' ? i : -1)).filter(i => i !== -1);
-      const lowIndices = priorities.map((p, i) => (p === 'low' ? i : -1)).filter(i => i !== -1);
-
-      expect(Math.max(...highIndices)).toBeLessThan(Math.min(...medIndices));
-      expect(Math.max(...medIndices)).toBeLessThan(Math.min(...lowIndices));
+      expect(tasks).toHaveLength(rawFindings.length);
+      expect(tasks.flatMap(t => t.rawFindingIndices).sort((a,b) => a-b)).toEqual(rawFindings.map((_,i) => i));
+      for (const task of tasks) {
+        expect(task.problemSummary).toBe(rawFindings[task.rawFindingIndices[0]].description);
+        expect(task.canonicalDirective).not.toMatch(/super-speed|kryptonite/);
+      }
+      expect(tasks.at(-1)?.priority).toBe('low');
     });
 
-    it('marks contradictory genre-pacing deletion requests as dismissed according to canon', () => {
+    it('preserves pacing observations for review without inventing authorial canon', () => {
       const rawFindings: EditorialFinding[] = [
         {
           description: 'Cut first 250 words of atmospheric inventory and chair squaring for fast action.',
@@ -189,9 +159,8 @@ describe('targetedEditorial', () => {
 
       const tasks = clusterEditorialFindings(rawFindings, chapters);
       expect(tasks.length).toBe(1);
-      expect(tasks[0].id).toBe('genre-pacing-preservation');
-      expect(tasks[0].isDismissed).toBe(true);
-      expect(tasks[0].dismissReason).toContain('Dismissed per authorial canon');
+      expect(tasks[0].problemSummary).toBe(rawFindings[0].description);
+      expect(tasks[0].isDismissed).not.toBe(true);
     });
   });
 
@@ -416,8 +385,8 @@ He activated the handheld scanner and swept the beam across the bulkhead. He ste
 
       const tasks = clusterEditorialFindings([validFinding], oxygenDebtChapters);
       expect(tasks.length).toBe(1);
-      expect(tasks[0].id).toBe('prop-teleportation');
-      expect(tasks[0].canonicalDirective).toContain('movement beats');
+      expect(tasks[0].id).toMatch(/^finding-/);
+      expect(tasks[0].problemSummary).toBe(validFinding.description);
       expect(tasks[0].canonicalDirective).not.toContain('Bleecker');
     });
   });

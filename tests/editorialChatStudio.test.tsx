@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import EditorialChatStudio from '../components/EditorialChatStudio';
+import EditorialChatStudio, { QUICK_PROMPTS } from '../components/EditorialChatStudio';
+import { asksForEdit } from '../utils/novel/editorialAgent';
 
 const SAMPLE_MANUSCRIPT = `
 ## Chapter 1: The Vault
@@ -23,7 +24,7 @@ const SAMPLE_METADATA = {
 };
 
 describe('EditorialChatStudio', () => {
-  it('renders Studio Header with title and model badge', () => {
+  it('renders Studio Header with title and model badge button', () => {
     const html = renderToStaticMarkup(
       <EditorialChatStudio
         bookContent={SAMPLE_MANUSCRIPT}
@@ -36,6 +37,7 @@ describe('EditorialChatStudio', () => {
 
     expect(html).toContain('Editorial Review');
     expect(html).toContain('Assistant');
+    expect(html).toContain('title="Change assistant provider and model"');
   });
 
   it('renders System Audit Accordion Card with findings count', () => {
@@ -64,6 +66,13 @@ describe('EditorialChatStudio', () => {
     );
 
     expect(html).toContain('Ask editor');
-    expect(html).toContain('Check props &amp; invariants');
+    expect(html).toContain('01 · Plot holes');
+    expect(html).toContain('02 · Repeats');
+    expect(html).toContain('03 · Pacing');
+  });
+
+  it('review buttons ask for findings, not changes', () => {
+    for (const { prompt } of QUICK_PROMPTS) expect(asksForEdit(prompt)).toBe(false);
+    expect(asksForEdit('Исправь главу 3')).toBe(true);
   });
 });

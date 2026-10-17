@@ -1,28 +1,34 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   clusterEditorialFindings,
-  repairSurgicalTask,
+  reconcileEditorialFindings,
+
   formatModelDisplayLabel,
   ClusteredEditorialTask,
 } from '../utils/novel/targetedEditorial';
+import { reportEditorialFindings, checkEditorialTask, proposeEditorialTask, taskContext, type TaskStatus, type TaskProposal } from '../utils/novel/editorialTasks';
 import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
 import { runEditorialTurn, ProposedDiffCard } from '../utils/novel/editorialAgent';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
 import { MarkdownView } from './common/MarkdownView';
+import EditorialModelModal from './EditorialModelModal';
 
 export interface EditorialChatStudioProps {
   bookContent: string;
+  callModel?: (prompt: string, system: string) => Promise<string>;
   metadata: any;
   onApplyPatch: (newManuscript: string, targetChapter?: number, patchSnippet?: string) => boolean | void;
   onUndoPatch: () => void;
   canUndo: boolean;
   activeModelConfig?: any;
+  onModelChange?: (config: any) => void;
   displayTitle?: string;
   isEditorialRunning?: boolean;
   editorialStatus?: string;
   onScrollToRevision?: (targetText?: string) => void;
+  className?: string;
 }
 
 interface ChatMessage {
@@ -34,41 +40,126 @@ interface ChatMessage {
   timestamp: number;
 }
 
-const QUICK_PROMPTS = [
-  'Check props & invariants',
-  'Find oxygen timers',
-  'Review Chapter 1',
+interface QuickEditorialPrompt {
+  label: string;
+  prompt: string;
+}
+
+// Review buttons: they ask for findings with quotes, not changes; the author picks what to work on next.
+export const QUICK_PROMPTS: QuickEditorialPrompt[] = [
+  {
+    label: '01 · Plot holes',
+    prompt: `Check the whole book for plot holes. Do not change the text yet.
+Start with chapter_skeleton {} for every chapter, then work from the skeletons:
+- where each character learns what they know, and whether anyone acts on a fact before the scene where they get it;
+- where each character is at the end of each scene, and whether anyone turns up somewhere without getting there;
+- whether hours, dates, ages and spans agree across chapters;
+- whether an object reaches a hand without being shown how;
+- whether the book contradicts the author's notes.
+Read the passages themselves (read_blocks) before you report anything. For each problem give the quotes that show it, with paragraph ids, and one or two ways the author could close it. A character's lie or mistake is not an error. If a check finds nothing, say so in one line.
+End with the problems ranked by how much they break the story, and ask which ones to work on. Answer in the language of the manuscript.`,
+  },
+  {
+    label: '02 · Repeats',
+    prompt: `Find what the book tells twice. Do not change the text yet.
+Call find_repeats {}, then read each repeated passage in its place (read_blocks). For each one, say whether it is a scene pasted twice, a scene retold with the same facts, or a refrain the author likely meant, and why.
+Also look for events the reader is told twice in different words: the same discovery, the same explanation, the same confession.
+Give paragraph ids for both places and say which one the story needs. If nothing is told twice, say so. Answer in the language of the manuscript.`,
+  },
+  {
+    label: '03 · Pacing',
+    prompt: `Check whether the story moves. Do not change the text yet.
+Start with chapter_skeleton {} for every chapter. For each scene say in one line what is different at its end, and whether it follows from the scene before because of it, despite it, or only after it.
+Name the stretches where nothing changes for a whole chapter or longer, the questions the book raises and never answers, and the promises made early that the ending does not keep.
+Read the passages (read_blocks) before you call a scene idle. Give paragraph ids. If the story moves well, say so. Answer in the language of the manuscript.`,
+  },
 ];
 
 export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   bookContent,
+  callModel,
   metadata,
   onApplyPatch,
   onUndoPatch,
   canUndo,
   activeModelConfig,
+  onModelChange,
   displayTitle = 'Manuscript Draft',
   isEditorialRunning = false,
   editorialStatus,
   onScrollToRevision,
+  className,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [internalModel, setInternalModel] = useState<any>(activeModelConfig);
+
+  useEffect(() => {
+    if (activeModelConfig) {
+      setInternalModel(activeModelConfig);
+    }
+  }, [activeModelConfig]);
+
+  const effectiveModel = internalModel || activeModelConfig;
   const [appliedCardIds, setAppliedCardIds] = useState<Set<string>>(new Set());
   const [rejectedCardIds, setRejectedCardIds] = useState<Set<string>>(new Set());
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [systemAccordionOpen, setSystemAccordionOpen] = useState(true);
   const [activeSystemTaskId, setActiveSystemTaskId] = useState<string | null>(null);
-  const [systemTaskStatus, setSystemTaskStatus] = useState<Record<string, 'pending' | 'working' | 'done'>>({});
+  const [systemTaskStatus, setSystemTaskStatus] = useState<Record<string, TaskStatus>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const rawFindings = useMemo(() => metadata?.audit?.findings || [], [metadata]);
   const parsedChapters = useMemo(() => parseBookChapters(bookContent), [bookContent]);
+  const rawFindings = useMemo(() => reconcileEditorialFindings(reportEditorialFindings(metadata?.audit), parsedChapters), [metadata, parsedChapters]);
   const clusteredTasks = useMemo(() => {
     return clusterEditorialFindings(rawFindings, parsedChapters, metadata?.dossier);
   }, [rawFindings, parsedChapters, metadata?.dossier]);
+
+  const [taskExplanations, setTaskExplanations] = useState<Record<string, string>>({});
+  const [taskProposals, setTaskProposals] = useState<Record<string, TaskProposal>>({});
+  const [taskHistory, setTaskHistory] = useState<{ taskId: string; status: TaskStatus; explanation: string; at: number }[]>([]);
+  const liveManuscript = useRef(bookContent);
+  liveManuscript.current = bookContent;
+  const previousContexts = useRef<Record<string, string>>({});
+  const pendingChecks = useRef(new Set<string>());
+  const authorContext = JSON.stringify({ dossier: metadata?.dossier, requirements: metadata?.author_requirements, premise: metadata?.premise, genre: metadata?.genre });
+  const callTaskModel = (prompt: string, system: string) => callModel ? callModel(prompt, system) : withOllamaOutputRoom(
+    maxTokens => generateText(prompt, system, undefined, 0.2, undefined, undefined, effectiveModel, maxTokens, false), 8192, 8192);
+  const setTaskState = (taskId: string, status: TaskStatus, explanation = '') => {
+    setSystemTaskStatus(prev => ({ ...prev, [taskId]: status }));
+    setTaskExplanations(prev => ({ ...prev, [taskId]: explanation }));
+    setTaskHistory(prev => [...prev, { taskId, status, explanation, at: Date.now() }]);
+  };
+
+  // Debounce manual edits and undo; discard asynchronous results from older revisions.
+  useEffect(() => {
+    let cancelled = false;
+    const changed = clusteredTasks.filter(task => {
+      const context = taskContext(task, bookContent) + authorContext;
+      const previous = previousContexts.current[task.id];
+      previousContexts.current[task.id] = context;
+      if (previous !== undefined && previous !== context) pendingChecks.current.add(task.id);
+      return pendingChecks.current.has(task.id);
+    });
+    for (const task of changed) setTaskState(task.id, 'checking', 'Text changed; checking the original observation.');
+    const timer = setTimeout(async () => {
+      for (const task of changed) {
+        if (cancelled) return;
+        try {
+          const check = await checkEditorialTask(task, bookContent, callTaskModel, authorContext);
+          if (cancelled || liveManuscript.current !== bookContent) return;
+          pendingChecks.current.delete(task.id);
+          setTaskState(task.id, check.status, check.explanation);
+        } catch (err) {
+          if (!cancelled) { pendingChecks.current.delete(task.id); setTaskState(task.id, 'error', err instanceof Error ? err.message : String(err)); }
+        }
+      }
+    }, 1200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [bookContent, clusteredTasks, authorContext, effectiveModel, callModel]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -101,7 +192,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
         bookContent,
         metadata,
         history,
-        provider: activeModelConfig?.provider,
+        provider: effectiveModel?.provider,
         callModel: async (prompt, system) => {
           return await withOllamaOutputRoom(
             async (maxTokens) => {
@@ -112,7 +203,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 0.2,
                 undefined,
                 undefined,
-                activeModelConfig,
+                effectiveModel,
                 maxTokens,
                 false
               );
@@ -160,11 +251,15 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     );
 
     if (patchResult.success) {
-      onApplyPatch(
+      const accepted = onApplyPatch(
         patchResult.updatedManuscript,
         patchResult.matchedChapter || card.chapterNum,
         card.replacementText
       );
+      if (accepted === false) {
+        setCardErrors(prev => ({ ...prev, [card.id]: "Could not save manuscript changes." }));
+        return;
+      }
       setAppliedCardIds(prev => new Set(prev).add(card.id));
       setCardErrors(prev => {
         const next = { ...prev };
@@ -183,86 +278,63 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     setRejectedCardIds(prev => new Set(prev).add(cardId));
   };
 
-  const handleApplySingleSystemTask = async (task: ClusteredEditorialTask) => {
+  const prepareSystemTask = async (task: ClusteredEditorialTask) => {
     setActiveSystemTaskId(task.id);
-    setSystemTaskStatus(prev => ({ ...prev, [task.id]: 'working' }));
-
+    setTaskState(task.id, 'working');
+    const baseline = liveManuscript.current;
     try {
-      const result = await repairSurgicalTask(
-        task,
-        bookContent,
-        displayTitle,
-        async (prompt, system) => {
-          return await generateText(
-            prompt,
-            system,
-            undefined,
-            0.2,
-            undefined,
-            undefined,
-            activeModelConfig,
-            4000,
-            true
-          );
-        }
-      );
-
-      if (result.changed) {
-        onApplyPatch(result.updatedManuscript, task.chapterNumber, result.explanation);
-        setSystemTaskStatus(prev => ({ ...prev, [task.id]: 'done' }));
-      } else {
-        setSystemTaskStatus(prev => ({ ...prev, [task.id]: 'done' }));
-      }
+      const proposal = await proposeEditorialTask(task, baseline, metadata, callTaskModel, activeModelConfig?.provider);
+      if (liveManuscript.current !== baseline) throw new Error('Manuscript changed while preparing edits. Prepare the task again.');
+      setTaskProposals(prev => ({ ...prev, [task.id]: proposal }));
+      setTaskState(task.id, 'proposed', `${proposal.cards.length} linked edits ready for review.`);
     } catch (err) {
-      console.error('System task repair failed:', err);
-    } finally {
-      setActiveSystemTaskId(null);
-    }
+      setTaskState(task.id, 'error', err instanceof Error ? err.message : String(err));
+    } finally { setActiveSystemTaskId(null); }
   };
-
+  const verifySystemTask = async (task: ClusteredEditorialTask) => {
+    if (activeRunning) return;
+    const manuscript = liveManuscript.current;
+    setTaskState(task.id, 'checking');
+    try {
+      const check = await checkEditorialTask(task, manuscript, callTaskModel, authorContext);
+      if (liveManuscript.current !== manuscript) return;
+      pendingChecks.current.delete(task.id);
+      setTaskState(task.id, check.status, check.explanation);
+    } catch (err) { setTaskState(task.id, 'error', err instanceof Error ? err.message : String(err)); }
+  };
+  const handleApplySingleSystemTask = async (task: ClusteredEditorialTask) => {
+    if (activeRunning) return;
+    await prepareSystemTask(task);
+  };
   const handleApplyAllSystemTasks = async () => {
-    if (clusteredTasks.length === 0 || isRunning) return;
+    if (activeRunning) return;
     setIsRunning(true);
-    let currentText = bookContent;
-
-    for (let i = 0; i < clusteredTasks.length; i++) {
-      const task = clusteredTasks[i];
-      setActiveSystemTaskId(task.id);
-      setSystemTaskStatus(prev => ({ ...prev, [task.id]: 'working' }));
-
-      try {
-        const result = await repairSurgicalTask(
-          task,
-          currentText,
-          displayTitle,
-          async (prompt, system) => {
-            return await generateText(
-              prompt,
-              system,
-              undefined,
-              0.2,
-              undefined,
-              undefined,
-              activeModelConfig,
-              4000,
-              true
-            );
-          }
-        );
-
-        if (result.changed) {
-          currentText = result.updatedManuscript;
-          onApplyPatch(result.updatedManuscript, task.chapterNumber, result.explanation);
-        }
-        setSystemTaskStatus(prev => ({ ...prev, [task.id]: 'done' }));
-        await new Promise(r => setTimeout(r, 400));
-      } catch (err) {
-        console.error(`Task ${task.id} failed:`, err);
+    try {
+      for (const task of clusteredTasks) {
+        if (systemTaskStatus[task.id] !== 'resolved' && !taskProposals[task.id]) await prepareSystemTask(task);
       }
+    } finally { setIsRunning(false); }
+  };
+  const applyTaskProposal = async (task: ClusteredEditorialTask) => {
+    const proposal = taskProposals[task.id];
+    if (!proposal || activeRunning) return;
+    if (proposal.baseline !== liveManuscript.current) {
+      setTaskState(task.id, 'error', 'This proposal targets an older revision. Prepare the task again.');
+      setTaskProposals(prev => { const next = { ...prev }; delete next[task.id]; return next; });
+      return;
     }
-
-    setActiveSystemTaskId(null);
-    setIsRunning(false);
+    if (onApplyPatch(proposal.updatedManuscript, task.chapterNumber, task.problemSummary) === false) {
+      setTaskState(task.id, 'error', 'Could not save manuscript changes.'); return;
+    }
+    previousContexts.current[task.id] = taskContext(task, proposal.updatedManuscript) + authorContext;
+    liveManuscript.current = proposal.updatedManuscript;
+    setTaskProposals(prev => { const next = { ...prev }; delete next[task.id]; return next; });
+    setTaskState(task.id, 'checking', 'Changes applied; checking the original problem.');
+    try {
+      const check = await checkEditorialTask(task, proposal.updatedManuscript, callTaskModel, authorContext);
+      if (liveManuscript.current !== proposal.updatedManuscript) return;
+      setTaskState(task.id, check.status, check.explanation);
+    } catch (err) { if (liveManuscript.current === proposal.updatedManuscript) setTaskState(task.id, 'error', err instanceof Error ? err.message : String(err)); }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -272,24 +344,29 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
     }
   };
 
-  const activeRunning = isRunning || isEditorialRunning;
+  const activeRunning = isRunning || isEditorialRunning || activeSystemTaskId !== null;
 
   return (
     <section
-      className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-280px)] min-h-[460px]"
+      className={`border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col ${className || 'h-[calc(100vh-215px)] min-h-[520px]'}`}
       aria-label="Editorial assistant studio"
     >
       {/* 1. Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium text-zinc-200">Editorial Review · Assistant</h2>
-          <span
-            className="text-[11px] font-mono text-zinc-300 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 inline-flex items-center gap-1.5"
-            title={`Editorial model: ${formatModelDisplayLabel(activeModelConfig)}`}
+          <button
+            type="button"
+            onClick={() => setIsModelModalOpen(true)}
+            className="text-[11px] font-mono text-zinc-300 bg-zinc-950 hover:bg-zinc-900 hover:text-zinc-100 hover:border-zinc-700 px-2 py-0.5 rounded border border-zinc-800 inline-flex items-center gap-1.5 transition-colors cursor-pointer group"
+            title="Change assistant provider and model"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
-            <span>{formatModelDisplayLabel(activeModelConfig)}</span>
-          </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 group-hover:scale-110 transition-transform"></span>
+            <span>{formatModelDisplayLabel(effectiveModel)}</span>
+            <svg className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 ml-0.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -318,6 +395,8 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
 
       {/* 2. Message Feed with Embedded System Audit Accordion */}
       <div className="p-4 space-y-4 flex-1 overflow-y-auto text-xs">
+        {metadata?.audit?.need_more_evidence?.length > 0 && <div className="border border-zinc-700 p-3 text-xs text-zinc-400"><strong>Checks requiring more evidence</strong>{metadata.audit.need_more_evidence.map((note: string, i: number) => <p key={i}>{note}</p>)}</div>}
+        {metadata?.audit?.central_resolution?.supported === false && <p className="text-xs text-zinc-400">Central resolution requires review: {metadata.audit.central_resolution.comment}</p>}
         {/* System Editorial Audit Accordion Card */}
         {(clusteredTasks.length > 0 || rawFindings.length > 0) && (
           <div className="border border-zinc-800/80 rounded bg-zinc-950/60 overflow-hidden">
@@ -336,7 +415,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 disabled={activeRunning}
                 className="inline-flex items-center h-5 px-2 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700/60 rounded transition-colors"
               >
-                {activeRunning ? (editorialStatus || 'Applying Review…') : 'Apply Review'}
+                {activeRunning ? (editorialStatus || 'Preparing Review…') : 'Prepare Review'}
               </button>
             </div>
 
@@ -344,7 +423,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
               <div className="p-3 space-y-2 max-h-56 overflow-y-auto">
                 {clusteredTasks.length > 0 ? (
                   clusteredTasks.map(task => {
-                    const status = systemTaskStatus[task.id] || 'pending';
+                    const status = systemTaskStatus[task.id] || 'open';
                     const isCurrent = activeSystemTaskId === task.id;
 
                     return (
@@ -355,15 +434,28 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                         <div className="space-y-0.5 flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400">
-                              Ch. {task.chapterNumber}
+                              Ch. {task.chapterNumbers?.join(', ') || task.chapterNumber} · {task.priority}
                             </span>
                             <span className="text-zinc-200 font-medium truncate">{task.title}</span>
                           </div>
-                          <p className="text-[11px] text-zinc-400 line-clamp-1">{task.problemSummary}</p>
+                          <p className="text-[11px] text-zinc-400">{task.problemSummary}</p>
+                          <p className="text-[11px] text-zinc-500">{status}: {taskExplanations[task.id]}</p>
+                          {task.targetQuotes.map((quote, i) => <blockquote key={i} className="text-[10px] text-zinc-500 border-l border-zinc-700 pl-2">{quote}</blockquote>)}
+                          {taskProposals[task.id] && <div className="space-y-2 pt-2">
+                            {taskProposals[task.id].cards.map(card => <div key={card.id} className="text-[11px] whitespace-pre-wrap">
+                              <div>Chapter {card.chapterNum}: {card.rationale}</div>
+                              <del className="block text-red-400">{card.searchTarget}</del>
+                              <ins className="block text-emerald-400">{card.replacementText || '(deleted)'}</ins>
+                            </div>)}
+                            <button disabled={activeRunning} onClick={() => applyTaskProposal(task)} className="border border-zinc-600 rounded px-2 py-1">Apply all linked edits</button>
+                            <button disabled={activeRunning} onClick={() => { setTaskProposals(prev => { const next = { ...prev }; delete next[task.id]; return next; }); setTaskState(task.id, 'open', 'Proposal rejected by author.'); }} className="ml-2">Reject</button>
+                          </div>}
+                          <button disabled={activeRunning || status === 'checking'} onClick={() => verifySystemTask(task)} className="text-[10px] underline">Verify current text</button>
+                          <details className="text-[10px] text-zinc-500"><summary>History</summary>{taskHistory.filter(event => event.taskId === task.id).map((event, i) => <div key={i}>{new Date(event.at).toLocaleTimeString()}: {event.status} {event.explanation}</div>)}</details>
                         </div>
 
                         <div className="shrink-0 flex items-center gap-1">
-                          {status === 'done' ? (
+                          {status === 'resolved' ? (
                             <span className="text-[11px] text-zinc-400">✓ Done</span>
                           ) : isCurrent ? (
                             <span className="text-[11px] text-zinc-300 animate-pulse">Working…</span>
@@ -374,7 +466,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                               disabled={activeRunning}
                               className="h-5 px-2 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
                             >
-                              Apply
+                              Prepare edits
                             </button>
                           )}
                         </div>
@@ -574,21 +666,22 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
       <div className="p-3 border-t border-zinc-800 bg-zinc-900/70 shrink-0 space-y-2">
         {/* Quick prompt chips */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {QUICK_PROMPTS.map((promptText, idx) => (
+          {QUICK_PROMPTS.map((item, idx) => (
             <button
               key={idx}
               type="button"
               disabled={activeRunning}
-              onClick={() => handleSendMessage(promptText)}
-              className="h-5 px-2 text-[10px] whitespace-nowrap bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded transition-colors disabled:opacity-50"
+              onClick={() => handleSendMessage(item.prompt)}
+              title={item.prompt}
+              className="h-5 px-2.5 text-[10px] font-medium whitespace-nowrap bg-zinc-950 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-700 rounded transition-colors disabled:opacity-50 tracking-tight"
             >
-              {promptText}
+              {item.label}
             </button>
           ))}
         </div>
 
         {/* Text input area */}
-        <div className="flex items-end gap-2">
+        <div className="flex items-stretch gap-2">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -602,12 +695,22 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
             type="button"
             onClick={() => handleSendMessage(input)}
             disabled={activeRunning || !input.trim()}
-            className="h-8 px-3 text-xs font-semibold bg-zinc-200 hover:bg-zinc-100 disabled:opacity-50 text-zinc-900 rounded transition-colors shrink-0"
+            className="self-stretch min-h-[54px] px-4 text-xs font-semibold bg-zinc-200 hover:bg-zinc-100 disabled:opacity-50 text-zinc-900 rounded transition-colors shrink-0 flex items-center justify-center shadow-sm"
           >
             Send
           </button>
         </div>
       </div>
+
+      <EditorialModelModal
+        isOpen={isModelModalOpen}
+        onClose={() => setIsModelModalOpen(false)}
+        currentConfig={effectiveModel}
+        onSave={(newCfg) => {
+          setInternalModel(newCfg);
+          onModelChange?.(newCfg);
+        }}
+      />
     </section>
   );
 };
