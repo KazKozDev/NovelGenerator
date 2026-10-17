@@ -922,11 +922,10 @@ export async function repairSingleFinding(
  * Example tag: "author: ollama:deepseek-v4.1-flash:cloud · reader: huggingface:..."
  */
 export function parseModelConfigFromTag(tag: string): {
-  provider: 'gemini' | 'ollama' | 'qwen' | 'anthropic' | 'huggingface' | 'compatible';
+  provider: 'gemini' | 'ollama' | 'anthropic' | 'huggingface' | 'compatible';
   ollamaEndpoint?: string;
   ollamaModel?: string;
   geminiModel?: string;
-  qwenModel?: string;
   anthropicModel?: string;
   hfModel?: string;
   compatibleModel?: string;
@@ -942,12 +941,6 @@ export function parseModelConfigFromTag(tag: string): {
       provider: 'ollama',
       ollamaModel: model,
       ollamaEndpoint: '/api/ollama',
-    };
-  }
-  if (provider === 'qwen') {
-    return {
-      provider: 'qwen',
-      qwenModel: model,
     };
   }
   if (provider === 'gemini') {
@@ -984,7 +977,6 @@ export function formatModelDisplayLabel(config: {
   provider: string;
   ollamaModel?: string;
   geminiModel?: string;
-  qwenModel?: string;
   anthropicModel?: string;
   hfModel?: string;
   compatibleModel?: string;
@@ -997,9 +989,6 @@ export function formatModelDisplayLabel(config: {
   }
   if (config.provider === 'anthropic') {
     return `Anthropic: ${config.anthropicModel || 'Claude'}`;
-  }
-  if (config.provider === 'qwen') {
-    return `Qwen: ${config.qwenModel || 'qwen3.8-flash'}`;
   }
   if (config.provider === 'gemini') {
     return `Gemini: ${config.geminiModel || 'gemini-3.6-flash'}`;

@@ -6,7 +6,6 @@
 import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
-import { generateQwenBrowserText } from './qwenBrowserService';
 import { generateHuggingFaceBrowserText, generateAnthropicBrowserText, type LiveText, gatewayText } from './hfBrowserService';
 import { providerTokenUsage, type TokenUsage } from '../utils/tokenUsage';
 import { logToTerminal } from '../utils/terminalLogger';
@@ -26,13 +25,12 @@ export function getStoredProviderConfig(): LLMProviderConfig {
     if (!raw) return DEFAULT_LLM_CONFIG;
     const parsed = JSON.parse(raw);
     return {
-      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
-      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
       // Only present when the author typed one: stored configs keep their exact shape otherwise.
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
@@ -55,13 +53,12 @@ export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
-      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
@@ -93,13 +90,12 @@ export function getStoredSecondWriterConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'qwen' ? 'qwen' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
       ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
       ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
       ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
-      ...(typeof parsed.qwenModel === 'string' && parsed.qwenModel.trim() ? { qwenModel: parsed.qwenModel.trim() } : {}),
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
@@ -144,7 +140,7 @@ export async function generateText(
   live: LiveText = {},
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -168,8 +164,6 @@ export async function generateText(
     result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
   } else if (config.provider === 'huggingface') {
     result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
-  } else if (config.provider === 'qwen') {
-    result = await generateQwenBrowserText(prompt, systemInstruction, maxTokens, config.qwenModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage);
   } else if (config.provider === 'ollama') {
     result = await generateOllamaText(
       prompt,
@@ -213,7 +207,7 @@ export async function generateTextStream(
   maxTokens?: number,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'qwen' ? `Qwen:${config.qwenModel||'qwen3.8-flash'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -235,9 +229,6 @@ export async function generateTextStream(
     result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema, undefined, { onChunk: wrappedOnChunk });
   } else if (config.provider === 'huggingface') {
     result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema);
-  } else if (config.provider === 'qwen') {
-    result = await generateQwenBrowserText(prompt, systemInstruction, maxTokens, config.qwenModel, temperature, schema);
-    wrappedOnChunk(result);
   } else if (config.provider === 'ollama') {
     result = await generateOllamaTextStream(
       prompt,

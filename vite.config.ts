@@ -3,11 +3,11 @@ import path from 'path';
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { projectAutosavePlugin } from './services/projectAutosavePlugin';
-import { qwenDevPlugin } from './services/qwenDevPlugin';
 import { hfDevPlugin } from './services/hfDevPlugin';
 import { geminiDevPlugin } from './services/geminiDevPlugin';
 import { anthropicDevPlugin } from './services/anthropicDevPlugin';
 import { keysDevPlugin } from './services/keysDevPlugin';
+import { coverAiDevPlugin } from './services/coverAiDevPlugin';
 
 function terminalLoggerPlugin(): Plugin {
   let lastKey = '';
@@ -99,7 +99,7 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
-      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), qwenDevPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin()],
+      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)

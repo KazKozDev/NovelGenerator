@@ -26,7 +26,7 @@ const sections = [
       {
         title: 'Author model and reader model',
         paragraphs: [
-          'The Author model manages the strategic planning (world dossier, scene cards) and enacts the prose. You can select Google Gemini, local Ollama models (e.g. Qwen 2.5, Llama 3.3), Qwen, Hugging Face, or any OpenAI-compatible API endpoint.',
+          'The Author model manages the strategic planning (world dossier, scene cards) and enacts the prose. You can select Google Gemini, local Ollama models (e.g. Qwen 2.5, Llama 3.3), Hugging Face, Anthropic, or any OpenAI-compatible API endpoint.',
           'Enabling a dedicated Reader model assigns an independent LLM instance to the Observer, Blind Reader, and Dual Audits. If the Reader model experiences connectivity or token limits, the engine provides transparent fallback to the primary model.'
         ]
       },
@@ -281,7 +281,7 @@ const sections = [
         paragraphs: [
           'Google Gemini: High-speed cloud generation with Gemini 2.5 Flash / Pro.',
           'Ollama (Local LLMs): Connects to local models (e.g. Qwen 2.5 32B/72B, Llama 3.3) for 100% offline, private, and free generation.',
-          'Qwen & Hugging Face: Connects via server proxy to open-weights models.',
+          'Hugging Face & Anthropic: Connects via server proxy to open-weights models and Claude.',
           'API Compatible: Connects to any standard OpenAI-compatible Chat Completions endpoint (e.g. vLLM, LM Studio, OpenRouter, Groq).'
         ]
       },

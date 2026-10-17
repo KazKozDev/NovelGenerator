@@ -110,7 +110,7 @@ Done.`;
   it('adjusts manuscript char limits based on provider capabilities', () => {
     expect(getMaxFullManuscriptChars('anthropic')).toBe(1_500_000);
     expect(getMaxFullManuscriptChars('gemini')).toBe(1_500_000);
-    expect(getMaxFullManuscriptChars('qwen')).toBe(400_000);
+    expect(getMaxFullManuscriptChars('compatible')).toBe(400_000);
     expect(getMaxFullManuscriptChars('ollama')).toBe(120_000);
   });
 

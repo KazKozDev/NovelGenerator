@@ -226,7 +226,7 @@ export function getMaxFullManuscriptChars(provider?: string): number {
     // Claude (200k-1M context) & Gemini (1M-2M context) can comfortably handle complete novels
     return 1_500_000;
   }
-  if (provider === 'qwen' || provider === 'compatible') {
+  if (provider === 'compatible') {
     return 400_000;
   }
   // Local Ollama default

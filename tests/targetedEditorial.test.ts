@@ -109,13 +109,13 @@ describe('targetedEditorial', () => {
     });
     expect(formatModelDisplayLabel(parsed!)).toBe('DeepSeek (deepseek-v4.1-flash:cloud)');
 
-    const qwenTag = 'author: qwen:qwen3.8-flash · reader: the author\'s own';
-    const parsedQwen = parseModelConfigFromTag(qwenTag);
-    expect(parsedQwen).toEqual({
-      provider: 'qwen',
-      qwenModel: 'qwen3.8-flash',
+    const anthropicTag = 'author: anthropic:claude-3-5-sonnet · reader: the author\'s own';
+    const parsedAnthropic = parseModelConfigFromTag(anthropicTag);
+    expect(parsedAnthropic).toEqual({
+      provider: 'anthropic',
+      anthropicModel: 'claude-3-5-sonnet',
     });
-    expect(formatModelDisplayLabel(parsedQwen!)).toBe('Qwen: qwen3.8-flash');
+    expect(formatModelDisplayLabel(parsedAnthropic!)).toBe('Anthropic: claude-3-5-sonnet');
   });
 
   describe('Clustering & Hierarchy', () => {

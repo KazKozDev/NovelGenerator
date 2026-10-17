@@ -14,7 +14,8 @@ export interface CoverBookFacts {
 
 /** What every master must be, whatever the book: added by code after the model's description. */
 export const MASTER_RULES = [
-  'Vertical 2:3 book-cover artwork, high detail.',
+  'Vertical 2:3 book-cover artwork, authentic photographic texture and tactile materials, natural skin micro-pores and realistic lighting, subtle 35mm film grain, editorial realism.',
+  'Strictly no plastic skin, no waxy airbrushed CGI look, no 3D digital render sheen.',
   'No text, no letters, no words, no numbers, no logos, no signatures, no watermarks anywhere in the image.',
   'The main subject sits in the central third of the frame.',
   'Calm, uncluttered space in the top quarter and the bottom fifth, for a title and an author name to be laid over later.',

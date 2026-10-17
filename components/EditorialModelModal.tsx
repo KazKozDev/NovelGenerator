@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LLMProviderConfig, LLMProviderType } from '../types';
-import { fetchProviderModels } from '../services/qwenBrowserService';
+import { fetchProviderModels } from '../services/providerModelsService';
 import { fetchOllamaModels, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from '../services/ollamaService';
 import { fetchHuggingFaceModels } from '../services/hfBrowserService';
 import { GEMINI_MODEL_NAME } from '../constants';
@@ -25,7 +25,6 @@ export function EditorialModelModal({
     ollamaEndpoint: currentConfig?.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
     ollamaModel: currentConfig?.ollamaModel || DEFAULT_OLLAMA_MODEL,
     geminiModel: currentConfig?.geminiModel,
-    qwenModel: currentConfig?.qwenModel,
     hfModel: currentConfig?.hfModel,
     anthropicModel: currentConfig?.anthropicModel,
     compatibleModel: currentConfig?.compatibleModel,
@@ -37,17 +36,15 @@ export function EditorialModelModal({
 
   const [listed, setListed] = useState<{
     gemini: string[];
-    qwen: string[];
     anthropic: string[];
     compatible: string[];
-  }>({ gemini: [], qwen: [], anthropic: [], compatible: [] });
+  }>({ gemini: [], anthropic: [], compatible: [] });
 
   const [listNote, setListNote] = useState<{
     gemini: string;
-    qwen: string;
     anthropic: string;
     compatible: string;
-  }>({ gemini: '', qwen: '', anthropic: '', compatible: '' });
+  }>({ gemini: '', anthropic: '', compatible: '' });
 
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaNote, setOllamaNote] = useState('');
@@ -63,7 +60,6 @@ export function EditorialModelModal({
         ollamaEndpoint: currentConfig.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
         ollamaModel: currentConfig.ollamaModel || DEFAULT_OLLAMA_MODEL,
         geminiModel: currentConfig.geminiModel,
-        qwenModel: currentConfig.qwenModel,
         hfModel: currentConfig.hfModel,
         anthropicModel: currentConfig.anthropicModel,
         compatibleModel: currentConfig.compatibleModel,
@@ -125,7 +121,7 @@ export function EditorialModelModal({
     }
   };
 
-  const loadListed = async (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible') => {
+  const loadListed = async (provider: 'gemini' | 'anthropic' | 'compatible') => {
     if (provider === 'compatible' && !(await saveCompatibleUrl())) return;
     setListNote((note) => ({ ...note, [provider]: 'Loading…' }));
     fetchProviderModels(provider).then(
@@ -136,8 +132,6 @@ export function EditorialModelModal({
           [provider]: `${models.length} models from ${
             provider === 'gemini'
               ? 'Gemini'
-              : provider === 'qwen'
-              ? 'Qwen'
               : provider === 'compatible'
               ? 'Compatible API'
               : 'Anthropic'
@@ -188,7 +182,6 @@ export function EditorialModelModal({
   const providers: { id: LLMProviderType; label: string }[] = [
     { id: 'gemini', label: 'Gemini' },
     { id: 'ollama', label: 'Ollama' },
-    { id: 'qwen', label: 'Qwen' },
     { id: 'huggingface', label: 'Hugging Face' },
     { id: 'anthropic', label: 'Anthropic' },
     { id: 'compatible', label: 'API compatible' },
@@ -345,38 +338,7 @@ export function EditorialModelModal({
             </div>
           )}
 
-          {/* Qwen */}
-          {config.provider === 'qwen' && (
-            <div className="space-y-3 pt-3 border-t border-zinc-800 animate-fadeIn">
-              <div className="flex flex-wrap gap-2 items-center justify-between">
-                <label className="block text-xs font-medium text-zinc-300">Qwen model</label>
-                <button
-                  type="button"
-                  onClick={() => loadListed('qwen')}
-                  className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors"
-                >
-                  List models
-                </button>
-              </div>
-              <Combo
-                id="editorial-qwen-model"
-                value={config.qwenModel || ''}
-                onChange={(model) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    qwenModel: model ? model.trim() : undefined,
-                  }))
-                }
-                placeholder="qwen3.8-flash"
-                className="text-xs font-mono"
-                options={listed.qwen.map((m) => ({ value: m }))}
-              />
-              <p className="text-[11px] text-zinc-500">
-                Uses QWEN_API_KEY from .env.local. Empty means default qwen3.8-flash.
-                {listNote.qwen ? ` ${listNote.qwen}.` : ''}
-              </p>
-            </div>
-          )}
+
 
           {/* Hugging Face */}
           {config.provider === 'huggingface' && (

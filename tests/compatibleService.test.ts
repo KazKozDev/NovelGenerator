@@ -1,10 +1,18 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { generateCompatibleText, listCompatibleModels } from '../services/compatibleService';
 import { generateText, generateTextStream, getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import { providerTokenUsage } from '../utils/tokenUsage';
-const settings = vi.hoisted(() => ({ COMPATIBLE_BASE_URL: 'http://localhost:1234/v1', COMPATIBLE_API_KEY: 'test-key' } as Record<string, string>));
-vi.mock('../services/qwenService', () => ({ qwenSetting: (name: string) => settings[name] }));
-afterEach(() => { vi.unstubAllGlobals(); settings.COMPATIBLE_BASE_URL = 'http://localhost:1234/v1'; settings.COMPATIBLE_API_KEY = 'test-key'; });
+
+beforeEach(() => {
+  vi.stubEnv('COMPATIBLE_BASE_URL', 'http://localhost:1234/v1');
+  vi.stubEnv('COMPATIBLE_API_KEY', 'test-key');
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
 const sse = (finish = 'stop') => new Response(new ReadableStream({ start(c) {
   const e = new TextEncoder();
   const data = `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: ' world' }, finish_reason: finish }], usage: { prompt_tokens: 12, completion_tokens: 4 } })}\n\ndata: [DONE]\n\n`;
@@ -25,7 +33,7 @@ it('streams split UTF-8 events and extracts usage using the configured server an
   expect(providerTokenUsage('compatible', metadata)).toEqual({ input: 12, output: 4 });
 });
 it('supports keyless local APIs and nonstream JSON responses', async () => {
-  settings.COMPATIBLE_API_KEY = '';
+  vi.stubEnv('COMPATIBLE_API_KEY', '');
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
     expect(init.headers.Authorization).toBeUndefined();
     return Response.json({ choices: [{ message: { content: 'Answer' }, finish_reason: 'stop' }] });
@@ -41,7 +49,7 @@ it('rejects truncation and invalid endpoints without exposing upstream bodies', 
   await expect(generateCompatibleText('write', '', 1000, 'model')).rejects.toThrow('token limit');
   vi.stubGlobal('fetch', vi.fn(async () => new Response('secret upstream error', { status: 401 })));
   await expect(generateCompatibleText('write', '', 1000, 'model')).rejects.toThrow('failed [401]');
-  settings.COMPATIBLE_BASE_URL = 'https://user:password@example.com/v1';
+  vi.stubEnv('COMPATIBLE_BASE_URL', 'https://user:password@example.com/v1');
   await expect(listCompatibleModels()).rejects.toThrow('without credentials');
 });
 it('dispatches both browser generation paths through the local gateway without sending the key', async () => {

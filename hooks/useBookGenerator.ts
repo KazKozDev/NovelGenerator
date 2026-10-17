@@ -263,7 +263,7 @@ export default function useBookGenerator() {
     const writer = getStoredProviderConfig();
     const validator = getStoredValidatorConfig();
     const second = getStoredSecondWriterConfig();
-    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'compatible' ? config.compatibleModel || '?' : config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'qwen' ? config.qwenModel || 'qwen3.8-flash' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
+    const modelOf = (config: typeof writer): string => `${config.provider}:${config.provider === 'compatible' ? config.compatibleModel || '?' : config.provider === 'anthropic' ? config.anthropicModel || 'default' : config.provider === 'huggingface' ? config.hfModel || '?' : config.provider === 'ollama' ? config.ollamaModel || '?' : config.geminiModel || 'default'}`;
     // Who writes and who reads, said once in the saved log: it can be checked after the fact, not only on screen.
     store.log('models', input.generation_mode === 'prompts' ? `planner: ${modelOf(writer)}` : `author: ${modelOf(writer)} · reader: ${validator ? modelOf(validator) : `the author's own (${modelOf(writer)})`}`);
     const llm: NovelLLM = async (prompt, system, options = {}) => {
@@ -284,7 +284,7 @@ export default function useBookGenerator() {
       // Model identity joins the run log: after the fact anyone can see what
       // served each call — a validator step on the writer model means the
       // author judged its own prose, and that must be visible, not silent.
-      const servingTag = role.provider === 'compatible' ? `API:${role.compatibleModel || '?'}` : role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'qwen' ? `Qwen:${role.qwenModel || 'qwen3.8-flash'}` : role.provider === 'ollama'
+      const servingTag = role.provider === 'compatible' ? `API:${role.compatibleModel || '?'}` : role.provider === 'anthropic' ? `Anthropic:${role.anthropicModel || 'default'}` : role.provider === 'huggingface' ? `HF:${role.hfModel || '?'}` : role.provider === 'ollama'
         ? `Ollama:${role.ollamaModel || '?'}` : `Gemini:${role.geminiModel || 'default'}`;
       const event:AgentLogEntry={timestamp:start,chapterNumber:currentChapterRef.current,type:'execution',message:`${call.title} · ${servingTag}`,details,finished:false,...(call.reason?{outcome:`Refused for: ${call.reason}`}:{})};
       if(input.generation_mode==='prompts')store.log('model_call',JSON.stringify({id:eventId,entry:event}));

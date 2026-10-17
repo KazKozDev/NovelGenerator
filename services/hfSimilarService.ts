@@ -2,10 +2,10 @@
  * Search by meaning on Hugging Face's own inference: one text and many lines in, a likeness for each line out.
  * Node only: the token never enters the browser bundle.
  */
-import { qwenSetting } from './qwenService';
+import { readEnvSetting } from './envService';
 
 export async function similarHuggingFace(model: string, source: string, sentences: string[]): Promise<number[]> {
-  const token = qwenSetting('HF_TOKEN');
+  const token = readEnvSetting('HF_TOKEN');
   if (!token) throw new Error('Set HF_TOKEN in .env.local or the environment.');
   if (!sentences.length) return [];
   const batch = async (part: string[]): Promise<number[]> => {

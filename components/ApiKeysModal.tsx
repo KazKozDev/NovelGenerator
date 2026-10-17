@@ -7,8 +7,6 @@ const ROWS: { name: string; label: string; hint: string; secret: boolean; placeh
   { name: 'GEMINI_API_KEY', label: 'Gemini', hint: 'Google AI Studio → Get API key.', secret: true, placeholder: 'Paste the key' },
   { name: 'ANTHROPIC_API_KEY', label: 'Anthropic', hint: 'Anthropic Console → API keys.', secret: true, placeholder: 'Paste the key' },
   { name: 'HF_TOKEN', label: 'Hugging Face', hint: 'Hugging Face → Settings → Access Tokens, with permission to call Inference Providers.', secret: true, placeholder: 'Paste the token' },
-  { name: 'QWEN_API_KEY', label: 'Qwen', hint: 'Alibaba Cloud Model Studio → API key.', secret: true, placeholder: 'Paste the key' },
-  { name: 'QWEN_BASE_URL', label: 'Qwen endpoint', hint: 'The OpenAI-compatible address of your Model Studio region, ending in /v1.', secret: false, placeholder: 'https://…/compatible-mode/v1' },
 ];
 
 /** The keys window: one row a provider. A key is saved to .env.local on this computer and is never shown again. */

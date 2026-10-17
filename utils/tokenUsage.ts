@@ -2,10 +2,10 @@ export interface TokenUsage { input:number; output:number; estimatedInput?:boole
 export interface TokenTotals extends TokenUsage { calls:number; historical?:boolean }
 export const emptyTokenTotals=():TokenTotals=>({input:0,output:0,calls:0});
 const count=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
-export function providerTokenUsage(provider:'qwen'|'ollama'|'gemini'|'huggingface'|'anthropic'|'compatible',metadata:any):Partial<TokenUsage>{
- const data=(provider==='qwen'||provider==='huggingface'||provider==='anthropic'||provider==='compatible')?metadata?.usage:metadata;
- const input=(provider==='qwen'||provider==='huggingface'||provider==='anthropic'||provider==='compatible')?data?.prompt_tokens:provider==='ollama'?data?.prompt_eval_count:data?.promptTokenCount;
- const output=(provider==='qwen'||provider==='huggingface'||provider==='anthropic'||provider==='compatible')?data?.completion_tokens:provider==='ollama'?data?.eval_count:
+export function providerTokenUsage(provider:'ollama'|'gemini'|'huggingface'|'anthropic'|'compatible',metadata:any):Partial<TokenUsage>{
+ const data=(provider==='huggingface'||provider==='anthropic'||provider==='compatible')?metadata?.usage:metadata;
+ const input=(provider==='huggingface'||provider==='anthropic'||provider==='compatible')?data?.prompt_tokens:provider==='ollama'?data?.prompt_eval_count:data?.promptTokenCount;
+ const output=(provider==='huggingface'||provider==='anthropic'||provider==='compatible')?data?.completion_tokens:provider==='ollama'?data?.eval_count:
    count(data?.totalTokenCount)&&count(input)?Math.max(0,data.totalTokenCount-input):
    count(data?.candidatesTokenCount)?data.candidatesTokenCount+(count(data?.thoughtsTokenCount)?data.thoughtsTokenCount:0):undefined;
  return {...(count(input)?{input}:{}),...(count(output)?{output}:{})};

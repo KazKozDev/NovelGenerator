@@ -323,7 +323,7 @@ export interface AgentLogEntry {
   strategy?: string;
 }
 
-export type LLMProviderType = 'gemini' | 'ollama' | 'qwen' | 'huggingface' | 'anthropic' | 'compatible';
+export type LLMProviderType = 'gemini' | 'ollama' | 'huggingface' | 'anthropic' | 'compatible';
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -331,7 +331,6 @@ export interface LLMProviderConfig {
   ollamaModel: string;
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
-  qwenModel?: string;
   /** Hugging Face Inference Providers model: org/name, optionally org/name:provider. */
   hfModel?: string;
   /** Anthropic model id (e.g. claude-opus-5-5). Absent means the server's default. */

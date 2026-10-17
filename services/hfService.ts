@@ -3,10 +3,10 @@
  * A model is "org/name", optionally with ":provider" (or ":fastest", ":cheapest") to say who
  * serves it. Node only: the token never enters the browser bundle.
  */
-import { qwenSetting } from './qwenService';
+import { readEnvSetting } from './envService';
 
 const ROUTER = 'https://router.huggingface.co/v1';
-const base = () => (qwenSetting('HF_BASE_URL') || ROUTER).replace(/\/+$/, '');
+const base = () => (readEnvSetting('HF_BASE_URL') || ROUTER).replace(/\/+$/, '');
 
 const RUNAWAY = 'the model was repeating itself or writing only blank space';
 /** What a caller may watch while the answer is being written. */
@@ -14,7 +14,7 @@ export interface LiveAnswer { retryOutputLimit?: boolean; onDelta?: (text: strin
 
 export async function generateHuggingFaceText(prompt: string, system?: string, maxTokens = 16384, model = '',
   temperature = 0.2, onMetadata?: (metadata: unknown) => void, schema?: object, live: LiveAnswer = {}): Promise<string> {
-  const token = qwenSetting('HF_TOKEN');
+  const token = readEnvSetting('HF_TOKEN');
   if (!token) throw new Error('Set HF_TOKEN in .env.local or the environment.');
   if (!model.trim()) throw new Error('Set a Hugging Face model: org/name, optionally org/name:provider.');
   const messages = [...(system || schema ? [{ role: 'system', content: (system || '') + (schema ? `\nReturn one JSON object. Every required field in this complete JSON Schema must be present; no omitted fields:\n${JSON.stringify(schema)}` : '') }] : []), { role: 'user', content: prompt }];
@@ -125,7 +125,7 @@ async function readAnswer(response: Response, controller: AbortController, onDel
       if (event.provider) provider = event.provider;
     } catch (error) { if (error instanceof Error && error.message === RUNAWAY) throw error; /* Otherwise a keep-alive or a partial line; the next read completes it. */ }
   };
-  const quiet = Number(qwenSetting('HF_IDLE_MS')) || 90000;
+  const quiet = Number(readEnvSetting('HF_IDLE_MS')) || 90000;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   for (;;) {

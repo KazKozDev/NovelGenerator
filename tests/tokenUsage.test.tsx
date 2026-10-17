@@ -5,7 +5,7 @@ import {addTokenUsage,emptyTokenTotals,providerTokenUsage,savedTokenTotals} from
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
 import {GenerationStep} from '../types';
 it('reads provider counts, including Gemini reasoning and cached input without double-counting',()=>{
- expect(providerTokenUsage('qwen',{usage:{prompt_tokens:100,completion_tokens:30,prompt_tokens_details:{cached_tokens:80}}})).toEqual({input:100,output:30});
+ expect(providerTokenUsage('compatible',{usage:{prompt_tokens:100,completion_tokens:30,prompt_tokens_details:{cached_tokens:80}}})).toEqual({input:100,output:30});
  expect(providerTokenUsage('ollama',{prompt_eval_count:120,eval_count:40})).toEqual({input:120,output:40});
  expect(providerTokenUsage('gemini',{promptTokenCount:200,totalTokenCount:260,candidatesTokenCount:20,thoughtsTokenCount:40})).toEqual({input:200,output:60});
  expect(providerTokenUsage('gemini',{promptTokenCount:200,candidatesTokenCount:20,thoughtsTokenCount:40})).toEqual({input:200,output:60});

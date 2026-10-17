@@ -1,5 +1,5 @@
 {
   "name": "Generator",
-  "description": "A local novel generator. One author writes a book at a desk from a premise. Gemini, Ollama, Qwen or Hugging Face can serve it.",
+  "description": "A local novel generator. One author writes a book at a desk from a premise. Gemini, Ollama, Anthropic, Hugging Face or OpenAI-compatible APIs can serve it.",
   "requestFramePermissions": []
 }

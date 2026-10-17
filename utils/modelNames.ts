@@ -31,15 +31,6 @@ export function getFullModelName(config?: LLMProviderConfig): string {
       return `Anthropic Claude (${raw})`;
     }
 
-    case 'qwen': {
-      const raw = config.qwenModel?.trim() || 'qwen3.8-flash';
-      if (/^qwen3\.8-flash/i.test(raw)) return `Alibaba Qwen 3.8 Flash (${raw})`;
-      if (/qwen-?2\.5-72b/i.test(raw)) return `Alibaba Qwen 2.5 72B (${raw})`;
-      if (/qwen-?2\.5-32b/i.test(raw)) return `Alibaba Qwen 2.5 32B (${raw})`;
-      if (/qwen-?2\.5-14b/i.test(raw)) return `Alibaba Qwen 2.5 14B (${raw})`;
-      if (/qwen-?2\.5-7b/i.test(raw)) return `Alibaba Qwen 2.5 7B (${raw})`;
-      return `Alibaba Qwen (${raw})`;
-    }
 
     case 'ollama': {
       const raw = config.ollamaModel?.trim() || DEFAULT_OLLAMA_MODEL;

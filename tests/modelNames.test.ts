@@ -39,15 +39,6 @@ describe('utils/modelNames', () => {
     expect(getFullModelName(configOpus)).toBe('Anthropic Claude Opus 5.5 (claude-opus-5-5)');
   });
 
-  it('resolves full name for Alibaba Qwen models', () => {
-    const config: LLMProviderConfig = {
-      provider: 'qwen',
-      qwenModel: 'qwen-2.5-72b',
-      ollamaEndpoint: '/api/ollama',
-      ollamaModel: 'llama3.1',
-    };
-    expect(getFullModelName(config)).toBe('Alibaba Qwen 2.5 72B (qwen-2.5-72b)');
-  });
 
   it('resolves full name for Ollama models', () => {
     const config: LLMProviderConfig = {

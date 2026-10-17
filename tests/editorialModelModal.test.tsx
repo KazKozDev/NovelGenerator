@@ -22,7 +22,6 @@ describe('EditorialModelModal', () => {
     expect(html).toContain('Assistant Model &amp; Provider');
     expect(html).toContain('Gemini');
     expect(html).toContain('Ollama');
-    expect(html).toContain('Qwen');
     expect(html).toContain('Hugging Face');
     expect(html).toContain('Anthropic');
     expect(html).toContain('API compatible');

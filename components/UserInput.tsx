@@ -9,7 +9,7 @@ import { GENRE_CHOICES } from '../utils/genreList';
 import { getStoredProviderConfig, getStoredValidatorConfig, getStoredSecondWriterConfig, saveStoredProviderConfig, saveStoredValidatorConfig, saveStoredSecondWriterConfig } from '../services/llmService';
 import { fetchHuggingFaceModels } from '../services/hfBrowserService';
 import { fetchOllamaModels } from '../services/ollamaService';
-import { fetchProviderModels } from '../services/qwenBrowserService';
+import { fetchProviderModels } from '../services/providerModelsService';
 import { LLMProviderConfig, StorySettings } from '../types';
 
 interface UserInputProps {
@@ -111,11 +111,11 @@ const UserInput: React.FC<UserInputProps> = ({
     <Input id={`${prefix}-api-base-url`} value={compatibleUrl} onChange={e => { setCompatibleUrl(e.target.value); setCompatibleDirty(true); setCompatibleNote('Unsaved'); }} placeholder="http://127.0.0.1:8085/v1/" className="font-mono" />
     <div className="flex items-center justify-between gap-2"><p className="text-xs text-zinc-500">Include /v1 if required. Shared by author and reader. {compatibleNote}</p><button type="button" onClick={() => { void saveCompatibleUrl(); }} className="text-xs text-zinc-400 hover:text-zinc-200 font-medium transition-colors">Save URL</button></div>
   </div>;
-  // Gemini, Qwen and Anthropic: the models their own servers report, as suggestions for the same kind of field.
-  const [listed, setListed] = useState<{ gemini: string[]; qwen: string[]; anthropic: string[]; compatible: string[] }>({ gemini: [], qwen: [], anthropic: [], compatible: [] });
-  const [listNote, setListNote] = useState<{ gemini: string; qwen: string; anthropic: string; compatible: string }>({ gemini: '', qwen: '', anthropic: '', compatible: '' });
-  const loadListed = async (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible') => { if (provider === 'compatible' && !await saveCompatibleUrl()) return; setListNote(note => ({ ...note, [provider]: 'Loading…' })); fetchProviderModels(provider).then(models => { setListed(all => ({ ...all, [provider]: models })); setListNote(note => ({ ...note, [provider]: `${models.length} models from ${provider === 'gemini' ? 'Gemini' : provider === 'qwen' ? 'Qwen' : provider === 'compatible' ? 'Compatible API' : 'Anthropic'}` })); }, error => setListNote(note => ({ ...note, [provider]: error instanceof Error ? error.message : 'Model list failed' }))); };
-  const listedField = (provider: 'gemini' | 'qwen' | 'anthropic' | 'compatible', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
+  // Gemini and Anthropic: the models their own servers report, as suggestions for the same kind of field.
+  const [listed, setListed] = useState<{ gemini: string[]; anthropic: string[]; compatible: string[] }>({ gemini: [], anthropic: [], compatible: [] });
+  const [listNote, setListNote] = useState<{ gemini: string; anthropic: string; compatible: string }>({ gemini: '', anthropic: '', compatible: '' });
+  const loadListed = async (provider: 'gemini' | 'anthropic' | 'compatible') => { if (provider === 'compatible' && !await saveCompatibleUrl()) return; setListNote(note => ({ ...note, [provider]: 'Loading…' })); fetchProviderModels(provider).then(models => { setListed(all => ({ ...all, [provider]: models })); setListNote(note => ({ ...note, [provider]: `${models.length} models from ${provider === 'gemini' ? 'Gemini' : provider === 'compatible' ? 'Compatible API' : 'Anthropic'}` })); }, error => setListNote(note => ({ ...note, [provider]: error instanceof Error ? error.message : 'Model list failed' }))); };
+  const listedField = (provider: 'gemini' | 'anthropic' | 'compatible', label: string, value: string | undefined, onChange: (model: string) => void, placeholder: string, hint: string) => (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <label className="block text-xs font-medium text-zinc-300">{label}</label>
@@ -196,7 +196,6 @@ const UserInput: React.FC<UserInputProps> = ({
               >
                 Ollama
               </button>
-              <button type="button" onClick={()=>{const updated={...providerConfig,provider:'qwen' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
               <button type="button" onClick={()=>{const updated={...providerConfig,provider:'huggingface' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
               <button type="button" onClick={()=>{const updated={...providerConfig,provider:'anthropic' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
               <button type="button" onClick={()=>{const updated={...providerConfig,provider:'compatible' as const};setProviderConfig(updated);saveStoredProviderConfig(updated)}} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${providerConfig.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
@@ -206,8 +205,6 @@ const UserInput: React.FC<UserInputProps> = ({
           {providerConfig.provider==='compatible' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{compatibleEndpointField('author')}{listedField('compatible', 'API model', providerConfig.compatibleModel, model => { const updated = { ...providerConfig, compatibleModel: model }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'model-id', 'OpenAI-compatible Chat Completions. Optional key stays in API settings.')}</div>}
           {providerConfig.provider==='anthropic' && <div className="mt-4 pt-3 border-t border-zinc-800">{listedField('anthropic', 'Anthropic model', providerConfig.anthropicModel, model => { const updated = { ...providerConfig, anthropicModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.')}</div>}
           {providerConfig.provider==='huggingface' && <div className="mt-4 pt-3 border-t border-zinc-800">{hfField('Hugging Face model', providerConfig.hfModel, model => {const updated={...providerConfig,hfModel:model||undefined};setProviderConfig(updated);saveStoredProviderConfig(updated);})}</div>}
-
-          {providerConfig.provider==='qwen' && <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3">{listedField('qwen', 'Qwen model', providerConfig.qwenModel, model => { const updated = { ...providerConfig, qwenModel: model || undefined }; setProviderConfig(updated); saveStoredProviderConfig(updated); }, 'qwen3.8-flash', 'Uses the server API key and endpoint from .env.local. Thinking is off. Empty means qwen3.8-flash.')}</div>}
           {/* Gemini Details */}
           {providerConfig.provider === 'gemini' && (
             <div className="mt-4 pt-3 border-t border-zinc-800 space-y-3 animate-fade-in">
@@ -289,13 +286,12 @@ const UserInput: React.FC<UserInputProps> = ({
                   >
                     Ollama
                   </button>
-                  <button type="button" onClick={()=>updateValidator({provider:'qwen'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='qwen'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Qwen</button>
                   <button type="button" onClick={()=>updateValidator({provider:'huggingface'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='huggingface'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Hugging Face</button>
                   <button type="button" onClick={()=>updateValidator({provider:'anthropic'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='anthropic'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>Anthropic</button>
                   <button type="button" onClick={()=>updateValidator({provider:'compatible'})} className={`h-6 px-2.5 text-xs font-medium rounded transition-colors ${validator.provider==='compatible'?'bg-zinc-200 text-zinc-900 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}>API compatible</button>
                 </div>
 
-                {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'qwen' ? listedField('qwen', 'Reader Qwen model', validator.qwenModel, model => updateValidator({ qwenModel: model || undefined }), 'qwen3.8-flash', 'Empty means qwen3.8-flash.') : validator.provider === 'gemini' ? (
+                {validator.provider === 'compatible' ? <div className="space-y-3">{compatibleEndpointField('reader')}{listedField('compatible', 'Reader API model', validator.compatibleModel, model => updateValidator({ compatibleModel: model }), 'model-id', 'Optional key stays in API settings.')}</div> : validator.provider === 'anthropic' ? listedField('anthropic', 'Reader Anthropic model', validator.anthropicModel, model => updateValidator({ anthropicModel: model || undefined }), 'claude-opus-5-5', 'Uses ANTHROPIC_API_KEY from .env.local. Empty means claude-opus-5-5.') : validator.provider === 'huggingface' ? hfField('Reader Hugging Face model', validator.hfModel, model => updateValidator({ hfModel: model || undefined })) : validator.provider === 'gemini' ? (
                   listedField('gemini', 'Reader Gemini model', validator.geminiModel, model => updateValidator({ geminiModel: model || undefined }), GEMINI_MODEL_NAME, `Pick a different model than the author. Empty means the default (${GEMINI_MODEL_NAME}).`)
                 ) : (
                   ollamaField('Reader Ollama model', validator.ollamaModel, model => updateValidator({ ollamaModel: model }), 'Uses the same Ollama endpoint as the author.')

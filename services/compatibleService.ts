@@ -1,11 +1,11 @@
-import { qwenSetting } from './qwenService';
+import { readEnvSetting } from './envService';
 
 function connection() {
-  const raw = qwenSetting('COMPATIBLE_BASE_URL');
+  const raw = readEnvSetting('COMPATIBLE_BASE_URL');
   if (!raw) throw new Error('Set COMPATIBLE_BASE_URL in API settings (including /v1 when required).');
   const url = new URL(raw);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('API base URL must be an HTTP(S) address without credentials, query or fragment.');
-  const key = qwenSetting('COMPATIBLE_API_KEY');
+  const key = readEnvSetting('COMPATIBLE_API_KEY');
   return { base: url.href.replace(/\/+$/, ''), headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) } };
 }
 export async function listCompatibleModels(): Promise<string[]> {
