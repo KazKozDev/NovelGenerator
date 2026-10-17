@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { indexManuscriptBlocks } from '../utils/novel/hybridSearch';
 import { chapterSkeleton, cachedSkeletons, checkSuspects, clearSkeletonCache, findRepeats, skeletonLines, readBlocks, readBookNotes } from '../utils/novel/editorialTools';
-import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, parseProblems, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
+import { asksForEdit, buildCloseProblemPrompt, buildEditorialAgentPrompt, parseDropped, parseProblems, quoteInBook, parseToolCallsFromModelResponse, runEditorialTurn } from '../utils/novel/editorialAgent';
 import { buildEntityGraph } from '../utils/novel/entityGraph';
 
 const SCENE = [
@@ -180,17 +180,39 @@ describe('editorial agent with reading tools', () => {
     const calls: string[] = [];
     const callModel = async (prompt: string, system: string) => {
       calls.push(system);
-      if (system.includes('copy kept problems')) return '```problem\n{"title": "Body found twice", "places": ["ch4_p18"], "ways": ["Make both five"]}\n```';
+      if (system.includes('You copy kept')) return '```problem\n{"title": "Body found twice", "places": ["ch4_p18"], "ways": ["Make both five"]}\n```';
       return 'Kept: the body is found at five and at noon (ch4_p18).';
     };
     const result = await runEditorialTurn({ userPrompt: 'Review it, then one block:\n```problem\n{}\n```', bookContent: BOOK, history: [], callModel });
     expect(calls).toHaveLength(2);
     expect(result.problems.map(p => p.title)).toEqual(['Body found twice']);
     expect(result.assistantMessage).toContain('Kept: the body');
-    const invented = await runEditorialTurn({ userPrompt: 'Review it, then one block:\n```problem\n{}\n```', bookContent: BOOK, history: [], callModel: async (_p, system) => system.includes('copy kept problems') ? '```problem\n{"title": "Unexplained ending", "places": ["ch3_p9"], "ways": []}\n```' : 'I will read the rest first.' });
+    const invented = await runEditorialTurn({ userPrompt: 'Review it, then one block:\n```problem\n{}\n```', bookContent: BOOK, history: [], callModel: async (_p, system) => system.includes('You copy kept') ? '```problem\n{"title": "Unexplained ending", "places": ["ch3_p9"], "ways": []}\n```' : 'I will read the rest first.' });
     expect(invented.problems).toEqual([]);
     const plain = await runEditorialTurn({ userPrompt: 'Check the plot', bookContent: BOOK, history: [], callModel: async () => 'Nothing found.' });
     expect(plain.problems).toEqual([]);
+  });
+
+  it('accepts a quote only when it stands in the book word for word', () => {
+    expect(quoteInBook('“Ilya waited upstairs until twenty to six”', BOOK)).toBe(true);
+    expect(quoteInBook('Nora pushed the archive door open … the cold air of the basement met her', BOOK)).toBe(true);
+    expect(quoteInBook('Ilya waited downstairs until six', BOOK)).toBe(false);
+    expect(quoteInBook('in this context', BOOK)).toBe(false);
+    expect(quoteInBook('', BOOK)).toBe(false);
+  });
+
+  it('keeps a dropped suspect whose clearing quote is not in the book', async () => {
+    const review = [
+      'Kept: none.',
+      '```dropped\n{"title": "Ilya leaves early", "places": ["ch1_p3"], "quote": "Ilya waited upstairs until twenty to six"}\n```',
+      '```dropped\n{"title": "Inspector at nine", "places": ["ch2_p0"], "quote": "in this context the hour is a guess"}\n```',
+      '```problem\n{"title": "Seal cut", "places": ["ch1_p2"], "ways": ["Show who cut it"]}\n```',
+    ].join('\n');
+    expect(parseDropped(review).map(d => d.title)).toEqual(['Ilya leaves early', 'Inspector at nine']);
+    const result = await runEditorialTurn({ userPrompt: 'Review, with ```problem and ```dropped blocks', bookContent: BOOK, history: [], callModel: async () => review });
+    expect(result.problems.map(p => p.title)).toEqual(['Seal cut', 'Inspector at nine (dropped without a quote that clears it)']);
+    expect(result.assistantMessage).toContain('Kept after all');
+    expect(result.assistantMessage).not.toContain('```dropped');
   });
 
   it('closes a problem with linked patches and re-reads the changed chapter once', async () => {

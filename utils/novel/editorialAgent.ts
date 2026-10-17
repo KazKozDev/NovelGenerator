@@ -38,6 +38,33 @@ export interface EditorialAgentResponse {
 }
 
 const PROBLEM_BLOCK = /```problem\s*\r?\n([\s\S]*?)\r?\n```/gi;
+const DROPPED_BLOCK = /```dropped\s*\r?\n([\s\S]*?)\r?\n```/gi;
+
+/** A suspect a review dropped, with the quote it says clears it. */
+export interface DroppedSuspect { title: string; places: string[]; quote: string }
+
+export function parseDropped(text: string): DroppedSuspect[] {
+  const dropped: DroppedSuspect[] = [];
+  for (const match of text.matchAll(DROPPED_BLOCK)) {
+    try {
+      const raw = JSON.parse(match[1]);
+      if (typeof raw?.title !== 'string' || !raw.title.trim()) continue;
+      dropped.push({ title: raw.title.trim(), places: Array.isArray(raw.places) ? raw.places.filter((x: unknown) => typeof x === 'string') : [], quote: typeof raw.quote === 'string' ? raw.quote : '' });
+    } catch {
+      // A malformed block is treated as a drop with no quote: it stays kept.
+    }
+  }
+  return dropped;
+}
+
+const plainQuote = (text: string) => text.toLowerCase().replace(/[“”«»„]/g, '"').replace(/[‘’]/g, "'").replace(/[*_]/g, '').replace(/\s+/g, ' ').trim();
+
+/** Whether a quote stands in the book word for word (fragments around an ellipsis each must). */
+export function quoteInBook(quote: string, book: string): boolean {
+  const text = plainQuote(book);
+  const fragments = plainQuote(quote).replace(/^["'\s]+|["'\s]+$/g, '').split(/…|\.\.\./).map(f => f.trim().replace(/^["'\s,;:]+|["'\s,;:]+$/g, '')).filter(f => f.length >= 8);
+  return plainQuote(quote).length >= 15 && fragments.length > 0 && fragments.every(f => text.includes(f));
+}
 
 export function parseProblems(text: string): EditorialProblem[] {
   const problems: EditorialProblem[] = [];
@@ -474,21 +501,33 @@ export async function runEditorialTurn(params: {
   }
 
   let problems = parseProblems(modelResponse);
-  // The review was asked for problem blocks but wrote prose: one call copies its kept problems out, nothing more.
-  if (!problems.length && params.userPrompt.includes('```problem') && modelResponse.trim()) {
+  let dropped = parseDropped(modelResponse);
+  const cited = (places: string[]) => places.length > 0 && places.some(place => modelResponse.includes(place.split(/[-–]/)[0].trim()));
+  // The review was asked for blocks but wrote prose: one call copies its kept and dropped suspects out, nothing more.
+  if (params.userPrompt.includes('```problem') && modelResponse.trim() && (!problems.length || !dropped.length)) {
     const extracted = await params.callModel(
-      `REVIEW:\n${modelResponse}\n\nCopy the problems this review KEEPS (not the dropped ones) as blocks, one per problem, in the review's order:\n\`\`\`problem\n{"title": "short name", "places": ["paragraph ids the review cites for it"], "ways": ["each way the review gives to close it"]}\n\`\`\`\nCopy only what the review says. If the review keeps no problems, output nothing.`,
-      'You copy kept problems out of an editorial review into blocks. Do not add, judge, or rewrite. Output the blocks only.',
+      `REVIEW:\n${modelResponse}\n\nCopy the problems this review KEEPS as blocks, one per problem, in the review's order:\n\`\`\`problem\n{"title": "short name", "places": ["paragraph ids the review cites for it"], "ways": ["each way the review gives to close it"]}\n\`\`\`\nThen copy the suspects it DROPS, each with the quote from the book it gives as clearing it (empty if it gives none):\n\`\`\`dropped\n{"title": "short name", "places": ["paragraph ids"], "quote": "the quote the review gives, word for word"}\n\`\`\`\nCopy only what the review says. If the review keeps or drops none, output no block for it.`,
+      'You copy kept and dropped suspects out of an editorial review into blocks. Do not add, judge, or rewrite. Output the blocks only.',
     );
-    // A copied problem stands only on paragraphs the review itself cites.
-    problems = parseProblems(extracted).filter(p => p.places.length > 0 && p.places.some(place => modelResponse.includes(place.split(/[-–]/)[0].trim())));
-    if (problems.length) executedTools.push({ tool: 'problems', summary: `Copied ${problems.length} kept problems into cards` });
+    // A copied entry stands only on paragraphs the review itself cites.
+    if (!problems.length) {
+      problems = parseProblems(extracted).filter(p => cited(p.places));
+      if (problems.length) executedTools.push({ tool: 'problems', summary: `Copied ${problems.length} kept problems into cards` });
+    }
+    if (!dropped.length) dropped = parseDropped(extracted).filter(d => cited(d.places));
   }
+  // A drop stands only on a quote that is in the book word for word; any other drop is kept.
+  const unproven = dropped.filter(d => !quoteInBook(d.quote, params.bookContent));
+  for (const d of unproven) {
+    problems.push({ id: `problem_${problems.length + 1}_${Math.random().toString(36).slice(2, 6)}`, title: `${d.title} (dropped without a quote that clears it)`, places: d.places, ways: [] });
+  }
+  if (unproven.length) executedTools.push({ tool: 'problems', summary: `Kept ${unproven.length} dropped suspects that had no clearing quote from the book` });
 
   // Clean tool tags and problem blocks from message text
   let cleanMessage = modelResponse
     .replace(/```(?:tool:[a-z_]+|json\s*\(tool:[a-z_]+\))[\s\S]*?```/gi, '')
     .replace(PROBLEM_BLOCK, '')
+    .replace(DROPPED_BLOCK, '')
     .trim();
 
   // If the model wrapped its output in a JSON object (e.g. {"type":"object","content":"..."} or {"error":"..."})
@@ -507,6 +546,10 @@ export async function runEditorialTurn(params: {
     } catch {
       // Keep as is if not valid JSON
     }
+  }
+
+  if (unproven.length) {
+    cleanMessage += `\n\n**Kept after all: dropped without a quote from the book that clears them:**\n${unproven.map(d => `- ${d.title}${d.quote ? ` (the quote given is not in the book: "${d.quote}")` : ''}`).join('\n')}`;
   }
 
   // Closing a problem: show once how the changed chapters read, by their new skeletons. Shown, not judged.
