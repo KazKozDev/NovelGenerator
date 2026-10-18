@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useFillHeight } from '../utils/useFillHeight';
 import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
@@ -288,15 +289,17 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     }
   };
 
+  // The review and the manuscript columns reach the bottom of the window.
+  const columnsFill = useFillHeight<HTMLDivElement>('auto', 520);
   return (
     <div className="space-y-4">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       {/* Column 1 (Review), Column 2 (Manuscript), and Column 3 (Cover) where no Cover or Publish stage holds it */}
-      <div className={`grid grid-cols-1 gap-6 items-stretch ${showPublicationColumn ? 'lg:grid-cols-[33%_47%_1fr]' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
+      <div ref={columnsFill} className={`grid grid-cols-1 gap-6 items-stretch ${showPublicationColumn ? 'lg:grid-cols-[33%_47%_1fr]' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
         {/* Column 1 (~33%): Interactive Editorial Assistant Studio */}
         <EditorialChatStudio
-          className="h-[calc(100vh-215px)] min-h-[520px]"
+          className="h-full min-h-[520px]"
           bookContent={isEditing ? editableContent : bookContent}
           metadata={metadata}
           onApplyPatch={handleApplyStudioPatch}
@@ -312,7 +315,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         />
 
         {/* Column 2 (~47%): Manuscript Reader Card */}
-        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
+        <div className="border border-zinc-800 rounded bg-zinc-900/40 overflow-hidden text-left flex flex-col h-full min-h-[520px]">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
             <h2 className="text-sm font-medium text-zinc-200">Manuscript</h2>
 
@@ -449,7 +452,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         </div>
 
         {/* Column 3 (~20%): Book Cover & Imprint */}
-        {showPublicationColumn && <div className="flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
+        {showPublicationColumn && <div className="flex flex-col h-full min-h-[520px]">
           <BookCoverUpload
             className="h-full"
             title={displayTitle}

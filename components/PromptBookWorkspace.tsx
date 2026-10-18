@@ -1,4 +1,5 @@
 import {PromptStoryStudio} from './PromptStoryStudio';
+import { useFillHeight } from '../utils/useFillHeight';
 import type {AgentLogEntry} from '../types';
 import type {TokenTotals} from '../utils/tokenUsage';
 import BookDisplay, {type ManualSaveOptions} from './BookDisplay';
@@ -27,15 +28,16 @@ function PromptEditor({bookTitle,value,stale,busy,onSave,onDirty,styleProfile,di
  useEffect(()=>{setMessage('');},[value.chapter,value.system,value.prompt]);
  const dirty=system!==value.system||prompt!==value.prompt;
  useEffect(()=>{onDirty(value.chapter,dirty);},[dirty,value.chapter,onDirty]);
- return <div className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col">
+ const fill=useFillHeight<HTMLDivElement>();
+ return <div ref={fill} className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col">
   <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
    <h2 className="text-sm font-medium text-zinc-200">Chapter {value.chapter}. {value.title}</h2>
    <span className="text-xs text-zinc-400">{stale?'Outdated after outline change':value.edited?'Edited manually':'Based on current outline'}</span>
   </div>
-  <div className="p-4 space-y-3">
+  <div className="p-4 flex-1 min-h-0 flex flex-col gap-3">
    {styleProfile&&<p className="text-xs text-zinc-400">The shared writing style profile is added automatically. Edit it under Writing style.</p>}
    <label className="block text-xs">Writer instructions<textarea aria-label={`Chapter instructions ${value.chapter}`} value={system} onChange={e=>setSystem(e.target.value)} disabled={busy||stale} rows={4} className={`${field} mt-2`}/></label>
-   <label className="block text-xs">Full prompt<textarea aria-label={`Chapter prompt ${value.chapter}`} value={prompt} onChange={e=>setPrompt(e.target.value)} disabled={busy||stale} rows={30} className={`${field} mt-2`}/></label>
+   <label className="flex-1 min-h-0 flex flex-col text-xs">Full prompt<textarea aria-label={`Chapter prompt ${value.chapter}`} value={prompt} onChange={e=>setPrompt(e.target.value)} disabled={busy||stale} rows={30} className={`${field} mt-2 lg:flex-1 lg:min-h-[240px]`}/></label>
    <div className="flex flex-wrap gap-2">
     <button className={button} disabled={busy||stale||!dirty||!system.trim()||!prompt.trim()} onClick={async()=>{try{await onSave(value.chapter,system,prompt);setDraft(undefined);setMessage('Saved');}catch(e){setMessage(String(e));}}}>Save prompt changes</button>
     <button className={button} disabled={!dirty||busy} onClick={()=>{setDraft(undefined);setMessage('Changes discarded');}}>Discard changes</button>
@@ -106,6 +108,7 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
     </span>
    </div>
  </>;
+ const asideFill=useFillHeight<HTMLElement>();
  const stageNav=<>
     {onLibrary&&<button type="button" className="h-[30px] px-3 text-xs font-medium rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors" onClick={onLibrary} title="All books in Documents/NovelGenerator">Library</button>}
     <nav aria-label="Book workflow stages" className="inline-flex p-0.5 bg-zinc-900 border border-zinc-800 rounded-lg">
@@ -146,7 +149,7 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
   <WritingStylePanel bookTitle={bookTitle} book={value} busy={busy} onSave={onSaveStyle} onGenerate={onGenerateStyle} onDirty={setStyleDirty} blocked={editing||Object.values(dirty).some(Boolean)}/>
   {styleNeedsGeneration(value)&&<p className="text-sm text-amber-200">Generate or save a style profile before writing the story.</p>}
   <div className="grid gap-5 lg:grid-cols-[290px_minmax(0,1fr)] items-start">
-  <aside aria-label="Chapters and review" className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col lg:sticky lg:top-4 max-h-[85vh]">
+  <aside ref={asideFill} aria-label="Chapters and review" className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col lg:sticky lg:top-4">
    <div className="px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0 flex items-center justify-between">
     <h2 className="text-sm font-medium text-zinc-200">Chapters & Consistency</h2>
    </div>

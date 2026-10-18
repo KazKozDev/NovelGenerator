@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useFillHeight } from '../utils/useFillHeight';
 import { saveOrDownload, saveToBookFolder } from '../utils/saveToBookFolder';
 import JSZip from 'jszip';
 import { generateText } from '../services/llmService';
@@ -67,6 +68,7 @@ interface AestheticEvaluation {
 
 export default function CoverStudio({ bookKey, facts, author, onUseAsCover, bookCover }: CoverStudioProps) {
   const bookCoverInput = useRef<HTMLInputElement | null>(null);
+  const controlsFill = useFillHeight<HTMLElement>();
   const [bookCoverError, setBookCoverError] = useState('');
   const [state, setState] = useState<CoverStudioState>(() => emptyStudio({ title: facts.title, author, tagline: '' }));
   // The print covers take the spine the Publish stage measured from the laid-out interior (or the printer's template).
@@ -814,7 +816,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
       />
 
       {/* Left Sidebar: Controls & Workflows */}
-      <aside aria-label="Cover controls" className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col lg:sticky lg:top-4 max-h-[85vh]">
+      <aside ref={controlsFill} aria-label="Cover controls" className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left flex flex-col lg:sticky lg:top-4">
         <div className="px-3.5 py-2.5 border-b border-zinc-800 bg-zinc-900/80 shrink-0 flex items-center justify-between">
           <h2 className="text-sm font-medium text-zinc-200">Cover Controls</h2>
           <span className="text-[11px] font-mono text-zinc-500">

@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useState} from 'react';
+import { useFillHeight } from '../utils/useFillHeight';
 import {ThreeZoneGenerationView} from './ThreeZoneGenerationView';
 import SaveStatusIndicator from './SaveStatusIndicator';
 import {GenerationStep,ChapterGenerationStage,type AgentLogEntry,type ChapterData} from '../types';
@@ -10,6 +11,7 @@ import {modelTimeMs,durationLabel} from '../utils/novel/promptBook/telemetry';
 const words=(text:string)=>text.trim()?text.trim().split(/\s+/u).length:0;
 export function PromptStoryStudio({book,running,writingChapter=0,liveText='',selectedChapter,onChapterSelect,logs=[],tokens,savedAt,saveStatus,onResume,error}:{book:PromptBook;running:boolean;writingChapter?:number;liveText?:string;selectedChapter:number;onChapterSelect:(chapter:number)=>void;logs?:AgentLogEntry[];tokens?:TokenTotals;savedAt?:number;saveStatus?:{state:'saving'|'saved'|'error';error?:string};onResume?:()=>void;error?:string|null}) {
  const [follow,setFollow]=useState(true),[now,setNow]=useState(Date.now);
+ const fill=useFillHeight<HTMLDivElement>('auto',560);
  useEffect(()=>{if(!running)return;const tick=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(tick);},[running]);
  useEffect(()=>{if(follow&&running&&writingChapter)onChapterSelect(writingChapter);},[follow,running,writingChapter,onChapterSelect]);
  const chapters=useMemo<ChapterData[]>(()=>Array.from({length:book.brief.input.chapter_count},(_,i)=>{const n=i+1,p=book.prompts.find(p=>p.chapter===n),c=book.story?.chapters.find(c=>c.chapter===n),previous=book.storyEdits?.at(-1)?.before.chapters.find(c=>c.chapter===n);return {title:p?.title||`Chapter ${n}`,content:c?normalizeChapterBody(c.text,n):'',plan:p?.prompt||'No chapter prompt saved.',previousContent:previous?normalizeChapterBody(previous.text,n):undefined,generationStage:c?ChapterGenerationStage.Complete:ChapterGenerationStage.NotStarted,revisionStatus:c?'Saved draft · not reviewed':running&&n===writingChapter?'Live draft · not saved':'Pending'};}),[book.story,book.prompts,book.storyEdits,book.brief.input.chapter_count,running,writingChapter]);
@@ -34,7 +36,7 @@ export function PromptStoryStudio({book,running,writingChapter=0,liveText='',sel
    </div>
   </div>
   <div className="flex items-center justify-between gap-3 text-xs text-zinc-500"><p>Live words are not saved until the chapter finishes. Model usage covers the whole project.</p><div className="flex items-center gap-4"><label className="flex items-center gap-2 whitespace-nowrap"><input type="checkbox" checked={follow} onChange={e=>setFollow(e.target.checked)}/>Follow active chapter</label><SaveStatusIndicator generatedChapters={chapters.filter(c=>!!c.content)} savedAt={savedAt} status={saveStatus}/></div></div>
-  <div className="h-auto lg:h-[calc(100dvh-340px)] lg:min-h-[650px]" aria-label="Writing workspace">
+  <div ref={fill} className="h-auto" aria-label="Writing workspace">
    <ThreeZoneGenerationView embedded selectedChapterNumber={selectedChapter} onChapterSelect={n=>{setFollow(false);onChapterSelect(n);}} followActiveChapter={false} targetWordsPerChapter={Math.round(target/book.brief.input.chapter_count)} currentStep={error?GenerationStep.Error:running?GenerationStep.GeneratingChapters:completed===book.brief.input.chapter_count?GenerationStep.Done:GenerationStep.Idle} currentChapterProcessing={running?writingChapter:0} totalChaptersToProcess={book.brief.input.chapter_count} currentStoryOutline={outline} currentChapterPlan={active?.prompt||''} tools={tools} generatedChapters={chapters} agentLogs={logs} liveDraft={running&&liveText?{label:`Chapter ${writingChapter}`,text:liveText}:null} tokenTotals={tokens} lastSavedAt={savedAt} autosaveStatus={saveStatus} isLoading={running} isResumable={completed>0&&completed<book.brief.input.chapter_count&&!!onResume} onResumeGeneration={onResume} developmentLabel={running?`Writing chapter ${writingChapter} of ${book.brief.input.chapter_count}`:completed===book.brief.input.chapter_count?'Story draft complete':completed?'Paused · ready to resume':'Ready to write'} />
   </div>
  </section>;
