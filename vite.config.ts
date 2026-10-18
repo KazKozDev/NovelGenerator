@@ -8,6 +8,7 @@ import { geminiDevPlugin } from './services/geminiDevPlugin';
 import { anthropicDevPlugin } from './services/anthropicDevPlugin';
 import { keysDevPlugin } from './services/keysDevPlugin';
 import { coverAiDevPlugin } from './services/coverAiDevPlugin';
+import { screenStatePlugin } from './services/screenStatePlugin';
 
 function terminalLoggerPlugin(): Plugin {
   let lastKey = '';
@@ -84,7 +85,7 @@ function terminalLoggerPlugin(): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
     const env = loadEnv(mode, '.', '');
     const apiKey = env.GEMINI_API_KEY || env.API_KEY || '';
     return {
@@ -99,10 +100,12 @@ export default defineConfig(({ mode }) => {
           }
         }
       },
-      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin()],
+      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin(), screenStatePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
-        'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
+        'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
+        // The guide's agent message names this folder, so a pasted message works as it is.
+        __NOVEL_REPO__: JSON.stringify(command === 'serve' ? __dirname : ''),
       },
       resolve: {
         alias: {

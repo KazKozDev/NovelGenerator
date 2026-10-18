@@ -27,3 +27,19 @@ describe('SystemManualModal and copyright placement', () => {
     expect(html).not.toContain('<footer');
   });
 });
+
+describe('Agents tab', () => {
+  it('gives a message an agent can follow without editing: the server command in this folder and the stage tools', async () => {
+    const { agentSetupPrompt } = await import('../utils/agentPrompt');
+    const text = agentSetupPrompt('/home/me/NovelGenerator');
+    expect(text).toContain('/home/me/NovelGenerator/mcp/start.sh');
+    expect(text).toContain('mcp_servers:');
+    expect(text).toContain('mcp.servers');
+    expect(text).toContain('claude mcp add novel -- /home/me/NovelGenerator/mcp/start.sh');
+    expect(text).toMatch(/book_status[\s\S]*write_story/);
+    expect(text).toContain('whats_new');
+    expect(text).toContain('see_app');
+    expect(text).toContain('watch');
+    expect(agentSetupPrompt('')).toContain('<path to NovelGenerator>');
+  });
+});

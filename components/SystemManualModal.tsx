@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { agentSetupPrompt, NOVEL_REPO } from '../utils/agentPrompt';
 
 interface SystemManualModalProps { isOpen: boolean; onClose: () => void }
 
@@ -293,8 +294,60 @@ const sections = [
         ]
       }
     ]
+  },
+  {
+    id: 'agents',
+    label: 'Agents',
+    title: 'Hand the book to an agent: Hermes, OpenClaw, Claude Code',
+    intro: 'Copy the message below and paste it into your agent\'s chat. The agent connects the NovelGenerator MCP server to itself and can then run every stage of this book.',
+    cards: [
+      {
+        title: 'What the agent can do',
+        paragraphs: [
+          'Start a book, build the writing style, plan the outline and chapter prompts, check and fix the prompts, write the story, and edit the manuscript, the same steps as the buttons here.',
+          'Stages that ask a model run in the background, one at a time; the agent waits for them with book_status and reports what changed.'
+        ]
+      },
+      {
+        title: 'The same book as the app',
+        paragraphs: [
+          'The agent works on the book in its folder in Documents/NovelGenerator. Reload this page to see what it did; it sees your edits on its next step.',
+          'Do not run a stage here while the agent runs one: the later save wins. The writer model is set in the agent\'s server settings (see docs/MCP.md); by default Claude Opus with the key from .env.local.'
+        ]
+      }
+    ]
   }
 ] as const;
+
+/** The message for an agent's chat, with a button that copies it. */
+function AgentPrompt() {
+  const text = agentSetupPrompt();
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copy = async () => {
+    // The copy command first, inside the click: the clipboard API can wait forever on a permission
+    // that is never asked (embedded browsers), and is only the fallback here.
+    const area = document.createElement('textarea');
+    area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select();
+    let done = false;
+    try { done = document.execCommand('copy'); } catch { done = false; }
+    area.remove();
+    if (!done) {
+      try { await Promise.race([navigator.clipboard.writeText(text), new Promise((_, reject) => setTimeout(reject, 1500))]); done = true; }
+      catch { done = false; }
+    }
+    setCopied(done ? 'copied' : 'failed');
+    setTimeout(() => setCopied('idle'), done ? 2000 : 5000);
+  };
+  return <section className="rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 overflow-hidden">
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 light:border-zinc-200">
+      <h4 className="font-semibold text-zinc-200 light:text-zinc-900">Message for the agent</h4>
+      <button type="button" onClick={copy} className="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white light:bg-zinc-900 light:text-white light:hover:bg-zinc-700">{copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Select and copy by hand' : 'Copy'}</button>
+    </div>
+    {!NOVEL_REPO && <p className="px-4 pt-3 text-xs text-amber-400 light:text-amber-700">This page does not know where NovelGenerator is on disk: replace &lt;path to NovelGenerator&gt; in the message with that folder.</p>}
+    <pre className="px-4 py-3 max-h-80 overflow-auto text-xs leading-relaxed whitespace-pre-wrap break-words font-mono text-zinc-300 light:text-zinc-800 select-all">{text}</pre>
+  </section>;
+}
 
 type GuideIconName = 'book' | 'layout' | 'chart' | 'layers' | 'check' | 'models' | 'save' | 'pen' | 'target' | 'play' | 'search' | 'clock' | 'file' | 'restore';
 
@@ -324,6 +377,7 @@ const sectionIcons: Record<string, GuideIconName> = {
   process: 'layers',
   checks: 'check',
   saving: 'save',
+  agents: 'models',
 };
 
 function cardIcon(title: string): GuideIconName {
@@ -367,11 +421,12 @@ export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </header>
-      <nav aria-label="Guide sections" className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 px-5 py-3 border-b border-zinc-800 light:border-zinc-200 shrink-0">
+      <nav aria-label="Guide sections" className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-1 px-5 py-3 border-b border-zinc-800 light:border-zinc-200 shrink-0">
         {sections.map(item => <button key={item.id} type="button" aria-current={item.id === section.id ? 'page' : undefined} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-2 min-w-0 px-2.5 py-2 rounded-md text-xs font-medium text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 ${item.id === section.id ? 'bg-zinc-800 light:bg-zinc-100 text-zinc-100 light:text-zinc-900' : 'text-zinc-400 light:text-zinc-600 hover:bg-zinc-800/50 light:hover:bg-zinc-100'}`}><GuideIcon name={sectionIcons[item.id] || 'book'} /><span>{item.label}</span></button>)}
       </nav>
       <div key={section.id} className="min-h-0 overflow-y-auto px-5 py-5 sm:px-6 space-y-5 text-sm leading-relaxed text-zinc-300 light:text-zinc-800">
         <div><h3 className="flex items-center gap-2.5 text-base font-semibold text-zinc-100 light:text-zinc-900"><GuideIcon name={sectionIcons[section.id] || 'book'} className="w-5 h-5 text-zinc-400 light:text-zinc-500" />{section.title}</h3><p className="mt-2 text-zinc-400 light:text-zinc-600">{section.intro}</p></div>
+        {section.id === 'agents' && <AgentPrompt />}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">{section.cards.map(card => <section key={card.title} className="p-4 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50 md:[&:last-child:nth-child(odd)]:col-span-2">
           <h4 className="flex items-start gap-2.5 font-semibold text-zinc-200 light:text-zinc-900"><GuideIcon name={cardIcon(card.title)} className="w-[18px] h-[18px] mt-0.5 text-zinc-400 light:text-zinc-500" /><span>{card.title}</span></h4>
           {card.paragraphs.map(paragraph => <p key={paragraph} className="mt-2 text-zinc-400 light:text-zinc-600">{section.id === 'metrics' && paragraph.includes(':') ? <><strong className="font-medium text-zinc-200 light:text-zinc-800">{paragraph.slice(0, paragraph.indexOf(':') + 1)}</strong>{paragraph.slice(paragraph.indexOf(':') + 1)}</> : paragraph}</p>)}

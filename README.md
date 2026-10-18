@@ -36,6 +36,8 @@ To run a headless generation via terminal:
 npx vite-node scripts/run-hp-book.ts
 ```
 
+To let an agent (Hermes Agent, OpenClaw, Claude Code) run each stage, connect the MCP server: see [docs/MCP.md](docs/MCP.md).
+
 ## Testing & Build
 
 ```bash
