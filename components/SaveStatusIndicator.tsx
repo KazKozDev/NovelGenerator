@@ -24,10 +24,10 @@ const SaveStatusIndicator: React.FC<SaveStatusIndicatorProps> = ({ generatedChap
   const stamp = formatTimestamp(savedAt);
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0 h-7 pr-1" role="status" aria-live="polite" title={status?.error || "Automatic project backup: autosaves/latest.project.json in the repository."}>
+    <div className="flex items-center gap-1.5 shrink-0 h-7 pr-1" role="status" aria-live="polite" title={status?.error || "Automatic backup of the whole project, covers included: Documents/NovelGenerator/<book title>/."}>
       <span className={`w-1.5 h-1.5 rounded-full ${status?.state === 'error' ? 'bg-amber-500' : inProgress ? 'bg-zinc-400 animate-pulse' : status?.state === 'saved' && savedAt ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
       <span className="text-xs text-zinc-500 whitespace-nowrap">
-        {status?.state === 'error' ? 'Autosave failed · retrying' : inProgress ? 'Autosaving' : savedAt ? 'Autosaved to repo' : 'Not saved yet'}{stamp ? ` · ${stamp}` : ''}
+        {status?.state === 'error' ? 'Autosave failed · retrying' : inProgress ? 'Autosaving' : savedAt ? 'Autosaved' : 'Not saved yet'}{stamp ? ` · ${stamp}` : ''}
       </span>
     </div>
   );

@@ -24,8 +24,19 @@ it('orders chapter navigation and puts the optional review result in the left si
 it('restores the third editing stage with the existing editorial studio and live manuscript',()=>{
  const state:PromptBook={version:1,brief:{input:{premise:'Save a log',chapter_count:2,target_total_words:1200,genre:'thriller',author_requirements:'Past tense'},settings:{}},phase:'ready',revision:1,prompts:[],workspaceStage:'editing',story:{revision:1,chapters:[1,2].map(chapter=>({chapter,title:`Chapter ${chapter}`,text:`Current live prose ${chapter}.`,system:'Write',prompt:'Write',createdAt:''}))},updatedAt:''};
  const html=renderToStaticMarkup(<PromptBookWorkspace value={state} busy={false} onContinue={vi.fn()} onSaveBlueprint={vi.fn()} onSavePrompt={vi.fn()} onExport={vi.fn()} onSettings={vi.fn()} onSaveStory={vi.fn()}/>);
- expect(html).toContain('3. Editing');expect(html).toContain('Manuscript');expect(html).toContain('Edit text');expect(html).toContain('Current live prose 2.');expect(html).toMatch(/Save(?: Draft)? ▾/);expect(html).not.toContain('Finish writing all chapters');
+ expect(html).toContain('3. Editing');expect(html).toContain('Manuscript');expect(html).toContain('Edit text');expect(html).toContain('Current live prose 2.');expect(html).toContain('5. Publish');expect(html).not.toMatch(/Export(?: draft)? ▾/);
+ // The cover and edition fields live on the Cover and Publish stages, not beside the manuscript.
+ expect(html).not.toContain('Upload book cover');expect(html).not.toContain('imprint-edition-input');expect(html).not.toContain('Finish writing all chapters');
  expect(html).not.toContain('Start new draft');
  expect(html).not.toContain('Back to project settings');
  expect(html).not.toContain('Open editing');
+});
+it('the publish stage gives each store its files and checks, and keeps the app formats without a backup button',()=>{
+ const state:PromptBook={version:1,brief:{input:{title:'The Log',premise:'Save a log',chapter_count:1,target_total_words:1200,genre:'thriller',author_requirements:''},settings:{}},phase:'ready',revision:1,prompts:[],workspaceStage:'publish',story:{revision:1,chapters:[{chapter:1,title:'Chapter 1',text:'The log was gone.',system:'Write',prompt:'Write',createdAt:''}]},updatedAt:''} as unknown as PromptBook;
+ const html=renderToStaticMarkup(<PromptBookWorkspace value={state} busy={false} onContinue={vi.fn()} onSaveBlueprint={vi.fn()} onSavePrompt={vi.fn()} onExport={vi.fn()} onSettings={vi.fn()} publication={{author:'A. Writer'}}/>);
+ for(const store of ['Amazon Kindle','Apple Books','Google Play Books'])expect(html).toContain(`Prepare for ${store}`);
+ expect(html).toContain('Cover JPEG 1600×2560');expect(html).toContain('needs a cover');
+ expect(html).toContain('>Edition<');expect(html).toContain('First edition');expect(html).toContain('Markdown');expect(html).not.toContain('Project backup');expect(html).not.toContain('Reading EPUB');
+ // The folder name is the only Russian on the page: the interface itself is English.
+ expect(html.replaceAll('издания/','')).not.toMatch(/[А-Яа-яЁё]/);
 });

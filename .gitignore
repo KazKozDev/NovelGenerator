@@ -43,3 +43,11 @@ public/models/
 
 # Local automatic project backups
 autosaves/
+
+# Section 5, the audio studio (Drama 3): local only, not published. The app loads it when these files are here.
+components/AudioStudio.tsx
+services/audioDevPlugin.ts
+utils/audio/
+scripts/drama3_*.py
+scripts/build_app.sh
+DramaStudio.spec

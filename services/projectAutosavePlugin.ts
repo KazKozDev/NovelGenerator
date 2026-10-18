@@ -4,8 +4,11 @@ import path from 'node:path';
 import {
   BOOK_FOLDERS,
   listAutosaves,
+  listBooks,
   listRecoveryCopies,
+  readBookSnapshot,
   saveProjectSnapshotToStorage,
+  readBookFile,
   saveBookFile,
   type BookStorageCategory,
 } from './bookStorageService';
@@ -20,6 +23,19 @@ export function projectAutosavePlugin(root = process.cwd()): Plugin {
   const docsBase = isTestRoot ? path.join(root, 'Documents', 'NovelGenerator') : undefined;
 
   let queue: Promise<unknown> = Promise.resolve();
+  /** Only this machine's own page may read or write the book folders. */
+  const localSameOrigin = (req: any): boolean => {
+    const host = req.headers.host || '';
+    try {
+      const local = new URL(`http://${host}`);
+      if (!['localhost', '127.0.0.1', '[::1]'].includes(local.hostname)) return false;
+      if (req.headers.origin && new URL(req.headers.origin).host !== host) return false;
+      if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+      if (req.method === 'PUT' && !req.headers.origin) return false;
+      return true;
+    } catch { return false; }
+  };
+  const TYPES: Record<string, string> = { epub: 'application/epub+zip', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', json: 'application/json', txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8' };
   const middleware = (server: { middlewares: { use: Function } }) => {
     // 1. One file a person asked for: a manuscript, a cover, a report, a copy of the project.
     server.middlewares.use('/api/save-document', (req: any, res: any) => {
@@ -55,19 +71,40 @@ export function projectAutosavePlugin(root = process.cwd()): Plugin {
       });
     });
 
-    // 2. Endpoint for full project snapshot autosave and restore
+    // 2. A file the app saved in a book's folder, read back on reload: the cover studio, its pictures, the book's cover.
+    server.middlewares.use('/api/book-file', async (req: any, res: any) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!localSameOrigin(req)) { res.statusCode = 403; res.end(); return; }
+      if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+      const query = new URL(req.url || '', 'http://local').searchParams;
+      const kind = query.get('kind') || '';
+      const name = query.get('name') || '';
+      const content = kind in BOOK_FOLDERS ? await readBookFile(query.get('title') || '', kind as BookStorageCategory, name, docsBase) : null;
+      if (!content) { res.statusCode = 404; res.end(); return; }
+      res.setHeader('Content-Type', TYPES[name.split('.').pop()!.toLowerCase()] || 'application/octet-stream');
+      res.statusCode = 200;
+      res.end(content);
+    });
+
+    // 3. The library: every book in Documents/NovelGenerator, and one book's autosave to open it.
+    server.middlewares.use('/api/books', async (req: any, res: any) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!localSameOrigin(req)) { res.statusCode = 403; res.end(); return; }
+      if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+      const folder = new URL(req.url || '', 'http://local').searchParams.get('folder');
+      res.setHeader('Content-Type', 'application/json');
+      if (folder === null) { res.statusCode = 200; res.end(JSON.stringify({ books: await listBooks(docsBase) })); return; }
+      const snapshot = await readBookSnapshot(folder, docsBase);
+      res.statusCode = snapshot ? 200 : 404;
+      res.end(snapshot ?? JSON.stringify({ error: 'No such book' }));
+    });
+
+    // 4. Endpoint for full project snapshot autosave and restore
     server.middlewares.use('/api/project-autosave', (req: any, res: any) => {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
       const finish = (code: number, value: unknown) => { res.statusCode = code; res.end(JSON.stringify(value)); };
-      const host = req.headers.host || '';
-      try {
-        const local = new URL(`http://${host}`);
-        if (!['localhost', '127.0.0.1', '[::1]'].includes(local.hostname)) throw Error();
-        if (req.headers.origin && new URL(req.headers.origin).host !== host) throw Error();
-        if (req.headers['sec-fetch-site'] === 'cross-site') throw Error();
-        if (req.method === 'PUT' && !req.headers.origin) throw Error();
-      } catch { finish(403, { error: 'Local same-origin requests only' }); return; }
+      if (!localSameOrigin(req)) { finish(403, { error: 'Local same-origin requests only' }); return; }
 
       if (req.method === 'GET') {
         queue.then(async () => {

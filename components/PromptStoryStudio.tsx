@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {ThreeZoneGenerationView} from './ThreeZoneGenerationView';
+import SaveStatusIndicator from './SaveStatusIndicator';
 import {GenerationStep,ChapterGenerationStage,type AgentLogEntry,type ChapterData} from '../types';
 import type {TokenTotals} from '../utils/tokenUsage';
 import type {PromptBook} from '../utils/novel/promptBook';
@@ -32,7 +33,7 @@ export function PromptStoryStudio({book,running,writingChapter=0,liveText='',sel
     </React.Fragment>)}
    </div>
   </div>
-  <div className="flex items-center justify-between gap-3 text-xs text-zinc-500"><p>Live words are not saved until the chapter finishes. Model usage covers the whole project.</p><label className="flex items-center gap-2 whitespace-nowrap"><input type="checkbox" checked={follow} onChange={e=>setFollow(e.target.checked)}/>Follow active chapter</label></div>
+  <div className="flex items-center justify-between gap-3 text-xs text-zinc-500"><p>Live words are not saved until the chapter finishes. Model usage covers the whole project.</p><div className="flex items-center gap-4"><label className="flex items-center gap-2 whitespace-nowrap"><input type="checkbox" checked={follow} onChange={e=>setFollow(e.target.checked)}/>Follow active chapter</label><SaveStatusIndicator generatedChapters={chapters.filter(c=>!!c.content)} savedAt={savedAt} status={saveStatus}/></div></div>
   <div className="h-auto lg:h-[calc(100dvh-340px)] lg:min-h-[650px]" aria-label="Writing workspace">
    <ThreeZoneGenerationView embedded selectedChapterNumber={selectedChapter} onChapterSelect={n=>{setFollow(false);onChapterSelect(n);}} followActiveChapter={false} targetWordsPerChapter={Math.round(target/book.brief.input.chapter_count)} currentStep={error?GenerationStep.Error:running?GenerationStep.GeneratingChapters:completed===book.brief.input.chapter_count?GenerationStep.Done:GenerationStep.Idle} currentChapterProcessing={running?writingChapter:0} totalChaptersToProcess={book.brief.input.chapter_count} currentStoryOutline={outline} currentChapterPlan={active?.prompt||''} tools={tools} generatedChapters={chapters} agentLogs={logs} liveDraft={running&&liveText?{label:`Chapter ${writingChapter}`,text:liveText}:null} tokenTotals={tokens} lastSavedAt={savedAt} autosaveStatus={saveStatus} isLoading={running} isResumable={completed>0&&completed<book.brief.input.chapter_count&&!!onResume} onResumeGeneration={onResume} developmentLabel={running?`Writing chapter ${writingChapter} of ${book.brief.input.chapter_count}`:completed===book.brief.input.chapter_count?'Story draft complete':completed?'Paused · ready to resume':'Ready to write'} />
   </div>

@@ -13,6 +13,7 @@ export const BOOK_FOLDERS = {
   reports: 'отчёты',
   blueprints: 'план',
   backups: 'копии',
+  editions: 'издания',
 } as const;
 export type BookStorageCategory = keyof typeof BOOK_FOLDERS;
 export const UNTITLED_BOOK = 'Без названия';
@@ -63,8 +64,9 @@ export function bookFileName(label: string, ext: string, stamp: boolean | number
 /** The name itself, or "<name> (2)" and on when a file of that name is already there: a save never replaces another. */
 function freeName(dir: string, fileName: string): string {
   if (!existsSync(path.join(dir, fileName))) return fileName;
-  const dot = fileName.indexOf('.', Math.max(0, fileName.lastIndexOf(' ')));
-  const [base, ext] = dot > 0 ? [fileName.slice(0, dot), fileName.slice(dot)] : [fileName, ''];
+  // The extension is the trailing ".jpg" or ".project.json", never the dot of a "15.55" stamp.
+  const ext = fileName.match(/(?:\.[a-z][a-z0-9]{0,9})+$/)?.[0] ?? '';
+  const base = fileName.slice(0, fileName.length - ext.length);
   for (let n = 2; ; n++) if (!existsSync(path.join(dir, `${base} (${n})${ext}`))) return `${base} (${n})${ext}`;
 }
 
@@ -213,6 +215,11 @@ export async function saveProjectSnapshotToStorage(snapshot: any, options: { cus
       await copyFile(autosave, path.join(dir, freeName(dir, bookFileName('повреждённый автосейв', AUTOSAVE_EXT, now))));
     } else if (error?.code !== 'ENOENT') throw error;
   }
+  // Opening a book saves it back unchanged, with only a new exportedAt: the folder and its files stay as they were,
+  // so a book's edited time in the library is when it was last changed.
+  if (previous?.files && JSON.stringify(previous.files) === JSON.stringify(snapshot?.files)) {
+    return { savedAt: (await stat(autosave).catch(() => null))?.mtimeMs ?? now, bookDir, mainBackupPath: autosave };
+  }
   if (previous?.files?.input && JSON.stringify(previous.files.input) !== JSON.stringify(snapshot?.files?.input)) {
     const { dir } = await ensureBookFolder(title, 'backups', customBase);
     await copyFile(autosave, path.join(dir, freeName(dir, bookFileName('перед новой книгой', AUTOSAVE_EXT, now))));
@@ -275,4 +282,79 @@ export async function findLatestProjectSnapshot(customBase?: string): Promise<{ 
   const [newest] = await listAutosaves(customBase);
   if (!newest) return null;
   return { snapshot: JSON.parse(await readFile(newest, 'utf8')), path: newest };
+}
+
+/** One file of a book's subfolder, read back to restore what the app saved there; null when it is not there. */
+export async function readBookFile(title: string, category: BookStorageCategory, name: string, customBase?: string): Promise<Buffer | null> {
+  if (!name || name !== path.basename(name) || name.startsWith('.')) return null;
+  try { return await readFile(path.join(getBookDirectory(title, customBase), BOOK_FOLDERS[category], name)); } catch { return null; }
+}
+
+/** One book of the library: what its card shows and where its cover is. */
+export interface BookSummary {
+  folder: string;
+  title: string;
+  updatedAt: number;
+  genre?: string;
+  premise?: string;
+  chaptersWritten: number;
+  chaptersPlanned: number;
+  words: number;
+  finished: boolean;
+  /** A file in обложки/, or null when the book has no cover yet. */
+  cover: string | null;
+}
+
+const COVER_NAMES = ['обложка книги.jpg', 'обложка книги.png', 'обложка книги.webp', 'обложка eBook 1600x2560.jpg'];
+
+/** The book's cover: the one издание.json names, the saved book cover, else the newest master picture. */
+async function findCover(bookDir: string): Promise<string | null> {
+  const covers = path.join(bookDir, BOOK_FOLDERS.covers);
+  const names = await readdir(covers).catch(() => [] as string[]);
+  if (!names.length) return null;
+  try {
+    const edition = JSON.parse(await readFile(path.join(bookDir, BOOK_FOLDERS.blueprints, 'издание.json'), 'utf8'));
+    if (typeof edition?.cover === 'string' && names.includes(edition.cover)) return edition.cover;
+  } catch { /* No edition file: try the usual names. */ }
+  const known = COVER_NAMES.find(name => names.includes(name));
+  if (known) return known;
+  const masters = names.filter(name => /^мастер [\d. -]+\.(png|jpg|webp)$/.test(name)).sort();
+  return masters.at(-1) ?? null;
+}
+
+/** Every book with an autosave, newest first; a book with nothing in it yet is left out. */
+export async function listBooks(customBase?: string): Promise<BookSummary[]> {
+  const books: BookSummary[] = [];
+  for (const file of await listAutosaves(customBase)) {
+    let snapshot: any;
+    try { snapshot = JSON.parse(await readFile(file, 'utf8')); } catch { continue; }
+    const files = snapshot?.files;
+    const input = files?.input;
+    const planning = files?.author_draft?.promptPlanning;
+    if (!input && !planning) continue;
+    const chapters = snapshotChapters(snapshot);
+    const bookDir = path.dirname(file);
+    books.push({
+      folder: path.basename(bookDir),
+      title: extractTitleFromSnapshot(snapshot),
+      updatedAt: (await stat(file).catch(() => null))?.mtimeMs ?? 0,
+      genre: typeof input?.genre === 'string' ? input.genre : planning?.brief?.settings?.genre,
+      premise: typeof input?.premise === 'string' ? input.premise.slice(0, 280) : undefined,
+      chaptersWritten: chapters.length,
+      chaptersPlanned: Number.isInteger(input?.chapter_count) ? input.chapter_count : chapters.length,
+      words: chapters.reduce((sum, c) => sum + c.text.split(/\s+/).filter(Boolean).length, 0),
+      finished: !!files?.author_draft?.completed || planning?.phase === 'ready',
+      cover: await findCover(bookDir),
+    });
+  }
+  return books;
+}
+
+/** A book's autosave by its folder name; null when there is none. */
+export async function readBookSnapshot(folder: string, customBase?: string): Promise<string | null> {
+  if (!folder || folder !== path.basename(folder) || folder.startsWith('.')) return null;
+  const dir = path.join(getDocumentsRoot(customBase), folder);
+  try { return await readFile(path.join(dir, `${folder}.${AUTOSAVE_EXT}`), 'utf8'); } catch { /* Try any autosave in the folder. */ }
+  const name = (await readdir(dir).catch(() => [] as string[])).find(n => n.endsWith(`.${AUTOSAVE_EXT}`));
+  return name ? readFile(path.join(dir, name), 'utf8').catch(() => null) : null;
 }

@@ -135,7 +135,7 @@ tool('save_manuscript', 'Replace the whole manuscript: every numbered chapter (#
   async ({ content, expected }) => { desk.saveManuscript(content, expected); await desk.wrote('save_manuscript'); return desk.status(); });
 
 tool('set_stage', 'Switch the app\'s workspace tab: prompts, story, editing (needs every chapter written) or cover.',
-  { stage: z.enum(['prompts', 'story', 'editing', 'cover']) }, async ({ stage }) => { desk.setStage(stage); await desk.wrote(`set_stage ${stage}`); return desk.status(); });
+  { stage: z.enum(['prompts', 'story', 'editing', 'cover', 'publish']) }, async ({ stage }) => { desk.setStage(stage); await desk.wrote(`set_stage ${stage}`); return desk.status(); });
 tool('stop_stage', 'Stop the running stage. What it finished stays.', {}, () => desk.stop());
 
 await server.connect(new StdioServerTransport());

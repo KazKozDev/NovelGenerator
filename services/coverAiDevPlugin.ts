@@ -191,6 +191,8 @@ export function coverAiDevPlugin(): Plugin {
             const strength = typeof payload.strength === 'number' ? payload.strength : 0.65;
             const grain = typeof payload.grain === 'number' ? payload.grain : 0.35;
             const dewax = typeof payload.dewax === 'number' ? payload.dewax : 0.5;
+            const codeformer = typeof payload.codeformer === 'boolean' ? payload.codeformer : true;
+            const fidelity = typeof payload.fidelity === 'number' ? payload.fidelity : 0.7;
 
             if (!imageBase64 || typeof imageBase64 !== 'string') {
               res.statusCode = 400;
@@ -206,7 +208,7 @@ export function coverAiDevPlugin(): Plugin {
             fs.writeFileSync(inputPath, Buffer.from(cleanBase64, 'base64'));
 
             const scriptPath = path.resolve(__dirname, '../scripts/cover_ai.py');
-            const pyProcess = spawn('python3', [
+            const pyArgs = [
               scriptPath,
               'deplastic',
               '--input', inputPath,
@@ -214,9 +216,17 @@ export function coverAiDevPlugin(): Plugin {
               '--strength', String(strength),
               '--grain', String(grain),
               '--dewax', String(dewax),
-            ]);
+              '--fidelity', String(fidelity),
+            ];
+            if (!codeformer) {
+              pyArgs.push('--no-codeformer');
+            }
 
+            const pyProcess = spawn('python3', pyArgs);
+
+            let stdout = '';
             let stderr = '';
+            pyProcess.stdout.on('data', d => { stdout += d.toString(); });
             pyProcess.stderr.on('data', d => { stderr += d.toString(); });
 
             pyProcess.on('close', code => {
@@ -234,10 +244,19 @@ export function coverAiDevPlugin(): Plugin {
                   fs.unlinkSync(outputPath);
                 } catch {}
 
+                let meta: any = {};
+                try {
+                  const lines = stdout.trim().split('\n');
+                  meta = JSON.parse(lines[lines.length - 1]);
+                } catch {}
+
                 res.statusCode = 200;
                 res.end(JSON.stringify({
                   status: 'ok',
                   imageBase64: `data:image/png;base64,${outBuffer.toString('base64')}`,
+                  facesRestored: meta.faces_restored || 0,
+                  codeformerApplied: meta.codeformer_applied ?? codeformer,
+                  fidelity,
                 }));
               } catch (err) {
                 res.statusCode = 500;

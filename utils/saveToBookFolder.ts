@@ -2,7 +2,7 @@
  * What a Save button does: the file goes to its book's folder in Documents/NovelGenerator through the dev server.
  * Only when the server cannot save it (the app opened without it) does the browser download it instead.
  */
-export type BookFileKind = 'manuscripts' | 'covers' | 'reports' | 'blueprints' | 'backups';
+export type BookFileKind = 'manuscripts' | 'covers' | 'reports' | 'blueprints' | 'backups' | 'editions';
 
 export interface BookFile {
   title: string;

@@ -557,7 +557,7 @@ export default function useBookGenerator() {
     void saveOrDownload({ title, kind: 'backups', label: 'копия проекта', ext: 'project.json', content: snapshot }, `${name}.project.json`, 'application/json');
   }
 
-  async function importProject(file: File): Promise<void> {
+  async function importProject(file: Blob): Promise<void> {
     if (busy.current) throw new Error('Finish or reset the running book first.');
     const store = getStore();
     const text = await file.text();
@@ -660,7 +660,7 @@ export default function useBookGenerator() {
   return {
     promptBook, updatePromptBlueprint, updateChapterPrompt,
     changePromptStage: (stage:PromptWorkspaceStage) => {try{setPromptWorkspaceStage(getStore(),stage);setError(null);refreshFromStore();void getStore().flush().catch(err=>setError(String(err)));}catch(err){setError(err instanceof Error?err.message:String(err));}},
-    savePromptStory: (content:string,expected:string) => {if(busy.current)return false;try{savePromptStoryManuscript(getStore(),content,expected);setError(null);refreshFromStore();void getStore().flush().catch(err=>setError(String(err)));return true;}catch(err){setError(err instanceof Error?err.message:String(err));return false;}},
+    savePromptStory: (content:string,expected:string,options?:{session?:string;quiet?:boolean}) => {if(busy.current)return false;try{savePromptStoryManuscript(getStore(),content,expected,options?.session);setError(null);refreshFromStore();void getStore().flush().catch(err=>setError(String(err)));return true;}catch(err){if(!options?.quiet)setError(err instanceof Error?err.message:String(err));return false;}},
     updateWritingStyle: async (profile:string,inputs:StyleInputs) => {if(busy.current)throw new Error('Wait for the current operation to finish.');saveWritingStyle(getStore(),profile,inputs);refreshFromStore();await getStore().flush();},
     generateWritingStyle: (inputs:StyleInputs) => inputRef.current ? run(inputRef.current,false,false,undefined,{kind:'style',inputs}) : Promise.resolve(),
     fixPromptIssue: (review:string,index:number) => inputRef.current ? run(inputRef.current,false,false,undefined,{kind:'fix',review,index}) : Promise.resolve(),

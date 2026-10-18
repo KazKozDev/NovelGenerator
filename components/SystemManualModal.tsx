@@ -99,6 +99,40 @@ const sections = [
     ]
   },
   {
+    id: 'covers',
+    label: 'Cover Studio',
+    title: '4K Book Covers, YouTube Thumbnails & AI Realism',
+    intro: 'The Cover Studio turns a text prompt or custom artwork into 14 publication-ready formats across a structured 3-tab workflow with local AI neural models on Apple Silicon.',
+    cards: [
+      {
+        title: '1 · Art & Realism (De-Plasticizer & CodeFormer)',
+        paragraphs: [
+          'Master Generation & Upload: Prompts Gemini for 2:3 4K clean master artwork without text, or accepts custom illustration uploads with crosshair focal point cropping.',
+          'De-Plastic & Micro-Pores: Eliminates the synthetic plastic sheen of diffusion models. CodeFormer neural restoration (bluefoxcreation ONNX on Apple Silicon CoreML/MPS) restores facial skin pores, iris detail, and micro-relief with adjustable fidelity.',
+          '35mm Film Grain: Bilateral frequency separation and high-pass frequency synthesis inject dual-scale cinematic film grain and anti-waxy highlight compression. Use Compare Original to verify real texture before lettering.'
+        ]
+      },
+      {
+        title: '2 · Typography & 3D (Depth-Anything-V2)',
+        paragraphs: [
+          'Smart Art Director: Analyzes artwork luminosity, focal subjects, and negative space to automatically recommend genre typography, font pairing, and palette colors.',
+          'Lettering & Presets: Full control over book title, author, optional tagline, serif vs sans fonts, uppercase transforms, and backdrop shadow density.',
+          '3D Depth Typography: Depth-Anything-V2 extracts a depth mask to layer title lettering behind foreground characters or objects while keeping audiobook badges and author name on top, with fine threshold tuning.',
+          'YouTube 16:9 Composition: Specialized Editorial Left layout with pill badges ("FULL AUDIOBOOK", "ПРЕМЬЕРА") or Classic Centered layout.'
+        ]
+      },
+      {
+        title: '3 · Review & Export (Aesthetic Scorer & A/B/C Pack)',
+        paragraphs: [
+          'Aesthetic & CTR Scorer: Evaluates cover appeal using cafeai/cafe_aesthetic (0–10 score, contrast punch, and mobile legibility bars with actionable improvement tips).',
+          'YouTube Mobile Feed Simulator: Live interactive preview testing title visibility, contrast, and safe zones under real-world smartphone scale with timecode badges.',
+          'YouTube Studio A/B/C Pack: Generates 3 distinct high-CTR thumbnail archetypes (Amber, Crimson, Gold) for native 3-way rotation in YouTube Studio Test & Compare.',
+          'Universal Multi-Format Export: One-click download for any individual format or full .zip archive covering Amazon KDP eBook, ACX Audible, social feeds, and 300 DPI paperback print wraps.'
+        ]
+      }
+    ]
+  },
+  {
     id: 'export',
     label: 'Publishing & Export',
     title: 'Professional industry-standard book exports',
@@ -372,6 +406,7 @@ const sectionIcons: Record<string, GuideIconName> = {
   start: 'book',
   workspace: 'layout',
   studio: 'pen',
+  covers: 'layout',
   export: 'file',
   metrics: 'chart',
   process: 'layers',
@@ -383,6 +418,7 @@ const sectionIcons: Record<string, GuideIconName> = {
 function cardIcon(title: string): GuideIconName {
   if (/chapter count|budget|target/i.test(title)) return 'target';
   if (/start|continue|play/i.test(title)) return 'play';
+  if (/cover studio|de-plastic|codeformer|3d depth|aesthetic|thumbnail|feed/i.test(title)) return 'layout';
   if (/premise|writing|manuscript|editor|author desk|cover|column 2|column 3/i.test(title)) return 'pen';
   if (/left|matrix|pipeline|column 1|relational/i.test(title)) return 'layers';
   if (/measured|checks ·|statistics|rhythm|metrics|signals|prose texture/i.test(title)) return 'chart';

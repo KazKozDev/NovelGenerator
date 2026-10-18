@@ -17,7 +17,7 @@ describe('SaveBook author validation and colophon', () => {
     const htmlWithoutAuthor = renderToStaticMarkup(
       <SaveBook content="A dark and stormy night." metadata={{}} />
     );
-    expect(htmlWithoutAuthor).toContain('Save ▾');
+    expect(htmlWithoutAuthor).toContain('Export ▾');
   });
 
   it('resolves colophon with exact legal disclaimers, author and optional ISBNs', () => {

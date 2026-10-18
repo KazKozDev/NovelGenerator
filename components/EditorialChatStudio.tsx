@@ -9,6 +9,7 @@ import {
 import { reportEditorialFindings, checkEditorialTask, proposeEditorialTask, taskContext, type TaskStatus, type TaskProposal } from '../utils/novel/editorialTasks';
 import { parseBookChapters } from '../utils/novel/manuscript';
 import { generateText } from '../services/llmService';
+import { useWorkspaceEntry } from '../utils/workspaceState';
 import { applySearchReplacePatch } from '../utils/novel/patchApplier';
 import { runEditorialTurn, buildCloseProblemPrompt, ProposedDiffCard, type EditorialProblem, type EditorialView } from '../utils/novel/editorialAgent';
 import { withOllamaOutputRoom } from '../utils/novel/v2/llm';
@@ -25,6 +26,8 @@ export interface EditorialChatStudioProps {
   activeModelConfig?: any;
   onModelChange?: (config: any) => void;
   displayTitle?: string;
+  /** The book folder the chat is kept in; the display title when not given. */
+  bookTitle?: string;
   isEditorialRunning?: boolean;
   editorialStatus?: string;
   onScrollToRevision?: (targetText?: string) => void;
@@ -39,6 +42,17 @@ interface ChatMessage {
   diffCards?: ProposedDiffCard[];
   problems?: EditorialProblem[];
   timestamp: number;
+}
+
+interface SavedChat {
+  messages: ChatMessage[];
+  input: string;
+  applied: string[];
+  rejected: string[];
+  statuses: Record<string, TaskStatus>;
+  explanations: Record<string, string>;
+  proposals: Record<string, TaskProposal>;
+  history: { taskId: string; status: TaskStatus; explanation: string; at: number }[];
 }
 
 interface QuickEditorialPrompt {
@@ -111,6 +125,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   activeModelConfig,
   onModelChange,
   displayTitle = 'Manuscript Draft',
+  bookTitle,
   isEditorialRunning = false,
   editorialStatus,
   onScrollToRevision,
@@ -147,6 +162,37 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   const [taskExplanations, setTaskExplanations] = useState<Record<string, string>>({});
   const [taskProposals, setTaskProposals] = useState<Record<string, TaskProposal>>({});
   const [taskHistory, setTaskHistory] = useState<{ taskId: string; status: TaskStatus; explanation: string; at: number }[]>([]);
+
+  // The conversation, the unsent message and what became of each task and suggestion are kept in the book's
+  // workspace state: brought back once the book folder has been read, then saved on every change.
+  const [savedChat, saveChat, chatReady] = useWorkspaceEntry<SavedChat>(bookTitle || displayTitle, 'chat');
+  const chatRestored = useRef(false);
+  useEffect(() => {
+    if (!chatReady || chatRestored.current) return;
+    chatRestored.current = true;
+    if (!savedChat) return;
+    const settled = (status: TaskStatus): TaskStatus => status === 'working' || status === 'checking' ? 'open' : status;
+    setMessages(savedChat.messages || []);
+    setInput(savedChat.input || '');
+    setAppliedCardIds(new Set(savedChat.applied || []));
+    setRejectedCardIds(new Set(savedChat.rejected || []));
+    setSystemTaskStatus(Object.fromEntries(Object.entries(savedChat.statuses || {}).map(([id, status]) => [id, settled(status)])));
+    setTaskExplanations(savedChat.explanations || {});
+    setTaskProposals(savedChat.proposals || {});
+    setTaskHistory(savedChat.history || []);
+  }, [chatReady, savedChat]);
+  useEffect(() => {
+    if (!chatRestored.current) return;
+    const timer = setTimeout(() => {
+      const chat: SavedChat = {
+        messages: messages.slice(-200), input, applied: [...appliedCardIds], rejected: [...rejectedCardIds],
+        statuses: systemTaskStatus, explanations: taskExplanations, proposals: taskProposals, history: taskHistory.slice(-200),
+      };
+      const empty = !chat.messages.length && !chat.input && !chat.applied.length && !chat.rejected.length && !Object.keys(chat.statuses).length && !chat.history.length;
+      saveChat(empty ? undefined : chat);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [messages, input, appliedCardIds, rejectedCardIds, systemTaskStatus, taskExplanations, taskProposals, taskHistory, saveChat, chatReady]);
   const liveManuscript = useRef(bookContent);
   liveManuscript.current = bookContent;
   const previousContexts = useRef<Record<string, string>>({});

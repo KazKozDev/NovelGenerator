@@ -48,8 +48,9 @@ export function restoreSnapshot(store: ProjectStore, snap: unknown): void {
     if (typeof item?.chapter === 'number' && typeof item?.text === 'string') store.saveManuscript(item.chapter, item.text);
   }
   if (files.final_report && typeof files.final_report === 'object') store.saveReport(files.final_report as Parameters<ProjectStore['saveReport']>[0]);
-  for (const entry of (Array.isArray(files.run_log) ? files.run_log : []) as { stage?: unknown; detail?: unknown }[]) {
-    if (typeof entry?.stage === 'string') store.log(entry.stage, typeof entry.detail === 'string' ? entry.detail : '');
+  for (const entry of (Array.isArray(files.run_log) ? files.run_log : []) as { at?: unknown; stage?: unknown; detail?: unknown }[]) {
+    const at = typeof entry?.at === 'string' && Number.isFinite(Date.parse(entry.at)) ? entry.at : undefined;
+    if (typeof entry?.stage === 'string') store.log(entry.stage, typeof entry.detail === 'string' ? entry.detail : '', at);
   }
   for (const mark of (Array.isArray(files.checkpoints) ? files.checkpoints : []) as unknown[]) {
     if (typeof mark === 'string') store.checkpoint(mark);

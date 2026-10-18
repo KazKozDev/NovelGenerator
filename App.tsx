@@ -1,10 +1,12 @@
 import PromptBookWorkspace from './components/PromptBookWorkspace';
+import ProjectLibrary, { LibraryBook } from './components/ProjectLibrary';
 import { canEditPromptStory, promptStoryContent, promptStoryMetadata } from './utils/novel/promptBook/editing';
 
 
 
 import React, { useEffect } from 'react';
 import { saveToBookFolder } from './utils/saveToBookFolder';
+import { dataUrlExt, restoreEdition } from './utils/bookEdition';
 import { assembleManuscript } from './utils/novel/manuscript';
 import { MIN_CHAPTERS, MAX_CHAPTERS } from './constants';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
@@ -22,6 +24,11 @@ import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
 import { installConsoleBridge, logToTerminal, watchMainThreadStalls } from './utils/terminalLogger';
 
 const App: React.FC = () => {
+  // Stage 0: the app opens on the library; a cover opens its book, the first tile the settings of a new one.
+  const [showLibrary, setShowLibrary] = React.useState(true);
+  // Where an open book's stage tabs sit: in the top row, beside the appearance and help buttons.
+  const [stageNavSlot, setStageNavSlot] = React.useState<HTMLDivElement | null>(null);
+  const [bookTitleSlot, setBookTitleSlot] = React.useState<HTMLDivElement | null>(null);
   const {
     promptBook, updatePromptBlueprint, updateChapterPrompt, checkPrompts, fixPromptIssue, generatePromptStory, stopPromptOperation, updateWritingStyle, generateWritingStyle, changePromptStage, savePromptStory,
     storyPremise,
@@ -94,17 +101,20 @@ const App: React.FC = () => {
     continueGeneration();
   };
 
-  const handleReset = () => {
+  /** True when the person went ahead with the reset. */
+  const handleReset = (): boolean => {
     if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-      const confirmed = window.confirm('Reset this project? All progress and manuscript text will be lost.');
-      if (!confirmed) return;
+      const confirmed = window.confirm('Reset this project? The open book is closed; its files stay in Documents/NovelGenerator and it opens again from the Library.');
+      if (!confirmed) return false;
     }
     resetGenerator();
+    return true;
   };
 
   const showProgress = !promptBook && ((isLoading && !isEditorialRunning) || (isResumable && currentStep !== GenerationStep.Done));
 
-  const isStudioLayout = showProgress;
+  const isStudioLayout = showProgress && !showLibrary;
+
 
   const [authorName, setAuthorName] = React.useState<string>(() => {
     try {
@@ -140,6 +150,17 @@ const App: React.FC = () => {
       return null;
     }
   });
+
+  // The book's cover stays in this browser across reloads, as an uploaded one already does.
+  const handleCoverChange = React.useCallback((url: string | null) => {
+    setCoverImageUrl(url);
+    try {
+      if (url) localStorage.setItem('novel_cover_image', url);
+      else localStorage.removeItem('novel_cover_image');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const handleImprintChange = React.useCallback((newImprint: ImprintData) => {
     setImprintData(newImprint);
@@ -191,22 +212,75 @@ const App: React.FC = () => {
 
   // The book's cover and its publication details (author, imprint) live in this browser; a copy goes to the book's folder.
   const folderTitle = promptBook?.blueprint?.title || promptBook?.story?.title || (typeof savedMetadata?.title === 'string' ? savedMetadata.title : '') || bookTitleInput || '';
+  // What this browser lacks comes back from the book folder once per book: the author, the imprint, the cover.
+  const [editionLoadedFor, setEditionLoadedFor] = React.useState<string | null>(null);
   React.useEffect(() => {
-    if (!coverImageUrl?.startsWith('data:image/')) return;
+    if (!folderTitle) return;
+    let cancelled = false;
+    restoreEdition(folderTitle, { author: !!authorName.trim(), imprint: !!imprintData, cover: !!coverImageUrl }).then(found => {
+      if (cancelled) return;
+      if (found.author) handleAuthorChange(found.author);
+      if (found.imprint) handleImprintChange(found.imprint);
+      if (found.cover) handleCoverChange(found.cover);
+      setEditionLoadedFor(folderTitle);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderTitle]);
+  const editionReady = !!folderTitle && editionLoadedFor === folderTitle;
+
+  const hasProject = !!(promptBook || finalBookContent || generatedChapters.length || storyPremise.trim() || bookTitleInput.trim());
+  const openFromLibrary = async (book: LibraryBook) => {
+    if (!storeReady) return;
+    if (folderTitle && (book.title === folderTitle || book.folder === folderTitle)) { setShowLibrary(false); return; }
+    try {
+      const res = await fetch(`/api/books?${new URLSearchParams({ folder: book.folder })}`);
+      if (!res.ok) throw new Error('its autosave could not be read');
+      const snapshot = await res.blob();
+      // The cover belongs to the book: the one on screen must not reach the other book's folder.
+      handleCoverChange(null);
+      await importProject(snapshot);
+      setShowLibrary(false);
+    } catch (err) {
+      alert(`Could not open "${book.title}": ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  const loadFromLibrary = async (file: File) => {
+    if (!storeReady) return;
+    try {
+      handleCoverChange(null);
+      await importProject(file);
+      setShowLibrary(false);
+    } catch (err) {
+      alert(`Import failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  // The open book stays in its folder; the slot is cleared for the new one without asking.
+  const newFromLibrary = async () => {
+    if (!storeReady) return;
+    if (hasProject) {
+      await resetGenerator();
+      handleCoverChange(null);
+    }
+    setShowLibrary(false);
+  };
+
+  const coverFile = coverImageUrl?.startsWith('data:image/') ? `обложка книги.${dataUrlExt(coverImageUrl)}` : null;
+  React.useEffect(() => {
+    if (!editionReady || !coverImageUrl || !coverFile) return;
     const timer = setTimeout(async () => {
       const blob = await (await fetch(coverImageUrl)).blob();
-      const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
-      await saveToBookFolder({ title: folderTitle, kind: 'covers', label: 'обложка книги', ext, content: blob, stamp: false, replace: true });
+      await saveToBookFolder({ title: folderTitle, kind: 'covers', label: 'обложка книги', ext: dataUrlExt(coverImageUrl), content: blob, stamp: false, replace: true });
     }, 800);
     return () => clearTimeout(timer);
-  }, [coverImageUrl, folderTitle]);
+  }, [coverImageUrl, folderTitle, editionReady]);
   React.useEffect(() => {
-    if (!authorName.trim() && !imprintData) return;
+    if (!editionReady) return;
     const timer = setTimeout(() => {
-      void saveToBookFolder({ title: folderTitle, kind: 'blueprints', label: 'издание', ext: 'json', content: JSON.stringify({ author: authorName.trim(), imprint: imprintData ?? null }, null, 2), stamp: false, replace: true });
+      void saveToBookFolder({ title: folderTitle, kind: 'blueprints', label: 'издание', ext: 'json', content: JSON.stringify({ author: authorName.trim(), imprint: imprintData ?? null, cover: coverFile }, null, 2), stamp: false, replace: true });
     }, 800);
     return () => clearTimeout(timer);
-  }, [authorName, imprintData, folderTitle]);
+  }, [authorName, imprintData, coverFile, folderTitle, editionReady]);
 
   const saveControl = finalBookContent ? (
     <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
@@ -231,19 +305,15 @@ const App: React.FC = () => {
     }
   };
 
-  const loadProjectButton = (
-    <label
-      title="Load project from backup (.project.json)"
-      className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded cursor-pointer transition-colors"
+  const libraryButton = (
+    <button
+      type="button"
+      onClick={() => setShowLibrary(true)}
+      title="All books in Documents/NovelGenerator"
+      className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
     >
-      Load Project
-      <input
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={handleFileImport}
-      />
-    </label>
+      Library
+    </button>
   );
 
   const errorPanel = error ? (
@@ -280,39 +350,34 @@ const App: React.FC = () => {
           </div>
         ) : null;
 
-  const isMainPage = currentStep === GenerationStep.Idle && !finalBookContent && !promptBook;
+  const isMainPage = showLibrary || (currentStep === GenerationStep.Idle && !finalBookContent && !promptBook);
+  const isWorkspace = !showLibrary && !!(finalBookContent || promptBook);
 
   return (
-    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : (finalBookContent || promptBook) ? 'min-h-screen p-2 md:p-4' : 'min-h-screen p-4 md:p-8'}`}>
+    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : isWorkspace ? 'min-h-screen p-2 md:p-4' : 'min-h-screen p-4 md:p-8'}`}>
       {!isStudioLayout && (
-      <header className={`w-full ${(finalBookContent || promptBook) ? 'max-w-[1700px] mb-2 px-2 md:px-4' : 'max-w-4xl mb-6 px-4 md:px-8'} transition-all duration-300`}>
+      <header className={`w-full ${isWorkspace ? 'max-w-[1700px] mb-2 px-2 md:px-4' : 'max-w-4xl mb-6 px-4 md:px-8'} transition-all duration-300`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col">
-            <h1 className="text-xl font-semibold wordmark">
-              NovelGenerator
-            </h1>
-            {isMainPage && (
-              <p className="text-xs text-zinc-500 mt-1">
-                Write a novel before your coffee gets cold
-              </p>
-            )}
+          <div className="flex min-w-0 items-center gap-5">
+            <div className="flex shrink-0 flex-col">
+              <h1 className="text-xl font-semibold wordmark">
+                NovelGenerator
+              </h1>
+              {isMainPage && (
+                <p className="text-xs text-zinc-500 mt-1">
+                  Write a novel before your coffee gets cold
+                </p>
+              )}
+            </div>
+            {promptBook && !showLibrary && <div ref={setBookTitleSlot} className="min-w-0" />}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
-            {loadProjectButton}
-
-            <button
-              type="button"
-              onClick={handleReset}
-              title="Wipe state and start a new book"
-              className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
-            >
-              Reset Project
-            </button>
-
+            {!showLibrary && !promptBook && libraryButton}
             {!promptBook && saveControl}
+            {promptBook && !showLibrary && <div ref={setStageNavSlot} className="flex flex-wrap items-center gap-2" />}
 
-            <span className="w-px h-4 bg-zinc-800 mx-1 hidden sm:inline-block" aria-hidden="true" />
+            {((!showLibrary && !promptBook) || (!promptBook && saveControl) || (promptBook && !showLibrary)) && <span className="w-px h-4 bg-zinc-800 mx-1 hidden sm:inline-block" aria-hidden="true" />}
 
             <div className="flex shrink-0 items-center gap-1.5" aria-label="Appearance and help">
               <ThemeToggle />
@@ -324,10 +389,14 @@ const App: React.FC = () => {
       </header>
       )}
 
-      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : ((finalBookContent || promptBook) ? 'max-w-[1700px] px-2 md:px-4 py-1' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
+      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : (isWorkspace ? 'max-w-[1700px] px-2 md:px-4 py-1' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
+
+        {showLibrary ? (
+          <ProjectLibrary currentTitle={hasProject ? folderTitle : undefined} busy={isLoading} onOpen={openFromLibrary} onNew={() => void newFromLibrary()} onLoad={loadFromLibrary} onReset={hasProject ? () => { if (handleReset()) handleCoverChange(null); } : undefined} />
+        ) : (<>
         {!showProgress && !promptBook && errorPanel}
 
-        {promptBook && <PromptBookWorkspace value={promptBook} busy={isLoading} label={developmentLabel} error={error} onContinue={handleContinue} onSaveBlueprint={updatePromptBlueprint} onSavePrompt={updateChapterPrompt} onCheck={checkPrompts} onFix={fixPromptIssue} onStageChange={changePromptStage} publication={{author:authorName,onAuthorChange:handleAuthorChange,imprint:imprintData,onImprintChange:handleImprintChange,coverImage:coverImageUrl,onCoverChange:setCoverImageUrl}} onSaveStory={savePromptStory} agentLogs={agentLogs} tokenTotals={tokenTotals} lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus} onReset={handleReset} onSaveStyle={updateWritingStyle} onGenerateStyle={generateWritingStyle} onGenerateStory={generatePromptStory} onStop={stopPromptOperation} writingChapter={currentChapterProcessing} liveText={liveDraft?.text} onExport={exportProject} onSettings={editSettings} saveStatus={autosaveStatus?.state} />}
+        {promptBook && <PromptBookWorkspace value={promptBook} busy={isLoading} label={developmentLabel} error={error} onContinue={handleContinue} onSaveBlueprint={updatePromptBlueprint} onSavePrompt={updateChapterPrompt} onCheck={checkPrompts} onFix={fixPromptIssue} onStageChange={changePromptStage} publication={{author:authorName,onAuthorChange:handleAuthorChange,imprint:imprintData,onImprintChange:handleImprintChange,coverImage:coverImageUrl,onCoverChange:handleCoverChange}} onSaveStory={savePromptStory} agentLogs={agentLogs} tokenTotals={tokenTotals} lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus} onReset={handleReset} onLibrary={() => setShowLibrary(true)} navSlot={stageNavSlot} titleSlot={bookTitleSlot} onSaveStyle={updateWritingStyle} onGenerateStyle={generateWritingStyle} onGenerateStory={generatePromptStory} onStop={stopPromptOperation} writingChapter={currentChapterProcessing} liveText={liveDraft?.text} onExport={exportProject} onSettings={editSettings} saveStatus={autosaveStatus?.state} />}
 
         {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && isResumable && !showProgress && (
           <div className="border border-zinc-800 bg-zinc-900/40 rounded p-4 md:p-5 text-sm text-zinc-300 space-y-3">
@@ -421,7 +490,7 @@ const App: React.FC = () => {
             isResumable={isResumable}
             isLoading={isLoading}
             onResumeGeneration={handleContinue}
-            headerActions={<>{loadProjectButton}{saveControl}</>}
+            headerActions={<>{libraryButton}{saveControl}</>}
             onReset={handleReset}
           />
         )}
@@ -442,12 +511,13 @@ const App: React.FC = () => {
               imprint={imprintData}
               onImprintChange={handleImprintChange}
               coverImage={coverImageUrl}
-              onCoverChange={setCoverImageUrl}
+              onCoverChange={handleCoverChange}
               onExportProject={exportProject}
             />
           </>
         )}
 
+        </>)}
       </main>
     </div>
   );

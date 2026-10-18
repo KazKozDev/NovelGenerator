@@ -1,10 +1,22 @@
 /**
  * The cover studio's state per book, kept in the browser's IndexedDB: master pictures are several
- * megabytes each, too large for the project autosave or localStorage.
+ * megabytes each, too large for the project autosave or localStorage. The same state also goes to the
+ * book's обложки/ folder (coverFolder.ts), which restores it when this browser has none or an older one.
  */
 import { DEFAULT_STYLE, type CoverStyle, type CoverText } from './formats';
+import type { CoverConcept } from './coverPrompt';
 
-export interface CoverMaster { id: string; blob: Blob; prompt: string; model: string; createdAt: number }
+export interface CoverMaster {
+  id: string;
+  blob: Blob;
+  prompt: string;
+  model: string;
+  createdAt: number;
+  /** The picture before it was enhanced, kept to compare and to go back to. */
+  original?: Blob;
+  /** The 3D depth mask that lets the lettering sit behind the foreground. */
+  depth?: Blob;
+}
 
 export interface CoverStudioState {
   description: string;
@@ -14,6 +26,13 @@ export interface CoverStudioState {
   focus: { x: number; y: number };
   text: CoverText;
   style: CoverStyle;
+  /** The format shown large in the studio. */
+  heroFormat?: string;
+  /** The concepts the art director offered from the book, and the one the prompt was made from. */
+  concepts?: CoverConcept[];
+  concept?: number;
+  /** When this state was last saved: the newer of the browser's and the book folder's copy wins on reload. */
+  savedAt?: number;
 }
 
 export const emptyStudio = (text: CoverText): CoverStudioState => ({

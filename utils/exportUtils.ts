@@ -155,11 +155,22 @@ export function resolveCoverImage(title?: string, metadata?: any): string | null
  * Export book as EPUB file (real EPUB 3.0 format)
  * Creates a proper EPUB with all required files and structure
  */
-export async function buildEpub(content: string, metadata: any): Promise<Blob> {
+/** What a store edition sets on top of the plain EPUB. */
+export interface EpubOptions {
+  /** BCP 47 language of the text, "en" when not given. */
+  language?: string;
+  /** The book's own identifier, the same on every build: "urn:isbn:…" or "urn:uuid:…". */
+  identifier?: string;
+  /** A cover already sized and encoded for the store, used instead of the one in metadata. */
+  cover?: { mime: 'image/jpeg' | 'image/png'; base64: string };
+}
+
+export async function buildEpub(content: string, metadata: any, options: EpubOptions = {}): Promise<Blob> {
   
   const title = extractBookTitle(content);
   const author = typeof metadata?.author === 'string' && metadata.author.trim() ? metadata.author.trim() : '';
-  const uuid = `urn:uuid:${crypto.randomUUID()}`;
+  const uuid = options.identifier || `urn:uuid:${crypto.randomUUID()}`;
+  const language = options.language || 'en';
   
   const chapters = parseBookChapters(content);
   if (!chapters.length) throw new Error('No chapter bodies found in the manuscript.');
@@ -211,10 +222,11 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
 </html>`);
 
   // Optional Cover image & cover page
-  const coverImage = resolveCoverImage(title, metadata);
+  const coverImage = options.cover ? `data:${options.cover.mime};base64,${options.cover.base64}` : resolveCoverImage(title, metadata);
   let coverMetaItem = '';
   let coverManifestItem = '';
   let coverSpineItem = '';
+  let coverLandmark = '';
 
   if (coverImage && coverImage.startsWith('data:image/')) {
     const match = coverImage.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -252,6 +264,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
       coverMetaItem = `    <meta name="cover" content="cover-image"/>\n`;
       coverManifestItem = `    <item id="cover-image" href="${coverFilename}" media-type="${coverMime}" properties="cover-image"/>\n    <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n`;
       coverSpineItem = `    <itemref idref="cover"/>\n`;
+      coverLandmark = `        <li><a epub:type="cover" href="cover.xhtml">Cover</a></li>\n`;
     }
   }
 
@@ -267,7 +280,8 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     `    <itemref idref="chapter${ch.num}"/>`
   ).join('\n');
   
-  const isbnIdentifier = metadata?.imprint?.isbnEbook || metadata?.imprint?.isbnPaperback;
+  // An ebook carries its own ISBN only; the paperback's belongs to the print edition. Given as the identifier, it is not repeated.
+  const isbnIdentifier = options.identifier?.startsWith('urn:isbn:') ? '' : metadata?.imprint?.isbnEbook;
 
   oebps.file('content.opf',
 `<?xml version="1.0" encoding="UTF-8"?>
@@ -279,7 +293,7 @@ export async function buildEpub(content: string, metadata: any): Promise<Blob> {
     <dc:creator>${xml(author || 'Anonymous')}</dc:creator>
     <dc:publisher>${xml(colophon.publisher)}</dc:publisher>
     <dc:rights>${xml(`${colophon.copyright}. ${colophon.rights}`)}</dc:rights>
-    <dc:language>en</dc:language>
+    <dc:language>${xml(language)}</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
 ${coverMetaItem}  </metadata>
   <manifest>
@@ -309,6 +323,12 @@ ${coverSpineItem}${imprintSpine}${spineItems}
     <h1>Table of Contents</h1>
     <ol>
 ${navItems}
+    </ol>
+  </nav>
+  <nav epub:type="landmarks" hidden="">
+    <h2>Landmarks</h2>
+    <ol>
+${coverLandmark}        <li><a epub:type="bodymatter" href="chapter${chapters[0].num}.xhtml">Start of Content</a></li>
     </ol>
   </nav>
 </body>
@@ -396,7 +416,7 @@ del {
     oebps.file(`chapter${ch.num}.xhtml`,
 `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${xml(language)}" lang="${xml(language)}">
 <head>
   <title>${markdownToHtml(chapterLabel(ch.num, ch.title))}</title>
   <link rel="stylesheet" type="text/css" href="stylesheet.css"/>

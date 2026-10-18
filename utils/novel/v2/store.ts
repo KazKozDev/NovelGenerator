@@ -21,7 +21,8 @@ export interface ProjectStore {
   saveReport(report: FinalReport): void;
   loadReport(): FinalReport | null;
   clearReport(): void;
-  log(stage: string, detail: string): void;
+  /** `at` is the entry's own time when a saved log is restored; a new entry takes the present. */
+  log(stage: string, detail: string, at?: string): void;
   runLog(): RunLogEntry[];
   checkpoint(label: string): void;
   checkpoints(): string[];
@@ -57,7 +58,7 @@ export class MemoryProjectStore implements ProjectStore {
   saveReport(report: FinalReport): void { this.report = report; }
   loadReport(): FinalReport | null { return this.report; }
   clearReport(): void { this.report = null; }
-  log(stage: string, detail: string): void { this.entries.push({ at: new Date().toISOString(), stage, detail }); }
+  log(stage: string, detail: string, at = new Date().toISOString()): void { this.entries.push({ at, stage, detail }); }
   runLog(): RunLogEntry[] { return this.entries; }
   checkpoint(label: string): void { this.marks.push(label); }
   checkpoints(): string[] { return this.marks; }
@@ -137,9 +138,9 @@ export class BrowserProjectStore extends MemoryProjectStore {
   }
   saveReport(report: FinalReport): void { super.saveReport(report); this.write('report', report); }
   clearReport(): void { super.clearReport(); this.remove('report'); }
-  log(stage: string, detail: string): void {
-    super.log(stage, detail);
-    const entries = [...(this.read<RunLogEntry[]>('log') || []), { at: new Date().toISOString(), stage, detail }];
+  log(stage: string, detail: string, at = new Date().toISOString()): void {
+    super.log(stage, detail, at);
+    const entries = [...(this.read<RunLogEntry[]>('log') || []), { at, stage, detail }];
     this.write('log', entries.slice(-LOG_CAP));
   }
   checkpoint(label: string): void {

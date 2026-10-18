@@ -10,7 +10,8 @@ import {
   DEFAULT_STYLE,
   renderYouTubeEditorial,
 } from '../utils/cover/formats';
-import { buildCoverPromptRequest, masterPrompt } from '../utils/cover/coverPrompt';
+import { buildCoverPromptRequest, conceptPrompt, masterPrompt, parseConcepts, MASTER_RULES } from '../utils/cover/coverPrompt';
+import { genreArt } from '../utils/cover/genreArt';
 import { generateGeminiImage } from '../services/geminiDevPlugin';
 import PromptBookWorkspace from '../components/PromptBookWorkspace';
 import type { PromptBook } from '../utils/novel/promptBook';
@@ -39,6 +40,7 @@ describe('cover formats', () => {
     expect(online).toEqual([
       'ebook',
       'audio',
+      'podcast',
       'yt_thumb',
       'yt_frame',
       'post',
@@ -47,12 +49,12 @@ describe('cover formats', () => {
       'twitter',
       'pinterest',
     ]);
+    // A front for every trim, and a full cover for every print edition and trim it prints.
     expect(offline).toEqual([
-      'print_front_6x9',
-      'print_front_55x85',
-      'print_front_5x8',
-      'print_wrap_6x9',
-      'print_wrap_55x85',
+      'print_front_5x8', 'print_front_525x8', 'print_front_55x85', 'print_front_6x9',
+      'print_wrap_5x8', 'print_wrap_525x8', 'print_wrap_55x85', 'print_wrap_6x9',
+      'hardcover_wrap_55x85', 'hardcover_wrap_6x9',
+      'ingram_wrap_5x8', 'ingram_wrap_525x8', 'ingram_wrap_55x85', 'ingram_wrap_6x9',
     ]);
     const audio = COVER_FORMATS.find(f => f.id === 'audio')!;
     const ebook = COVER_FORMATS.find(f => f.id === 'ebook')!;
@@ -62,12 +64,55 @@ describe('cover formats', () => {
 });
 
 describe('cover prompt', () => {
-  it('asks for a picture from the book, and adds the no-lettering rules in code', () => {
-    const { prompt, system } = buildCoverPromptRequest({ title: 'The Thursday Room', genre: 'erotic thriller', premise: 'A counselor and a hotel room.', excerpt: 'Room 412 held the heat.' });
+  const book = {
+    title: 'The Thursday Room', genre: 'erotic thriller', premise: 'A counselor and a hotel room.',
+    overview: 'Nora meets a nameless lover every Thursday in Room 412.', conflict: 'She must protect him from his wife.',
+    chapters: ['1. No Names: keep composure'], characters: ['Nora Blake: keeps her two lives apart'],
+    excerpt: 'Room 412 held the heat.',
+  };
+
+  it('reads the book from its outline, not from its first scene, and gives the genre\'s cues', () => {
+    const { prompt, system } = buildCoverPromptRequest(book);
     expect(prompt).toContain('TITLE: The Thursday Room');
-    expect(prompt).toContain('OPENING OF THE BOOK:\nRoom 412 held the heat.');
-    expect(system).toContain('Do not ask for any text');
-    expect(masterPrompt('A window in a hotel room.')).toMatch(/^A window in a hotel room\.\n\n.*No text, no letters/s);
+    expect(prompt).toContain('WHAT THE BOOK IS ABOUT:\nNora meets a nameless lover');
+    expect(prompt).toContain('CENTRAL CONFLICT:');
+    expect(prompt).not.toContain('Room 412 held the heat');
+    expect(prompt).toMatch(/HOW COVERS IN THIS GENRE READ: desire shown through one charged detail/);
+    expect(system).toContain('"object"');
+    expect(system).toContain('No text, letters');
+    expect(system).toContain('never gives the book away');
+    expect(system).toContain('carries no writing or digits');
+    // A book without an outline still has its opening to go on.
+    expect(buildCoverPromptRequest({ title: 'T', excerpt: 'It began.' }).prompt).toContain('OPENING OF THE BOOK:\nIt began.');
+  });
+
+  it('keeps complete concepts from the answer and leaves out the rest', () => {
+    const concepts = parseConcepts('```json\n{"concepts":[{"kind":"object","idea":"An ashtray no one uses.","subject":"a heavy veined marble ashtray on a sill","setting":"dark hotel window","light":"one seam of amber light","palette":["burgundy","amber","charcoal"],"mood":"secret, tense"},{"kind":"place","idea":"","subject":"x"},{"kind":"weird","idea":"A door.","subject":"a hotel door numbered with brass"}]}\n```');
+    expect(concepts).toHaveLength(2);
+    expect(concepts[1].kind).toBe('object');
+    expect(parseConcepts('no json here')).toEqual([]);
+  });
+
+  it('puts the prompt together in code: the genre\'s medium, the subject, room for lettering, no text', () => {
+    const concept = { kind: 'object' as const, idea: 'i', subject: 'a heavy veined marble ashtray on a sill', setting: 'dark hotel window', light: 'one seam of amber light', palette: ['burgundy', 'amber'], mood: 'secret' };
+    const thriller = conceptPrompt(concept, genreArt('erotic thriller'));
+    expect(thriller).toMatch(/^A moody fine-art photograph with a cinematic finish for a vertical book cover\. A heavy veined marble ashtray on a sill\. Setting: dark hotel window\./);
+    expect(thriller).toContain('the same scene carries on into soft, dim, uneventful surroundings');
+    expect(thriller).toContain('no borders, bands or blank panels');
+    expect(thriller).not.toMatch(/plain and uncluttered|open space/);
+    expect(thriller).toContain('Colour palette: burgundy, amber.');
+    expect(thriller.endsWith(MASTER_RULES)).toBe(true);
+    // A fantasy book is painted, not photographed with skin pores.
+    expect(conceptPrompt(concept, genreArt('epic fantasy'))).toMatch(/^A painterly digital illustration/);
+    expect(conceptPrompt(concept, genreArt('epic fantasy'))).not.toMatch(/photograph|pores|35mm/);
+    expect(genreArt('').key).toBe('literary');
+    expect(genreArt('Cozy mystery').key).toBe('cozy');
+    expect(genreArt('Psychological thriller').key).toBe('thriller');
+  });
+
+  it('sends a written prompt as it is, adding the no-lettering rule only where it is missing', () => {
+    expect(masterPrompt('A window in a hotel room.')).toBe(`A window in a hotel room.\n\n${MASTER_RULES}`);
+    expect(masterPrompt(`A door. ${MASTER_RULES}`)).toBe(`A door. ${MASTER_RULES}`);
   });
 });
 
@@ -97,7 +142,7 @@ describe('cover stage', () => {
     const state: PromptBook = { version: 1, brief: { input: { premise: 'Save a log', chapter_count: 2, target_total_words: 1200, genre: 'thriller', author_requirements: '' }, settings: {} }, phase: 'ready', revision: 1, prompts: [], blueprint: { title: 'The Log' } as any, workspaceStage: 'cover', updatedAt: '' };
     const html = renderToStaticMarkup(<PromptBookWorkspace value={state} busy={false} onContinue={vi.fn()} onSaveBlueprint={vi.fn()} onSavePrompt={vi.fn()} onExport={vi.fn()} onSettings={vi.fn()} />);
     expect(html).toContain('4. Cover');
-    expect(html).toContain('Write from the book');
+    expect(html).toContain('Concepts from the book');
     expect(html).toContain('Generate master');
     expect(html).toContain('Upload custom master');
     expect(html).not.toContain('Chapter prompts');
@@ -204,7 +249,7 @@ describe('youtube editorial cover format', () => {
     }
   });
 
-  it('renders Apply All AI to Selected Cover, De-Plastic, and A/B/C Pack buttons in CoverStudio UI', () => {
+  it('renders 3-tab workflow (Art & Realism, Typography & 3D, Review & Export), AI Autopilot, De-Plastic, and A/B/C Pack in CoverStudio UI', () => {
     const state: PromptBook = {
       version: 1,
       brief: { input: { premise: 'Save a log', chapter_count: 2, target_total_words: 1200, genre: 'thriller', author_requirements: '' }, settings: {} },
@@ -226,10 +271,17 @@ describe('youtube editorial cover format', () => {
         onSettings={vi.fn()}
       />
     );
-    expect(html).toContain('Apply All AI to Selected Cover');
+    expect(html).toContain('AI Autopilot');
+    expect(html).toContain('1. Art &amp; Realism');
+    expect(html).toContain('2. Typography &amp; 3D');
+    expect(html).toContain('3. Review &amp; Export');
     expect(html).toContain('YouTube A/B/C Pack');
-    expect(html).toContain('De-Plastic (Remove AI Look)');
+    expect(html).toContain('De-Plastic');
+    expect(html).toContain('CodeFormer Face Pores (MPS)');
+    expect(html).toContain('Remove AI Plastic');
     expect(html).toContain('3D Depth Typography');
+    expect(html).toContain('Aesthetic &amp; CTR Scorer');
+    expect(html).toContain('Feed Simulator');
   });
 
   it('layers 3D depth cutout over title on standard portrait book formats', () => {

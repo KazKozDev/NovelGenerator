@@ -2,14 +2,23 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { saveOrDownload, saveToBookFolder } from '../utils/saveToBookFolder';
 import JSZip from 'jszip';
 import { generateText } from '../services/llmService';
-import { buildCoverPromptRequest, masterPrompt, MASTER_RULES, type CoverBookFacts } from '../utils/cover/coverPrompt';
-import { canvasBlob, COVER_FORMATS, renderCover, type CoverFormat, type CoverStyle } from '../utils/cover/formats';
-import { emptyStudio, loadStudio, saveStudio, type CoverStudioState } from '../utils/cover/coverStore';
+import { buildCoverPromptRequest, conceptPrompt, masterPrompt, parseConcepts, MASTER_RULES, type CoverBookFacts } from '../utils/cover/coverPrompt';
+import { genreArt } from '../utils/cover/genreArt';
+import CoverFeedPreview, { feedPlace } from './CoverFeedPreview';
+import { allCoverFormats, canvasBlob, renderCover, type CoverFormat, type CoverStyle, type PrintSpines } from '../utils/cover/formats';
+import { useWorkspaceEntry } from '../utils/workspaceState';
+import { FORMAT_GROUPS, formatGroup, formatsInGroup, type FormatGroup } from '../utils/cover/formatGroups';
+import { emptyStudio, loadStudio, saveStudio, type CoverMaster, type CoverStudioState } from '../utils/cover/coverStore';
+import { imageExt, loadStudioFromFolder, masterLabels, newerStudio, saveStudioManifest } from '../utils/cover/coverFolder';
 import { analyzeCoverImage, recommendCoverStyling } from '../utils/cover/artDirector';
 
 const IMAGE_MODELS = [
   { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image — best quality' },
   { id: 'gemini-3.1-flash-image', label: 'Gemini 3.1 Flash Image — faster, cheaper' },
+  // Drawn in the author's own ChatGPT tab through WebOperator: no image API is paid for; about 1024 × 1536.
+  { id: 'chatgpt-web', label: 'ChatGPT in your browser — no API cost (WebOperator)' },
+  // Drawn on this Mac by FLUX 3 Image Klein through mflux: free, 1024 × 1536, a few minutes a picture.
+  { id: 'flux3-local', label: 'FLUX 3 Klein on this Mac — free, ~5 min (mflux)' },
 ];
 
 const button = 'px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm';
@@ -21,7 +30,10 @@ interface CoverStudioProps {
   bookKey: string;
   facts: CoverBookFacts;
   author: string;
-  onUseAsCover?: (dataUrl: string) => void;
+  /** Sets the book's own cover (the Library card, and the stores' cover when there is no master); null removes it. */
+  onUseAsCover?: (dataUrl: string | null) => void;
+  /** The book's cover as it is now. */
+  bookCover?: string | null;
 }
 
 interface StylePreset {
@@ -41,9 +53,8 @@ const STYLE_PRESETS: StylePreset[] = [
   { name: 'Minimal Dark', font: 'sans', color: '#f4f4f5', uppercase: false, shade: 0.2 },
 ];
 
-const FEATURED_FORMAT_IDS = ['ebook', 'yt_thumb', 'print_wrap_6x9', 'audio', 'post'];
 
-type FormatCategory = 'featured' | 'online' | 'offline' | 'all';
+type FormatCategory = FormatGroup | 'all';
 
 /** The fourth stage: one master picture from the book, cut and lettered for each format, ready to download. */
 interface AestheticEvaluation {
@@ -54,8 +65,13 @@ interface AestheticEvaluation {
   tips: string[];
 }
 
-export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: CoverStudioProps) {
+export default function CoverStudio({ bookKey, facts, author, onUseAsCover, bookCover }: CoverStudioProps) {
+  const bookCoverInput = useRef<HTMLInputElement | null>(null);
+  const [bookCoverError, setBookCoverError] = useState('');
   const [state, setState] = useState<CoverStudioState>(() => emptyStudio({ title: facts.title, author, tagline: '' }));
+  // The print covers take the spine the Publish stage measured from the laid-out interior (or the printer's template).
+  const [spines] = useWorkspaceEntry<PrintSpines>(facts.title, 'publish.spines');
+  const formats = useMemo(() => allCoverFormats(spines || {}), [spines]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<'' | 'prompt' | 'image' | 'export'>('');
   const [error, setError] = useState('');
@@ -71,9 +87,15 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
   const [isDeplasticizing, setIsDeplasticizing] = useState(false);
   const [deplasticStrength, setDeplasticStrength] = useState(0.65);
   const [isMasterDeplasticized, setIsMasterDeplasticized] = useState(false);
+  const [originalMaster, setOriginalMaster] = useState<ImageBitmap | null>(null);
+  const [isComparingOriginal, setIsComparingOriginal] = useState(false);
+  const [useCodeFormer, setUseCodeFormer] = useState(true);
+  const [codeformerFidelity, setCodeformerFidelity] = useState(0.7);
+  const [facesRestoredCount, setFacesRestoredCount] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<'art' | 'type'>('art');
-  const [filter, setFilter] = useState<FormatCategory>('featured');
+  const [sidebarTab, setSidebarTab] = useState<'art' | 'type' | 'export'>('art');
+  const [filter, setFilter] = useState<FormatCategory>('stores');
+  const [otherTrims, setOtherTrims] = useState(false);
   const [heroFormatId, setHeroFormatId] = useState<string>('ebook');
   const [showGuides, setShowGuides] = useState(true);
   const [showAbModal, setShowAbModal] = useState(false);
@@ -85,62 +107,104 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
   const canvases = useRef<Record<string, HTMLCanvasElement | null>>({});
   const heroCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Each master picture's files already in the book's обложки/ folder, so a picture is written once and again only when it changes.
+  const mastersInFolder = useRef(new Set<string>());
+  const masterFileKeys = (m: CoverMaster) => [`${m.id}:${m.blob.size}`, ...(m.original ? [`${m.id}:original:${m.original.size}`] : []), ...(m.depth ? [`${m.id}:depth:${m.depth.size}`] : [])];
+
+  // The studio comes back from this browser or from the book folder, whichever was saved last.
   useEffect(() => {
     let cancelled = false;
-    loadStudio(bookKey).then(saved => {
+    Promise.all([loadStudio(bookKey), loadStudioFromFolder(facts.title)]).then(([browser, folder]) => {
       if (cancelled) return;
-      if (saved) setState({ ...saved, text: { ...saved.text, author: saved.text.author || author } });
+      for (const m of folder?.masters || []) for (const key of masterFileKeys(m)) mastersInFolder.current.add(key);
+      const saved = newerStudio(browser, folder);
+      if (saved) {
+        setState({ ...emptyStudio({ title: facts.title, author, tagline: '' }), ...saved, text: { ...saved.text, author: saved.text.author || author } });
+        if (saved.heroFormat && formats.some(f => f.id === saved.heroFormat)) setHeroFormatId(saved.heroFormat);
+      }
       setLoaded(true);
     });
     return () => { cancelled = true; };
   }, [bookKey]);
 
-  // Each master picture and its prompt also go to the book's обложки/ folder, once per picture and again when it is enhanced.
-  const mastersInFolder = useRef(new Set<string>());
+  // Each master picture, its prompt, its original before enhancing and its depth mask go to the book's обложки/ folder.
   useEffect(() => {
     if (!loaded) return;
     for (const m of state.masters) {
-      const key = `${m.id}:${m.blob.size}`;
-      if (mastersInFolder.current.has(key)) continue;
-      mastersInFolder.current.add(key);
-      const label = `мастер ${masterStamp(m.createdAt)}`;
-      const ext = m.blob.type === 'image/jpeg' ? 'jpg' : m.blob.type === 'image/webp' ? 'webp' : 'png';
-      void saveToBookFolder({ title: facts.title, kind: 'covers', label, ext, content: m.blob, stamp: false, replace: true });
-      void saveToBookFolder({ title: facts.title, kind: 'covers', label: `${label} — промпт`, ext: 'txt', content: m.prompt, stamp: false, replace: true });
+      const labels = masterLabels(m);
+      const files: [string, string, string, Blob | string][] = [
+        [`${m.id}:${m.blob.size}`, labels.picture, imageExt(m.blob), m.blob],
+        ...(m.original ? [[`${m.id}:original:${m.original.size}`, labels.original, imageExt(m.original), m.original] as [string, string, string, Blob]] : []),
+        ...(m.depth ? [[`${m.id}:depth:${m.depth.size}`, labels.depth, imageExt(m.depth), m.depth] as [string, string, string, Blob]] : []),
+      ];
+      const fresh = !mastersInFolder.current.has(files[0][0]);
+      for (const [key, label, ext, content] of files) {
+        if (mastersInFolder.current.has(key)) continue;
+        mastersInFolder.current.add(key);
+        void saveToBookFolder({ title: facts.title, kind: 'covers', label, ext, content, stamp: false, replace: true });
+      }
+      if (fresh) void saveToBookFolder({ title: facts.title, kind: 'covers', label: labels.prompt, ext: 'txt', content: m.prompt, stamp: false, replace: true });
     }
   }, [state.masters, loaded, facts.title]);
 
+  // Every change autosaves: to this browser, and the studio's state file to the book folder.
   useEffect(() => {
     if (!loaded) return;
-    const timer = setTimeout(() => { void saveStudio(bookKey, state).catch(() => setError('Could not save the cover studio in this browser.')); }, 400);
+    const timer = setTimeout(() => {
+      const stamped: CoverStudioState = { ...state, heroFormat: heroFormatId, savedAt: Date.now() };
+      void saveStudio(bookKey, stamped).catch(() => setError('Could not save the cover studio in this browser.'));
+      void saveStudioManifest(facts.title, stamped);
+    }, 400);
     return () => clearTimeout(timer);
-  }, [state, loaded, bookKey]);
+  }, [state, heroFormatId, loaded, bookKey, facts.title]);
 
   const selected = state.masters.find(m => m.id === state.selected) || state.masters[0];
   useEffect(() => {
-    if (!selected) { setMaster(null); setMasterUrl(''); setDepthCutout(null); return; }
+    if (!selected) {
+      setMaster(null);
+      setOriginalMaster(null);
+      setIsMasterDeplasticized(false);
+      setIsComparingOriginal(false);
+      setFacesRestoredCount(null);
+      setMasterUrl('');
+      setDepthCutout(null);
+      return;
+    }
     let cancelled = false;
     const url = URL.createObjectURL(selected.blob);
     setMasterUrl(url);
-    createImageBitmap(selected.blob).then(bitmap => { if (!cancelled) setMaster(bitmap); });
+    setIsMasterDeplasticized(!!selected.original);
+    setIsComparingOriginal(false);
+    setFacesRestoredCount(null);
+    setDepthCutout(null);
+    createImageBitmap(selected.blob).then(async bitmap => {
+      const original = selected.original ? await createImageBitmap(selected.original).catch(() => bitmap) : bitmap;
+      const depth = selected.depth ? await createImageBitmap(selected.depth).catch(() => null) : null;
+      if (!cancelled) {
+        setMaster(bitmap);
+        setOriginalMaster(original);
+        setDepthCutout(depth);
+      }
+    });
     return () => { cancelled = true; URL.revokeObjectURL(url); };
   }, [selected?.id]);
 
-  const heroFormat = useMemo(() => COVER_FORMATS.find(f => f.id === heroFormatId) || COVER_FORMATS[0], [heroFormatId]);
+  const heroFormat = useMemo(() => formats.find(f => f.id === heroFormatId) || formats[0], [heroFormatId, formats]);
+  const displayMaster = isComparingOriginal && originalMaster ? originalMaster : master;
 
   // Formats are drawn at full size a moment after the last change, not on every keystroke.
   useEffect(() => {
     const timer = setTimeout(() => {
-      for (const format of COVER_FORMATS) {
+      for (const format of formats) {
         const canvas = canvases.current[format.id];
-        if (canvas) renderCover(master, format, state.text, state.style, state.focus, canvas, depthCutout);
+        if (canvas) renderCover(displayMaster, format, state.text, state.style, state.focus, canvas, depthCutout);
       }
       if (heroCanvasRef.current) {
-        renderCover(master, heroFormat, state.text, state.style, state.focus, heroCanvasRef.current, depthCutout);
+        renderCover(displayMaster, heroFormat, state.text, state.style, state.focus, heroCanvasRef.current, depthCutout);
       }
     }, 120);
     return () => clearTimeout(timer);
-  }, [master, state.text, state.style, state.focus, heroFormat, depthCutout]);
+  }, [displayMaster, state.text, state.style, state.focus, heroFormat, depthCutout, formats]);
 
   const variantAStyle: CoverStyle = useMemo(() => ({
     ...state.style,
@@ -180,7 +244,7 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
 
   useEffect(() => {
     if (!showAbModal || !master) return;
-    const ytFormat = COVER_FORMATS.find(f => f.id === 'yt_thumb');
+    const ytFormat = formats.find(f => f.id === 'yt_thumb');
     if (!ytFormat) return;
     const timer = setTimeout(() => {
       if (abCanvasARef.current) {
@@ -196,14 +260,47 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
     return () => clearTimeout(timer);
   }, [showAbModal, master, state.text, state.focus, variantAStyle, variantBStyle, variantCStyle, depthCutout]);
 
+  // The current covers a person would use, kept in обложки/ and replaced as the studio changes: the eBook cover,
+  // the YouTube thumbnail and the three A/B/C test thumbnails.
+  const renderedInFolder = useRef('');
+  useEffect(() => {
+    if (!loaded || !master || !selected) return;
+    const timer = setTimeout(async () => {
+      const key = JSON.stringify([selected.id, selected.blob.size, state.text, state.style, state.focus, !!depthCutout]);
+      if (renderedInFolder.current === key) return;
+      renderedInFolder.current = key;
+      const ebook = formats.find(f => f.id === 'ebook')!;
+      const yt = formats.find(f => f.id === 'yt_thumb')!;
+      const name = (format: CoverFormat) => `${format.label.split(' · ')[0]} ${format.width}x${format.height}`;
+      const covers: [string, CoverFormat, CoverStyle][] = [
+        [`обложка ${name(ebook)}`, ebook, state.style],
+        [`обложка ${name(yt)}`, yt, state.style],
+        [`YouTube Variant A Editorial ${yt.width}x${yt.height}`, yt, variantAStyle],
+        [`YouTube Variant B Crimson ${yt.width}x${yt.height}`, yt, variantBStyle],
+        [`YouTube Variant C Cinema ${yt.width}x${yt.height}`, yt, variantCStyle],
+      ];
+      try {
+        for (const [label, format, style] of covers) {
+          const blob = await canvasBlob(renderCover(master, format, state.text, style, state.focus, undefined, style.depthBehind ? depthCutout : null), format.mime);
+          await saveToBookFolder({ title: facts.title, kind: 'covers', label, ext: 'jpg', content: blob, stamp: false, replace: true });
+        }
+      } catch {
+        renderedInFolder.current = ''; // Tried again on the next change.
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [loaded, master, selected, state.text, state.style, state.focus, depthCutout, variantAStyle, variantBStyle, variantCStyle, facts.title]);
+
   const update = (patch: Partial<CoverStudioState>) => setState(s => ({ ...s, ...patch }));
 
   async function writePrompt() {
     setBusy('prompt'); setError('');
     try {
       const { prompt, system } = buildCoverPromptRequest(facts);
-      const description = (await generateText(prompt, system, undefined, 0.8)).trim();
-      update({ description });
+      const concepts = parseConcepts(await generateText(prompt, system, undefined, 0.9, undefined, undefined, undefined, 2400, true));
+      if (!concepts.length) throw new Error('The art director gave no usable concepts; try again.');
+      // The first concept is chosen at once, so the prompt is ready; the others are a click away.
+      update({ concepts, concept: 0, description: conceptPrompt(concepts[0], genreArt(facts.genre)) });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(''); }
@@ -279,12 +376,12 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
       const maskImg = await (await fetch(data.maskBase64)).blob();
       const bitmap = await createImageBitmap(maskImg);
       setDepthCutout(bitmap);
-      update({
-        style: {
-          ...state.style,
-          depthBehind: true,
-        },
-      });
+      const depthFor = selected.id;
+      setState(s => ({
+        ...s,
+        masters: s.masters.map(m => m.id === depthFor ? { ...m, depth: maskImg } : m),
+        style: { ...s.style, depthBehind: true },
+      }));
       setNotice('3D Depth layer generated. Typography is now layered behind foreground subjects.');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -337,8 +434,13 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
       return null;
     }
     setIsDeplasticizing(true);
+    setIsComparingOriginal(false);
     setError('');
-    setNotice('De-plasticizing image: removing waxy shine, recovering skin pores, injecting 35mm film grain...');
+    setNotice(
+      useCodeFormer
+        ? 'Running CodeFormer & Film Realism on Apple Silicon MPS: restoring skin pores, removing waxy shine, injecting 35mm grain...'
+        : 'De-plasticizing image: removing waxy shine, recovering micro-texture, injecting 35mm film grain...'
+    );
 
     try {
       const reader = new FileReader();
@@ -357,6 +459,8 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
           strength: deplasticStrength,
           grain: 0.35,
           dewax: 0.5,
+          codeformer: useCodeFormer,
+          fidelity: codeformerFidelity,
         }),
       });
 
@@ -365,19 +469,28 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
         throw new Error(data.error || `De-plasticizing failed (${res.status}).`);
       }
 
+      if (!originalMaster && master) {
+        setOriginalMaster(master);
+      }
+
       const enhancedBlob = await (await fetch(data.imageBase64)).blob();
       const newBitmap = await createImageBitmap(enhancedBlob);
       setMaster(newBitmap);
       setIsMasterDeplasticized(true);
+      const facesCount = typeof data.facesRestored === 'number' ? data.facesRestored : 0;
+      setFacesRestoredCount(facesCount);
 
       if (selected) {
         setState(s => ({
           ...s,
-          masters: s.masters.map(m => m.id === selected.id ? { ...m, blob: enhancedBlob } : m),
+          masters: s.masters.map(m => m.id === selected.id ? { ...m, original: m.original ?? m.blob, blob: enhancedBlob } : m),
         }));
       }
 
-      setNotice('De-plasticizing complete: waxy specular shine eliminated, micro-pores and 35mm grain restored.');
+      const faceNote = facesCount > 0
+        ? ` (${facesCount} face${facesCount > 1 ? 's' : ''} enhanced via CodeFormer)`
+        : '';
+      setNotice(`De-plasticizing complete: waxy specular shine eliminated, micro-pores and 35mm grain restored${faceNote}.`);
       return enhancedBlob;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -437,8 +550,10 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
           const maskBlob = await (await fetch(data.maskBase64)).blob();
           activeCutout = await createImageBitmap(maskBlob);
           setDepthCutout(activeCutout);
+          const depthFor = selected.id;
           setState(s => ({
             ...s,
+            masters: s.masters.map(m => m.id === depthFor ? { ...m, depth: maskBlob } : m),
             style: {
               ...s.style,
               depthBehind: true,
@@ -474,7 +589,7 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover }: Co
     if (!master) return;
     setBusy('export');
     try {
-      const ytFormat = COVER_FORMATS.find(f => f.id === 'yt_thumb');
+      const ytFormat = formats.find(f => f.id === 'yt_thumb');
       if (!ytFormat) return;
 
       const zip = new JSZip();
@@ -549,7 +664,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
 
   async function downloadSingleVariant(variantLabel: string, style: CoverStyle) {
     if (!master) return;
-    const ytFormat = COVER_FORMATS.find(f => f.id === 'yt_thumb');
+    const ytFormat = formats.find(f => f.id === 'yt_thumb');
     if (!ytFormat) return;
     const blob = await canvasBlob(
       renderCover(master, ytFormat, state.text, style, state.focus, undefined, style.depthBehind ? depthCutout : null),
@@ -579,12 +694,22 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
     setBusy('image'); setError(''); setNotice('');
     try {
       const prompt = masterPrompt(state.description);
-      const response = await fetch('/api/gemini/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, model: state.model, aspectRatio: '2:3', imageSize: '4K' }) });
+      const viaChatgpt = state.model === 'chatgpt-web';
+      const viaFlux3 = state.model === 'flux3-local';
+      if (viaChatgpt) setNotice('ChatGPT is drawing in your browser tab; this takes about a minute.');
+      if (viaFlux3) setNotice('FLUX 3 is drawing on this Mac; this takes about five minutes and most of the memory.');
+      const response = viaChatgpt
+        ? await fetch('/api/cover/chatgpt-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) })
+        : viaFlux3
+        ? await fetch('/api/cover/flux3-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, width: 1024, height: 1536 }) })
+        : await fetch('/api/gemini/image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, model: state.model, aspectRatio: '2:3', imageSize: '4K' }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.data) throw new Error(data.error || `Image request failed (${response.status}).`);
       const blob = await (await fetch(`data:${data.mimeType};base64,${data.data}`)).blob();
       const id = `master_${Date.now()}`;
       setState(s => ({ ...s, masters: [{ id, blob, prompt, model: s.model, createdAt: Date.now() }, ...s.masters], selected: id, focus: { x: 0.5, y: 0.5 } }));
+      if (viaChatgpt) setNotice(`Master drawn by ChatGPT${data.width ? `, ${data.width}×${data.height}` : ''}.`);
+      if (viaFlux3) setNotice(`Master drawn by FLUX 3 on this Mac in ${Math.round((data.seconds || 0) / 60 * 10) / 10} min.`);
       setSidebarTab('type');
       createImageBitmap(blob).then(bitmap => {
         autoDesignCover(bitmap);
@@ -649,7 +774,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
     setBusy('export');
     try {
       const zip = new JSZip();
-      for (const format of COVER_FORMATS) zip.file(format.file, await canvasBlob(renderCover(master, format, state.text, state.style, state.focus, undefined, state.style.depthBehind ? depthCutout : null), format.mime));
+      for (const format of formats) zip.file(format.file, await canvasBlob(renderCover(master, format, state.text, state.style, state.focus, undefined, state.style.depthBehind ? depthCutout : null), format.mime));
       zip.file('cover-master.png', selected!.blob);
       zip.file('cover-prompt.txt', selected!.prompt);
       const where = await saveOrDownload({ title: facts.title, kind: 'covers', label: 'все обложки', ext: 'zip', content: await zip.generateAsync({ type: 'blob' }) }, `${slug(facts.title)}-covers.zip`);
@@ -659,23 +784,20 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
 
   function useAsBookCover() {
     if (!master || !onUseAsCover) return;
-    const ebook = COVER_FORMATS.find(f => f.id === 'ebook')!;
+    const ebook = formats.find(f => f.id === 'ebook')!;
     onUseAsCover(renderCover(master, ebook, state.text, state.style, state.focus, undefined, state.style.depthBehind ? depthCutout : null).toDataURL('image/jpeg', 0.9));
     setNotice('The eBook cover is now the book\'s cover for export.');
   }
 
   const text = state.text;
-  const busyLabel = busy === 'prompt' ? 'Writing the prompt…' : busy === 'image' ? 'Drawing the master (up to a minute)…' : busy === 'export' ? 'Packing the files…' : '';
+  const busyLabel = busy === 'prompt' ? 'Writing the prompt…' : busy === 'image' ? 'Drawing the master…' : busy === 'export' ? 'Packing the files…' : '';
 
-  const onlineFormats = useMemo(() => COVER_FORMATS.filter(f => f.medium === 'online'), []);
-  const offlineFormats = useMemo(() => COVER_FORMATS.filter(f => f.medium === 'offline'), []);
 
-  const visibleFormats = useMemo(() => {
-    if (filter === 'featured') return COVER_FORMATS.filter(f => FEATURED_FORMAT_IDS.includes(f.id));
-    if (filter === 'online') return COVER_FORMATS.filter(f => f.medium === 'online');
-    if (filter === 'offline') return COVER_FORMATS.filter(f => f.medium === 'offline');
-    return COVER_FORMATS;
-  }, [filter]);
+  // The trim the Publish stage lays the book out at; Print shows its covers first.
+  const [printSettings] = useWorkspaceEntry<{ trimId: string }>(facts.title, 'publish.print');
+  const printTrim = printSettings?.trimId || '6x9';
+  const visibleFormats = useMemo(() => formatsInGroup(formats, filter, printTrim, otherTrims), [filter, formats, printTrim, otherTrims]);
+  const otherTrimCount = useMemo(() => formats.filter(f => formatGroup(f) === 'print' && f.trim !== printTrim).length, [formats, printTrim]);
 
   return (
     <section aria-label="Cover studio" className="grid gap-5 lg:grid-cols-[290px_minmax(0,1fr)] items-start text-left">
@@ -700,7 +822,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
           </span>
         </div>
 
-        {/* Sidebar Tabs: 1. Art & Master | 2. Typography */}
+        {/* Sidebar Tabs: 1. Art & Realism | 2. Typography & 3D | 3. Review & Export */}
         <div className="flex border-b border-zinc-800 bg-zinc-900/60 p-1 gap-1 shrink-0">
           <button
             type="button"
@@ -711,7 +833,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
             }`}
             onClick={() => setSidebarTab('art')}
           >
-            1. Art & Master
+            1. Art & Realism
           </button>
           <button
             type="button"
@@ -722,19 +844,49 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
             }`}
             onClick={() => setSidebarTab('type')}
           >
-            2. Typography
+            2. Typography & 3D
+          </button>
+          <button
+            type="button"
+            className={`flex-1 py-1 text-xs font-medium rounded transition-colors text-center ${
+              sidebarTab === 'export'
+                ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/70'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+            }`}
+            onClick={() => setSidebarTab('export')}
+          >
+            3. Review & Export
           </button>
         </div>
 
         <div className="p-3 space-y-4 overflow-y-auto flex-1">
-          {/* TAB 1: ART & MASTER */}
+          {/* TAB 1: ART & REALISM */}
           <div hidden={sidebarTab !== 'art'} className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold mb-1 text-zinc-200">Prompt for master</h3>
-              <p className="text-xs text-zinc-500 mb-2.5">Generate scene description from book outline or enter custom prompt.</p>
+              <p className="text-xs text-zinc-500 mb-2.5">Three concepts from the book's outline: an object, a figure, a place. Pick one, or write your own prompt.</p>
               <button type="button" className={`${button} w-full`} disabled={!!busy} onClick={writePrompt}>
-                Write from the book
+                {busy === 'prompt' ? 'Reading the book…' : state.concepts?.length ? 'Three new concepts' : 'Concepts from the book'}
               </button>
+              {!!state.concepts?.length && (
+                <div className="mt-2 space-y-1.5" role="radiogroup" aria-label="Cover concepts">
+                  {state.concepts.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      role="radio"
+                      aria-checked={state.concept === i}
+                      onClick={() => update({ concept: i, description: conceptPrompt(c, genreArt(facts.genre)) })}
+                      className={`w-full rounded border p-2 text-left transition-colors ${state.concept === i ? 'border-zinc-500 bg-zinc-800/80' : 'border-zinc-800 bg-zinc-950/40 hover:border-zinc-700'}`}
+                    >
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{c.kind}</span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-200">{c.idea}</span>
+                      {c.palette.length > 0 && <span className="mt-1 block text-[10px] text-zinc-500">{c.palette.join(' · ')}{c.mood ? ` — ${c.mood}` : ''}</span>}
+                    </button>
+                  ))}
+                  <p className="text-[10px] text-zinc-600">Rendered as {genreArt(facts.genre).medium}.</p>
+                </div>
+              )}
               <textarea
                 aria-label="Master prompt"
                 className={`${field} mt-2 h-28 resize-y`}
@@ -743,7 +895,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 onChange={e => update({ description: e.target.value })}
               />
               <details className="mt-1 text-[11px] text-zinc-500">
-                <summary className="cursor-pointer">Rules added to every master</summary>
+                <summary className="cursor-pointer">Rule added to every master</summary>
                 <p className="mt-1">{MASTER_RULES}</p>
               </details>
             </div>
@@ -829,15 +981,6 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                     <span className="block text-[9px] text-zinc-500">Drop here or click to browse</span>
                   </div>
                 )}
-                {masterUrl && (
-                  <button
-                    type="button"
-                    onClick={() => autoDesignCover()}
-                    className={`${button} w-full mt-2`}
-                  >
-                    Auto-Layout & Palette
-                  </button>
-                )}
               </div>
 
               {state.masters.length > 1 && (
@@ -857,9 +1000,122 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 </div>
               )}
             </div>
+
+            {/* De-Plastic & Film Realism Card */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">De-Plastic & Film Realism</h3>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">
+                  {isMasterDeplasticized
+                    ? (facesRestoredCount && facesRestoredCount > 0 ? `CodeFormer (${facesRestoredCount} face${facesRestoredCount > 1 ? 's' : ''}) + Grain` : 'Active · 35mm Grain')
+                    : 'CodeFormer + Grain'}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Strips synthetic plastic sheen, recovers authentic skin micro-pores via CodeFormer on Apple Silicon MPS/CoreML, and injects dual-scale 35mm film grain.
+              </p>
+
+              {/* Texture Strength Slider */}
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400">Texture Strength</span>
+                  <span className="text-zinc-300 font-mono">{Math.round(deplasticStrength * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1.0}
+                  step={0.05}
+                  value={deplasticStrength}
+                  onChange={e => setDeplasticStrength(Number(e.target.value))}
+                  className="w-full accent-zinc-400 cursor-pointer"
+                />
+                <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
+                  <span>Subtle</span>
+                  <span>Balanced (65%)</span>
+                  <span>Deep 35mm</span>
+                </div>
+              </div>
+
+              {/* CodeFormer Face Restoration Options */}
+              <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                <label className="text-xs text-zinc-300 font-medium flex items-center justify-between cursor-pointer select-none">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={useCodeFormer}
+                      onChange={e => setUseCodeFormer(e.target.checked)}
+                      className="rounded border-zinc-700 bg-zinc-950 text-zinc-300 focus:ring-0"
+                    />
+                    <span>CodeFormer Face Pores (MPS)</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-400">{codeformerFidelity.toFixed(2)} w</span>
+                </label>
+
+                {useCodeFormer && (
+                  <div className="space-y-1 pl-6">
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                      <span>Face Likeness vs Micro-pores</span>
+                      <span className="text-zinc-300 font-mono">{codeformerFidelity.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.3}
+                      max={0.9}
+                      step={0.05}
+                      value={codeformerFidelity}
+                      onChange={e => setCodeformerFidelity(Number(e.target.value))}
+                      className="w-full accent-zinc-400 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-zinc-500">
+                      <span>Max Pores</span>
+                      <span>Likeness</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status and Action Buttons */}
+              <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400">
+                    {isMasterDeplasticized ? 'Plastic sheen eliminated' : 'Synthetic look present'}
+                  </span>
+                  {facesRestoredCount !== null && facesRestoredCount > 0 && (
+                    <span className="text-zinc-300 font-mono">
+                      {facesRestoredCount} face{facesRestoredCount > 1 ? 's' : ''} restored
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => runDeplastic()}
+                    disabled={!master || isDeplasticizing}
+                    className={`${button} flex-1 text-[11px]`}
+                  >
+                    {isDeplasticizing ? 'Processing on MPS...' : isMasterDeplasticized ? 'Re-Apply De-Plastic' : 'Remove AI Plastic'}
+                  </button>
+
+                  {originalMaster && isMasterDeplasticized && (
+                    <button
+                      type="button"
+                      onClick={() => setIsComparingOriginal(c => !c)}
+                      className={`${button} text-[11px]`}
+                      title="Toggle between original AI generation and de-plasticized result"
+                    >
+                      {isComparingOriginal ? 'Show Restored' : 'Compare Original'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* TAB 2: TYPOGRAPHY & LETTERING */}
+          {/* TAB 2: TYPOGRAPHY & 3D */}
           <div hidden={sidebarTab !== 'type'} className="space-y-4">
             {/* Smart Art Director Card */}
             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2">
@@ -880,235 +1136,6 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
               >
                 Apply Auto-Design
               </button>
-            </div>
-
-            {/* De-Plastic & Film Realism Card */}
-            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">De-Plastic (Remove AI Look)</h3>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">
-                  {isMasterDeplasticized ? 'Active · 35mm Grain' : 'Bilateral + Grain'}
-                </span>
-              </div>
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Strips synthetic plastic sheen, recovers skin micro-pores and fabric weave, and injects dual-scale 35mm film grain.
-              </p>
-
-              <div className="space-y-1 pt-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-zinc-400">Texture Strength</span>
-                  <span className="text-zinc-300 font-mono">{Math.round(deplasticStrength * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={1.0}
-                  step={0.05}
-                  value={deplasticStrength}
-                  onChange={e => setDeplasticStrength(Number(e.target.value))}
-                  className="w-full accent-zinc-400 cursor-pointer"
-                />
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[10px] text-zinc-400">
-                  {isMasterDeplasticized ? 'Plastic sheen eliminated' : 'Synthetic look present'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => runDeplastic()}
-                  disabled={!master || isDeplasticizing}
-                  className={button}
-                >
-                  {isDeplasticizing ? 'Processing...' : isMasterDeplasticized ? 'Re-Apply De-Plastic' : 'Remove AI Plastic'}
-                </button>
-              </div>
-            </div>
-
-            {/* 3D Depth Layering Card */}
-            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">3D Depth Typography</h3>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">Depth-Anything-V2</span>
-              </div>
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Layers title typography behind foreground objects (curtains, hands, subjects) while keeping the badge on top.
-              </p>
-              
-              <div className="flex items-center justify-between pt-1">
-                <label className="text-xs text-zinc-300 font-medium flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!state.style.depthBehind}
-                    onChange={e => update({ style: { ...state.style, depthBehind: e.target.checked } })}
-                    className="rounded border-zinc-700 bg-zinc-950 text-zinc-300 focus:ring-0"
-                  />
-                  <span>Text Behind Subject</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={generateDepthLayer}
-                  disabled={!master || isGeneratingDepth}
-                  className={button}
-                >
-                  {isGeneratingDepth ? 'Scanning...' : depthCutout ? 'Regenerate Mask' : 'Extract Depth Mask'}
-                </button>
-              </div>
-
-              {depthCutout && (
-                <div className="space-y-1 pt-1 border-t border-zinc-800">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-400">Foreground Threshold</span>
-                    <span className="text-zinc-300 font-mono">{state.style.depthThreshold ?? 150}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={50}
-                    max={230}
-                    step={5}
-                    value={state.style.depthThreshold ?? 150}
-                    onChange={e => update({ style: { ...state.style, depthThreshold: Number(e.target.value) } })}
-                    onMouseUp={generateDepthLayer}
-                    className="w-full accent-zinc-400 cursor-pointer"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Aesthetic & CTR Scorer Card */}
-            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">Aesthetic & CTR Scorer</h3>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">cafe_aesthetic</span>
-              </div>
-
-              <div className="flex items-center justify-between pt-0.5">
-                {aestheticData ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-lg font-bold text-zinc-200 font-mono">{aestheticData.score}</span>
-                      <span className="text-xs text-zinc-400">/ 10</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
-                      {aestheticData.verdict}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-xs text-zinc-400">Score preview to evaluate</span>
-                )}
-                <button
-                  type="button"
-                  onClick={scoreAesthetics}
-                  disabled={!master || isScoringAesthetic}
-                  className={button}
-                >
-                  {isScoringAesthetic ? 'Scoring...' : 'Score Preview'}
-                </button>
-              </div>
-
-              {aestheticData && (
-                <div className="space-y-2 pt-1 border-t border-zinc-800/80">
-                  <div className="grid grid-cols-2 gap-2 text-[10px]">
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-zinc-400">
-                        <span>Contrast & Punch</span>
-                        <span className="text-zinc-300 font-mono font-semibold">{aestheticData.contrast}/10</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-zinc-400 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, aestheticData.contrast * 10)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-zinc-400">
-                        <span>Mobile Legibility</span>
-                        <span className="text-zinc-300 font-mono font-semibold">{aestheticData.mobile}/10</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-zinc-400 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, aestheticData.mobile * 10)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {aestheticData.tips.length > 0 && (
-                    <div className="space-y-1 pt-1">
-                      <span className="block text-[10px] text-zinc-400 uppercase font-semibold">Actionable Feedback</span>
-                      <ul className="space-y-1">
-                        {aestheticData.tips.map((tip, idx) => (
-                          <li key={idx} className="text-[11px] text-zinc-300 flex items-start gap-1.5 leading-snug">
-                            <span className="text-zinc-400 text-xs shrink-0">•</span>
-                            <span>{tip}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* YouTube Mobile Feed Preview Button & Simulator */}
-              <div className="pt-1 border-t border-zinc-800/80">
-                <button
-                  type="button"
-                  onClick={() => setShowMobileSimulator(s => !s)}
-                  className={`${button} w-full text-[11px]`}
-                >
-                  {showMobileSimulator ? 'Hide Mobile Simulator' : 'Test in YouTube Mobile Feed'}
-                </button>
-
-                {showMobileSimulator && (
-                  <div className="mt-2.5 p-2 rounded-lg bg-zinc-950 border border-zinc-800 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono uppercase">
-                      <span>YouTube Feed Scale</span>
-                      <span className="text-emerald-400">Safe Zones: OK</span>
-                    </div>
-
-                    {/* Realistic YouTube Mobile Feed Card */}
-                    <div className="w-full bg-[#0f0f0f] rounded-lg p-2 border border-zinc-800 shadow-lg space-y-2">
-                      <div className="relative aspect-video w-full rounded overflow-hidden bg-zinc-900">
-                        {heroCanvasRef.current ? (
-                          <img
-                            src={heroCanvasRef.current.toDataURL()}
-                            alt="Mobile preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">Generating...</div>
-                        )}
-                        {/* YouTube Mobile duration overlay */}
-                        <span className="absolute bottom-1.5 right-1.5 px-1 py-0.5 rounded bg-black/80 text-[9px] font-mono font-medium text-white shadow">
-                          1:48:20
-                        </span>
-                      </div>
-
-                      <div className="flex items-start gap-2 pt-0.5">
-                        <div className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 shrink-0 flex items-center justify-center text-[10px] text-zinc-300 font-bold">
-                          A
-                        </div>
-                        <div className="space-y-0.5 overflow-hidden">
-                          <p className="text-[11px] font-semibold text-zinc-200 truncate leading-tight">
-                            {state.text.title || 'Audiobook Full Novel'} — Full Audiobook
-                          </p>
-                          <p className="text-[9px] text-zinc-400 truncate">
-                            Audiobook Realm · 84K views · 3 days ago
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
 
             <div>
@@ -1172,6 +1199,17 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   onChange={e => update({ text: { ...text, tagline: e.target.value } })}
                 />
               </div>
+              <div>
+                <label className={label}>Back cover text (print)</label>
+                <textarea
+                  aria-label="Back cover text"
+                  className={`${field} h-auto py-1.5 leading-snug`}
+                  rows={5}
+                  value={text.blurb || ''}
+                  placeholder="The description on the back of the paperback and hardcover"
+                  onChange={e => update({ text: { ...text, blurb: e.target.value } })}
+                />
+              </div>
             </div>
 
             <div className="border-t border-zinc-800 pt-4 space-y-3">
@@ -1226,6 +1264,58 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   value={state.style.shade}
                   onChange={e => update({ style: { ...state.style, shade: Number(e.target.value) } })}
                 />
+              </div>
+
+              {/* 3D Depth Layering Card */}
+              <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">3D Depth Typography</h3>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">Depth-Anything-V2</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Layers title typography behind foreground objects (curtains, hands, subjects) while keeping the badge on top.
+                </p>
+                
+                <div className="flex items-center justify-between pt-1">
+                  <label className="text-xs text-zinc-300 font-medium flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!state.style.depthBehind}
+                      onChange={e => update({ style: { ...state.style, depthBehind: e.target.checked } })}
+                      className="rounded border-zinc-700 bg-zinc-950 text-zinc-300 focus:ring-0"
+                    />
+                    <span>Text Behind Subject</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateDepthLayer}
+                    disabled={!master || isGeneratingDepth}
+                    className={button}
+                  >
+                    {isGeneratingDepth ? 'Scanning...' : depthCutout ? 'Regenerate Mask' : 'Extract Depth Mask'}
+                  </button>
+                </div>
+
+                {depthCutout && (
+                  <div className="space-y-1 pt-1 border-t border-zinc-800">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-zinc-400">Foreground Threshold</span>
+                      <span className="text-zinc-300 font-mono">{state.style.depthThreshold ?? 150}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={230}
+                      step={5}
+                      value={state.style.depthThreshold ?? 150}
+                      onChange={e => update({ style: { ...state.style, depthThreshold: Number(e.target.value) } })}
+                      onMouseUp={generateDepthLayer}
+                      className="w-full accent-zinc-400 cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* YouTube & Video Layout Customization */}
@@ -1335,6 +1425,185 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
             </div>
           </div>
 
+          {/* TAB 3: REVIEW & EXPORT */}
+          <div hidden={sidebarTab !== 'export'} className="space-y-4">
+            {/* Aesthetic & CTR Scorer Card */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">Aesthetic & CTR Scorer</h3>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">cafe_aesthetic</span>
+              </div>
+
+              <div className="flex items-center justify-between pt-0.5">
+                {aestheticData ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-lg font-bold text-zinc-200 font-mono">{aestheticData.score}</span>
+                      <span className="text-xs text-zinc-400">/ 10</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
+                      {aestheticData.verdict}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-zinc-400">Score preview to evaluate</span>
+                )}
+                <button
+                  type="button"
+                  onClick={scoreAesthetics}
+                  disabled={!master || isScoringAesthetic}
+                  className={button}
+                >
+                  {isScoringAesthetic ? 'Scoring...' : 'Score Preview'}
+                </button>
+              </div>
+
+              {aestheticData && (
+                <div className="space-y-2 pt-1 border-t border-zinc-800/80">
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-zinc-400">
+                        <span>Contrast & Punch</span>
+                        <span className="text-zinc-300 font-mono font-semibold">{aestheticData.contrast}/10</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-zinc-400 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, aestheticData.contrast * 10)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-zinc-400">
+                        <span>Mobile Legibility</span>
+                        <span className="text-zinc-300 font-mono font-semibold">{aestheticData.mobile}/10</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-zinc-400 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, aestheticData.mobile * 10)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {aestheticData.tips.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      <span className="block text-[10px] text-zinc-400 uppercase font-semibold">Actionable Feedback</span>
+                      <ul className="space-y-1">
+                        {aestheticData.tips.map((tip, idx) => (
+                          <li key={idx} className="text-[11px] text-zinc-300 flex items-start gap-1.5 leading-snug">
+                            <span className="text-zinc-400 text-xs shrink-0">•</span>
+                            <span>{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Feed Simulator: the format chosen above, at phone size, where a reader meets it */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">Feed Simulator</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">{feedPlace(heroFormat)}</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                How the title and the picture read at the size a reader sees them on a phone.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setShowMobileSimulator(s => !s)}
+                className={`${button} w-full text-[11px]`}
+              >
+                {showMobileSimulator ? 'Hide preview' : `Preview in ${feedPlace(heroFormat)}`}
+              </button>
+
+              {showMobileSimulator && (
+                <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                  <div className="text-[10px] text-zinc-500 font-mono uppercase">
+                    {heroFormat.label.split(' · ')[0]} · feed scale
+                  </div>
+                  {heroCanvasRef.current ? (
+                    <CoverFeedPreview
+                      format={heroFormat}
+                      image={heroCanvasRef.current.toDataURL('image/jpeg', 0.85)}
+                      title={state.text.title}
+                      author={state.text.author}
+                    />
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-zinc-600 text-xs">Generating…</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* YouTube A/B/C Pack Card */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">YouTube A/B/C Pack</h3>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">Test & Compare</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Generates 3 distinct high-CTR thumbnail archetypes (Amber, Crimson, Gold) for YouTube native 3-way rotation.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowAbModal(true)}
+                disabled={!master}
+                className={`${button} w-full`}
+              >
+                Open A/B/C Pack Modal
+              </button>
+            </div>
+
+            {/* Formats & Export Card */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">Export Formats</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">{formats.length} Formats</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Download current format or package full collection for screen and 300 DPI print.
+              </p>
+              <div className="space-y-1.5 pt-1">
+                <button
+                  type="button"
+                  className={`${button} w-full`}
+                  disabled={!master}
+                  onClick={() => download(heroFormat)}
+                >
+                  Download {heroFormat.label} ({heroFormat.width}×{heroFormat.height})
+                </button>
+                <button
+                  type="button"
+                  className={`${primary} w-full`}
+                  disabled={!master || !!busy}
+                  onClick={downloadAll}
+                >
+                  Download all (.zip)
+                </button>
+                {heroFormat.id === 'ebook' && onUseAsCover && (
+                  <button
+                    type="button"
+                    className={`${button} w-full`}
+                    disabled={!master}
+                    onClick={useAsBookCover}
+                  >
+                    Use as book cover
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {busyLabel && <p className="text-xs text-zinc-400 border-t border-zinc-800 pt-3">{busyLabel}</p>}
           {error && <p role="alert" className="text-xs text-red-300 whitespace-pre-wrap border-t border-zinc-800 pt-3">{error}</p>}
           {notice && <p className="text-xs text-emerald-300 border-t border-zinc-800 pt-3">{notice}</p>}
@@ -1348,7 +1617,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
           <div>
             <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
               <span>Cover Studio</span>
-              <span className="text-xs font-normal text-zinc-400">· {COVER_FORMATS.length} formats</span>
+              <span className="text-xs font-normal text-zinc-400">· {formats.length} formats</span>
             </h2>
             <p className="text-xs text-zinc-400">
               Master 2:3 4K · Auto-cropped and lettered for screen & 300 DPI print
@@ -1362,26 +1631,46 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
               onClick={runAutopilotOnSelectedCover}
               title={`Apply all AI neural models & effects to ${heroFormat.label} (De-plasticizer, 3D Depth, Smart Layout, Readability Scorer)`}
             >
-              Apply All AI to Selected Cover
-            </button>
-            <button
-              type="button"
-              className={button}
-              disabled={!master}
-              onClick={() => setShowAbModal(true)}
-              title="Generate 3 high-CTR thumbnail variants for YouTube Test & Compare"
-            >
-              YouTube A/B/C Pack
+              AI Autopilot ({heroFormat.label})
             </button>
             {onUseAsCover && (
-              <button
-                type="button"
-                className={button}
-                disabled={!master}
-                onClick={useAsBookCover}
-              >
-                Use eBook cover for book
-              </button>
+              // The book's own cover: what the Library shows, made here from the master or brought in finished.
+              <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 py-1 pl-1 pr-1.5">
+                {bookCover
+                  ? <img src={bookCover} alt="Book cover" className="h-9 w-6 rounded-sm object-cover ring-1 ring-zinc-700" />
+                  : <span className="flex h-9 w-6 items-center justify-center rounded-sm border border-dashed border-zinc-700 text-[9px] text-zinc-600" aria-hidden="true">—</span>}
+                <span className="text-[11px] font-medium text-zinc-400 mr-0.5">Book cover</span>
+                <button type="button" className={button} disabled={!master} onClick={useAsBookCover} title="The eBook format of this studio, 1600×2560">
+                  Use eBook cover
+                </button>
+                <button type="button" className={button} onClick={() => bookCoverInput.current?.click()} title="A finished cover made elsewhere (PNG, JPG or WEBP, up to 10 MB)">
+                  {bookCover ? 'Replace…' : 'Upload…'}
+                </button>
+                {bookCover && (
+                  <button type="button" className={button} onClick={() => onUseAsCover(null)}>
+                    Remove
+                  </button>
+                )}
+                <input
+                  ref={bookCoverInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    setBookCoverError('');
+                    if (!file) return;
+                    if (!file.type.startsWith('image/')) { setBookCoverError('Choose a PNG, JPG or WEBP image.'); return; }
+                    if (file.size > 10 * 1024 * 1024) { setBookCoverError('The image must be under 10 MB.'); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => typeof reader.result === 'string' && onUseAsCover(reader.result);
+                    reader.onerror = () => setBookCoverError('The image could not be read.');
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                {bookCoverError && <span className="text-[11px] text-red-400">{bookCoverError}</span>}
+              </div>
             )}
             <button
               type="button"
@@ -1407,6 +1696,11 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   <span className="text-xs font-normal font-mono text-zinc-400">
                     {heroFormat.width} × {heroFormat.height} px · {heroFormat.ratio} {heroFormat.dpi ? `· ${heroFormat.dpi} DPI` : ''}
                   </span>
+                  {isComparingOriginal && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                      Comparing Original
+                    </span>
+                  )}
                 </h3>
               </div>
             </div>
@@ -1423,15 +1717,6 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   <span>Guides & safe zones</span>
                 </label>
               )}
-              <button
-                type="button"
-                className={button}
-                disabled={!master || isGeneratingDepth || isScoringAesthetic || isDeplasticizing}
-                onClick={runAutopilotOnSelectedCover}
-                title={`Apply all AI neural models & effects to ${heroFormat.label}`}
-              >
-                Apply All AI to {heroFormat.label}
-              </button>
               <button
                 type="button"
                 className={button}
@@ -1466,8 +1751,8 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 <canvas
                   ref={el => {
                     heroCanvasRef.current = el;
-                    if (el && master) {
-                      renderCover(master, heroFormat, state.text, state.style, state.focus, el, state.style.depthBehind ? depthCutout : null);
+                    if (el && displayMaster) {
+                      renderCover(displayMaster, heroFormat, state.text, state.style, state.focus, el, state.style.depthBehind ? depthCutout : null);
                     }
                   }}
                   className="w-full h-auto block"
@@ -1477,7 +1762,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   <span
                     key={i}
                     title={c.why}
-                    className="absolute border border-dashed border-amber-400/80 bg-amber-400/20 text-[9px] text-amber-200 font-mono flex items-center justify-center p-0.5 text-center pointer-events-none"
+                    className="absolute border border-dashed border-zinc-600 bg-zinc-600/20 text-[9px] text-zinc-300 font-mono flex items-center justify-center p-0.5 text-center pointer-events-none"
                     style={{
                       left: `${c.rect.x * 100}%`,
                       top: `${c.rect.y * 100}%`,
@@ -1485,7 +1770,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                       height: `${c.rect.h * 100}%`,
                     }}
                   >
-                    <span className="truncate bg-zinc-900/90 border border-zinc-700 px-1.5 py-0.5 rounded text-[9px] text-amber-300">
+                    <span className="truncate bg-zinc-900/90 border border-zinc-700 px-1.5 py-0.5 rounded text-[9px] text-zinc-300">
                       {c.why}
                     </span>
                   </span>
@@ -1523,51 +1808,27 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
         <div className="space-y-3 pt-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 bg-zinc-900/80 p-1 rounded-lg border border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setFilter('featured')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  filter === 'featured'
-                    ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                Featured (4)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter('online')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  filter === 'online'
-                    ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                Screen & Digital ({onlineFormats.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter('offline')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  filter === 'offline'
-                    ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                Print & Paperback ({offlineFormats.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter('all')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  filter === 'all'
-                    ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                All ({COVER_FORMATS.length})
-              </button>
+              {[...FORMAT_GROUPS, { id: 'all' as const, name: 'All' }].map(group => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => setFilter(group.id)}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    filter === group.id
+                      ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {group.name} ({formatsInGroup(formats, group.id, printTrim).length})
+                </button>
+              ))}
             </div>
+
+            {filter === 'print' && otherTrimCount > 0 && (
+              <button type="button" onClick={() => setOtherTrims(v => !v)} className="text-[11px] text-zinc-400 underline hover:text-zinc-200">
+                {otherTrims ? `Only ${printTrim.replace('x', ' × ')} in` : `Other trim sizes (${otherTrimCount})`}
+              </button>
+            )}
 
             <span className="text-[11px] text-zinc-500">
               Click any format to inspect in Hero view
@@ -1592,8 +1853,8 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                     <canvas
                       ref={el => {
                         canvases.current[format.id] = el;
-                        if (el && master) {
-                          renderCover(master, format, state.text, state.style, state.focus, el, state.style.depthBehind ? depthCutout : null);
+                        if (el && displayMaster) {
+                          renderCover(displayMaster, format, state.text, state.style, state.focus, el, state.style.depthBehind ? depthCutout : null);
                         }
                       }}
                       className="max-h-full max-w-full object-contain block"
@@ -1878,12 +2139,5 @@ function MasterThumb({ blob, active, onSelect, onRemove }: { blob: Blob; active:
   );
 }
 
-
-/** "2026-10-17 15.40.07": seconds too, so two pictures made in one minute keep their own files. */
-const masterStamp = (at: number) => {
-  const d = new Date(at || Date.now());
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
-};
 
 const slug = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'book';

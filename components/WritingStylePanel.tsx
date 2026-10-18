@@ -2,14 +2,18 @@ import React,{useEffect,useState} from 'react';
 import {WritingStyleFields} from './WritingStyleFields';
 import {STYLE_LIMITS,styleInputs,styleNeedsGeneration,type StyleInputs} from '../utils/novel/promptBook/style';
 import type {PromptBook} from '../utils/novel/promptBook';
+import {useWorkspaceEntry} from '../utils/workspaceState';
 const button='rounded border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 disabled:opacity-40';
-export function WritingStylePanel({book,busy,onSave,onGenerate,onDirty,blocked=false}:{book:PromptBook;busy:boolean;onSave?:(profile:string,inputs:StyleInputs)=>Promise<void>;onGenerate?:(inputs:StyleInputs)=>Promise<void>;onDirty:(dirty:boolean)=>void;blocked?:boolean}) {
+export function WritingStylePanel({bookTitle,book,busy,onSave,onGenerate,onDirty,blocked=false}:{bookTitle:string;book:PromptBook;busy:boolean;onSave?:(profile:string,inputs:StyleInputs)=>Promise<void>;onGenerate?:(inputs:StyleInputs)=>Promise<void>;onDirty:(dirty:boolean)=>void;blocked?:boolean}) {
  const saved=styleInputs(book.brief.settings),savedProfile=book.style?.profile||'';
- const [inputs,setInputs]=useState(saved),[profile,setProfile]=useState(savedProfile),[generating,setGenerating]=useState(false),[message,setMessage]=useState('');
- useEffect(()=>{setInputs(styleInputs(book.brief.settings));setProfile(book.style?.profile||'');},[saved.instructions,saved.samples,savedProfile]);
+ // An unsaved style edit is kept in the book's workspace state, so a reload brings it back still unsaved.
+ const [draft,setDraft]=useWorkspaceEntry<{inputs:StyleInputs;profile:string}>(bookTitle,'style',JSON.stringify([saved.instructions,saved.samples,savedProfile]));
+ const inputs=draft?.inputs??saved,profile=draft?.profile??savedProfile,[generating,setGenerating]=useState(false),[message,setMessage]=useState('');
+ const edit=(next:{inputs:StyleInputs;profile:string})=>setDraft(next.inputs.instructions===saved.instructions&&next.inputs.samples===saved.samples&&next.profile===savedProfile?undefined:next);
+ const setInputs=(next:StyleInputs)=>edit({inputs:next,profile}),setProfile=(text:string)=>edit({inputs,profile:text});
  const dirty=inputs.instructions!==saved.instructions||inputs.samples!==saved.samples||profile!==savedProfile;
  useEffect(()=>onDirty(dirty),[dirty,onDirty]);
- const discard=()=>{setInputs(saved);setProfile(savedProfile);setMessage('Changes discarded');};
+ const discard=()=>{setDraft(undefined);setMessage('Changes discarded');};
  return <details className="rounded border border-zinc-800 bg-zinc-900/40 overflow-hidden text-left" aria-label="Writing style settings">
   <summary className="cursor-pointer text-sm font-medium px-4 py-2.5 bg-zinc-900/80 border-b border-zinc-800 flex items-center justify-between text-zinc-200"><span>Writing style</span><span className="text-xs text-zinc-400 font-normal">{dirty?'Unsaved changes':styleNeedsGeneration(book)?'Profile needs updating':book.style?'Shared profile saved':'Optional · no profile'}</span></summary>
   <div className="p-4 space-y-4"><p className="text-xs text-zinc-400">Use a different set of references for each book. Generate a profile, review it, then edit and save it. The same saved profile is added to every chapter writer request and copied prompt.</p>

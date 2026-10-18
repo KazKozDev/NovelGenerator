@@ -2,8 +2,9 @@ import type {ProjectStore} from '../v2/store';
 import {assembleManuscript,parseBookChapters} from '../manuscript';
 import {savePromptBook,type PromptBook} from './index';
 import type {PromptStory} from './actions';
-export type PromptWorkspaceStage='prompts'|'story'|'editing'|'cover';
-export interface StoryEditRevision {at:string;before:PromptStory}
+export type PromptWorkspaceStage='prompts'|'story'|'editing'|'cover'|'publish'|'audio';
+/** `session` ties the revisions of one manual editing session together: autosaves while typing keep one "before". */
+export interface StoryEditRevision {at:string;before:PromptStory;session?:string}
 export function canEditPromptStory(book:PromptBook):boolean {
  return !!book.story&&book.story.chapters.length===book.brief.input.chapter_count&&book.story.chapters.every((c,i)=>c.chapter===i+1&&!!c.text.trim());
 }
@@ -17,12 +18,12 @@ export function promptStoryMetadata(book:PromptBook) {
 }
 export function setPromptWorkspaceStage(store:ProjectStore,stage:PromptWorkspaceStage) {
  const book=store.loadAuthor()?.promptPlanning;if(!book)throw new Error('Prompt project not found.');
- if(!['prompts','story','editing','cover'].includes(stage))throw new Error('Unknown workspace stage.');
+ if(!['prompts','story','editing','cover','publish','audio'].includes(stage))throw new Error('Unknown workspace stage.');
  if(stage==='editing'&&!canEditPromptStory(book))throw new Error('Finish writing all chapters before opening the editing stage.');
  book.workspaceStage=stage;savePromptBook(store,book);return book;
 }
 /** The prompt-story draft remains the sole source of truth for this workflow. */
-export function savePromptStoryManuscript(store:ProjectStore,content:string,expectedContent?:string) {
+export function savePromptStoryManuscript(store:ProjectStore,content:string,expectedContent?:string,session?:string) {
  const book=store.loadAuthor()?.promptPlanning;
  if(!book||!canEditPromptStory(book))throw new Error('The complete story is not available for editing.');
  if(expectedContent!==undefined&&expectedContent!==promptStoryContent(book))throw new Error('The story changed while this edit was prepared. Reopen it and apply the change again.');
@@ -32,6 +33,12 @@ export function savePromptStoryManuscript(store:ProjectStore,content:string,expe
  const title=content.match(/^#[ \t]+([^\r\n]+)/m)?.[1].trim()||book.story!.title||book.blueprint?.title;
  const next={...book.story!,title,chapters:book.story!.chapters.map((c,i)=>({...c,text:parsed[i].content}))};
  if(JSON.stringify(next)===JSON.stringify(book.story))return book;
- book.storyEdits=[...(book.storyEdits||[]).slice(-19),{at:new Date().toISOString(),before:structuredClone(book.story!)}];
+ const last=book.storyEdits?.at(-1);
+ if(session&&last?.session===session){
+  // The same editing session again: keep its first "before", and drop it when the text is back to that.
+  book.storyEdits=JSON.stringify(next)===JSON.stringify(last.before)?book.storyEdits!.slice(0,-1):book.storyEdits;
+  book.story=next;book.workspaceStage='editing';savePromptBook(store,book);return book;
+ }
+ book.storyEdits=[...(book.storyEdits||[]).slice(-19),{at:new Date().toISOString(),before:structuredClone(book.story!),...(session?{session}:{})}];
  book.story=next;book.workspaceStage='editing';savePromptBook(store,book);store.log('story-edit','Saved manuscript edit; previous revision retained.');return book;
 }

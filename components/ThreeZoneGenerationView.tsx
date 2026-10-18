@@ -167,7 +167,7 @@ export const ThreeZoneGenerationView: React.FC<ThreeZoneGenerationViewProps> = (
         </div>
       </div>
 
-      :<div className="flex justify-end shrink-0"><SaveStatusIndicator generatedChapters={generatedChapters.filter(c=>!!c.content)} savedAt={lastSavedAt||undefined} status={autosaveStatus}/></div>}
+      :null}
 
       {/* 3-Zone Studio Grid */}
       <div className="studio-grid grid grid-cols-1 lg:grid-cols-12 gap-3 w-full flex-1 min-h-0 items-stretch overflow-hidden">

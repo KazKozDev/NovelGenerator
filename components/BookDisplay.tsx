@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import BookStatistics from './BookStatistics';
 
 import { extractBookTitle } from '../utils/exportUtils';
@@ -9,6 +9,18 @@ import { parseModelConfigFromTag } from '../utils/novel/targetedEditorial';
 import { getStoredProviderConfig, getStoredValidatorConfig } from '../services/llmService';
 import EditorialChatStudio from './EditorialChatStudio';
 import { pushUndoState, popUndoState, UndoStackEntry } from '../utils/novel/patchApplier';
+import { parseBookChapters } from '../utils/novel/manuscript';
+import { useWorkspaceEntry } from '../utils/workspaceState';
+
+/** `session` ties autosaves of one manual editing session into one revision; `quiet` keeps a failed autosave out of the error banner. */
+export interface ManualSaveOptions { session?: string; quiet?: boolean }
+
+/** A manual edit autosaves only while every chapter it started with is still there, in order and with text. */
+export function safeToAutosave(start: string, content: string): boolean {
+  const before = parseBookChapters(start).map(c => c.num);
+  const now = parseBookChapters(content);
+  return now.length > 0 && now.length === before.length && now.every((c, i) => c.num === before[i] && !!c.content.trim());
+}
 
 interface BookDisplayProps {
   bookContent: string;
@@ -18,7 +30,9 @@ interface BookDisplayProps {
   isEditorialRunning?: boolean;
   editorialStatus?: string;
   onEditingStateChange?: (editing: boolean) => void;
-  onManualSave?: (newContent: string) => boolean;
+  onManualSave?: (newContent: string, options?: ManualSaveOptions) => boolean;
+  /** The book folder the workspace state goes to; the manuscript's own title when not given. */
+  bookTitle?: string;
   author?: string;
   onAuthorChange?: (author: string) => void;
   imprint?: ImprintData;
@@ -26,6 +40,8 @@ interface BookDisplayProps {
   coverImage?: string | null;
   onCoverChange?: (coverUrl: string | null) => void;
   onExportProject?: () => void;
+  /** The cover and edition column; off where the Cover and Publish stages hold them. */
+  showPublicationColumn?: boolean;
 }
 
 const BookDisplay: React.FC<BookDisplayProps> = ({
@@ -37,6 +53,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   editorialStatus,
   onManualSave,
   onEditingStateChange,
+  bookTitle,
   author,
   onAuthorChange,
   imprint,
@@ -44,6 +61,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   coverImage,
   onCoverChange,
   onExportProject,
+  showPublicationColumn = true,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -111,6 +129,32 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // A manual edit autosaves a second after typing stops, so text is never lost without Save. Cancel goes back
+  // to the text the edit started from.
+  const editStart = useRef('');
+  const lastAutosaved = useRef('');
+  const editSession = useRef('');
+  const [autosaveNote, setAutosaveNote] = useState<'' | 'saved' | 'held'>('');
+  const startEditing = () => {
+    editStart.current = manuscriptWithTitle;
+    lastAutosaved.current = manuscriptWithTitle;
+    editSession.current = `edit-${Date.now()}`;
+    setAutosaveNote('');
+    setEditableContent(manuscriptWithTitle);
+    setIsEditing(true);
+    setSaveError(null);
+  };
+  useEffect(() => {
+    if (!isEditing || !onManualSave || editableContent === lastAutosaved.current) return;
+    const timer = setTimeout(() => {
+      if (!safeToAutosave(editStart.current, editableContent)) { setAutosaveNote('held'); return; }
+      if (onManualSave(editableContent, { session: editSession.current, quiet: true }) === false) { setAutosaveNote('held'); return; }
+      lastAutosaved.current = editableContent;
+      setAutosaveNote('saved');
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [isEditing, editableContent, onManualSave]);
+
   const [viewMode, setViewMode] = useState<'clean' | 'changes'>('clean');
   const [lastDiff, setLastDiff] = useState<{ before: string; after: string } | null>(null);
   const readerContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -156,7 +200,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   }, [manuscriptWithTitle, isEditing]);
 
   const handleSave = () => {
-    const success = onManualSave?.(editableContent);
+    const success = onManualSave?.(editableContent, { session: editSession.current });
     if (success !== false) {
       setIsEditing(false);
       setSaveError(null);
@@ -168,6 +212,10 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
   };
 
   const handleCancel = () => {
+    if (lastAutosaved.current !== editStart.current && onManualSave?.(editStart.current, { session: editSession.current }) === false) {
+      setSaveError('Could not go back to the text before this edit; the autosaved edit stays.');
+      return;
+    }
     setIsEditing(false);
     setEditableContent(manuscriptWithTitle);
     setSaveError(null);
@@ -182,7 +230,14 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
 
   const isRunning = isEditorialRunning;
   const currentStatus = editorialStatus;
-  const [undoStack, setUndoStack] = useState<UndoStackEntry[]>([]);
+  // The undo history of applied editorial patches survives a reload, in the book's workspace state.
+  const workspaceTitle = bookTitle || displayTitle;
+  const [savedUndo, saveUndo] = useWorkspaceEntry<UndoStackEntry[]>(workspaceTitle, 'undo');
+  const undoStack = savedUndo || [];
+  const setUndoStack = (next: UndoStackEntry[] | ((prev: UndoStackEntry[]) => UndoStackEntry[])) => {
+    const value = typeof next === 'function' ? next(undoStack) : next;
+    saveUndo(value.length ? value : undefined);
+  };
 
   const scrollToRevisionTarget = (targetSnippet?: string) => {
     setViewMode('changes');
@@ -237,8 +292,8 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
     <div className="space-y-4">
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
-      {/* Three-zone layout: Column 1 (33% Review), Column 2 (47% Manuscript), Column 3 (1fr Cover) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[33%_47%_1fr] gap-6 items-stretch">
+      {/* Column 1 (Review), Column 2 (Manuscript), and Column 3 (Cover) where no Cover or Publish stage holds it */}
+      <div className={`grid grid-cols-1 gap-6 items-stretch ${showPublicationColumn ? 'lg:grid-cols-[33%_47%_1fr]' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
         {/* Column 1 (~33%): Interactive Editorial Assistant Studio */}
         <EditorialChatStudio
           className="h-[calc(100vh-215px)] min-h-[520px]"
@@ -250,6 +305,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
           activeModelConfig={editorialModel}
           onModelChange={setEditorialModel}
           displayTitle={displayTitle}
+          bookTitle={workspaceTitle}
           isEditorialRunning={isRunning || isEditing}
           editorialStatus={isEditing?'Manual editing — save or cancel manuscript changes.':currentStatus}
           onScrollToRevision={scrollToRevisionTarget}
@@ -294,11 +350,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
               {onManualSave && !isEditing && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditableContent(manuscriptWithTitle);
-                    setIsEditing(true);
-                    setSaveError(null);
-                  }}
+                  onClick={startEditing}
                   className="inline-flex items-center h-6 px-2.5 text-xs font-medium whitespace-nowrap shrink-0 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
                 >
                   Edit text
@@ -347,7 +399,11 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
                 />
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pt-2">
                   <span className="text-xs text-zinc-500">
-                    Tip: press <kbd className="px-1.5 py-0.5 bg-zinc-900 rounded border border-zinc-800 text-zinc-400 text-[11px]">Cmd+S</kbd> or <kbd className="px-1.5 py-0.5 bg-zinc-900 rounded border border-zinc-800 text-zinc-400 text-[11px]">Ctrl+S</kbd> to save
+                    {autosaveNote === 'held'
+                      ? 'Not autosaved yet: keep every numbered chapter heading, in order, with text.'
+                      : autosaveNote === 'saved'
+                        ? 'Autosaved. Cancel goes back to the text before this edit.'
+                        : 'Changes autosave as you type. Cancel goes back to the text before this edit.'}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -393,7 +449,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
         </div>
 
         {/* Column 3 (~20%): Book Cover & Imprint */}
-        <div className="flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
+        {showPublicationColumn && <div className="flex flex-col h-[calc(100vh-215px)] min-h-[520px]">
           <BookCoverUpload
             className="h-full"
             title={displayTitle}
@@ -405,7 +461,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
             coverImage={coverImage}
             onCoverChange={onCoverChange}
           />
-        </div>
+        </div>}
       </div>
     </div>
   );

@@ -1,32 +1,25 @@
 import React, { useState } from 'react';
-import {
-  exportAsPdf,
-  extractBookTitle,
-  sanitizeFilename,
-  formatMarkdownWithMetadata,
-  formatTextWithMetadata,
-  buildEpub,
-  buildPdfHtml,
-} from '../utils/exportUtils';
-import { saveOrDownload, saveToBookFolder } from '../utils/saveToBookFolder';
+import { exportOwnFormat, type OwnFormat } from '../utils/publish/ownFormats';
 
 export default function SaveBook({
   content,
   metadata = {},
   draft = false,
   onExportProject,
+  align = 'right',
 }: {
   content: string;
   metadata?: Record<string, unknown>;
   draft?: boolean;
   onExportProject?: () => void;
+  /** Which edge of the button the menu opens from. */
+  align?: 'left' | 'right';
 }) {
+  const hasText = !!content.trim();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [showAuthorAlert, setShowAuthorAlert] = useState(false);
-  const rawTitle = (typeof metadata?.title === 'string' && metadata.title.trim()) || extractBookTitle(content) || 'Book';
-  const filename = sanitizeFilename(rawTitle);
 
   const showSaved = (where: string | null) => {
     if (!where) return;
@@ -34,7 +27,7 @@ export default function SaveBook({
     setTimeout(() => setSavedNotice(null), 5000);
   };
 
-  const download = async (format: string) => {
+  const download = async (format: OwnFormat) => {
     setError('');
     setShowAuthorAlert(false);
 
@@ -56,22 +49,8 @@ export default function SaveBook({
     }
 
     setBusy(true);
-    const label = draft ? 'черновик' : 'книга';
-    const file = (kind: 'manuscripts' | 'reports', what: string, ext: string, body: string | Blob) => ({ title: rawTitle, kind, label: what, ext, content: body });
     try {
-      if (format === 'txt') {
-        showSaved(await saveOrDownload(file('manuscripts', label, 'txt', formatTextWithMetadata(content, metadata)), `${filename}.txt`, 'text/plain;charset=utf-8'));
-      } else if (format === 'md') {
-        showSaved(await saveOrDownload(file('manuscripts', label, 'md', formatMarkdownWithMetadata(content, metadata)), `${filename}.md`, 'text/markdown;charset=utf-8'));
-      } else if (format === 'report') {
-        showSaved(await saveOrDownload(file('reports', 'редакторский отчёт', 'json', JSON.stringify(metadata, null, 2)), `${filename}-report.json`, 'application/json;charset=utf-8'));
-      } else if (format === 'pdf') {
-        // The print window makes the PDF; the page it prints is kept in the book folder to print again.
-        exportAsPdf(content, metadata);
-        showSaved(await saveToBookFolder(file('manuscripts', `${label} для печати`, 'html', buildPdfHtml(content, metadata))));
-      } else {
-        showSaved(await saveOrDownload(file('manuscripts', label, 'epub', await buildEpub(content, metadata)), `${filename}.epub`));
-      }
+      showSaved(await exportOwnFormat(format, content, metadata, draft));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -83,19 +62,21 @@ export default function SaveBook({
     <div className="relative group shrink-0">
       <button
         type="button"
-        aria-label={draft ? 'Save draft' : 'Save book'}
-        disabled={busy || !content.trim()}
+        aria-label={draft ? 'Export draft' : 'Export book'}
+        title="The book saves itself to its folder; this exports it for readers and stores"
+        disabled={busy || (!hasText && !onExportProject)}
         className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors disabled:opacity-50"
       >
-        {busy ? 'Saving…' : draft ? 'Save Draft ▾' : 'Save ▾'}
+        {busy ? 'Exporting…' : draft ? 'Export draft ▾' : 'Export ▾'}
       </button>
-      <div className="hidden group-hover:block hover:block absolute right-0 top-full pt-1 z-30 min-w-[170px]">
-        <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300">
-          <button type="button" onClick={() => download('epub')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">EPUB (.epub)</button>
-          <button type="button" onClick={() => download('md')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Markdown (.md)</button>
-          <button type="button" onClick={() => download('txt')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Plain Text (.txt)</button>
-          <button type="button" onClick={() => download('pdf')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">PDF (.pdf)</button>
-          <button type="button" onClick={() => download('report')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">Editorial Report (.json)</button>
+      <div className="hidden group-hover:block hover:block absolute ${align === 'left' ? 'left-0' : 'right-0'} top-full pt-1 z-30 min-w-[190px]">
+        <div className="bg-zinc-900 border border-zinc-800 rounded shadow-lg py-1 text-xs text-zinc-300 whitespace-nowrap flex flex-col">
+          <button type="button" disabled={!hasText} onClick={() => download('epub')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">EPUB (.epub)</button>
+          <button type="button" disabled={!hasText} onClick={() => download('md')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">Markdown (.md)</button>
+          <button type="button" disabled={!hasText} onClick={() => download('txt')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">Plain Text (.txt)</button>
+          <button type="button" disabled={!hasText} onClick={() => download('pdf')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">PDF (.pdf)</button>
+          <button type="button" disabled={!hasText} onClick={() => download('report')} className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent">Editorial Report (.json)</button>
+          {!hasText && <p className="px-3 pb-1 text-[11px] text-zinc-500">Book formats open once a chapter is written.</p>}
           {onExportProject && (
             <>
               <div className="my-1 border-t border-zinc-800/80" />
@@ -111,8 +92,8 @@ export default function SaveBook({
         </div>
       </div>
       {savedNotice && (
-        <p role="status" className="absolute top-full mt-1 right-0 text-[11px] text-emerald-400 bg-zinc-950 px-2 py-1 rounded border border-emerald-900/60 z-40 whitespace-nowrap shadow-md">
-          ✓ Сохранено в {savedNotice}
+        <p role="status" className={`absolute top-full mt-1 ${align === 'left' ? 'left-0' : 'right-0'} text-[11px] text-emerald-400 bg-zinc-950 px-2 py-1 rounded border border-emerald-900/60 z-40 whitespace-nowrap shadow-md`}>
+          ✓ Saved to {savedNotice}
         </p>
       )}
       {error && <p role="alert" className="absolute top-full mt-1 text-[11px] text-red-400 bg-zinc-950 p-1 rounded border border-red-900 z-40 whitespace-nowrap">{error}</p>}

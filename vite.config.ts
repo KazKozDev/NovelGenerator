@@ -1,5 +1,7 @@
 import { compatibleDevPlugin } from './services/compatibleDevPlugin';
 import path from 'path';
+import { existsSync } from 'fs';
+import { pathToFileURL } from 'url';
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { projectAutosavePlugin } from './services/projectAutosavePlugin';
@@ -9,6 +11,9 @@ import { anthropicDevPlugin } from './services/anthropicDevPlugin';
 import { keysDevPlugin } from './services/keysDevPlugin';
 import { coverAiDevPlugin } from './services/coverAiDevPlugin';
 import { screenStatePlugin } from './services/screenStatePlugin';
+import { publishDevPlugin } from './services/publishDevPlugin';
+import { chatgptImagePlugin } from './services/chatgptImagePlugin';
+import { flux3ImagePlugin } from './services/flux3ImagePlugin';
 
 function terminalLoggerPlugin(): Plugin {
   let lastKey = '';
@@ -85,7 +90,12 @@ function terminalLoggerPlugin(): Plugin {
   };
 }
 
-export default defineConfig(({ mode, command }) => {
+// The audio studio (Drama 3) is kept out of the repository; where its server half is on disk, it is loaded.
+const AUDIO_PLUGIN = path.resolve(__dirname, 'services/audioDevPlugin.ts');
+const audioPlugins = async (): Promise<Plugin[]> =>
+  existsSync(AUDIO_PLUGIN) ? [(await import(pathToFileURL(AUDIO_PLUGIN).href)).audioDevPlugin()] : [];
+
+export default defineConfig(async ({ mode, command }) => {
     const env = loadEnv(mode, '.', '');
     const apiKey = env.GEMINI_API_KEY || env.API_KEY || '';
     return {
@@ -100,7 +110,7 @@ export default defineConfig(({ mode, command }) => {
           }
         }
       },
-      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin(), screenStatePlugin()],
+      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin(), ...await audioPlugins(), publishDevPlugin(), chatgptImagePlugin(), flux3ImagePlugin(), screenStatePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),

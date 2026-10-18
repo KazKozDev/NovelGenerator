@@ -4,6 +4,8 @@
  * Sizes and covered zones follow COVER_SPECIFICATIONS.md.
  */
 
+import { PRINT_TARGETS, TRIMS, coverGeometry, spineFromPages, type PrintTarget, type PrintTargetId, type Trim } from '../publish/printSpecs';
+
 export interface Rect { x: number; y: number; w: number; h: number }
 
 export type CoverMedium = 'online' | 'offline';
@@ -25,9 +27,27 @@ export interface CoverFormat {
   isWrap?: boolean;
   /** Parts of the picture a platform covers (fractions of the frame): kept clear of lettering, shown in the preview. */
   covered: { rect: Rect; why: string }[];
+  /** A full print cover: its parts in inches, laid out edge + back + spine + front + edge. */
+  wrap?: WrapGeometry;
+  /** The trim size a print format is for ("6x9"). */
+  trim?: string;
 }
 
-export const COVER_FORMATS: CoverFormat[] = [
+export interface WrapGeometry {
+  /** Bleed for a paperback, the wrap around the board for a hardcover. */
+  edge: number;
+  trimWidth: number;
+  trimHeight: number;
+  spine: number;
+  dpi: number;
+  /** The printer letters the spine only from a page count up. */
+  spineText: boolean;
+  /** Where the spine width came from: the page count, the printer's template, or an estimate. */
+  spineSource: 'pages' | 'template' | 'estimate';
+}
+
+/** Screen formats; the print ones are made from the trim sizes and spines below. */
+const SCREEN_FORMATS: CoverFormat[] = [
   // ==========================================
   // ONLINE (SCREEN)
   // ==========================================
@@ -62,6 +82,21 @@ export const COVER_FORMATS: CoverFormat[] = [
     covered: [
       { rect: { x: 0.72, y: 0.86, w: 0.28, h: 0.14 }, why: 'Audible / store badge' },
     ],
+  },
+  {
+    // Apple Podcasts: 3000 × 3000 square, JPEG or PNG, no alpha (1400 × 1400 accepted from RSS). Spotify takes the same.
+    id: 'podcast',
+    medium: 'online',
+    category: 'books',
+    categoryLabel: 'Digital Books & Audio',
+    label: 'Podcast · Apple Podcasts, Spotify, YouTube Music',
+    ratio: '1:1',
+    width: 3000,
+    height: 3000,
+    file: 'cover-podcast-3000x3000.jpg',
+    mime: 'image/jpeg',
+    description: 'Square 1:1 show cover. Seen as small as a phone icon: the title has to read at 55 px.',
+    covered: [],
   },
 
   // 2. Video & YouTube
@@ -174,121 +209,98 @@ export const COVER_FORMATS: CoverFormat[] = [
     description: 'High-performing 2:3 vertical pin format for Pinterest feeds.',
     covered: [],
   },
-
-  // ==========================================
-  // OFFLINE (PRINT, 300 DPI)
-  // ==========================================
-
-  // 4. Print Front Covers
-  {
-    id: 'print_front_6x9',
-    medium: 'offline',
-    category: 'print_front',
-    categoryLabel: 'KDP Paperback Front (300 DPI)',
-    label: 'Paperback Front · 6 × 9" (with 0.125" bleed)',
-    ratio: '6:9',
-    dpi: 300,
-    width: 1875,
-    height: 2775,
-    file: 'cover-print-front-6x9-300dpi.jpg',
-    mime: 'image/jpeg',
-    description: 'Front cover for 6×9" trade paperback with 0.125" (38 px) bleed on all edges.',
-    covered: [
-      { rect: { x: 0, y: 0, w: 1, h: 0.0137 }, why: 'Top bleed (38 px)' },
-      { rect: { x: 0, y: 0.9863, w: 1, h: 0.0137 }, why: 'Bottom bleed (38 px)' },
-      { rect: { x: 0, y: 0, w: 0.0203, h: 1 }, why: 'Left bleed (38 px)' },
-      { rect: { x: 0.9797, y: 0, w: 0.0203, h: 1 }, why: 'Right bleed (38 px)' },
-    ],
-  },
-  {
-    id: 'print_front_55x85',
-    medium: 'offline',
-    category: 'print_front',
-    categoryLabel: 'KDP Paperback Front (300 DPI)',
-    label: 'Paperback Front · 5.5 × 8.5" (with 0.125" bleed)',
-    ratio: '5.5:8.5',
-    dpi: 300,
-    width: 1725,
-    height: 2625,
-    file: 'cover-print-front-5.5x8.5-300dpi.jpg',
-    mime: 'image/jpeg',
-    description: 'Front cover for 5.5×8.5" trade paperback with 0.125" bleed.',
-    covered: [
-      { rect: { x: 0, y: 0, w: 1, h: 0.0145 }, why: 'Top bleed (38 px)' },
-      { rect: { x: 0, y: 0.9855, w: 1, h: 0.0145 }, why: 'Bottom bleed (38 px)' },
-      { rect: { x: 0, y: 0, w: 0.022, h: 1 }, why: 'Left bleed (38 px)' },
-      { rect: { x: 0.978, y: 0, w: 0.022, h: 1 }, why: 'Right bleed (38 px)' },
-    ],
-  },
-  {
-    id: 'print_front_5x8',
-    medium: 'offline',
-    category: 'print_front',
-    categoryLabel: 'KDP Paperback Front (300 DPI)',
-    label: 'Paperback Front · 5 × 8" (with 0.125" bleed)',
-    ratio: '5:8',
-    dpi: 300,
-    width: 1575,
-    height: 2475,
-    file: 'cover-print-front-5x8-300dpi.jpg',
-    mime: 'image/jpeg',
-    description: 'Front cover for 5×8" pocket paperback with 0.125" bleed.',
-    covered: [
-      { rect: { x: 0, y: 0, w: 1, h: 0.0153 }, why: 'Top bleed (38 px)' },
-      { rect: { x: 0, y: 0.9847, w: 1, h: 0.0153 }, why: 'Bottom bleed (38 px)' },
-      { rect: { x: 0, y: 0, w: 0.0241, h: 1 }, why: 'Left bleed (38 px)' },
-      { rect: { x: 0.9759, y: 0, w: 0.0241, h: 1 }, why: 'Right bleed (38 px)' },
-    ],
-  },
-
-  // 5. Full Paperback Wrap Spreads
-  {
-    id: 'print_wrap_6x9',
-    medium: 'offline',
-    category: 'print_wrap',
-    categoryLabel: 'KDP Paperback Full Wrap (300 DPI)',
-    label: 'KDP Paperback Wrap · 6 × 9" (300 page spread)',
-    ratio: 'Full Wrap',
-    dpi: 300,
-    width: 3878,
-    height: 2775,
-    file: 'cover-print-wrap-6x9-300dpi.jpg',
-    mime: 'image/jpeg',
-    isWrap: true,
-    description: 'Full spread for 6×9" paperback: back cover + 0.68" (203 px) spine + front cover + 0.125" bleed.',
-    covered: [
-      { rect: { x: 0, y: 0, w: 1, h: 0.0137 }, why: 'Top bleed (38 px)' },
-      { rect: { x: 0, y: 0.9863, w: 1, h: 0.0137 }, why: 'Bottom bleed (38 px)' },
-      { rect: { x: 0, y: 0, w: 0.0098, h: 1 }, why: 'Left bleed (38 px)' },
-      { rect: { x: 0.9902, y: 0, w: 0.0098, h: 1 }, why: 'Right bleed (38 px)' },
-      { rect: { x: 0.306, y: 0.838, w: 0.155, h: 0.130 }, why: 'ISBN Barcode zone 2"×1.2"' },
-      { rect: { x: 0.474, y: 0.0137, w: 0.052, h: 0.9726 }, why: 'Book spine (203 px)' },
-    ],
-  },
-  {
-    id: 'print_wrap_55x85',
-    medium: 'offline',
-    category: 'print_wrap',
-    categoryLabel: 'KDP Paperback Full Wrap (300 DPI)',
-    label: 'KDP Paperback Wrap · 5.5 × 8.5" (300 page spread)',
-    ratio: 'Full Wrap',
-    dpi: 300,
-    width: 3578,
-    height: 2625,
-    file: 'cover-print-wrap-5.5x8.5-300dpi.jpg',
-    mime: 'image/jpeg',
-    isWrap: true,
-    description: 'Full spread for 5.5×8.5" paperback: back cover + 203 px spine + front cover + 0.125" bleed.',
-    covered: [
-      { rect: { x: 0, y: 0, w: 1, h: 0.0145 }, why: 'Top bleed (38 px)' },
-      { rect: { x: 0, y: 0.9855, w: 1, h: 0.0145 }, why: 'Bottom bleed (38 px)' },
-      { rect: { x: 0, y: 0, w: 0.0106, h: 1 }, why: 'Left bleed (38 px)' },
-      { rect: { x: 0.9894, y: 0, w: 0.0106, h: 1 }, why: 'Right bleed (38 px)' },
-      { rect: { x: 0.290, y: 0.825, w: 0.168, h: 0.137 }, why: 'ISBN Barcode zone 2"×1.2"' },
-      { rect: { x: 0.472, y: 0.0145, w: 0.057, h: 0.971 }, why: 'Book spine (203 px)' },
-    ],
-  },
 ];
+
+const trimKey = (trim: Trim) => trim.id.replace(/\./g, '');
+const inchLabel = (trim: Trim) => `${trim.width} × ${trim.height}"`;
+
+/** A front cover alone, for previews and promotion: the trim with 0.125" bleed on every edge, at 300 DPI. */
+function printFront(trim: Trim): CoverFormat {
+  const bleed = 0.125, dpi = 300;
+  const width = Math.round((trim.width + bleed * 2) * dpi), height = Math.round((trim.height + bleed * 2) * dpi);
+  const bx = bleed / (trim.width + bleed * 2), by = bleed / (trim.height + bleed * 2);
+  return {
+    id: `print_front_${trimKey(trim)}`,
+    medium: 'offline',
+    category: 'print_front',
+    categoryLabel: 'Print Front Covers (300 DPI)',
+    label: `Paperback Front · ${inchLabel(trim)} (with 0.125" bleed)`,
+    ratio: `${trim.width}:${trim.height}`,
+    dpi,
+    width,
+    height,
+    file: `cover-print-front-${trim.id}-300dpi.jpg`,
+    trim: trim.id,
+    mime: 'image/jpeg',
+    description: `Front cover for a ${inchLabel(trim)} book with 0.125" (38 px) bleed on all edges.`,
+    covered: [
+      { rect: { x: 0, y: 0, w: 1, h: by }, why: 'Top bleed (38 px)' },
+      { rect: { x: 0, y: 1 - by, w: 1, h: by }, why: 'Bottom bleed (38 px)' },
+      { rect: { x: 0, y: 0, w: bx, h: 1 }, why: 'Left bleed (38 px)' },
+      { rect: { x: 1 - bx, y: 0, w: bx, h: 1 }, why: 'Right bleed (38 px)' },
+    ],
+  };
+}
+
+const WRAP_IDS: Record<PrintTargetId, string> = { kdp_paperback: 'print_wrap', kdp_hardcover: 'hardcover_wrap', ingram_paperback: 'ingram_wrap' };
+
+/** Spines of the print editions, by "<target>:<trim id>", with where each came from. */
+export type PrintSpines = Partial<Record<string, { spine: number; pages: number; source: WrapGeometry['spineSource'] }>>;
+
+/** The full cover of one print edition, at the spine it was given or one estimated for a 300-page book. */
+export function printWrapFormat(target: PrintTarget, trim: Trim, given?: PrintSpines[string]): CoverFormat {
+  const dpi = 300;
+  const pages = given?.pages ?? 300;
+  const spine = given?.spine ?? spineFromPages(pages, 'white');
+  const g = coverGeometry(target, trim, spine);
+  const width = Math.round(g.width * dpi), height = Math.round(g.height * dpi);
+  const fx = (inches: number) => inches / g.width, fy = (inches: number) => inches / g.height;
+  // KDP and IngramSpark put the barcode on the back, bottom right: 2" × 1.2", 0.25" in from the trim.
+  const barcode = { x: fx(g.spineX - 0.25 - 2), y: fy(g.height - g.edge - 0.25 - 1.2), w: fx(2), h: fy(1.2) };
+  const source = given?.source ?? 'estimate';
+  return {
+    id: `${WRAP_IDS[target.id]}_${trimKey(trim)}`,
+    medium: 'offline',
+    category: 'print_wrap',
+    categoryLabel: `${target.name} Full Cover (300 DPI)`,
+    label: `${target.name} Cover · ${inchLabel(trim)} · ${source === 'estimate' ? 'spine estimated' : `${pages} pages`}`,
+    ratio: 'Full Wrap',
+    dpi,
+    width,
+    height,
+    file: `cover-${WRAP_IDS[target.id].replace('_', '-')}-${trim.id}-300dpi.jpg`,
+    trim: trim.id,
+    mime: 'image/jpeg',
+    isWrap: true,
+    description: `Back + ${spine.toFixed(3)}" spine + front for a ${inchLabel(trim)} ${target.name.toLowerCase()}, ${target.coverEdge}" ${target.coverEdge > 0.2 ? 'wrap' : 'bleed'} around.`,
+    covered: [
+      { rect: { x: 0, y: 0, w: 1, h: fy(g.edge) }, why: `Top ${target.coverEdge > 0.2 ? 'wrap' : 'bleed'}` },
+      { rect: { x: 0, y: 1 - fy(g.edge), w: 1, h: fy(g.edge) }, why: `Bottom ${target.coverEdge > 0.2 ? 'wrap' : 'bleed'}` },
+      { rect: { x: 0, y: 0, w: fx(g.edge), h: 1 }, why: `Left ${target.coverEdge > 0.2 ? 'wrap' : 'bleed'}` },
+      { rect: { x: 1 - fx(g.edge), y: 0, w: fx(g.edge), h: 1 }, why: `Right ${target.coverEdge > 0.2 ? 'wrap' : 'bleed'}` },
+      { rect: barcode, why: 'Barcode 2" × 1.2"' },
+      { rect: { x: fx(g.spineX), y: 0, w: fx(spine), h: 1 }, why: `Spine ${spine.toFixed(3)}"` },
+    ],
+    wrap: { edge: g.edge, trimWidth: trim.width, trimHeight: trim.height, spine, dpi, spineText: pages >= target.spineTextFrom, spineSource: source },
+  };
+}
+
+/** The print formats: a front for every trim, and a full cover for every edition and trim it prints. */
+export function printCoverFormats(spines: PrintSpines = {}): CoverFormat[] {
+  const fronts = TRIMS.map(printFront);
+  const wraps = PRINT_TARGETS.flatMap(target => target.trims.map(id => {
+    const trim = TRIMS.find(t => t.id === id)!;
+    return printWrapFormat(target, trim, spines[`${target.id}:${trim.id}`]);
+  }));
+  return [...fronts, ...wraps];
+}
+
+/** Every format, the print covers at the spines given (estimated where none is). */
+export function allCoverFormats(spines: PrintSpines = {}): CoverFormat[] {
+  return [...SCREEN_FORMATS, ...printCoverFormats(spines)];
+}
+
+export const COVER_FORMATS: CoverFormat[] = allCoverFormats();
 
 /** The largest part of the master with the format's proportions, centred on the focus as far as the edges allow. */
 export function cropRect(masterWidth: number, masterHeight: number, width: number, height: number, focus = { x: 0.5, y: 0.5 }): Rect {
@@ -329,6 +341,8 @@ export interface CoverText {
   author: string;
   tagline: string;
   badge?: string;
+  /** The text on the back of a print cover. */
+  blurb?: string;
 }
 
 export interface CoverStyle {
@@ -569,6 +583,147 @@ export function renderYouTubeEditorial(
   }
 }
 
+/**
+ * A full print cover on the canvas: the front drawn as its own front-cover format and set on the right, the back
+ * from the same picture under a dark veil with the title, the back text and the author, the spine lettered when the
+ * printer prints spine text. The barcode zone on the back is left clear: the printer places the barcode there.
+ */
+function drawPrintWrap(
+  ctx: CanvasRenderingContext2D,
+  master: (CanvasImageSource & { width: number; height: number }) | null,
+  format: CoverFormat,
+  text: CoverText,
+  style: CoverStyle,
+  focus: { x: number; y: number },
+  cutout?: (CanvasImageSource & { width: number; height: number }) | null,
+  frontArt?: (CanvasImageSource & { width: number; height: number }) | null,
+) {
+  const g = format.wrap!;
+  const W = format.width, H = format.height;
+  const px = (inches: number) => Math.round(inches * g.dpi);
+  const edge = px(g.edge), spineX = px(g.edge + g.trimWidth), spineW = px(g.spine), frontX = spineX + spineW;
+  const family = FONT_FAMILY[style.font];
+
+  // The back: the picture, darkened so text reads on it.
+  if (master) {
+    // Blurred well past recognition, so the back carries the front's colour and light, not a second copy of it.
+    const back = cropRect(master.width, master.height, spineX, H, { x: 1 - focus.x, y: focus.y });
+    ctx.imageSmoothingQuality = 'high';
+    ctx.save();
+    ctx.filter = `blur(${Math.round(g.dpi * 0.35)}px)`;
+    const spill = Math.round(g.dpi * 0.5);
+    ctx.drawImage(master, back.x, back.y, back.w, back.h, -spill, -spill, spineX + spill * 2, H + spill * 2);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(10, 10, 12, 0.6)';
+    ctx.fillRect(0, 0, spineX, H);
+  } else {
+    ctx.fillStyle = '#1c1c1f';
+    ctx.fillRect(0, 0, spineX, H);
+  }
+
+  // The spine: a solid band.
+  ctx.fillStyle = '#121214';
+  ctx.fillRect(spineX, 0, spineW, H);
+
+  // The front: the studio's own front-cover layout at this panel's size, edges marked as covered.
+  const frontW = W - frontX;
+  const front: CoverFormat = {
+    id: `${format.id}_front`, medium: 'offline', category: 'print_front', categoryLabel: '', label: '', ratio: '', dpi: g.dpi,
+    width: frontW, height: H, file: '', mime: 'image/jpeg',
+    covered: [
+      { rect: { x: 0, y: 0, w: 1, h: edge / H }, why: '' },
+      { rect: { x: 0, y: 1 - edge / H, w: 1, h: edge / H }, why: '' },
+      { rect: { x: 1 - edge / frontW, y: 0, w: edge / frontW, h: 1 }, why: '' },
+    ],
+  };
+  if (frontArt) {
+    // A cover already lettered: set as it is, cropped to the panel from the centre.
+    const crop = cropRect(frontArt.width, frontArt.height, frontW, H);
+    ctx.drawImage(frontArt, crop.x, crop.y, crop.w, crop.h, frontX, 0, frontW, H);
+  } else {
+    ctx.drawImage(renderCover(master, front, text, style, focus, undefined, cutout), frontX, 0);
+  }
+
+  // Spine lettering: title and author along the spine, clear of the folds by 0.0625" each side.
+  const lettering = spineW - px(0.0625) * 2;
+  if (g.spineText && lettering > px(0.08)) {
+    const size = Math.min(Math.round(lettering * 0.62), Math.round(H * 0.022));
+    ctx.save();
+    ctx.translate(spineX + spineW / 2, H / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = style.color;
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${size}px ${family}`;
+    const title = style.uppercase ? text.title.toUpperCase() : text.title;
+    const author = text.author.toUpperCase();
+    const gap = size * 1.6;
+    const titleW = ctx.measureText(title).width;
+    ctx.font = `400 ${Math.round(size * 0.8)}px ${family}`;
+    const authorW = ctx.measureText(author).width;
+    const room = H - edge * 2 - px(0.5);
+    if (titleW + gap + authorW <= room) {
+      const start = -(titleW + gap + authorW) / 2;
+      ctx.textAlign = 'left';
+      ctx.font = `600 ${size}px ${family}`;
+      ctx.fillText(title, start, 0);
+      ctx.font = `400 ${Math.round(size * 0.8)}px ${family}`;
+      ctx.fillText(author, start + titleW + gap, 0);
+    } else if (titleW <= room) {
+      ctx.textAlign = 'center';
+      ctx.font = `600 ${size}px ${family}`;
+      ctx.fillText(title, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  // The back's text: inside the trim with a margin, above the barcode zone.
+  const left = edge + px(0.6), width = px(g.trimWidth) - px(1.1);
+  let y = edge + px(0.85);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#f4f4f5';
+  ctx.font = `600 ${px(0.24)}px ${family}`;
+  for (const line of wrapLines(style.uppercase ? text.title.toUpperCase() : text.title, width, l => ctx.measureText(l).width).slice(0, 2)) {
+    ctx.fillText(line, left, y);
+    y += px(0.32);
+  }
+  y += px(0.2);
+  const blurb = (text.blurb || text.tagline || '').trim();
+  if (blurb) {
+    ctx.fillStyle = '#e4e4e7';
+    ctx.font = `400 ${px(0.135)}px ${family}`;
+    const bottom = H - edge - px(0.25 + 1.2 + 0.35);
+    for (const paragraph of blurb.split(/\n\s*\n/)) {
+      for (const line of wrapLines(paragraph.replace(/\s+/g, ' ').trim(), width, l => ctx.measureText(l).width)) {
+        if (y + px(0.2) > bottom) break;
+        ctx.fillText(line, left, y);
+        y += px(0.205);
+      }
+      y += px(0.12);
+    }
+  }
+  ctx.fillStyle = '#a1a1aa';
+  ctx.font = `500 ${px(0.13)}px ${family}`;
+  ctx.textBaseline = 'alphabetic';
+  if (text.author.trim()) ctx.fillText(text.author.toUpperCase(), left, H - edge - px(0.25 + 0.6));
+}
+
+/** A full print cover; with `frontArt`, a finished front cover is used as the front panel instead of lettering one. */
+export function renderPrintWrap(
+  master: (CanvasImageSource & { width: number; height: number }) | null,
+  format: CoverFormat,
+  text: CoverText,
+  style: CoverStyle,
+  focus: { x: number; y: number },
+  frontArt?: (CanvasImageSource & { width: number; height: number }) | null,
+  canvas = document.createElement('canvas'),
+): HTMLCanvasElement {
+  canvas.width = format.width;
+  canvas.height = format.height;
+  drawPrintWrap(canvas.getContext('2d')!, master, format, text, style, focus, null, frontArt);
+  return canvas;
+}
+
 /** Draws one format from the master: the crop, a soft shade behind the lettering, the title, tagline and author. */
 export function renderCover(
   master: (CanvasImageSource & { width: number; height: number }) | null,
@@ -586,143 +741,8 @@ export function renderCover(
   const family = FONT_FAMILY[style.font];
   const measureAt = (size: number, line: string) => { ctx.font = `700 ${size}px ${family}`; return ctx.measureText(line).width; };
 
-  if (format.isWrap) {
-    const is6x9 = format.id.includes('6x9');
-    const trimW = is6x9 ? 1800 : 1650;
-    const spineW = 203;
-    const bleed = 38;
-    const frontX = bleed + trimW + spineW;
-    const frontW = trimW + bleed;
-
-    // Dark gray back cover / wrap canvas background
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0, '#3f3f46');
-    bg.addColorStop(0.5, '#27272a');
-    bg.addColorStop(1, '#18181b');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // Front cover image
-    if (master) {
-      const frontCrop = cropRect(master.width, master.height, frontW, H, focus);
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(master, frontCrop.x, frontCrop.y, frontCrop.w, frontCrop.h, frontX, 0, frontW, H);
-    } else {
-      const frontBg = ctx.createLinearGradient(frontX, 0, frontX + frontW, H);
-      frontBg.addColorStop(0, '#3f3f46');
-      frontBg.addColorStop(1, '#27272a');
-      ctx.fillStyle = frontBg;
-      ctx.fillRect(frontX, 0, frontW, H);
-    }
-
-    // Front shade
-    if (style.shade > 0) {
-      const frontShade = ctx.createLinearGradient(0, 0, 0, 0.4 * H);
-      frontShade.addColorStop(0, `rgba(0,0,0,${style.shade})`);
-      frontShade.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = frontShade;
-      ctx.fillRect(frontX, 0, frontW, 0.4 * H);
-
-      const bottomShade = ctx.createLinearGradient(0, H, 0, 0.78 * H);
-      bottomShade.addColorStop(0, `rgba(0,0,0,${style.shade})`);
-      bottomShade.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = bottomShade;
-      ctx.fillRect(frontX, 0.78 * H, frontW, 0.22 * H);
-    }
-
-    // Spine border/fold marks
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(bleed + trimW, 0, spineW, H);
-
-    // Spine title (rotated 90 degrees along spine)
-    if (text.title.trim()) {
-      ctx.save();
-      ctx.translate(bleed + trimW + spineW / 2, H / 2);
-      ctx.rotate(Math.PI / 2);
-      ctx.fillStyle = style.color;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const spineFontSize = Math.min(Math.round(spineW * 0.22), 52);
-      ctx.font = `600 ${spineFontSize}px ${family}`;
-      ctx.fillText(style.uppercase ? text.title.toUpperCase() : text.title, 0, 0);
-      ctx.restore();
-    }
-
-    // Back cover layout
-    const backMargin = bleed + 100;
-    const backW = trimW - 200;
-    ctx.fillStyle = '#fafafa';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.font = `700 ${Math.round(H * 0.024)}px ${family}`;
-    ctx.fillText(text.title.toUpperCase(), backMargin, bleed + 140);
-
-    if (text.tagline.trim()) {
-      ctx.font = `italic 400 ${Math.round(H * 0.015)}px ${family}`;
-      ctx.fillStyle = '#a1a1aa';
-      for (const line of wrapLines(text.tagline, backW, l => ctx.measureText(l).width).slice(0, 3)) {
-        ctx.fillText(line, backMargin, bleed + 220);
-      }
-    }
-
-    // ISBN Barcode box (2" x 1.2" = 600 x 360 px at 300 DPI) in bottom-right of back cover
-    const isbnW = 600;
-    const isbnH = 360;
-    const isbnX = bleed + trimW - isbnW - 60;
-    const isbnY = H - bleed - isbnH - 60;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(isbnX, isbnY, isbnW, isbnH);
-    ctx.strokeStyle = '#27272a';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(isbnX, isbnY, isbnW, isbnH);
-    ctx.fillStyle = '#18181b';
-    ctx.font = 'bold 22px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('ISBN BARCODE AREA (2" × 1.2")', isbnX + isbnW / 2, isbnY + isbnH / 2 - 12);
-    ctx.font = '16px monospace';
-    ctx.fillStyle = '#71717a';
-    ctx.fillText('600 × 360 px · 300 DPI', isbnX + isbnW / 2, isbnY + isbnH / 2 + 18);
-
-    // Front cover lettering
-    const frontCenterX = frontX + (frontW - bleed) / 2;
-    const maxTitleW = (frontW - bleed) * 0.86;
-    ctx.fillStyle = style.color;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = Math.round(H * 0.008);
-
-    let y = 0.08 * H;
-    const title = style.uppercase ? text.title.toUpperCase() : text.title;
-    if (title.trim()) {
-      const fit = fitText(title, maxTitleW, 3, Math.round(0.09 * H), Math.round(0.035 * H), measureAt);
-      ctx.font = `700 ${fit.size}px ${family}`;
-      for (const line of fit.lines) { ctx.fillText(line, frontCenterX, y); y += fit.size * 1.08; }
-    }
-    if (text.tagline.trim()) {
-      const size = Math.round(0.03 * H);
-      ctx.font = `italic 400 ${size}px ${family}`;
-      for (const line of wrapLines(text.tagline, maxTitleW, l => ctx.measureText(l).width).slice(0, 2)) {
-        y += size * 0.4; ctx.fillText(line, frontCenterX, y); y += size * 1.1;
-      }
-    }
-    if (style.depthBehind && cutout) {
-      const frontCrop = cropRect(cutout.width, cutout.height, frontW, H, focus);
-      ctx.save();
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(cutout, frontCrop.x, frontCrop.y, frontCrop.w, frontCrop.h, frontX, 0, frontW, H);
-      ctx.restore();
-    }
-    if (text.author.trim()) {
-      const author = style.uppercase ? text.author.toUpperCase() : text.author;
-      const fit = fitText(author, maxTitleW, 1, Math.round(0.045 * H), Math.round(0.025 * H), (size, line) => { ctx.font = `600 ${size}px ${family}`; return ctx.measureText(line).width; });
-      ctx.font = `600 ${fit.size}px ${family}`;
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(fit.lines[0] || author, frontCenterX, H - 0.08 * H);
-    }
-
+  if (format.wrap) {
+    drawPrintWrap(ctx, master, format, text, style, focus, cutout);
     return canvas;
   }
 

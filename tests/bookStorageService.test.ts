@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -9,6 +9,7 @@ import {
   saveBookFile,
   saveProjectSnapshotToStorage,
   findLatestProjectSnapshot,
+  listBooks,
   listRecoveryCopies,
   renameOldFile,
 } from '../services/bookStorageService';
@@ -31,6 +32,20 @@ describe('bookStorageService', () => {
   let base: string | null = null;
   afterEach(async () => { if (base) await rm(base, { recursive: true, force: true }); base = null; });
 
+  it('leaves the book untouched when it is saved back unchanged', async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'novel-books-'));
+    const first = await saveProjectSnapshotToStorage(snapshot('Тихий дом'), { customBase: base });
+    const old = new Date(2026, 0, 1);
+    await utimes(first.mainBackupPath, old, old);
+    await saveProjectSnapshotToStorage({ ...snapshot('Тихий дом'), exportedAt: new Date(Date.now() + 60_000).toISOString() }, { customBase: base });
+    expect((await stat(first.mainBackupPath)).mtimeMs).toBe(old.getTime());
+    expect((await listBooks(base))[0].updatedAt).toBe(old.getTime());
+    const changed = snapshot('Тихий дом');
+    changed.files.manuscript[0].text = 'Первая глава переписана.';
+    await saveProjectSnapshotToStorage(changed, { customBase: base });
+    expect((await stat(first.mainBackupPath)).mtimeMs).toBeGreaterThan(old.getTime());
+  });
+
   it('names folders and files the way a person reads them', () => {
     expect(bookFolderName('Война и Мир: Том 1')).toBe('Война и Мир - Том 1');
     expect(bookFolderName('Shadows / Part 2?')).toBe('Shadows - Part 2');
@@ -50,6 +65,17 @@ describe('bookStorageService', () => {
     expect(second.fileName).toBe('книга (2).md');
     expect(await readFile(first.fullPath, 'utf8')).toBe('# One');
     expect(first.relativePath).toBe(path.join(path.basename(base), 'Chronicles of Solitude', 'текст', 'книга.md'));
+  });
+
+  it('puts the number of a second save before the extension, not inside the time', async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'novel-storage-'));
+    const at = new Date(2026, 9, 17, 15, 55).getTime();
+    const save = (ext: string) => saveBookFile({ title: 'The Thursday Room', category: 'covers', label: 'обложка eBook 1600x2560', content: 'x', ext, stamp: at, customBase: base! });
+    await save('jpg');
+    expect((await save('jpg')).fileName).toBe('обложка eBook 1600x2560 2026-10-17 15.55 (2).jpg');
+    expect((await save('jpg')).fileName).toBe('обложка eBook 1600x2560 2026-10-17 15.55 (3).jpg');
+    await save('project.json');
+    expect((await save('project.json')).fileName).toBe('обложка eBook 1600x2560 2026-10-17 15.55 (2).project.json');
   });
 
   it('replaces a file of the same name when asked, for files kept in step with one thing', async () => {

@@ -13,6 +13,12 @@ NovelGenerator turns a premise into a manuscript using the 2-layer Craft 2.0 Eng
 - **Strict POV Barrier**: Scene prompts are strictly isolated from future narrative facts (`povKnows`, `learnsAt < order`), blocking omniscience leaks.
 - **Anti-Metaphorical Directive**: Eliminates abstract clichés and filler prose in favor of concrete physical sensory action, verified by an independent Observer.
 - **Embedded Continuous Checks**: A Blind Reader generates forward-looking hypotheses before each scene, while Dual Reviewers verify causal integrity throughout.
+- **Cover Studio & AI Realism Suite**:
+  - **14 Production Formats**: Instant cropping and high-resolution rendering for Amazon KDP eBook, ACX Audible, YouTube 16:9 thumbnails, Instagram/TikTok/X socials, and 300 DPI KDP paperback print wraps.
+  - **Structured 3-Tab Workflow**:
+    - **1. Art & Realism**: Master prompt generation/upload, crosshair focal point cropping, and **De-Plasticizer**: CodeFormer face pore restoration on Apple Silicon MPS/CoreML + dual-scale 35mm film grain and frequency separation with instant Before/After comparison.
+    - **2. Typography & 3D**: Smart Art Director auto-layout, genre style presets, full lettering controls, and **3D Depth Typography** (`Depth-Anything-V2`) layering titles behind foreground subjects with threshold tuning.
+    - **3. Review & Export**: **Aesthetic & CTR Scorer** (`cafeai/cafe_aesthetic` 0–10 score and mobile legibility bars), interactive **YouTube Mobile Feed Simulator**, and **YouTube Studio A/B/C Test Pack** (Amber, Crimson, Gold archetypes).
 - **Author Desk & Publishing Studio**:
   - **In-Place Editorial Review**: Real-time continuity & POV analysis with autonomous "Apply Review" revision passes.
   - **Manuscript Editor**: Instant in-place editing with keyboard shortcuts (`Cmd+S` / `Ctrl+S`).

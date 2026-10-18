@@ -59,6 +59,6 @@ describe('canonical chapter structure', () => {
   it('has no human approval, reader submission or author-confirmation form in the delivery controls', () => {
     const html = renderToStaticMarkup(<><SaveBook content="# Book\n\n## Chapter 1\n\nText." /><ReaderTools text="Text." /></>);
     expect(html).not.toMatch(/<form|<dialog|Author Name|Save reader feedback|Target-reader feedback/);
-    expect(html).toContain('Save book');
+    expect(html).toContain('Export book');
   });
 });
