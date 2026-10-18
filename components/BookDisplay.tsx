@@ -296,7 +296,7 @@ const BookDisplay: React.FC<BookDisplayProps> = ({
       <BookStatistics bookContent={bookContent} metadata={metadata} />
 
       {/* Column 1 (Review), Column 2 (Manuscript), and Column 3 (Cover) where no Cover or Publish stage holds it */}
-      <div ref={columnsFill} className={`grid grid-cols-1 gap-6 items-stretch ${showPublicationColumn ? 'lg:grid-cols-[33%_47%_1fr]' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
+      <div ref={columnsFill} className={`grid grid-cols-1 gap-6 items-stretch ${showPublicationColumn ? 'lg:grid-cols-[33%_47%_1fr]' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'}`}>
         {/* Column 1 (~33%): Interactive Editorial Assistant Studio */}
         <EditorialChatStudio
           className="h-full min-h-[520px]"

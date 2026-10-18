@@ -102,27 +102,34 @@ const sections = [
     id: 'covers',
     label: 'Cover Studio',
     title: '4K Book Covers, YouTube Thumbnails & AI Realism',
-    intro: 'The Cover Studio turns a text prompt or custom artwork into 14 publication-ready formats across a structured 3-tab workflow with local AI neural models on Apple Silicon.',
+    intro: 'The Cover Studio turns a text prompt or custom artwork into 14 publication-ready formats in four steps, in order: the art, its effects and AI models, the typography, then review and export.',
     cards: [
       {
-        title: '1 · Art & Realism (De-Plasticizer & CodeFormer)',
+        title: '1 · Art (concepts, prompt, master)',
         paragraphs: [
-          'Master Generation & Upload: Prompts Gemini for 2:3 4K clean master artwork without text, or accepts custom illustration uploads with crosshair focal point cropping.',
-          'De-Plastic & Micro-Pores: Eliminates the synthetic plastic sheen of diffusion models. CodeFormer neural restoration (bluefoxcreation ONNX on Apple Silicon CoreML/MPS) restores facial skin pores, iris detail, and micro-relief with adjustable fidelity.',
-          '35mm Film Grain: Bilateral frequency separation and high-pass frequency synthesis inject dual-scale cinematic film grain and anti-waxy highlight compression. Use Compare Original to verify real texture before lettering.'
+          'Concepts & Prompt: Three concepts from the book\'s outline (an object, a figure, a place); pick one or write your own prompt.',
+          'Master Generation & Upload: Gemini, ChatGPT in your browser or FLUX on this Mac draws a 2:3 4K master without lettering, or upload your own illustration; click the master to set the focal point for every crop.'
         ]
       },
       {
-        title: '2 · Typography & 3D (Depth-Anything-V2)',
+        title: '2 · Effects & AI models (Autopilot, De-Plasticizer, Depth-Anything-V2)',
+        paragraphs: [
+          'AI Autopilot: Runs every model in turn on the selected master (de-plastic, depth mask, auto-layout) and scores the selected format.',
+          'De-Plastic & Micro-Pores: Eliminates the synthetic plastic sheen of diffusion models. CodeFormer neural restoration (bluefoxcreation ONNX on Apple Silicon CoreML/MPS) restores facial skin pores, iris detail, and micro-relief with adjustable fidelity.',
+          '35mm Film Grain: Bilateral frequency separation and high-pass frequency synthesis inject dual-scale cinematic film grain and anti-waxy highlight compression. Use Compare Original to verify real texture before lettering.',
+          '3D Depth Mask: Depth-Anything-V2 extracts a depth mask so the title can sit behind foreground characters or objects while badges and the author name stay on top, with fine threshold tuning.'
+        ]
+      },
+      {
+        title: '3 · Typography (Art Director, lettering, YouTube composition)',
         paragraphs: [
           'Smart Art Director: Analyzes artwork luminosity, focal subjects, and negative space to automatically recommend genre typography, font pairing, and palette colors.',
           'Lettering & Presets: Full control over book title, author, optional tagline, serif vs sans fonts, uppercase transforms, and backdrop shadow density.',
-          '3D Depth Typography: Depth-Anything-V2 extracts a depth mask to layer title lettering behind foreground characters or objects while keeping audiobook badges and author name on top, with fine threshold tuning.',
           'YouTube 16:9 Composition: Specialized Editorial Left layout with pill badges ("FULL AUDIOBOOK", "ПРЕМЬЕРА") or Classic Centered layout.'
         ]
       },
       {
-        title: '3 · Review & Export (Aesthetic Scorer & A/B/C Pack)',
+        title: '4 · Review & Export (Aesthetic Scorer, A/B/C Pack, book cover)',
         paragraphs: [
           'Aesthetic & CTR Scorer: Evaluates cover appeal using cafeai/cafe_aesthetic (0–10 score, contrast punch, and mobile legibility bars with actionable improvement tips).',
           'YouTube Mobile Feed Simulator: Live interactive preview testing title visibility, contrast, and safe zones under real-world smartphone scale with timecode badges.',

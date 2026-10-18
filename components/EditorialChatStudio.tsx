@@ -113,6 +113,22 @@ Drop a suspect only with a quote that clears it: a sentence from the book that s
 \`\`\`
 End with the kept problems ranked by how much they slow the story, and ask which ones to work on. Answer in the language of the manuscript.`,
   },
+  {
+    label: '04 · AI tells',
+    view: 'tells',
+    prompt: `Check the whole book for signs of AI writing. Do not change the text yet.
+Code has already read every chapter after parsing, measured the rates of each sign per chapter and for the whole book, and lists the paragraphs that carry them below, each with its passages: overused AI vocabulary (tapestry, testament, pivotal, vibrant…), claims of significance, hedges and anonymous authorities, sentences ending on ", highlighting/reflecting/symbolizing…", "serves as" or "stands as" in place of "is", "not X, but Y" and "no X, no Y, just Z", lists of exactly three, em dashes, chat formatting, and text addressed to the user. Decide each from the passages given; do not read whole chapters. Keep it if the passage reads as the habit: the phrase tells the reader how much something matters, comments on what was just shown, or puts a formula where a plain sentence would do. A phrase a character says in their own voice in dialogue, or a style the author's notes ask for, is not a tell.
+Code's suspicions already come with their passages: do not send them to check_suspects again. You may add up to 3 suspicions of your own from the rates code measured, sent through one check_suspects call; keep only suspicions that were checked.
+For each kept problem quote the phrases with paragraph ids, say which habit it is, and one or two ways the author could close it (say it plainly, cut the tail or the claim, break the formula, vary the punctuation), then one block:
+\`\`\`problem
+{"title": "short name of the habit", "places": ["ch2_p14", "ch2_p30"], "ways": ["first way to close it", "second way"]}
+\`\`\`
+Drop a suspect only with a quote that clears it: the sentence from the book that shows the phrase is a character's own speech or meant by the book, or a sentence from the author's notes that asks for this voice. Your reading of the context is not a reason; a suspect with no such quote stays kept. For each dropped suspect write one line, then one block:
+\`\`\`dropped
+{"title": "short name of the suspect", "places": ["ch1_p21"], "quote": "the exact sentence from the book or the author's notes that clears it"}
+\`\`\`
+End with the kept problems ranked by how strongly they make the book read as generated, and ask which ones to work on. Answer in the language of the manuscript.`,
+  },
 ];
 
 export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
@@ -147,6 +163,8 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
   const [appliedCardIds, setAppliedCardIds] = useState<Set<string>>(new Set());
   const [rejectedCardIds, setRejectedCardIds] = useState<Set<string>>(new Set());
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  // Long prompts (the review buttons send pages of instructions) show their first line until opened.
+  const [openPrompts, setOpenPrompts] = useState<Set<string>>(new Set());
   const [systemAccordionOpen, setSystemAccordionOpen] = useState(true);
   const [activeSystemTaskId, setActiveSystemTaskId] = useState<string | null>(null);
   const [systemTaskStatus, setSystemTaskStatus] = useState<Record<string, TaskStatus>>({});
@@ -469,13 +487,13 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
       </div>
 
       {/* 2. Message Feed with Embedded System Audit Accordion */}
-      <div className="p-4 space-y-4 flex-1 overflow-y-auto text-xs">
-        {metadata?.audit?.need_more_evidence?.length > 0 && <div className="border border-zinc-700 p-3 text-xs text-zinc-400"><strong>Checks requiring more evidence</strong>{metadata.audit.need_more_evidence.map((note: string, i: number) => <p key={i}>{note}</p>)}</div>}
+      <div className="p-4 space-y-6 flex-1 overflow-y-auto text-xs">
+        {metadata?.audit?.need_more_evidence?.length > 0 && <div className="text-xs text-zinc-400 space-y-0.5"><strong className="font-medium text-zinc-300">Checks requiring more evidence</strong>{metadata.audit.need_more_evidence.map((note: string, i: number) => <p key={i}>{note}</p>)}</div>}
         {metadata?.audit?.central_resolution?.supported === false && <p className="text-xs text-zinc-400">Central resolution requires review: {metadata.audit.central_resolution.comment}</p>}
         {/* System Editorial Audit Accordion Card */}
         {(clusteredTasks.length > 0 || rawFindings.length > 0) && (
-          <div className="border border-zinc-800/80 rounded bg-zinc-950/60 overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 bg-zinc-900/50 border-b border-zinc-800/60">
+          <div className="rounded bg-zinc-900/40 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2">
               <button
                 type="button"
                 onClick={() => setSystemAccordionOpen(prev => !prev)}
@@ -488,14 +506,14 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                 type="button"
                 onClick={handleApplyAllSystemTasks}
                 disabled={activeRunning}
-                className="inline-flex items-center h-5 px-2 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700/60 rounded transition-colors"
+                className="inline-flex items-center h-5 px-2 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 rounded transition-colors"
               >
                 {activeRunning ? (editorialStatus || 'Preparing Review…') : 'Prepare Review'}
               </button>
             </div>
 
             {systemAccordionOpen && (
-              <div className="p-3 space-y-2 max-h-56 overflow-y-auto">
+              <div className="px-3 pb-2 max-h-56 overflow-y-auto divide-y divide-zinc-800/80">
                 {clusteredTasks.length > 0 ? (
                   clusteredTasks.map(task => {
                     const status = systemTaskStatus[task.id] || 'open';
@@ -504,7 +522,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                     return (
                       <div
                         key={task.id}
-                        className="p-2 rounded bg-zinc-900/60 border border-zinc-800/60 flex items-start justify-between gap-2"
+                        className="py-2 flex items-start justify-between gap-2"
                       >
                         <div className="space-y-0.5 flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -539,7 +557,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                               type="button"
                               onClick={() => handleApplySingleSystemTask(task)}
                               disabled={activeRunning}
-                              className="h-5 px-2 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
+                              className="h-5 px-2 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors"
                             >
                               Prepare edits
                             </button>
@@ -552,7 +570,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                   rawFindings.map((finding: any, idx: number) => (
                     <div
                       key={idx}
-                      className="p-2 rounded bg-zinc-900/60 border border-zinc-800/60 flex items-start justify-between gap-2"
+                      className="py-2 flex items-start justify-between gap-2"
                     >
                       <div className="space-y-0.5 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -579,54 +597,81 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
           </div>
         )}
 
-        {/* Chat message bubbles */}
-        {messages.map(msg => (
+        {/* Chat messages: each turn under its own label, the editor's replies set apart by a line */}
+        {messages.map(msg => {
+          const isUser = msg.role === 'user';
+          const firstLine = msg.text.split('\n').find(line => line.trim()) || '';
+          const folded = isUser && msg.text.length > 240 && !openPrompts.has(msg.id);
+          const lines = msg.text.split('\n').filter(line => line.trim()).length;
+          return (
           <div
             key={msg.id}
-            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}
+            className={`flex flex-col ${isUser ? 'items-end' : 'items-start pb-6 border-b border-zinc-800/70 last:border-b-0'} gap-1.5`}
           >
+            <span className="text-[11px] font-medium text-zinc-500">{isUser ? 'You' : 'Editor'}</span>
             <div
-              className={`max-w-[90%] p-3 rounded-lg leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-zinc-800 text-zinc-100 rounded-br-none border border-zinc-700/60'
-                  : 'bg-zinc-950/70 text-zinc-300 rounded-bl-none border border-zinc-800'
-              }`}
+              className={
+                isUser
+                  ? 'max-w-[90%] px-3 py-2 rounded-lg bg-zinc-800/70 text-zinc-100'
+                  : 'w-full text-zinc-300'
+              }
             >
-              {/* Tool Execution Badges */}
+              {/* What the editor did before answering, folded */}
               {msg.tools && msg.tools.length > 0 && (
-                <div className="space-y-1 mb-2">
-                  {msg.tools.map((t, i) => (
-                    <div
-                      key={i}
-                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 mr-1.5 mb-1"
-                    >
-                      <span>{t.tool.includes('search') ? '🔍' : t.tool.includes('diff') ? '✏️' : '⚠️'}</span>
-                      <span>{t.summary}</span>
-                    </div>
-                  ))}
-                </div>
+                <details className="mb-3 text-[11px] text-zinc-500">
+                  <summary className="cursor-pointer select-none hover:text-zinc-300">
+                    {msg.tools.length} step{msg.tools.length > 1 ? 's' : ''}: {msg.tools[msg.tools.length - 1].summary}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 pl-3">
+                    {msg.tools.map((t, i) => (
+                      <li key={i} className="flex gap-1.5">
+                        <span aria-hidden className="text-zinc-600">›</span>
+                        <span>{t.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
 
-              <MarkdownView content={msg.text} className="text-xs text-inherit break-words space-y-1.5" />
+              {folded ? (
+                <p className="text-[13px] leading-[1.6]">{firstLine}</p>
+              ) : (
+                <MarkdownView content={msg.text} className="chat-text break-words" />
+              )}
+              {isUser && msg.text.length > 240 && (
+                <button
+                  type="button"
+                  onClick={() => setOpenPrompts(prev => {
+                    const next = new Set(prev);
+                    if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
+                    return next;
+                  })}
+                  className="mt-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
+                >
+                  {folded ? `Show the full prompt (${lines} lines)` : 'Fold the prompt'}
+                </button>
+              )}
             </div>
 
             {/* Problems kept by a review, each with its ways to close it */}
             {msg.problems && msg.problems.length > 0 && (
-              <div className="space-y-2 w-full mt-2">
+              <div className="w-full mt-3">
+                <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Problems · {msg.problems.length}</div>
+                <div className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
                 {msg.problems.map(problem => (
-                  <div key={problem.id} className="p-3 rounded-md border border-zinc-800 bg-zinc-950/90 text-left space-y-1.5">
-                    <div className="font-medium text-zinc-200 text-xs">{problem.title}</div>
+                  <div key={problem.id} className="py-2.5 text-left space-y-1.5">
+                    <div className="font-medium text-zinc-200 text-[13px]">{problem.title}</div>
                     {problem.places.length > 0 && (
-                      <div className="text-[10px] font-mono text-zinc-500">{problem.places.join(', ')}</div>
+                      <div className="text-[11px] font-mono text-zinc-500">{problem.places.join(', ')}</div>
                     )}
                     {problem.ways.map((way, i) => (
-                      <div key={i} className="flex items-start justify-between gap-2 text-[11px] text-zinc-400">
+                      <div key={i} className="flex items-start justify-between gap-2 text-xs text-zinc-400">
                         <span>{way}</span>
                         <button
                           type="button"
                           disabled={isRunning}
                           onClick={() => handleSendMessage(buildCloseProblemPrompt(problem, way), undefined, { title: problem.title })}
-                          className="shrink-0 px-2 py-0.5 rounded border border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+                          className="shrink-0 px-2 py-0.5 text-[11px] rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
                         >
                           Close this way
                         </button>
@@ -634,12 +679,14 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                     ))}
                   </div>
                 ))}
+                </div>
               </div>
             )}
 
             {/* Diff Review Cards */}
             {msg.diffCards && msg.diffCards.length > 0 && (
-              <div className="space-y-2.5 w-full mt-2">
+              <div className="space-y-2.5 w-full mt-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Proposed edits · {msg.diffCards.length}</div>
                 {msg.diffCards.map(card => {
                   const isApplied = appliedCardIds.has(card.id);
                   const isRejected = rejectedCardIds.has(card.id);
@@ -648,7 +695,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                     return (
                       <div
                         key={card.id}
-                        className="p-2 rounded border border-zinc-800 bg-zinc-950/40 text-[11px] text-zinc-500 italic"
+                        className="text-xs text-zinc-500 italic"
                       >
                         Patch for Chapter {card.chapterNum} was rejected.
                       </div>
@@ -658,17 +705,15 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                   return (
                     <div
                       key={card.id}
-                      className={`p-3 rounded-md border text-left space-y-2 transition-all ${
-                        isApplied
-                          ? 'border-zinc-700 bg-zinc-900/60'
-                          : 'border-zinc-800 bg-zinc-950/90'
+                      className={`p-3 rounded-md text-left space-y-2 transition-all ${
+                        isApplied ? 'bg-zinc-900/30' : 'bg-zinc-900/60'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 pb-1.5">
-                        <span className="font-medium text-zinc-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-zinc-200 text-[13px]">
                           {card.replacementText === '' ? 'Excision' : 'Proposed Edit'} · Chapter {card.chapterNum}
                           {card.startBlockId && (
-                            <span className="ml-1 text-[10px] font-mono text-zinc-400">
+                            <span className="ml-1 text-[11px] font-mono font-normal text-zinc-500">
                               ({card.startBlockId}{card.endBlockId && card.endBlockId !== card.startBlockId ? `–${card.endBlockId}` : ''})
                             </span>
                           )}
@@ -681,43 +726,53 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                             title="Click to view change in manuscript"
                           >
                             <span>✓ Applied</span>
-                            <span className="text-[9px] underline opacity-80">(show in text)</span>
+                            <span className="underline opacity-80">(show in text)</span>
                           </button>
                         )}
                       </div>
 
-                      {/* Red / Green visual diff */}
-                      <div className="space-y-1 font-mono text-[11px] bg-zinc-900/80 p-2 rounded border border-zinc-800/60 overflow-x-auto">
-                        <div className="text-red-400/90 line-through break-words">
-                          - {card.searchTarget}
-                        </div>
-                        {card.replacementText ? (
-                          <div className="text-emerald-400 break-words">
-                            + {card.replacementText}
+                      {/* The change as text to read: the old passage dimmed and struck, the new one plain. Folded once applied. */}
+                      {(() => {
+                        const change = (
+                          <div className="space-y-2 text-xs leading-relaxed">
+                            <div className="flex gap-2">
+                              <span aria-hidden className="shrink-0 text-red-400/60">−</span>
+                              <p className="break-words text-zinc-500 line-through decoration-zinc-600">{card.searchTarget}</p>
+                            </div>
+                            {card.replacementText ? (
+                              <div className="flex gap-2">
+                                <span aria-hidden className="shrink-0 text-emerald-400/70">+</span>
+                                <p className="break-words text-zinc-200">{card.replacementText}</p>
+                              </div>
+                            ) : (
+                              <p className="pl-4 text-[11px] italic text-zinc-500">The passage is cut.</p>
+                            )}
                           </div>
-                        ) : (
-                          <div className="text-zinc-500 italic text-[10px]">
-                            (Block deleted / excised)
-                          </div>
-                        )}
-                      </div>
+                        );
+                        return isApplied ? (
+                          <details className="text-[11px] text-zinc-500">
+                            <summary className="cursor-pointer select-none hover:text-zinc-300">Show the change</summary>
+                            <div className="mt-2">{change}</div>
+                          </details>
+                        ) : change;
+                      })()}
 
                       {card.rationale && (
-                        <p className="text-[11px] text-zinc-400">
+                        <p className="text-xs text-zinc-400">
                           <span className="text-zinc-500">Rationale:</span> {card.rationale}
                         </p>
                       )}
 
                       {/* Warnings if entity graph caught cross-text implications */}
                       {card.warnings && card.warnings.length > 0 && (
-                        <div className="p-1.5 rounded bg-zinc-900 border border-zinc-700/60 text-[11px] text-zinc-300 space-y-1">
+                        <ul className="text-xs text-zinc-400 space-y-1">
                           {card.warnings.map((w, wIdx) => (
-                            <div key={wIdx} className="flex items-start gap-1">
-                              <span>⚠️</span>
+                            <li key={wIdx} className="flex items-start gap-1.5">
+                              <span aria-hidden className="text-zinc-500">!</span>
                               <span>{w}</span>
-                            </div>
+                            </li>
                           ))}
-                        </div>
+                        </ul>
                       )}
 
                       {!isApplied && (
@@ -733,16 +788,13 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
                             <button
                               type="button"
                               onClick={() => handleRejectDiffCard(card.id)}
-                              className="h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded transition-colors"
+                              className="h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
                             >
                               Reject
                             </button>
                           </div>
                           {cardErrors[card.id] && (
-                            <div className="p-2 rounded bg-red-950/40 border border-red-900/60 text-[11px] text-red-300 flex items-start gap-1.5">
-                              <span>⚠️</span>
-                              <span>{cardErrors[card.id]}</span>
-                            </div>
+                            <p className="text-xs text-red-300/90">{cardErrors[card.id]}</p>
                           )}
                         </div>
                       )}
@@ -752,7 +804,8 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
               </div>
             )}
           </div>
-        ))}
+        );
+        })}
 
         {activeRunning && (
           <div className="flex items-center gap-2 text-zinc-400 text-xs py-2 italic">
@@ -775,7 +828,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
               disabled={activeRunning}
               onClick={() => handleSendMessage(item.prompt, item.view)}
               title={item.prompt}
-              className="h-5 px-2.5 text-[10px] font-medium whitespace-nowrap bg-zinc-950 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-700 rounded transition-colors disabled:opacity-50 tracking-tight"
+              className="h-5 px-2.5 text-[11px] font-medium whitespace-nowrap bg-zinc-950 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-700 rounded transition-colors disabled:opacity-50 tracking-tight"
             >
               {item.label}
             </button>

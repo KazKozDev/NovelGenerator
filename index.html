@@ -296,6 +296,30 @@
       .markdown-content p:last-child {
         margin-bottom: 0;
       }
+      /* The editorial chat: one size for all the assistant writes, in the panel's sans, not the reader's serif. */
+      .markdown-content.chat-text { font-size: 13px; line-height: 1.6; color: inherit; }
+      .markdown-content.chat-text p,
+      .markdown-content.chat-text li { font-size: 13px; line-height: 1.6; color: inherit; }
+      .markdown-content.chat-text p { margin-bottom: 10px; }
+      .markdown-content.chat-text li { margin-bottom: 4px; }
+      .markdown-content.chat-text ul,
+      .markdown-content.chat-text ol { margin: 4px 0 10px; color: inherit; }
+      .markdown-content.chat-text h1,
+      .markdown-content.chat-text h2,
+      .markdown-content.chat-text h3,
+      .markdown-content.chat-text h4,
+      .markdown-content.chat-text h5,
+      .markdown-content.chat-text h6 {
+        font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+        color: rgb(var(--z-100)); margin: 18px 0 6px; padding: 0; border: 0;
+      }
+      .markdown-content.chat-text > div > :first-child { margin-top: 0; }
+      .markdown-content.chat-text > div > :last-child { margin-bottom: 0; }
+      .markdown-content.chat-text code { font-size: 12px; border: 0; padding: 0.05rem 0.3rem; }
+      .markdown-content.chat-text pre { font-size: 12px; line-height: 1.5; border: 0; padding: 8px 10px; margin: 8px 0; background: rgb(var(--z-950) / 0.6); }
+      .markdown-content.chat-text blockquote { font-style: normal; background: none; border-left-width: 2px; padding: 0 0 0 10px; margin: 8px 0; }
+      .markdown-content.chat-text hr { margin: 12px 0; }
+      .markdown-content.chat-text table { font-size: 12px; }
       .markdown-content strong {
         font-weight: 600;
         color: rgb(var(--z-50));

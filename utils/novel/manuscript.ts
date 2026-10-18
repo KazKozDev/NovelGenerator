@@ -1,8 +1,14 @@
+import { scrubArtifacts } from './analytics';
 export interface ManuscriptChapter { chapter: number; text: string }
 const heading = /^[ \t]*(?:(?:#{1,6}[ \t]+|\*\*)(?:(?:Chapter|Глава)[ \t]+)?(\d+)|(?:Chapter|Глава)[ \t]+(\d+))(?:[ \t]*[:.—–-][ \t]*(.*?)|[ \t]+([^\r\n*]+))?(?:\*\*)?[ \t]*$/i;
 
-/** Presentation owns chapter headings; the prose never owns a second copy. */
+/**
+ * Presentation owns chapter headings; the prose never owns a second copy.
+ * Every model's prose passes through here, so this is also where what is not
+ * prose at all (invisible characters, citation markup, chat preambles) leaves.
+ */
 export function normalizeChapterBody(text: string, chapter: number): string {
+  text = scrubArtifacts(text);
   const lines = text.split(/\r?\n/);
   if (!lines.some(line => {
     const m = line.match(heading);

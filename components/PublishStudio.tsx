@@ -19,6 +19,9 @@ import {
 import { OWN_FORMATS, exportOwnFormat, type OwnFormat } from '../utils/publish/ownFormats';
 import { getDefaultImprintData, type ImprintData } from '../utils/imprintConstants';
 import PrintEditions from './PrintEditions';
+import AudioEditions from './AudioEditions';
+import type { TimecodeChapter } from '../utils/audiobook/chapterTimecodes';
+import PlatformLogo from './PlatformLogo';
 
 interface EpubCheckResult { available: boolean; ok?: boolean; version?: string; messages: { severity: string; id: string; message: string; where?: string }[] }
 
@@ -42,6 +45,8 @@ interface PublishStudioProps {
   imprint?: ImprintData;
   onImprintChange?: (imprint: ImprintData) => void;
   coverImage?: string | null;
+  /** The chapters the audiobook's timecodes are found by; without them there is no audiobook section. */
+  audioChapters?: TimecodeChapter[];
 }
 
 const card = 'rounded-lg border border-zinc-800 bg-zinc-900/40 p-4';
@@ -59,7 +64,7 @@ const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9а-яё]+/gi,
  * The fifth stage: the book leaves the app. Each store gets the files its upload form asks for, checked the way the
  * store checks them; the app's own formats sit below. The project itself needs no export: it saves to the book folder.
  */
-export default function PublishStudio({ title, studioKey, content, metadata, draft, author, onAuthorChange, imprint, onImprintChange, coverImage }: PublishStudioProps) {
+export default function PublishStudio({ title, studioKey, content, metadata, draft, author, onAuthorChange, imprint, onImprintChange, coverImage, audioChapters }: PublishStudioProps) {
   const hasText = !!content.trim();
   const [savedLanguage, setLanguage] = useWorkspaceEntry<string>(title, 'publish.language');
   const language = savedLanguage || guessLanguage(content);
@@ -137,7 +142,7 @@ export default function PublishStudio({ title, studioKey, content, metadata, dra
           <h2 className="text-sm font-semibold text-zinc-100">Edition</h2>
           <p className="text-[11px] text-zinc-500">Carried into every file below. Files go to the book folder, in издания/.</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-[1.2fr_1fr_0.8fr_0.9fr_1fr_auto]">
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-[1.2fr_1fr_0.8fr_0.9fr_1fr]">
           <div>
             <span className={label}>Title</span>
             <p className="h-8 truncate text-sm leading-8 text-zinc-100" style={{ fontFamily: 'ui-serif, Georgia, Cambria, serif' }}>{title || '—'}</p>
@@ -160,18 +165,6 @@ export default function PublishStudio({ title, studioKey, content, metadata, dra
             <span className={label}>Edition</span>
             <input className={field} value={imprint?.edition ?? getDefaultImprintData().edition} placeholder="First edition" onChange={e => changeImprint({ edition: e.target.value })} title="On the copyright page of every edition" />
           </label>
-          <div className="flex items-end gap-2">
-            {storeCover ? (
-              <>
-                <img src={storeCover.dataUrl} alt="Store cover" className="h-16 w-10 rounded-sm object-cover ring-1 ring-zinc-700" />
-                <span className="pb-0.5 text-[11px] leading-tight text-zinc-500">{storeCover.width}×{storeCover.height}<br />from {storeCover.source === 'studio' ? 'Cover studio' : 'book cover'}</span>
-              </>
-            ) : storeCover === undefined ? (
-              <span className="pb-1.5 text-[11px] text-zinc-500">Reading the cover…</span>
-            ) : (
-              <span className="pb-1.5 text-[11px] text-amber-400/90">No cover yet · Cover stage</span>
-            )}
-          </div>
         </div>
       </div>
 
@@ -186,9 +179,12 @@ export default function PublishStudio({ title, studioKey, content, metadata, dra
             const inside = epubCoverSize(store);
             return (
               <article key={store.id} className={`${card} flex flex-col gap-3`}>
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">{store.name}</h3>
-                  <p className="text-[11px] text-zinc-500">{store.where}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-zinc-100">{store.name}</h3>
+                    <p className="text-[11px] text-zinc-500">{store.where}</p>
+                  </div>
+                  <PlatformLogo id={store.id} />
                 </div>
                 <ul className="space-y-0.5 text-xs text-zinc-300">
                   <li>EPUB 3 · cover inside {inside.width}×{inside.height}</li>
@@ -248,6 +244,14 @@ export default function PublishStudio({ title, studioKey, content, metadata, dra
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Print</h2>
         <PrintEditions title={title} studioKey={studioKey} content={content} author={author} language={language} imprint={imprint} onImprintChange={onImprintChange} coverImage={coverImage} />
       </div>
+
+      {/* Audiobook stores */}
+      {audioChapters && audioChapters.length > 0 && (
+        <div>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Audiobook</h2>
+          <AudioEditions title={title} studioKey={studioKey} author={author} coverImage={coverImage || undefined} chapters={audioChapters} />
+        </div>
+      )}
 
       {/* The app's own formats */}
       <div>

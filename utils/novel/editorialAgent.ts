@@ -2,6 +2,7 @@ import { indexManuscriptBlocks, hybridSearch, ManuscriptBlock } from './hybridSe
 import { buildEntityGraph, checkCrossTextImpact, EntityGraph } from './entityGraph';
 import { applySearchReplacePatch, cleanDiffArtifacts } from './patchApplier';
 import { findSuspects, openQuestions, pacingSuspects } from './chapterRecords';
+import { aiTellHits, aiTells, type AiTell } from './analytics';
 import { cachedSkeletons, chapterSkeleton, chapterSkeletons, checkSuspects, findRepeats, cachedRecords, knowledgeByPair, linesAbout, formatRepeats, readBlocks, readBookNotes, durationMentions, durationSuspects, formatDurations } from './editorialTools';
 
 const EDITORIAL_TOOLS = ['search_manuscript', 'inspect_dependencies', 'propose_diff', 'find_repeats', 'read_blocks', 'chapter_skeleton', 'check_suspects'] as const;
@@ -37,8 +38,8 @@ export interface EditorialAgentResponse {
   problems: EditorialProblem[];
 }
 
-/** 'skeletons': the plot review; 'repeats': what the book tells twice; 'pacing': whether the story moves. All show skeletons, not prose. */
-export type EditorialView = 'full' | 'skeletons' | 'repeats' | 'pacing';
+/** 'skeletons': the plot review; 'repeats': what the book tells twice; 'pacing': whether the story moves; 'tells': signs of AI writing. All show the book through code's suspicions, not as prose. */
+export type EditorialView = 'full' | 'skeletons' | 'repeats' | 'pacing' | 'tells';
 
 const PROBLEM_BLOCK = /```problem\s*\r?\n([\s\S]*?)\r?\n```/gi;
 const DROPPED_BLOCK = /```dropped\s*\r?\n([\s\S]*?)\r?\n```/gi;
@@ -112,11 +113,72 @@ export function codeRepeatSuspects(blocks: ManuscriptBlock[]): { claim: string; 
   ].slice(0, 15);
 }
 
+// The order a tells review reads them in: text that was never meant for the
+// reader first, then the habits a reader hears soonest.
+const TELL_ORDER: AiTell['id'][] = ['chatbot-leftovers', 'markdown-in-prose', 'ai-vocabulary', 'significance-puffery', 'hedging-attribution', 'participle-tail', 'copula-avoidance', 'negative-parallelism', 'rule-of-three', 'em-dash-density'];
+// Text that is never the story's own is a suspicion at one hit; a habit only once a chapter, or the book, leans on it.
+const ALWAYS_TOLD: AiTell['id'][] = ['chatbot-leftovers', 'markdown-in-prose'];
+
+const chapterTexts = (blocks: ManuscriptBlock[]) => {
+  const byChapter = new Map<number, ManuscriptBlock[]>();
+  for (const block of blocks) byChapter.set(block.chapterNum, [...(byChapter.get(block.chapterNum) || []), block]);
+  return [...byChapter].sort((a, b) => a[0] - b[0]).map(([chapter, list]) => ({ chapter, blocks: list, text: list.map(b => b.text).join('\n\n') }));
+};
+
+/**
+ * Signs of AI writing across the whole book, as suspicions with their places.
+ *
+ * A habit counts where `aiTells` finds a chapter leaning on it, or the whole
+ * book doing so a little in every chapter; then each paragraph carrying it is a
+ * place, the densest first. Code finds and counts; whether a passage is a tell
+ * or the voice the book means is the review's to decide.
+ */
+export function tellSuspects(blocks: ManuscriptBlock[]): { claim: string; places: string[] }[] {
+  const chapters = chapterTexts(blocks);
+  const bookWide = new Set(aiTells(chapters.map(c => c.text).join('\n\n')).map(t => t.id));
+  const suspects: { claim: string; places: string[]; rank: number }[] = [];
+  for (const { chapter, blocks: list, text } of chapters) {
+    const leaning = new Set([...aiTells(text).map(t => t.id), ...bookWide, ...ALWAYS_TOLD]);
+    const byTell = new Map<AiTell['id'], { id: string; phrases: string[] }[]>();
+    for (const block of list) {
+      for (const hit of aiTellHits(block.text)) {
+        if (!leaning.has(hit.id)) continue;
+        const rows = byTell.get(hit.id) || [];
+        const row = rows.find(r => r.id === block.id);
+        if (row) row.phrases.push(hit.phrase); else rows.push({ id: block.id, phrases: [hit.phrase] });
+        byTell.set(hit.id, rows);
+      }
+    }
+    for (const [id, rows] of byTell) {
+      const total = rows.reduce((sum, r) => sum + r.phrases.length, 0);
+      const dense = [...rows].sort((a, b) => b.phrases.length - a.phrases.length);
+      const phrases = [...new Set(dense.flatMap(r => r.phrases))].filter(p => p !== '—').slice(0, 4);
+      suspects.push({
+        claim: `${id} in Chapter ${chapter}: ${total} hit${total > 1 ? 's' : ''} in ${rows.length} paragraph${rows.length > 1 ? 's' : ''}${phrases.length ? ` — ${phrases.map(p => `"${p.slice(0, 80)}"`).join(', ')}` : ''}`,
+        places: dense.slice(0, 3).map(r => r.id),
+        rank: TELL_ORDER.indexOf(id) * 1000 - total,
+      });
+    }
+  }
+  return suspects.sort((a, b) => a.rank - b.rank).slice(0, 15).map(({ claim, places }) => ({ claim, places }));
+}
+
+/** What code measures for the tells review, chapter by chapter and for the whole book: rates, not places. */
+export function tellMeasurements(blocks: ManuscriptBlock[]): string {
+  const chapters = chapterTexts(blocks);
+  const line = (label: string, text: string) => {
+    const found = aiTells(text);
+    return `- ${label}: ${found.length ? found.map(t => t.detail).join(' ') : 'nothing above the rates.'}`;
+  };
+  return [line('Whole book', chapters.map(c => c.text).join('\n\n')), ...chapters.map(c => line(`Chapter ${c.chapter}`, c.text))].join('\n');
+}
+
 /** A review view: the book comes as chapter skeletons, code's suspicions come with their passages, and kept problems must be checked. */
-const isReview = (view?: EditorialView) => view === 'skeletons' || view === 'repeats' || view === 'pacing';
+const isReview = (view?: EditorialView) => view === 'skeletons' || view === 'repeats' || view === 'pacing' || view === 'tells';
 const lastParagraph = (blocks: ManuscriptBlock[]) => (chapter: number) => Math.max(-1, ...blocks.filter(b => b.chapterNum === chapter).map(b => b.pIndex));
 const suspectsFor = (blocks: ManuscriptBlock[], view?: EditorialView) =>
   view === 'repeats' ? codeRepeatSuspects(blocks)
+    : view === 'tells' ? tellSuspects(blocks)
     : view === 'pacing' ? pacingSuspects(cachedRecords(blocks), lastParagraph(blocks))
       : codeSuspects(blocks);
 
@@ -125,11 +187,13 @@ const REVIEW_FOCUS: Record<string, string> = {
   skeletons: 'a plot hole hides in prose',
   repeats: 'a scene told twice shows in what the chapters state',
   pacing: 'whether the story moves shows in what changes from scene to scene',
+  tells: 'a sign of AI writing shows in the phrases code has found and counted',
 };
 const SUSPECTS_FOUND: Record<string, string> = {
   skeletons: 'a passage standing twice in the text, two spans of time whose sentences share words, and checks over the chapter records: one event at two times, a name known then not recognized, an object with someone new',
   repeats: 'passages standing twice in the text, and sentences said more than once',
   pacing: 'checks over the chapter records: a long scene where no event is shown, nothing is learned, and no object changes hands, and an event shown and then told again',
+  tells: 'signs of AI writing in the text: overused AI vocabulary, claims of significance, hedges, ", highlighting…" tails, "serves as" for "is", "not X, but Y", lists of three, em dashes, chat formatting and text addressed to the user',
 };
 
 export function parseProblems(text: string): EditorialProblem[] {
@@ -307,20 +371,22 @@ export function buildEditorialAgentPrompt(params: {
     manuscriptText = `MANUSCRIPT SCENE TEXT (Chapters ${focusChapters.join(', ')}):\n\n${chLines}\n\nCHAPTER INVENTORY (Call search_manuscript to query any other chapter):\n${chapterOutline}`;
   }
 
-  const skeletons = cachedSkeletons(params.manuscriptBlocks);
+  const skeletons = view === 'tells' ? [] : cachedSkeletons(params.manuscriptBlocks);
   const skeletonText = skeletons.length
     ? `CHAPTER SKELETONS (dry lists of what each chapter states; paragraph ids point to the text):\n\n${skeletons.map(s => `### Chapter ${s.chapter}\n${s.skeleton}`).join('\n\n')}`
     : '';
 
   const system = `You are an expert Literary Co-Author and Surgical Editorial Assistant.
-${skeletonView
+${view === 'tells'
+    ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) through code's suspicions and the rates it measured, not as prose: ${REVIEW_FOCUS[view]}. Every suspicion names its paragraphs; read the text itself through check_suspects or read_blocks.`
+    : skeletonView
     ? `In this review you see the book (${chapterList.map(c => `Chapter ${c}`).join(', ')}) as chapter skeletons, not as prose: ${REVIEW_FOCUS[view]}. Every line of a skeleton names its paragraph; read the text itself through check_suspects or read_blocks.`
     : `You have full visibility of the entire novel manuscript across all chapters (${chapterList.map(c => `Chapter ${c}`).join(', ')}).`}
 You assist the author with comprehensive manuscript analysis, cross-chapter continuity checks, fact-checking, and making atomic surgical edits.
 Respond in the language used by the author (if Russian, respond in natural Russian).
 
 CRITICAL OPERATIONAL RULES:
-1. ${skeletonView ? 'You have the chapter skeletons, the author\'s notes, and the cross-chapter entity map below; the manuscript text is one tool call away.' : 'You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.'}
+1. ${view === 'tells' ? 'You have code\'s suspicions with their passages, the rates it measured, the author\'s notes, and the cross-chapter entity map below; the rest of the text is one tool call away.' : skeletonView ? 'You have the chapter skeletons, the author\'s notes, and the cross-chapter entity map below; the manuscript text is one tool call away.' : 'You have direct access to the entire manuscript text across all chapters and the cross-chapter entity map below.'}
 2. EDITORIAL SCOPE & MACRO-STITCHING (Eliminating Redundancies):
    - When text contains duplicated multi-paragraph scenes, repetitive paragraphs, or redundant blocks (e.g., paragraphs ch4_p55 to ch4_p86 repeating an earlier sequence):
      DO NOT merely trim 3-4 words inside a single paragraph! You MUST propose a BLOCK RANGE DELETION by providing "startBlockId", "endBlockId", and "replace": "" (or revised text). Excise the entire redundant block cleanly!
@@ -380,6 +446,9 @@ ${repeatsView ? '' : `   - find_repeats {"chapter": Optional[number]} — passag
       ? `SUSPICIONS FOUND BY CODE (${SUSPECTS_FOUND[view]}). Each comes with its passages:\n\n${checkSuspects(params.manuscriptBlocks, suspects)}\n\n`
       : `SUSPICIONS FOUND BY CODE: none.\n\n`;
   }
+  if (view === 'tells') {
+    prompt += `RATES CODE MEASURED (per 1000 words, chapter by chapter and for the whole book):\n${tellMeasurements(params.manuscriptBlocks)}\n\n`;
+  }
   if (view === 'pacing') {
     const open = openQuestions(cachedRecords(params.manuscriptBlocks));
     if (open) prompt += `QUESTIONS AND PROMISES THE CHAPTERS LEAVE OPEN (code lists them in book order; one the later chapters never answer is a suspicion):\n${open}\n\n`;
@@ -396,7 +465,9 @@ ${repeatsView ? '' : `   - find_repeats {"chapter": Optional[number]} — passag
   if (manuscriptText) {
     prompt += `${manuscriptText}\n\n`;
   }
-  prompt += skeletonView
+  prompt += view === 'tells'
+    ? `Work from code's suspicions and their passages; read the text before you report anything.`
+    : skeletonView
     ? `Work from the skeletons, and read the passages before you report anything.`
     : `Please analyze the manuscript, advise the author across chapters, and propose surgical diff patches if appropriate.`;
 
@@ -490,12 +561,15 @@ export async function runEditorialTurn(params: {
   // Paragraphs of every suspicion checked against the text this turn: code's, and the reader's own through check_suspects.
   const checked = new Set<string>();
   if (isReview(params.view)) {
-    const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
-    await chapterSkeletons(blocks, chapters, params.callModel);
-    executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
+    // The tells review reads phrases, not events: it needs no skeletons, and builds none.
+    if (params.view !== 'tells') {
+      const chapters = Array.from(new Set(blocks.map(b => b.chapterNum))).sort((a, b) => a - b);
+      await chapterSkeletons(blocks, chapters, params.callModel);
+      executedTools.push({ tool: 'chapter_skeleton', summary: `Skeletons of ${chapters.length} chapters` });
+    }
     const suspects = suspectsFor(blocks, params.view);
     for (const suspect of suspects) for (const id of expandPlaces(suspect.places)) checked.add(id);
-    executedTools.push({ tool: 'code_checks', summary: `Code found ${suspects.length} suspicions in the text and the chapter records` });
+    executedTools.push({ tool: 'code_checks', summary: `Code found ${suspects.length} suspicions in the text${params.view === 'tells' ? '' : ' and the chapter records'}` });
   }
 
   const { system, prompt } = buildEditorialAgentPrompt({

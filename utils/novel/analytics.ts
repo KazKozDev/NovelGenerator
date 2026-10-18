@@ -8,6 +8,10 @@
  * feeding the MEASURED bar are compact equivalents computed the same way the
  * labels read. Everything here is advisory-only: it never blocks, repairs,
  * or rewrites — it feeds the dashboard and the reader's judgment.
+ *
+ * One exception, kept at the bottom of the file: `scrubArtifacts` removes what
+ * is not prose at all — invisible characters, chatbot citation markup, a
+ * "Here is the chapter" preamble — and never touches a word the writer chose.
  */
 
 const EN_STOP = new Set(
@@ -608,4 +612,249 @@ export function repeatedSpans(prose: string, earlier: { ref: string; text: strin
     index = end;
   }
   return runs.slice(0, maxSpans).map(run => ({ text: words.slice(run.start, run.end).join(' '), ref: run.ref }));
+}
+
+export interface AiTell {
+  id:
+    | 'ai-vocabulary'
+    | 'copula-avoidance'
+    | 'negative-parallelism'
+    | 'rule-of-three'
+    | 'participle-tail'
+    | 'significance-puffery'
+    | 'hedging-attribution'
+    | 'em-dash-density'
+    | 'flat-punctuation'
+    | 'chatbot-leftovers'
+    | 'markdown-in-prose';
+  detail: string;
+  rate: number;
+  examples: string[];
+}
+
+// The lists of Wikipedia:Signs of AI writing (October 2026), taken as literally
+// as the page asks. Words a novel uses for their plain meaning — quietly,
+// steady, echoed, key, rich, clearer, matters, practical, challenge — are left
+// out: in fiction they are scenery, and counting them would flag every book.
+const AI_VOCABULARY = /\b(delv(?:e|es|ed|ing)|tapestry|testament|intricac(?:y|ies)|intricate|meticulous(?:ly)?|interplay|garner(?:s|ed|ing)?|bolster(?:s|ed|ing)?|underscor(?:e|es|ed|ing)|showcas(?:e|es|ed|ing)|pivotal|multifaceted|leverag(?:e|es|ed|ing)|foster(?:s|ed|ing)?|enduring|vibrant|boasts|align(?:s|ed)? with|enhanc(?:e|es|ed|ing)|crucial|additionally|prioritiz(?:e|es|ed|ing)|dependable|universally|resonat(?:e|es|ed|ing) with)\b/gi;
+const COPULA_AVOIDANCE = /\b(serv(?:es|ed|ing) as|stands as|stood as|functions as|functioned as|represents a|represented a|marks a|marked a|boasts a|boasted a|holds the distinction)\b/gi;
+const NEGATIVE_PARALLELISM = [
+  // "not only the rain, but the silence after it"
+  /\bnot only\b[^.!?]{0,80}\bbut\b/gi,
+  // "It's not fear, it's arithmetic."
+  /\b(?:it|this|that)(?:'s|’s| is| was) not\b[^.!?]{1,60}[,;—–-]\s*(?:it|this|that)(?:'s|’s| is| was)\b/gi,
+  // "No maps, no lanterns, just the river."
+  /\bno\s+\w+(?:\s+\w+)?,\s*no\s+\w+(?:\s+\w+)?,?\s*(?:just|only)\b/gi,
+];
+const TRIAD = /\b[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2},\s+[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2},\s+(?:and|or)\s+[\p{L}'’-]+/gu;
+const TRIAD_CLAUSE_START = new Set('and,or,but,so,yet,then,he,she,they,i,we,you,it,there'.split(','));
+const PARTICIPLE_TAIL = /,\s+(highlighting|underscoring|emphasizing|emphasising|ensuring|reflecting|symbolizing|symbolising|contributing to|cultivating|fostering|encompassing|enhancing|showcasing|signaling|signalling|cementing)\b[^.!?\n]*[.!?]/gi;
+const PUFFERY = /\b(a testament to|(?:pivotal|crucial|vital|key|significant) (?:role|moment)|indelible mark|enduring legacy|deeply rooted|evolving landscape|setting the stage for|key turning point|focal point|rich tapestry|stands? as a reminder|serves? as a reminder|reflects? (?:a )?broader)\b/gi;
+const HEDGING = /\b(experts (?:say|argue|agree|believe)|observers (?:have )?(?:noted|cited|said)|some critics argue|industry reports|it(?:'s|’s| is) (?:important|crucial|worth) (?:to )?(?:note|remember|noting|consider)|worth noting|based on available information|not widely (?:documented|known|available)|maintains? a low profile)\b/gi;
+const LEFTOVERS = /(\[(?:insert|character|protagonist|name|location|city|place|your)[^\]\n]{0,40}\]|\b\d{4}-xx-xx\b|\bas an ai(?: language model)?\b|\bas of my (?:last )?(?:knowledge|training) (?:update|cutoff)\b|\b(?:certainly|of course)! (?:here|below)\b|\bi hope this helps\b)/gi;
+const MARKDOWN = /(\*\*[^*\n]{1,80}\*\*|^#{1,6}\s+\S|^\s*[-*•]\s+\*\*[^*\n]+\*\*:)/gm;
+
+const matchesOf = (content: string, pattern: RegExp): string[] => [...content.matchAll(pattern)].map(match => match[0].trim());
+
+// A list item is a noun or a phrase; a part that opens on a pronoun or a
+// conjunction ("He smiled, and she smiled, and…", "the moment, she knew,
+// and…") is a clause, and a sequence of clauses is narration, not a triad.
+const triadsOf = (content: string): string[] => matchesOf(content, TRIAD).filter(match => {
+  const items = match.split(/,\s+/);
+  const middle = items[1]?.split(/\s+/)[0]?.toLowerCase() || '';
+  return !TRIAD_CLAUSE_START.has(middle) && !items.slice(0, 2).some(item => /\s(?:and|or|but)\s/i.test(` ${item} `));
+});
+
+/**
+ * Every phrase behind `aiTells`, one entry per hit, with no threshold: what a
+ * review needs to point at the paragraphs, where `aiTells` only says whether a
+ * text as a whole leans on a tell.
+ */
+export function aiTellHits(content: string): { id: AiTell['id']; phrase: string }[] {
+  const of = (id: AiTell['id'], found: string[]) => found.map(phrase => ({ id, phrase }));
+  return [
+    ...of('chatbot-leftovers', matchesOf(content, LEFTOVERS)),
+    ...of('markdown-in-prose', matchesOf(content, MARKDOWN)),
+    ...of('ai-vocabulary', matchesOf(content, AI_VOCABULARY).map(word => word.toLowerCase())),
+    ...of('significance-puffery', matchesOf(content, PUFFERY)),
+    ...of('hedging-attribution', matchesOf(content, HEDGING)),
+    ...of('participle-tail', matchesOf(content, PARTICIPLE_TAIL)),
+    ...of('copula-avoidance', matchesOf(content, COPULA_AVOIDANCE)),
+    ...of('negative-parallelism', NEGATIVE_PARALLELISM.flatMap(pattern => matchesOf(content, pattern))),
+    ...of('rule-of-three', triadsOf(content)),
+    ...of('em-dash-density', content.match(/—/g) || []),
+  ];
+}
+
+/**
+ * The signs of AI writing a reader of generated prose learns to hear, counted.
+ *
+ * Each is a rate against the length of the text and a few of the actual
+ * phrases, so the writer and the dashboard see the evidence rather than a
+ * verdict. Nothing here rewrites: a synonym swap would only trade one tell for
+ * another (the "elegant variation" the same list warns about), and the place
+ * to avoid these is the first writing, not a pass over it.
+ *
+ * The thresholds are judgements in the same sense as `signatureTics`: one
+ * "testament to" is a sentence, a handful per chapter is a habit.
+ */
+export function aiTells(content: string): AiTell[] {
+  const total = wordsOf(content).length;
+  if (total < 300) return [];
+  const per1000 = (count: number) => (count / total) * 1000;
+  const findings: AiTell[] = [];
+  const add = (id: AiTell['id'], found: string[], minCount: number, minRate: number, describe: (count: number, rate: number) => string) => {
+    const rate = per1000(found.length);
+    if (found.length < minCount || rate < minRate) return;
+    findings.push({ id, detail: describe(found.length, rate), rate, examples: [...new Set(found)].slice(0, 4) });
+  };
+
+  const vocabulary = matchesOf(content, AI_VOCABULARY).map(word => word.toLowerCase());
+  add('ai-vocabulary', vocabulary, 4, 0.8, (count, rate) =>
+    `${count} words from the overused AI vocabulary (${rate.toFixed(1)} per 1000): ${[...new Set(vocabulary)].slice(0, 6).join(', ')}. One is chance; a cluster is the most recognisable tell there is.`);
+
+  add('copula-avoidance', matchesOf(content, COPULA_AVOIDANCE), 3, 0.6, count =>
+    `"Serves as", "stands as", "marks a" stand in for a plain "is" ${count} times. Plain copulas read human; their avoidance reads generated.`);
+
+  const parallels = NEGATIVE_PARALLELISM.flatMap(pattern => matchesOf(content, pattern));
+  add('negative-parallelism', parallels, 3, 0.6, count =>
+    `"Not only… but", "It's not X, it's Y", "no X, no Y, just Z" — ${count} times. The shape corrects a misreading nobody made.`);
+
+  const triads = triadsOf(content);
+  add('rule-of-three', triads, 6, 2, (count, rate) =>
+    `${count} lists of exactly three (${rate.toFixed(1)} per 1000). Triads make thin observation sound complete.`);
+
+  add('participle-tail', matchesOf(content, PARTICIPLE_TAIL), 3, 0.6, count =>
+    `${count} sentences end on ", highlighting/reflecting/symbolizing…" — commentary on what was just shown instead of the next thing that happens.`);
+
+  add('significance-puffery', matchesOf(content, PUFFERY), 2, 0.4, count =>
+    `${count} claims of significance ("a testament to", "pivotal moment", "enduring legacy") that tell the reader how much a thing matters.`);
+
+  add('hedging-attribution', matchesOf(content, HEDGING), 2, 0.4, count =>
+    `${count} hedges or anonymous authorities ("experts say", "it is important to note") — an essay's voice, not a narrator's.`);
+
+  const dashes = content.match(/—/g)?.length || 0;
+  const dashRate = per1000(dashes);
+  if (dashes >= 10 && dashRate >= 8) {
+    findings.push({
+      id: 'em-dash-density',
+      detail: `${dashes} em dashes (${dashRate.toFixed(1)} per 1000 words). Models — Claude above all — reach for the dash where a comma, colon or full stop would do.`,
+      rate: dashRate,
+      examples: [],
+    });
+  }
+
+  if (total >= 1500 && !/[—–;:()…]/.test(content)) {
+    findings.push({
+      id: 'flat-punctuation',
+      detail: `${total} words with no dash, semicolon, colon, parenthesis or ellipsis. Models told to avoid the em dash fall back to commas and full stops only, which is now a tell of its own.`,
+      rate: 0,
+      examples: [],
+    });
+  }
+
+  const leftovers = matchesOf(content, LEFTOVERS);
+  if (leftovers.length) {
+    findings.push({
+      id: 'chatbot-leftovers',
+      detail: `Text meant for the person at the keyboard, not the reader: ${[...new Set(leftovers)].slice(0, 4).join('; ')}.`,
+      rate: per1000(leftovers.length),
+      examples: [...new Set(leftovers)].slice(0, 4),
+    });
+  }
+
+  const markdown = matchesOf(content, MARKDOWN);
+  if (markdown.length) {
+    findings.push({
+      id: 'markdown-in-prose',
+      detail: `${markdown.length} pieces of chat formatting inside the prose (bold, headings, "**Label:**" lists).`,
+      rate: per1000(markdown.length),
+      examples: [...new Set(markdown)].slice(0, 4),
+    });
+  }
+
+  return findings;
+}
+
+// Character classes for the scrub, built from code points: the ranges are
+// invisible by definition, and a literal in source is one editor away from
+// being lost or turned into the character itself.
+const charClass = (...ranges: [number, number?][]): string =>
+  ranges.map(([from, to]) => (to === undefined ? String.fromCodePoint(from) : `${String.fromCodePoint(from)}-${String.fromCodePoint(to)}`)).join('');
+const FORMAT_CHARS = new RegExp(`[${charClass([0xad], [0x61c], [0x180e], [0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2064], [0x206a, 0x206f], [0xfeff], [0xfff9, 0xfffb])}]`, 'u');
+const TAG_CHARS = new RegExp(`[${charClass([0xe0000, 0xe007f])}]`, 'u');
+const PRIVATE_USE = new RegExp(`[${charClass([0xe000, 0xf8ff], [0xf0000, 0x10ffff])}]`, 'u');
+const ODD_SPACES = new RegExp(`[${charClass([0xa0], [0x1680], [0x2000, 0x200a], [0x202f], [0x205f], [0x3000], [0x2028, 0x2029], [0x85])}]`, 'u');
+const EMOJI = new RegExp(`[${charClass([0x1f000, 0x1faff], [0x2600, 0x27bf], [0xfe0f])}]`, 'u');
+const EMOJI_JOINERS = new Set([0x200c, 0x200d, 0xfe0f].map(code => String.fromCodePoint(code)));
+
+/** Invisible characters out, odd spaces to plain ones, joiners inside emoji kept. */
+function scrubInvisible(text: string): string {
+  const chars = [...text];
+  let out = '';
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (EMOJI_JOINERS.has(ch) && i > 0 && i < chars.length - 1 && (EMOJI.test(chars[i - 1]) || EMOJI.test(chars[i + 1]))) {
+      out += ch;
+      continue;
+    }
+    if (TAG_CHARS.test(ch) || PRIVATE_USE.test(ch) || FORMAT_CHARS.test(ch)) continue;
+    out += ODD_SPACES.test(ch) ? ' ' : ch;
+  }
+  return out;
+}
+
+// Internal reference markup each chatbot leaks when its answer is copied out.
+const CITATION_MARKUP: RegExp[] = [
+  /[ \t]*:?contentReference\[oaicite:\d+\]\{index=\d+\}/g,
+  /[ \t]*\[?oai_citation[^\]\n]*\]?(?:\([^)\n]*\))?/g,
+  /[ \t]*\b(?:cite|i)?(?:turn\d+(?:search|news|file|image|view)\d+)+/g,
+  /[ \t]*\(\{"attribution":\{"attributableIndex":"[\d-]+"\}\}\)/g,
+  /[ \t]*citegenerated-reference-identifier/g,
+  /[ \t]*\[cite:\s*\d+(?:\s*,\s*\d+)*\]/g,
+  /\[span_\d+\]\((?:start|end)_span\)/g,
+  /[ \t]*<grok_card\b[^>]*>(?:[\s\S]*?<\/grok_card>)?/g,
+  /[ \t]*grok_render_citation_card_json\S*/g,
+  /[ \t]*【\d+†[^】\n]*】/g,
+  /[ \t]*\[(?:attached_file|web):\d+\]/g,
+  /^[ \t]*:::writing\{[^}\n]*\}[ \t]*\n?/gm,
+  /^[ \t]*:::[ \t]*$\n?/gm,
+];
+
+const TRACKING = /([?&])(?:utm_source=(?:chatgpt\.com|openai|copilot\.com)|referrer=grok\.com)(&?)/g;
+
+// A preamble is the whole paragraph, not its first words: "Here is the chapter
+// of my life I never told you, she said" opens like one and is a line of story.
+const PREAMBLE = /^(?:(?:certainly|sure|of course|absolutely)[!.]|(?:certainly|sure|of course|absolutely)[!,.]\s+(?:here|below)\b[^\n]*|here(?:'s| is| are)\s+(?:the\s+|your\s+|a\s+)?(?:(?:revised|rewritten|updated|next|final|full|complete)\s+)*(?:chapter|scene|draft|revision|continuation|text|prose)(?:\s+[\w'’-]+){0,4}\s*[.:!])$/i;
+const SIGN_OFF = /^(?:i hope (?:this|you)|let me know\b|would you like\b|feel free to\b|if you(?:'d| would) like\b|shall i\b|do you want me to\b)/i;
+
+/** One quotation style for the whole text: the one it already uses most. */
+function unifyQuotes(text: string): string {
+  const straight = (text.match(/["']/g) || []).length;
+  const curly = (text.match(/[“”‘’]/g) || []).length;
+  if (!straight || !curly) return text;
+  if (straight > curly) return text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  return text
+    .replace(/(^|[\s([{—–-])"/g, '$1“')
+    .replace(/"/g, '”')
+    .replace(/(^|[\s([{—–-])'(?=\p{L})/gu, '$1‘')
+    .replace(/'/g, '’');
+}
+
+/**
+ * Removes what is not prose: invisible characters, chatbot citation markup,
+ * tracking parameters, a chat preamble or sign-off at the edges, and a mix of
+ * quotation styles. Deterministic and idempotent, and it never changes a word
+ * of the story — the signs that live in the writing are `aiTells`' to report,
+ * not this function's to fix.
+ */
+export function scrubArtifacts(text: string): string {
+  let out = scrubInvisible(text);
+  for (const pattern of CITATION_MARKUP) out = out.replace(pattern, '');
+  out = out.replace(TRACKING, (_, lead: string, tail: string) => (lead === '?' && tail ? '?' : lead === '?' ? '' : tail ? '&' : ''));
+  const parts = out.split(/\n\s*\n/);
+  while (parts.length > 1 && parts[0].trim().length < 200 && PREAMBLE.test(parts[0].trim())) parts.shift();
+  while (parts.length > 1 && parts.at(-1)!.trim().length < 300 && SIGN_OFF.test(parts.at(-1)!.trim())) parts.pop();
+  out = parts.join('\n\n');
+  return unifyQuotes(out);
 }

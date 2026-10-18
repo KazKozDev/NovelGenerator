@@ -10,6 +10,8 @@ import { geminiDevPlugin } from './services/geminiDevPlugin';
 import { anthropicDevPlugin } from './services/anthropicDevPlugin';
 import { keysDevPlugin } from './services/keysDevPlugin';
 import { coverAiDevPlugin } from './services/coverAiDevPlugin';
+import { timecodesDevPlugin } from './services/timecodesDevPlugin';
+import { audiobookDevPlugin } from './services/audiobookDevPlugin';
 import { screenStatePlugin } from './services/screenStatePlugin';
 import { publishDevPlugin } from './services/publishDevPlugin';
 import { chatgptImagePlugin } from './services/chatgptImagePlugin';
@@ -110,7 +112,7 @@ export default defineConfig(async ({ mode, command }) => {
           }
         }
       },
-      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin(), ...await audioPlugins(), publishDevPlugin(), chatgptImagePlugin(), flux3ImagePlugin(), screenStatePlugin()],
+      plugins: [react(), compatibleDevPlugin(), terminalLoggerPlugin(), hfDevPlugin(), geminiDevPlugin(apiKey), anthropicDevPlugin(), keysDevPlugin(), projectAutosavePlugin(), coverAiDevPlugin(), timecodesDevPlugin(), audiobookDevPlugin(), ...await audioPlugins(), publishDevPlugin(), chatgptImagePlugin(), flux3ImagePlugin(), screenStatePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),

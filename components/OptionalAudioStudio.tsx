@@ -9,6 +9,8 @@ export interface AudioStudioProps {
   initialTitle?: string;
   initialChapters?: { index: number; title: string; text: string }[];
   onClose?: () => void;
+  /** The Timecodes tab's content, shown as the studio's third tab. */
+  timecodes?: React.ReactNode;
 }
 
 const found = import.meta.glob<{ default: React.ComponentType<AudioStudioProps> }>('./AudioStudio.tsx');

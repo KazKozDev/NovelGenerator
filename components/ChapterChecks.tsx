@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { bestsellerAdvisory, hookScore, recurrentMotifs, rhythmDrift, uniqueNgramRatio } from '../utils/novel/analytics';
+import { aiTells, bestsellerAdvisory, hookScore, recurrentMotifs, rhythmDrift, uniqueNgramRatio } from '../utils/novel/analytics';
 
 /**
  * Live coherence and texture checks for the chapter under the cursor.
@@ -29,6 +29,7 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
     const rhythm = rhythmDrift(content);
     const hook = hookScore(content);
     const advisory = bestsellerAdvisory(content).map(finding => finding.id);
+    const tells = aiTells(content).map(tell => tell.id);
     return [
       { label: 'Originality', value: `${Math.round(uniqueNgramRatio(content) * 100)}%` },
       {
@@ -40,6 +41,7 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
         value: rhythm.drifted ? `drifted ${rhythm.firstMedian}→${rhythm.lastMedian}w` : `held ~${rhythm.lastMedian}w`,
       },
       { label: 'Hook', value: `${hook}/10${advisory.length ? ` · ${advisory.join(', ')}` : ''}` },
+      { label: 'AI tells', value: tells.length ? tells.join(', ') : 'none' },
     ];
   }, [content]);
 
@@ -54,6 +56,9 @@ export default function ChapterChecks({ content, chapterNum, revisionStatus, tex
       if (!list.some(item => item.id === adv.id)) {
         list.push({ id: adv.id, description: adv.detail });
       }
+    }
+    for (const tell of aiTells(content)) {
+      list.push({ id: tell.id, description: tell.detail });
     }
     return list;
   }, [content, texture]);

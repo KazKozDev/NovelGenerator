@@ -17,6 +17,7 @@ import {
 } from '../utils/publish/printSpecs';
 import { normalizeIsbn13 } from '../utils/publish/ebookStores';
 import { getDefaultImprintData, type ImprintData } from '../utils/imprintConstants';
+import PlatformLogo from './PlatformLogo';
 
 interface PrintEditionsProps {
   title: string;
@@ -155,9 +156,12 @@ export default function PrintEditions({ title, studioKey, content, author, langu
           const g = spine !== undefined ? coverGeometry(target, trim, spine) : null;
           return (
             <article key={target.id} className={`${card} flex flex-col gap-3`}>
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-100">{target.name}</h3>
-                <p className="text-[11px] text-zinc-500">{target.where}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-zinc-100">{target.name}</h3>
+                  <p className="text-[11px] text-zinc-500">{target.where}</p>
+                </div>
+                <PlatformLogo id={target.id} />
               </div>
               <ul className="space-y-0.5 text-xs text-zinc-300">
                 <li>Interior PDF · {trim.label}{pages ? ` · ${pages} pages` : ''}</li>

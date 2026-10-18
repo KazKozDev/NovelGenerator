@@ -56,6 +56,8 @@ const STYLE_PRESETS: StylePreset[] = [
 
 
 type FormatCategory = FormatGroup | 'all';
+/** The studio's steps, in the order the work goes: the picture, its effects, the lettering, then review and export. */
+type CoverStep = 'art' | 'effects' | 'type' | 'export';
 
 /** The fourth stage: one master picture from the book, cut and lettered for each format, ready to download. */
 interface AestheticEvaluation {
@@ -95,7 +97,7 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover, book
   const [codeformerFidelity, setCodeformerFidelity] = useState(0.7);
   const [facesRestoredCount, setFacesRestoredCount] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<'art' | 'type' | 'export'>('art');
+  const [sidebarTab, setSidebarTab] = useState<CoverStep>('art');
   const [filter, setFilter] = useState<FormatCategory>('stores');
   const [otherTrims, setOtherTrims] = useState(false);
   const [heroFormatId, setHeroFormatId] = useState<string>('ebook');
@@ -508,7 +510,7 @@ export default function CoverStudio({ bookKey, facts, author, onUseAsCover, book
       return;
     }
     setError('');
-    setSidebarTab('type');
+    setSidebarTab('effects');
     setNotice(`Applying all AI models to ${heroFormat.label}...`);
 
     // 1. De-plasticize master if not yet done
@@ -712,7 +714,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
       setState(s => ({ ...s, masters: [{ id, blob, prompt, model: s.model, createdAt: Date.now() }, ...s.masters], selected: id, focus: { x: 0.5, y: 0.5 } }));
       if (viaChatgpt) setNotice(`Master drawn by ChatGPT${data.width ? `, ${data.width}×${data.height}` : ''}.`);
       if (viaFlux3) setNotice(`Master drawn by FLUX 3 on this Mac in ${Math.round((data.seconds || 0) / 60 * 10) / 10} min.`);
-      setSidebarTab('type');
+      setSidebarTab('effects');
       createImageBitmap(blob).then(bitmap => {
         autoDesignCover(bitmap);
       }).catch(() => {});
@@ -746,7 +748,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
       focus: { x: 0.5, y: 0.5 },
     }));
     setNotice(`Image "${file.name}" uploaded as master.`);
-    setSidebarTab('type');
+    setSidebarTab('effects');
     createImageBitmap(file).then(bitmap => {
       autoDesignCover(bitmap);
     }).catch(() => {});
@@ -824,46 +826,8 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
           </span>
         </div>
 
-        {/* Sidebar Tabs: 1. Art & Realism | 2. Typography & 3D | 3. Review & Export */}
-        <div className="flex border-b border-zinc-800 bg-zinc-900/60 p-1 gap-1 shrink-0">
-          <button
-            type="button"
-            className={`flex-1 py-1 text-xs font-medium rounded transition-colors text-center ${
-              sidebarTab === 'art'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/70'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-            }`}
-            onClick={() => setSidebarTab('art')}
-          >
-            1. Art & Realism
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-1 text-xs font-medium rounded transition-colors text-center ${
-              sidebarTab === 'type'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/70'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-            }`}
-            onClick={() => setSidebarTab('type')}
-          >
-            2. Typography & 3D
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-1 text-xs font-medium rounded transition-colors text-center ${
-              sidebarTab === 'export'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/70'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-            }`}
-            onClick={() => setSidebarTab('export')}
-          >
-            3. Review & Export
-          </button>
-        </div>
-
-        <div className="p-3 space-y-4 overflow-y-auto flex-1">
-          {/* TAB 1: ART & REALISM */}
-          <div hidden={sidebarTab !== 'art'} className="space-y-4">
+        <div className="overflow-y-auto flex-1">
+          <CoverStepPanel n={1} title="Art" hint={state.masters.length ? `${state.masters.length} master${state.masters.length > 1 ? 's' : ''} · focus ${Math.round(state.focus.x * 100)}%, ${Math.round(state.focus.y * 100)}%` : 'Concepts, prompt, generate or upload'} open={sidebarTab === 'art'} onOpen={() => setSidebarTab('art')}>
             <div>
               <h3 className="text-sm font-semibold mb-1 text-zinc-200">Prompt for master</h3>
               <p className="text-xs text-zinc-500 mb-2.5">Three concepts from the book's outline: an object, a figure, a place. Pick one, or write your own prompt.</p>
@@ -1002,6 +966,30 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 </div>
               )}
             </div>
+            <button type="button" className={`${button} w-full`} onClick={() => setSidebarTab('effects')}>
+              Next: effects & AI models →
+            </button>
+          </CoverStepPanel>
+
+          <CoverStepPanel n={2} title="Effects & AI models" hint={[isMasterDeplasticized ? 'De-plastic ✓' : 'De-plastic', depthCutout ? 'Depth ✓' : 'Depth'].join(' · ')} open={sidebarTab === 'effects'} onOpen={() => setSidebarTab('effects')}>
+            {/* All models at once */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">AI Autopilot</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">All models</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Runs every model below in turn on the selected master — de-plastic, 3D depth mask, auto-layout — then scores the {heroFormat.label} cover. Or run them one by one.
+              </p>
+              <button
+                type="button"
+                className={`${primary} w-full`}
+                disabled={!master || isGeneratingDepth || isScoringAesthetic || isDeplasticizing}
+                onClick={runAutopilotOnSelectedCover}
+              >
+                Apply all AI models & effects
+              </button>
+            </div>
 
             {/* De-Plastic & Film Realism Card */}
             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
@@ -1115,10 +1103,64 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* TAB 2: TYPOGRAPHY & 3D */}
-          <div hidden={sidebarTab !== 'type'} className="space-y-4">
+            {/* 3D Depth Layering Card */}
+            <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">3D Depth Typography</h3>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">Depth-Anything-V2</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Layers title typography behind foreground objects (curtains, hands, subjects) while keeping the badge on top.
+              </p>
+              
+              <div className="flex items-center justify-between pt-1">
+                <label className="text-xs text-zinc-300 font-medium flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!state.style.depthBehind}
+                    onChange={e => update({ style: { ...state.style, depthBehind: e.target.checked } })}
+                    className="rounded border-zinc-700 bg-zinc-950 text-zinc-300 focus:ring-0"
+                  />
+                  <span>Text Behind Subject</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={generateDepthLayer}
+                  disabled={!master || isGeneratingDepth}
+                  className={button}
+                >
+                  {isGeneratingDepth ? 'Scanning...' : depthCutout ? 'Regenerate Mask' : 'Extract Depth Mask'}
+                </button>
+              </div>
+
+              {depthCutout && (
+                <div className="space-y-1 pt-1 border-t border-zinc-800">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-400">Foreground Threshold</span>
+                    <span className="text-zinc-300 font-mono">{state.style.depthThreshold ?? 150}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={230}
+                    step={5}
+                    value={state.style.depthThreshold ?? 150}
+                    onChange={e => update({ style: { ...state.style, depthThreshold: Number(e.target.value) } })}
+                    onMouseUp={generateDepthLayer}
+                    className="w-full accent-zinc-400 cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
+            <button type="button" className={`${button} w-full`} onClick={() => setSidebarTab('type')}>
+              Next: typography →
+            </button>
+          </CoverStepPanel>
+
+          <CoverStepPanel n={3} title="Typography" hint={`${state.style.font === 'serif' ? 'Serif' : 'Sans'} · ${text.title || 'no title'}`} open={sidebarTab === 'type'} onOpen={() => setSidebarTab('type')}>
             {/* Smart Art Director Card */}
             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2">
               <div className="flex items-center justify-between">
@@ -1268,75 +1310,13 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 />
               </div>
 
-              {/* 3D Depth Layering Card */}
-              <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-xs font-semibold text-zinc-100 uppercase tracking-wider">3D Depth Typography</h3>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono font-medium">Depth-Anything-V2</span>
-                </div>
-                <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  Layers title typography behind foreground objects (curtains, hands, subjects) while keeping the badge on top.
-                </p>
-                
-                <div className="flex items-center justify-between pt-1">
-                  <label className="text-xs text-zinc-300 font-medium flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!state.style.depthBehind}
-                      onChange={e => update({ style: { ...state.style, depthBehind: e.target.checked } })}
-                      className="rounded border-zinc-700 bg-zinc-950 text-zinc-300 focus:ring-0"
-                    />
-                    <span>Text Behind Subject</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={generateDepthLayer}
-                    disabled={!master || isGeneratingDepth}
-                    className={button}
-                  >
-                    {isGeneratingDepth ? 'Scanning...' : depthCutout ? 'Regenerate Mask' : 'Extract Depth Mask'}
-                  </button>
-                </div>
-
-                {depthCutout && (
-                  <div className="space-y-1 pt-1 border-t border-zinc-800">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-400">Foreground Threshold</span>
-                      <span className="text-zinc-300 font-mono">{state.style.depthThreshold ?? 150}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={230}
-                      step={5}
-                      value={state.style.depthThreshold ?? 150}
-                      onChange={e => update({ style: { ...state.style, depthThreshold: Number(e.target.value) } })}
-                      onMouseUp={generateDepthLayer}
-                      className="w-full accent-zinc-400 cursor-pointer"
-                    />
-                  </div>
-                )}
-              </div>
-
               {/* YouTube & Video Layout Customization */}
               <div className="border-t border-zinc-800 pt-3 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-zinc-200">YouTube 16:9 Composition</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowAbModal(true)}
-                      disabled={!master}
-                      className="text-[10px] font-mono font-medium uppercase tracking-wider text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
-                    >
-                      A/B/C Pack
-                    </button>
-                    <span className="text-[10px] font-mono font-medium uppercase tracking-wider text-zinc-400 bg-zinc-800/80 border border-zinc-700 px-1.5 py-0.2 rounded">
-                      Editorial
-                    </span>
-                  </div>
+                  <span className="text-[10px] font-mono font-medium uppercase tracking-wider text-zinc-400 bg-zinc-800/80 border border-zinc-700 px-1.5 py-0.2 rounded">
+                    Editorial
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1425,10 +1405,12 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 </div>
               </div>
             </div>
-          </div>
+            <button type="button" className={`${button} w-full`} onClick={() => setSidebarTab('export')}>
+              Next: review & export →
+            </button>
+          </CoverStepPanel>
 
-          {/* TAB 3: REVIEW & EXPORT */}
-          <div hidden={sidebarTab !== 'export'} className="space-y-4">
+          <CoverStepPanel n={4} title="Review & Export" hint={aestheticData ? `${heroFormat.label} · ${aestheticData.score}/10` : heroFormat.label} open={sidebarTab === 'export'} onOpen={() => setSidebarTab('export')}>
             {/* Aesthetic & CTR Scorer Card */}
             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -1592,97 +1574,68 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 >
                   Download all (.zip)
                 </button>
-                {heroFormat.id === 'ebook' && onUseAsCover && (
-                  <button
-                    type="button"
-                    className={`${button} w-full`}
-                    disabled={!master}
-                    onClick={useAsBookCover}
-                  >
-                    Use as book cover
-                  </button>
-                )}
               </div>
+              {onUseAsCover && (
+                // The book's own cover: what the Library shows, made here from the master or brought in finished.
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-1.5">
+                  {bookCover
+                    ? <img src={bookCover} alt="Book cover" className="h-9 w-6 rounded-sm object-cover ring-1 ring-zinc-700" />
+                    : <span className="flex h-9 w-6 items-center justify-center rounded-sm border border-dashed border-zinc-700 text-[9px] text-zinc-600" aria-hidden="true">—</span>}
+                  <span className="text-[11px] font-medium text-zinc-400 mr-0.5">Book cover</span>
+                  <button type="button" className={button} disabled={!master} onClick={useAsBookCover} title="The eBook format of this studio, 1600×2560">
+                    Use eBook cover
+                  </button>
+                  <button type="button" className={button} onClick={() => bookCoverInput.current?.click()} title="A finished cover made elsewhere (PNG, JPG or WEBP, up to 10 MB)">
+                    {bookCover ? 'Replace…' : 'Upload…'}
+                  </button>
+                  {bookCover && (
+                    <button type="button" className={button} onClick={() => onUseAsCover(null)}>
+                      Remove
+                    </button>
+                  )}
+                  <input
+                    ref={bookCoverInput}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      setBookCoverError('');
+                      if (!file) return;
+                      if (!file.type.startsWith('image/')) { setBookCoverError('Choose a PNG, JPG or WEBP image.'); return; }
+                      if (file.size > 10 * 1024 * 1024) { setBookCoverError('The image must be under 10 MB.'); return; }
+                      const reader = new FileReader();
+                      reader.onload = () => typeof reader.result === 'string' && onUseAsCover(reader.result);
+                      reader.onerror = () => setBookCoverError('The image could not be read.');
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  {bookCoverError && <span className="text-[11px] text-red-400">{bookCoverError}</span>}
+                </div>
+              )}
             </div>
-          </div>
+          </CoverStepPanel>
 
+          <div className="px-3 pb-3">
           {busyLabel && <p className="text-xs text-zinc-400 border-t border-zinc-800 pt-3">{busyLabel}</p>}
           {error && <p role="alert" className="text-xs text-red-300 whitespace-pre-wrap border-t border-zinc-800 pt-3">{error}</p>}
           {notice && <p className="text-xs text-emerald-300 border-t border-zinc-800 pt-3">{notice}</p>}
+          </div>
         </div>
       </aside>
 
       {/* Main Center Area: Top Global Actions, Hero Stage & Filtered Format Cards */}
       <div className="space-y-5 min-w-0">
-        {/* Global Action Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-lg border border-zinc-800 bg-zinc-900/60 shadow-sm">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-              <span>Cover Studio</span>
-              <span className="text-xs font-normal text-zinc-400">· {formats.length} formats</span>
-            </h2>
-            <p className="text-xs text-zinc-400">
-              Master 2:3 4K · Auto-cropped and lettered for screen & 300 DPI print
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={button}
-              disabled={!master || isGeneratingDepth || isScoringAesthetic || isDeplasticizing}
-              onClick={runAutopilotOnSelectedCover}
-              title={`Apply all AI neural models & effects to ${heroFormat.label} (De-plasticizer, 3D Depth, Smart Layout, Readability Scorer)`}
-            >
-              AI Autopilot ({heroFormat.label})
-            </button>
-            {onUseAsCover && (
-              // The book's own cover: what the Library shows, made here from the master or brought in finished.
-              <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 py-1 pl-1 pr-1.5">
-                {bookCover
-                  ? <img src={bookCover} alt="Book cover" className="h-9 w-6 rounded-sm object-cover ring-1 ring-zinc-700" />
-                  : <span className="flex h-9 w-6 items-center justify-center rounded-sm border border-dashed border-zinc-700 text-[9px] text-zinc-600" aria-hidden="true">—</span>}
-                <span className="text-[11px] font-medium text-zinc-400 mr-0.5">Book cover</span>
-                <button type="button" className={button} disabled={!master} onClick={useAsBookCover} title="The eBook format of this studio, 1600×2560">
-                  Use eBook cover
-                </button>
-                <button type="button" className={button} onClick={() => bookCoverInput.current?.click()} title="A finished cover made elsewhere (PNG, JPG or WEBP, up to 10 MB)">
-                  {bookCover ? 'Replace…' : 'Upload…'}
-                </button>
-                {bookCover && (
-                  <button type="button" className={button} onClick={() => onUseAsCover(null)}>
-                    Remove
-                  </button>
-                )}
-                <input
-                  ref={bookCoverInput}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    e.target.value = '';
-                    setBookCoverError('');
-                    if (!file) return;
-                    if (!file.type.startsWith('image/')) { setBookCoverError('Choose a PNG, JPG or WEBP image.'); return; }
-                    if (file.size > 10 * 1024 * 1024) { setBookCoverError('The image must be under 10 MB.'); return; }
-                    const reader = new FileReader();
-                    reader.onload = () => typeof reader.result === 'string' && onUseAsCover(reader.result);
-                    reader.onerror = () => setBookCoverError('The image could not be read.');
-                    reader.readAsDataURL(file);
-                  }}
-                />
-                {bookCoverError && <span className="text-[11px] text-red-400">{bookCoverError}</span>}
-              </div>
-            )}
-            <button
-              type="button"
-              className={primary}
-              disabled={!master || !!busy}
-              onClick={downloadAll}
-            >
-              Download all (.zip)
-            </button>
-          </div>
+        {/* What the studio makes; the work itself goes through the steps on the left, in order. */}
+        <div className="p-3.5 rounded-lg border border-zinc-800 bg-zinc-900/60 shadow-sm">
+          <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+            <span>Cover Studio</span>
+            <span className="text-xs font-normal text-zinc-400">· {formats.length} formats</span>
+          </h2>
+          <p className="text-xs text-zinc-400">
+            1 Art → 2 Effects & AI models → 3 Typography → 4 Review & export · the preview shows the selected format
+          </p>
         </div>
 
         {/* Hero Inspection Stage */}
@@ -1718,24 +1671,6 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                   />
                   <span>Guides & safe zones</span>
                 </label>
-              )}
-              <button
-                type="button"
-                className={button}
-                disabled={!master}
-                onClick={() => download(heroFormat)}
-              >
-                Download {heroFormat.width}×{heroFormat.height} {heroFormat.dpi ? `${heroFormat.dpi} DPI` : 'JPG'}
-              </button>
-              {heroFormat.id === 'ebook' && onUseAsCover && (
-                <button
-                  type="button"
-                  className={primary}
-                  disabled={!master}
-                  onClick={useAsBookCover}
-                >
-                  Use as book cover
-                </button>
               )}
             </div>
           </div>
@@ -1785,14 +1720,10 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                 </svg>
                 <p className="text-sm font-medium text-zinc-300">No master picture yet</p>
                 <p className="text-xs text-zinc-500 leading-relaxed">
-                  Generate a master image from the book outline or upload your own 2:3 illustration on the left.
+                  Generate a master image from the book outline or upload your own 2:3 illustration in step 1.
                 </p>
-                <button
-                  type="button"
-                  className={button}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload custom master
+                <button type="button" className={button} onClick={() => setSidebarTab('art')}>
+                  Open step 1 · Art
                 </button>
               </div>
             )}
@@ -1833,7 +1764,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
             )}
 
             <span className="text-[11px] text-zinc-500">
-              Click any format to inspect in Hero view
+              Click a format to preview it; download it in step 4
             </span>
           </div>
 
@@ -1878,19 +1809,7 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
                         {format.ratio}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
-                      <span>{format.width}×{format.height}</span>
-                      <button
-                        type="button"
-                        className="text-zinc-400 hover:text-zinc-100 font-medium underline"
-                        onClick={e => {
-                          e.stopPropagation();
-                          download(format);
-                        }}
-                      >
-                        Download
-                      </button>
-                    </div>
+                    <div className="text-[10px] text-zinc-500">{format.width}×{format.height}</div>
                   </div>
                 </div>
               );
@@ -2126,6 +2045,36 @@ HOW TO RUN THE TEST IN YOUTUBE STUDIO:
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+/** One step of the studio: its number, name and state on a header that opens it; one step is open at a time. */
+function CoverStepPanel({ n, title, hint, open, onOpen, children }: { n: number; title: string; hint: string; open: boolean; onOpen: () => void; children: React.ReactNode }) {
+  // A step that opens is brought to the top of the controls, so its work starts in view.
+  const ref = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const box = ref.current?.parentElement;
+    if (open && !wasOpen.current && ref.current && box) box.scrollTop += ref.current.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    wasOpen.current = open;
+  }, [open]);
+  return (
+    <section ref={ref} aria-label={`${n}. ${title}`} className="border-b border-zinc-800">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onOpen}
+        className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors ${open ? 'bg-zinc-800/60' : 'hover:bg-zinc-800/30'}`}
+      >
+        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${open ? 'bg-zinc-200 text-zinc-950' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}`}>{n}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold text-zinc-100">{n}. {title}</span>
+          <span className="block truncate text-[11px] text-zinc-500">{hint}</span>
+        </span>
+        <span aria-hidden className="text-xs text-zinc-500">{open ? '▾' : '▸'}</span>
+      </button>
+      <div hidden={!open} className="p-3 space-y-4">{children}</div>
     </section>
   );
 }

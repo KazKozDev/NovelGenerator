@@ -249,7 +249,7 @@ describe('youtube editorial cover format', () => {
     }
   });
 
-  it('renders 3-tab workflow (Art & Realism, Typography & 3D, Review & Export), AI Autopilot, De-Plastic, and A/B/C Pack in CoverStudio UI', () => {
+  it('renders the four steps in order (Art, Effects & AI models, Typography, Review & Export) with each control in its step', () => {
     const state: PromptBook = {
       version: 1,
       brief: { input: { premise: 'Save a log', chapter_count: 2, target_total_words: 1200, genre: 'thriller', author_requirements: '' }, settings: {} },
@@ -272,9 +272,23 @@ describe('youtube editorial cover format', () => {
       />
     );
     expect(html).toContain('AI Autopilot');
-    expect(html).toContain('1. Art &amp; Realism');
-    expect(html).toContain('2. Typography &amp; 3D');
-    expect(html).toContain('3. Review &amp; Export');
+    const steps = ['1. Art', '2. Effects &amp; AI models', '3. Typography', '4. Review &amp; Export'].map(s => html.indexOf(`aria-label="${s}"`));
+    expect(steps.every(i => i >= 0)).toBe(true);
+    expect([...steps].sort((a, b) => a - b)).toEqual(steps);
+    // Each control sits in its own step: generation, then the models, then lettering, then export.
+    const at = (text: string) => html.indexOf(text);
+    expect(at('Generate master')).toBeLessThan(steps[1]);
+    for (const effect of ['Apply all AI models &amp; effects', 'Remove AI Plastic', 'Extract Depth Mask']) {
+      expect(at(effect)).toBeGreaterThan(steps[1]);
+      expect(at(effect)).toBeLessThan(steps[2]);
+    }
+    expect(at('Book Lettering')).toBeGreaterThan(steps[2]);
+    expect(at('Book Lettering')).toBeLessThan(steps[3]);
+    expect(at('Download all (.zip)')).toBeGreaterThan(steps[3]);
+    // Nothing is offered twice.
+    expect(html.split('Download all (.zip)').length).toBe(2);
+    expect(html.split('Apply all AI models').length).toBe(2);
+    expect(html.split('Open A/B/C Pack Modal').length).toBe(2);
     expect(html).toContain('YouTube A/B/C Pack');
     expect(html).toContain('De-Plastic');
     expect(html).toContain('CodeFormer Face Pores (MPS)');

@@ -11,6 +11,7 @@ import {withWritingStyle,styleNeedsGeneration,type StyleInputs} from '../utils/n
 import React, {useEffect,useState} from 'react';
 import CoverStudio from './CoverStudio';
 import AudioStudio, { hasAudioStudio } from './OptionalAudioStudio';
+import AudioTimecodes from './AudioTimecodes';
 import type {BookBlueprint,ChapterPrompt,PromptBook} from '../utils/novel/promptBook';
 import {promptsReady,storyIsCurrent} from '../utils/novel/promptBook/actions';
 import {reviewIsCurrent} from '../utils/novel/promptBook/review';
@@ -79,7 +80,9 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
  useEffect(()=>{if(view==='cover')setCoverOpened(true);},[view]);
  const [audioOpened,setAudioOpened]=useState(false);
  useEffect(()=>{if(view==='audio')setAudioOpened(true);},[view]);
+ const timecodeChapters=React.useMemo(()=>(value.story?.chapters||[]).map(c=>({chapter:c.chapter,title:(value.blueprint as any)?.chapters?.find((b:any)=>b.chapter===c.chapter)?.title,text:c.text})),[value.story,value.blueprint]);
  const coverTitle=value.blueprint?.title||value.brief.input.title||'';
+ const timecodesPanel=<AudioTimecodes bookTitle={coverTitle||value.story?.title||''} chapters={timecodeChapters}/>;
  // The cover is drawn from the book as a whole: its outline, conflict, chapters and people; the opening only without an outline.
  const coverFacts=React.useMemo(()=>{const b=value.blueprint as any;return {title:coverTitle,genre:value.brief.input.genre,premise:value.brief.input.premise,requirements:value.brief.input.author_requirements,overview:b?.overview,conflict:b?.centralConflict,ending:b?.ending,chapters:Array.isArray(b?.chapters)?b.chapters.map((c:any)=>`${c.chapter}. ${c.title}: ${c.goal||''}`):undefined,characters:Array.isArray(b?.characters)?b.characters.map((c:any)=>`${c.name}: ${String(c.motivation||'').split('. ')[0]}`):undefined,excerpt:b?undefined:value.story?.chapters?.[0]?.text?.slice(0,3000)};},[coverTitle,value.brief,value.blueprint,value.story]);
  const manuscript=React.useMemo(()=>promptStoryContent(value),[value.story,value.blueprint?.title]);
@@ -117,7 +120,7 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='editing'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved||!editableStory} onClick={()=>changeView('editing')} title={!editableStory?'Editing unlocks after all chapters are written':undefined}>3. Editing</button>
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='cover'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved||!value.blueprint} onClick={()=>changeView('cover')} title={!value.blueprint?'The cover unlocks once the outline exists':undefined}>4. Cover</button>
      <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='publish'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved} onClick={()=>changeView('publish')} title="Store files for Amazon, Apple and Google, and the app's own formats">5. Publish</button>
-     {hasAudioStudio&&<button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='audio'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved} onClick={()=>changeView('audio')} title="Drama 3 Audio & Narration Studio">6. Audio</button>}
+     <button className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${view==='audio'?'bg-zinc-800 text-zinc-100 font-semibold shadow-sm':'text-zinc-400 hover:text-zinc-200'}`} disabled={busy||unsaved} onClick={()=>changeView('audio')} title={hasAudioStudio?'Narration studio and chapter timecodes':'Chapter timecodes for a finished audiobook'}>6. Audio</button>
     </nav>
  </>;
  return <section aria-label="Book outline and prompts" className="space-y-3">
@@ -143,8 +146,11 @@ export default function PromptBookWorkspace({value,busy,label,error,onContinue,o
   {editableStory&&(view==='editing'||editorOpened)&&<div hidden={view!=='editing'}><BookDisplay {...publication} showPublicationColumn={false} bookTitle={bookTitle} bookContent={manuscript} metadataJson={editorialMetadata} onManualSave={onSaveStory?((content,options)=>onSaveStory(content,manuscript,options)):undefined} onEditingStateChange={setEditorDirty} onReset={onReset||onSettings} onExportProject={onExport}/></div>}
   {/* Kept mounted once opened, like the editor, so a picture being drawn survives switching stages. */}
   {(view==='cover'||coverOpened)&&value.blueprint&&<div hidden={view!=='cover'}><CoverStudio bookKey={coverTitle||value.brief.input.premise.slice(0,80)} facts={coverFacts} author={publication?.author||''} onUseAsCover={publication?.onCoverChange?(url=>publication.onCoverChange!(url)):undefined} bookCover={publication?.coverImage}/></div>}
-  {view==='publish'&&<PublishStudio title={coverTitle||value.story?.title||''} studioKey={coverTitle||value.brief.input.premise.slice(0,80)} content={storyCount>0?manuscript:''} metadata={promptStoryMetadata(value) as Record<string,unknown>} draft={!storyComplete} author={publication?.author||''} onAuthorChange={publication?.onAuthorChange} imprint={publication?.imprint} onImprintChange={publication?.onImprintChange} coverImage={publication?.coverImage}/>}
-  {(view==='audio'||audioOpened)&&<div hidden={view!=='audio'}><AudioStudio bookKey={coverTitle||value.brief.input.premise.slice(0,80)} initialTitle={coverTitle} initialChapters={value.story?.chapters?.map(c=>({index:c.chapter,title:`Chapter ${c.chapter}`,text:c.text}))}/></div>}
+  {view==='publish'&&<PublishStudio title={coverTitle||value.story?.title||''} studioKey={coverTitle||value.brief.input.premise.slice(0,80)} content={storyCount>0?manuscript:''} metadata={promptStoryMetadata(value) as Record<string,unknown>} draft={!storyComplete} author={publication?.author||''} onAuthorChange={publication?.onAuthorChange} imprint={publication?.imprint} onImprintChange={publication?.onImprintChange} coverImage={publication?.coverImage} audioChapters={timecodeChapters}/>}
+  {/* Timecodes is the studio's third tab; without the studio it is the whole Audio stage. */}
+  {(view==='audio'||audioOpened)&&<div hidden={view!=='audio'}>{hasAudioStudio
+   ?<AudioStudio bookKey={coverTitle||value.brief.input.premise.slice(0,80)} initialTitle={coverTitle} initialChapters={value.story?.chapters?.map(c=>({index:c.chapter,title:`Chapter ${c.chapter}`,text:c.text}))} timecodes={timecodesPanel}/>
+   :timecodesPanel}</div>}
   {view==='cover'||view==='publish'||view==='audio'||(view==='editing'&&editableStory)?null:view==='story'?<PromptStoryStudio book={value} running={busy&&!!writingChapter} writingChapter={writingChapter} liveText={liveText} selectedChapter={active==='plan'?1:active} onChapterSelect={setActive} logs={agentLogs} tokens={tokenTotals} savedAt={lastSavedAt} saveStatus={autosaveStatus} error={error} onResume={!busy&&!unsaved&&storyCurrent&&!styleNeedsGeneration(value)?async()=>{setWriting(true);try{await onGenerateStory?.();}finally{setWriting(false);}}:undefined}/>:<>
   <WritingStylePanel bookTitle={bookTitle} book={value} busy={busy} onSave={onSaveStyle} onGenerate={onGenerateStyle} onDirty={setStyleDirty} blocked={editing||Object.values(dirty).some(Boolean)}/>
   {styleNeedsGeneration(value)&&<p className="text-sm text-amber-200">Generate or save a style profile before writing the story.</p>}
