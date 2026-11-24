@@ -4,6 +4,7 @@
  * (services/audiobookDevPlugin.ts), then measured; the measurements are checked here against the store's limits.
  */
 import type { ChapterTimecode } from '../audiobook/chapterTimecodes';
+import { narrationCheck, type Narration } from './disclosures';
 
 export type AudioStoreId = 'acx' | 'spotify' | 'google' | 'youtube';
 
@@ -192,10 +193,12 @@ export function audioParts(store: AudioStore, timecodes: ChapterTimecode[], dura
 }
 
 /** Before building: does the book have what the store needs? */
-export function audioReadiness(store: AudioStore, facts: { title: string; author: string; timecodes: ChapterTimecode[]; chapters: number; hasCover: boolean; hasMaster: boolean }): AudioCheck[] {
+export function audioReadiness(store: AudioStore, facts: { title: string; author: string; timecodes: ChapterTimecode[]; chapters: number; hasCover: boolean; hasMaster: boolean; narration?: Narration }): AudioCheck[] {
   const found = facts.timecodes.filter(t => t.start !== null);
   const checks: AudioCheck[] = [];
   checks.push(facts.hasMaster ? { level: 'ok', text: 'Recording chosen' } : { level: 'fail', text: 'Choose the recording of the whole book' });
+  const voice = facts.narration && narrationCheck(store.id, facts.narration);
+  if (voice) checks.push(voice);
   if (!facts.timecodes.length) checks.push({ level: 'fail', text: 'Find the chapter timecodes first (Audio → Timecodes)' });
   else if (found.length < facts.chapters) checks.push({ level: store.layout === 'video' ? 'warn' : 'fail', text: `${facts.chapters - found.length} of ${facts.chapters} chapters not found in the recording` });
   else checks.push({ level: 'ok', text: `All ${facts.chapters} chapters have timecodes` });

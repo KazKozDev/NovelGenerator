@@ -59,14 +59,15 @@
       :root {
         --z-50: 250 250 250;  --z-100: 244 244 245; --z-200: 228 228 231;
         --z-300: 212 212 216; --z-400: 161 161 170; --z-500: 113 113 122;
-        --z-600: 82 82 91;    --z-700: 63 63 70;    --z-800: 39 39 42;
-        --z-900: 24 24 27;    --z-950: 9 9 11;
+        /* The dark end is graphite, not black: the page sits at 950, panels at 900, lines and fields at 800. */
+        --z-600: 98 99 108;   --z-700: 76 77 85;    --z-800: 58 59 66;
+        --z-900: 43 44 50;    --z-950: 32 33 38;
         color-scheme: dark;
       }
       /* The same ramp, walked from the other end. */
       /* One meaningful surface: the sheet the manuscript is written on. Lighter than its ground in
          either theme, which a single palette step cannot express once the ramp is inverted. */
-      :root { --sheet: 20 20 23; }
+      :root { --sheet: 46 47 53; }
       html.light { --sheet: 255 255 255; }
       .sheet { background-color: rgb(var(--sheet)); }
       .revision-removed {

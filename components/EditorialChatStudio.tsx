@@ -850,7 +850,7 @@ export const EditorialChatStudio: React.FC<EditorialChatStudioProps> = ({
             type="button"
             onClick={() => handleSendMessage(input)}
             disabled={activeRunning || !input.trim()}
-            className="self-stretch min-h-[54px] px-4 text-xs font-semibold bg-zinc-200 hover:bg-zinc-100 disabled:opacity-50 text-zinc-900 rounded transition-colors shrink-0 flex items-center justify-center shadow-sm"
+            className="self-stretch min-h-[54px] px-4 text-xs font-semibold bg-zinc-500 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-500 text-white rounded transition-colors shrink-0 flex items-center justify-center shadow-sm"
           >
             Send
           </button>

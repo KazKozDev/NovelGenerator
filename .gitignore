@@ -49,5 +49,6 @@ components/AudioStudio.tsx
 services/audioDevPlugin.ts
 utils/audio/
 scripts/drama3_*.py
+scripts/audio_cleanup.py
 scripts/build_app.sh
 DramaStudio.spec
