@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Нейросети для YouTube-аудиокниг</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1a1a1a; }
+  h1 { font-size: 20pt; margin: 0 0 4pt; }
+  .sub { color: #666; margin-bottom: 14pt; }
+  h2 { font-size: 14pt; margin: 18pt 0 6pt; padding-bottom: 3pt; border-bottom: 1.5pt solid #c8553d; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 12pt 0 4pt; page-break-after: avoid; }
+  ul, ol { margin: 4pt 0 6pt; padding-left: 18pt; }
+  li { margin: 2pt 0; }
+  code { font-family: Menlo, monospace; font-size: 9pt; background: #f2f0ec; padding: 0 3pt; border-radius: 2pt; }
+  a { color: #1f5fa8; text-decoration: none; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 10pt; }
+  th, td { border: 0.75pt solid #ccc; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #f2f0ec; }
+  .note { background: #fdf3e7; border-left: 3pt solid #d98b2b; padding: 6pt 9pt; margin: 8pt 0; }
+  .tip { background: #eef5ee; border-left: 3pt solid #4a8a4a; padding: 6pt 9pt; margin: 8pt 0; }
+  section { page-break-inside: auto; }
+</style>
+</head>
+<body>
+
+<h1>Нейросети для YouTube-аудиокниг</h1>
+<div class="sub">Что уже есть локально, что можно взять с Hugging Face и что подходит для обложек · 17 октября 2026 · Mac M1 Max, 32 ГБ</div>
+
+<h2>1. Что уже есть локально</h2>
+<p>Источники: кэш Hugging Face, модели Ollama, папка <code>/Volumes/SSD/models</code>, проекты в <code>~/projects</code>. Отдельной «YouTube-нейронки» нет, но для канала с аудиокнигами почти всё необходимое уже есть.</p>
+
+<h3>Голос (TTS)</h3>
+<ul>
+  <li><code>Qwen3-TTS-12Hz-1.7B</code> в трёх вариантах: Base, CustomVoice (клонирование голоса) и VoiceDesign (голос по текстовому описанию).</li>
+  <li><code>chatterbox</code> 4bit и 8bit — выразительный английский TTS.</li>
+  <li><code>Zonos-v0.1-hybrid</code> на SSD.</li>
+</ul>
+
+<h3>Распознавание речи и тайминги</h3>
+<ul>
+  <li><code>whisper-large-v3-turbo</code> (MLX) и <code>faster-whisper-base</code>.</li>
+  <li>Проект <code>reading-video-maker</code>: выравнивает слова по аудио и рендерит «видеокнигу» с подсветкой слов.</li>
+  <li><code>TIMECODER.zip</code> — судя по названию, ставит таймкоды глав (не открывался).</li>
+</ul>
+
+<h3>Музыка</h3>
+<ul><li><code>ACE-Step 1.5</code> и <code>acestep-5Hz-lm-0.6B</code> — фоновая музыка и заставки.</li></ul>
+
+<h3>Видео</h3>
+<ul>
+  <li><code>LTX-2-MLX</code> и <code>gcp-ltx</code> — генерация видео (подробности в разделе 2).</li>
+  <li><code>OpenMontage</code> собирает ролик агентом.</li>
+  <li><code>auto-vertical-reframe</code> переводит 16:9 в 9:16 для Shorts.</li>
+</ul>
+
+<h3>Обложки и превью (NovelGenerator: <code>scripts/cover_ai.py</code>, CoverStudio)</h3>
+<ul>
+  <li><code>RMBG-1.4</code> убирает фон.</li>
+  <li><code>Depth-Anything-V2</code> строит карту глубины.</li>
+  <li><code>cafe_aesthetic</code> оценивает эстетику картинки.</li>
+  <li><code>Codeformer</code> восстанавливает лица.</li>
+  <li>CoverStudio уже делает YouTube-превью 1280×720 и пакет A/B/C для Test &amp; Compare.</li>
+  <li><code>diffusiongemma-26B</code> на SSD — стоит проверить, генерирует ли он картинки.</li>
+</ul>
+
+<h3>Продвижение и текст</h3>
+<ul>
+  <li><code>PromoBook</code> пишет посты по сообществам для канала.</li>
+  <li>Skill <code>youtube-audiobook-content-optimizer</code>.</li>
+  <li>Для описаний, глав и тегов хватит локальных LLM: <code>qwen3.6</code>, <code>gemma4</code>, <code>translategemma</code> для мультиязычных версий.</li>
+</ul>
+
+<h3>Что может пригодиться</h3>
+<ol>
+  <li><b>Проверка озвучки через Whisper.</b> Озвученная глава прогоняется обратно через <code>whisper-large-v3-turbo</code> и сравнивается с текстом: видны пропуски, проглоченные слова и неверные ударения. Модель уже скачана, нужна только обвязка. Вспомогательная сеть только размечает, а не решает.</li>
+  <li><b>Очистка звука и громкость.</b> Не хватает шумодава или «улучшайзера» голоса (DeepFilterNet, Resemble Enhance). Нужна нормализация громкости до уровня YouTube (около −14 LUFS) — это <code>ffmpeg loudnorm</code>, нейросеть не нужна.</li>
+  <li><b>Апскейлер картинок</b>, например Real-ESRGAN: поднимет сгенерированные арты до 1920×1080 и выше без мыла.</li>
+  <li><b>Оценка превью по CTR.</b> <code>cafe_aesthetic</code> оценивает красоту, а не кликабельность. Можно уменьшать превью до 168×94 и проверять читаемость текста через <code>qwen3-vl:8b</code> или <code>minicpm-v4.5</code>.</li>
+  <li><b>Автоглавы для описания.</b> Таймкоды из Whisper плюс локальная LLM дают готовый список глав <code>00:00 Глава 1…</code>.</li>
+</ol>
+<div class="tip">Самое дешёвое по усилиям — пункты 1 и 5: модели уже лежат локально, нужен только код-обвязка.</div>
+
+<h2>2. LTX: где генерируется видео</h2>
+<p><b>gcp-ltx — облако, не мак.</b> В папке два скрипта:</p>
+<ul>
+  <li><code>gpu_hunter.sh</code> поднимает в Google Cloud виртуалку с GPU: сначала spot L4, затем spot T4, затем L4 по обычной цене. До 24 попыток раз в 5 минут.</li>
+  <li><code>ltx_deploy.sh</code> ставит драйверы NVIDIA, ComfyUI и ноды LTX, качает LTX-2.3 FP8 (около 30 ГБ) и запускает ComfyUI на порту 8188.</li>
+</ul>
+<p>Видео там генерируется на арендованной видеокарте — платно за время работы машины.</p>
+
+<p><b>LTX-2-MLX — для мака, но запустить сейчас нечем.</b> На SSD лежат только веса, всего 63 ГБ:</p>
+<ul>
+  <li><code>ltx-2-19b-distilled.safetensors</code> — 40 ГБ;</li>
+  <li><code>gemma-3-12b</code> (текстовый энкодер) — 23 ГБ.</li>
+</ul>
+<p>Кода-раннера в папке нет, только <code>weights/</code>. При 32 ГБ памяти модель на 40 ГБ не помещается, а с энкодером нужно больше 60 ГБ. Нужна квантованная версия (8 или 4 бита) и MLX-раннер; даже с ними клипы будут короткими и считаться несколько минут. Оценка по размерам файлов, не проверялось запуском.</p>
+<div class="tip">Для аудиокниг генерация видео не обязательна: статичный арт с лёгким движением через Depth-Anything плюс подсветка текста из <code>reading-video-maker</code> работают локально и бесплатно.</div>
+
+<h2>3. Что ещё полезного на Hugging Face</h2>
+<p>Подбор под M1 Max с 32 ГБ. Ничего не скачивалось и не запускалось: выводы по карточкам моделей.</p>
+
+<h3>Голос</h3>
+<ul>
+  <li><a href="https://huggingface.co/fishaudio/drama-3"><b>fishaudio/drama-3</b></a> — первая в трендах TTS. Длинные тексты и сцены с несколькими персонажами: до 16 голосов в одном тексте тегами <code>&lt;|speaker:N|&gt;</code>. Клонирование голоса, управление текстовым описанием, русский поддерживается.
+    <ul>
+      <li>MLX-сборки: <a href="https://huggingface.co/mlx-community/fish-audio-drama-3-4bit">fish-audio-drama-3-4bit</a> и <a href="https://huggingface.co/mlx-community/fish-audio-drama-3-8bit">8bit</a>. 35B параметров, 3B активных — 4bit должна поместиться в 32 ГБ.</li>
+    </ul>
+  </li>
+  <li><a href="https://huggingface.co/k2-fsa/OmniVoice"><b>k2-fsa/OmniVoice</b></a> — компактная (на базе Qwen3-0.6B), сотни языков. Для черновиков озвучки и многоязычных версий.</li>
+  <li><a href="https://huggingface.co/hexgrad/Kokoro-82M"><b>hexgrad/Kokoro-82M</b></a> — очень лёгкая и быстрая, для превью и тестов.</li>
+</ul>
+<div class="note">⚠️ У Drama-3 лицензия <code>fish-audio-research-license</code>. Перед использованием на монетизированном канале проверьте, разрешено ли коммерческое использование.</div>
+
+<h3>Чистка звука (этого пока нет)</h3>
+<ul>
+  <li><a href="https://huggingface.co/aufklarer/DeepFilterNet3-MLX"><b>DeepFilterNet3-MLX</b></a>, а также <a href="https://huggingface.co/aufklarer/DeepFilterNet3-CoreML">CoreML</a> и <a href="https://huggingface.co/soniqo/DeepFilterNet3-ONNX">ONNX</a> — убирает шум и шипение после TTS, быстро.</li>
+  <li><a href="https://huggingface.co/starkdmi/MossFormer2-SE"><b>MossFormer2-SE</b></a> — улучшение речи, есть fp16 и 8bit.</li>
+  <li><a href="https://huggingface.co/ResembleAI/resemble-enhance"><b>resemble-enhance</b></a> — чистит и «дорисовывает» качество голоса. Старая, но проверенная.</li>
+</ul>
+
+<h3>Картинки для превью и фона</h3>
+<ul>
+  <li>Генерация на MLX: <a href="https://huggingface.co/themindstudio/Qwen-Image-2.1-MLX-4bit">Qwen-Image-2.1-MLX-4bit</a> (хорошо пишет текст на картинке), <a href="https://huggingface.co/themindstudio/flux2-klein-9b-mlx-4bit">flux2-klein-9b-mlx-4bit</a> (быстрый FLUX).</li>
+  <li>Апскейл: <a href="https://huggingface.co/qualcomm/Real-ESRGAN-x4plus">Real-ESRGAN-x4plus</a> (есть <a href="https://huggingface.co/imgdesignart/realesrgan-x4-onnx">ONNX</a>) или <a href="https://huggingface.co/prithivMLmods/Qwen-Image-Edit-2511-Unblur-Upscale">Qwen-Image-Edit-2511-Unblur-Upscale</a>.</li>
+</ul>
+
+<h3>Видео: замена локальному LTX</h3>
+<p>Вместо LTX-2 bf16 на 40 ГБ — квантованная <a href="https://huggingface.co/dgrauet/ltx-2.5-mlx-q4"><b>ltx-2.5-mlx-q4</b></a> (есть <a href="https://huggingface.co/dgrauet/ltx-2.5-mlx-q8">q8</a>), к тому же более новая версия 2.5. У репозитория счётчик скачиваний на нуле — сначала проверить, что работает.</p>
+
+<h3>Звук и музыка</h3>
+<ul>
+  <li><a href="https://huggingface.co/stabilityai/stable-audio-3-small-sfx"><b>stable-audio-3-small-sfx</b></a> — звуковые эффекты (дверь, шаги, дождь) для атмосферы.</li>
+  <li><a href="https://huggingface.co/m-a-p/YuE2-3B"><b>YuE2-3B</b></a> — песни, например вокальная заставка канала. Фоновая музыка уже закрыта ACE-Step.</li>
+</ul>
+<div class="tip">Что попробовать первым: Drama-3 в 4bit (если лицензия подходит) и DeepFilterNet3-MLX — голоса персонажей и чистый звук.</div>
+
+<h2>4. Модели для обложек</h2>
+<p>Базовые модели рисуют саму картинку, LoRA — маленькие добавки, подгоняющие стиль под обложки.</p>
+
+<h3>Базовые модели</h3>
+<table>
+  <tr><th>Модель</th><th>Чем хороша для обложек</th><th>Версия для мака</th></tr>
+  <tr><td><a href="https://huggingface.co/Qwen/Qwen-Image-2.1">Qwen-Image-2.1</a></td><td>Лучше всех пишет текст на картинке, включая кириллицу; в топе трендов</td><td><a href="https://huggingface.co/themindstudio/Qwen-Image-2.1-MLX-4bit">MLX 4bit</a></td></tr>
+  <tr><td><a href="https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo">Qwen-Image-2.1-Turbo</a></td><td>То же за несколько шагов — удобно перебирать варианты</td><td><a href="https://huggingface.co/ddalcu/Qwen-Image-2.1-Turbo-MLX-Serve-4bit">MLX 4bit</a> / <a href="https://huggingface.co/ddalcu/Qwen-Image-2.1-Turbo-MLX-Serve-8bit">8bit</a></td></tr>
+  <tr><td>FLUX.2 Klein 9B</td><td>Красивая «художественная» картинка, лёгкая</td><td><a href="https://huggingface.co/themindstudio/flux2-klein-9b-mlx-4bit">MLX 4bit</a></td></tr>
+  <tr><td><a href="https://huggingface.co/krea/Krea-2-Turbo">Krea-2-Turbo</a></td><td>Фотореализм, кинематографичный свет</td><td>MLX-версии не найдено</td></tr>
+</table>
+
+<h3>LoRA под книжные обложки</h3>
+<ul>
+  <li><b>BOOKCOVER-REDMOND</b> — одна LoRA для трёх моделей: <a href="https://huggingface.co/artificialguybr/BOOKCOVER-REDMOND-QWENIMAGE">Qwen-Image</a>, <a href="https://huggingface.co/artificialguybr/BOOKCOVER-REDMOND-FLUXKLEIN">FLUX Klein</a>, <a href="https://huggingface.co/artificialguybr/BOOKCOVER-REDMOND-ZIMAGE">Z-Image</a>.</li>
+  <li><a href="https://huggingface.co/Norod78/flux2-klein-4b-base-lora-vintage-book-cover"><b>vintage-book-cover</b></a> для FLUX Klein 4B — стиль старых изданий.</li>
+</ul>
+
+<h3>LoRA под превью YouTube</h3>
+<ul>
+  <li><a href="https://huggingface.co/fal/Youtube-Thumbnails-Kontext-Dev-LoRA"><b>Youtube-Thumbnails-Kontext-Dev-LoRA</b></a> от fal — не рисует с нуля, а переделывает готовую картинку в стиль превью.</li>
+</ul>
+<div class="note">У всех этих LoRA мало скачиваний (десятки–сотни): нишевые, качество не гарантировано. Перед встраиванием проверить на 3–4 обложках.</div>
+
+<h3>Что выбрать при CoverStudio</h3>
+<p>CoverStudio сам накладывает заголовок, автора и бейджи, поэтому от модели нужен только <b>арт без текста</b> под макет — умение Qwen писать текст почти не нужно.</p>
+<div class="tip">Начать с <b>Qwen-Image-2.1-Turbo в MLX 8bit</b>: быстрая, укладывается в 32 ГБ, подходит для нескольких вариантов под A/B/C-превью. Для жанрового стиля добавить <b>BOOKCOVER-REDMOND-QWENIMAGE</b>.</div>
+
+</body>
+</html>

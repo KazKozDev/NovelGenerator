@@ -52,3 +52,5 @@ scripts/drama3_*.py
 scripts/audio_cleanup.py
 scripts/build_app.sh
 DramaStudio.spec
+
+scratch/
