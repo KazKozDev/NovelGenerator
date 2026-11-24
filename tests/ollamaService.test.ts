@@ -44,18 +44,17 @@ describe('ollamaService', () => {
     expect(payload.options?.temperature).toBe(0.5);
   });
 
-  it('honours a role that enables thinking and stops telling that model to suppress reasoning', () => {
+  it('never enables thinking, whatever the caller asks for', () => {
     const payload = buildOllamaGeneratePayload({
       model: 'gemma4:31b-cloud',
-      think: true,
+      ...({ think: true } as object),
       prompt: 'Review this chapter',
       system: 'You are a rigorous editor',
       isJson: true
     });
 
-    expect(payload.think).toBe(true);
-    expect(payload.system).toBe('You are a rigorous editor');
-    expect(payload.system).not.toContain('Do not output thinking');
+    expect(payload.think).toBe(false);
+    expect(payload.system).toContain('Do not output thinking');
   });
 
   it('fetchOllamaModels calls /api/tags and returns model list', async () => {
@@ -104,7 +103,7 @@ describe('ollamaService', () => {
     expect(result).not.toContain('Let me think');
   });
 
-  it('lets a validator role think while keeping that reasoning out of the returned text', async () => {
+  it('sends think:false for an editor call too and keeps an unsolicited trace out of the answer', async () => {
     const { generateOllamaText } = await import('../services/ollamaService');
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -115,13 +114,12 @@ describe('ollamaService', () => {
     });
     globalThis.fetch = fakeFetch as any;
 
-    const result = await generateOllamaText('Review chapter 1', 'You are a rigorous editor', undefined, 0.2, 'gemma4:31b-cloud', '/api/ollama', undefined, undefined, undefined, true);
+    const result = await generateOllamaText('Review chapter 1', 'You are a rigorous editor', undefined, 0.2, 'gemma4:31b-cloud', '/api/ollama');
 
     const body = JSON.parse(fakeFetch.mock.calls[0][1].body);
-    expect(body.think).toBe(true);
-    expect(body.messages[0].content).not.toContain('Do not output reasoning');
+    expect(body.think).toBe(false);
+    expect(body.messages[0].content).toContain('Do not output reasoning');
     expect(result).toBe('{"issues":[]}');
-    expect(result).not.toContain('step by step');
   });
 
   it('asks for a context window the prompt fits in, and never a smaller one for the same model afterwards', () => {

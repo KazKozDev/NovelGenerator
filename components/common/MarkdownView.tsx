@@ -24,7 +24,16 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
   const renderedHtml = useMemo(() => {
     if (!content) return '';
     try {
-      const rawHtml = marked.parse(content, {
+      // Generated exact edits sometimes omit the separator after closing
+      // emphasis: *sentence.*Next. Repair only this unambiguous prose boundary
+      // for display; never alter the saved manuscript or fenced/inline code.
+      const displayContent = marked.lexer(content).map(token => token.type === 'paragraph'
+        ? token.raw.split(/(`+[^`]*`+)/g).map((part, index) => index % 2 ? part : part.replace(
+          /(^|[\s(])(\*{1,2})(?=\S)([^*\n]+?[.!?,;:'"’”])\2(?=[\p{L}\p{N}])/gu,
+          '$1$2$3$2 ',
+        )).join('')
+        : token.raw).join('');
+      const rawHtml = marked.parse(displayContent, {
         gfm: true,
         breaks: true,
         async: false,
@@ -39,7 +48,6 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
     <div className={`markdown-content ${className}`}>
       <div 
         dangerouslySetInnerHTML={{ __html: renderedHtml }} 
-        className="inline"
       />
       {isStreaming && (
         <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse ml-1 align-middle" />

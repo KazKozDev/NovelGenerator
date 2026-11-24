@@ -30,17 +30,19 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
   const formatTime = (timestamp: number) =>
     new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const logsByChapter = logs.reduce((acc, log) => {
-    (acc[log.chapterNumber] ||= []).push(log);
+  // In the order things happened. Grouping by chapter put a late pass over an early scene
+  // above work done an hour before it, and the log read as if it jumped back and forth.
+  const runs = [...logs].sort((a, b) => a.timestamp - b.timestamp).reduce((acc, log) => {
+    if (acc.at(-1)?.[0].chapterNumber === log.chapterNumber) acc.at(-1)!.push(log); else acc.push([log]);
     return acc;
-  }, {} as Record<number, AgentLogEntry[]>);
+  }, [] as AgentLogEntry[][]);
 
   return (
     <div className="mt-2">
-      {Object.entries(logsByChapter).map(([chapterNum, chapterLogs]) => (
-        <div key={chapterNum} className="mb-4">
+      {runs.map((chapterLogs, run) => (
+        <div key={`${chapterLogs[0].timestamp}-${run}`} className="mb-4">
           <h4 className="text-xs font-semibold uppercase text-zinc-500 mb-1.5">
-            Chapter {chapterNum}
+            {chapterLogs[0].chapterNumber ? `Chapter ${chapterLogs[0].chapterNumber}` : 'Before the chapters'}
           </h4>
 
           {chapterLogs.map((log, idx) => (
@@ -55,16 +57,17 @@ const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ logs }) => {
               ) : (
                 <div className={`mb-1.5 pl-2.5 border-l-2 ${ACCENT[log.type] || ACCENT.default}`}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-zinc-500">{LABEL[log.type] || log.type}</span>
+                    <span className="text-xs font-semibold uppercase text-zinc-500">{log.finished ? (log.type === 'warning' ? 'Failed' : 'Done') : LABEL[log.type] || log.type}</span>
                     {/* A timestamp is a machine value, so it keeps the monospaced face. */}
                     <span className="text-xs text-zinc-500 shrink-0">{formatTime(log.timestamp)}</span>
                   </div>
                   <p className="text-xs text-zinc-300">{log.message}</p>
+                  {log.outcome && <p className="text-xs text-zinc-500 mt-0.5">{log.outcome}</p>}
 
                   {log.details && (
                     <details className="mt-1">
                       <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-300">Details</summary>
-                      <pre className="mt-1 p-2 text-xs text-zinc-400 border border-zinc-800 rounded overflow-auto">
+                      <pre className="mt-1 p-2 text-xs text-zinc-400 border border-zinc-800 rounded whitespace-pre-wrap break-words">
                         {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
                       </pre>
                     </details>

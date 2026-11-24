@@ -101,13 +101,13 @@ export default function PlanView({ content, className = '' }: { content: string;
     );
   }
 
-  if (!parsed) return <MarkdownView content={content} className={className} />;
+  if (!parsed) return <MarkdownView content={content} className={`compact-plan ${className}`} />;
 
   const all = Object.entries(parsed)
     .map(([key, value]) => ({ key, label: prettyLabel(key), value: readable(value) }))
     .filter((entry): entry is { key: string; label: string; value: string } => Boolean(entry.value));
 
-  if (!all.length) return <MarkdownView content={content} className={className} />;
+  if (!all.length) return <MarkdownView content={content} className={`compact-plan ${className}`} />;
 
   const scenes = Array.isArray(parsed.detailedScenes)
     ? (parsed.detailedScenes as Record<string, unknown>[]).filter(scene => scene && typeof scene === 'object')

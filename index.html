@@ -59,16 +59,64 @@
       :root {
         --z-50: 250 250 250;  --z-100: 244 244 245; --z-200: 228 228 231;
         --z-300: 212 212 216; --z-400: 161 161 170; --z-500: 113 113 122;
-        --z-600: 82 82 91;    --z-700: 63 63 70;    --z-800: 39 39 42;
-        --z-900: 24 24 27;    --z-950: 9 9 11;
+        /* The dark end is graphite, not black: the page sits at 950, panels at 900, lines and fields at 800. */
+        --z-600: 98 99 108;   --z-700: 76 77 85;    --z-800: 58 59 66;
+        --z-900: 43 44 50;    --z-950: 32 33 38;
         color-scheme: dark;
       }
       /* The same ramp, walked from the other end. */
       /* One meaningful surface: the sheet the manuscript is written on. Lighter than its ground in
          either theme, which a single palette step cannot express once the ramp is inverted. */
-      :root { --sheet: 20 20 23; }
+      :root { --sheet: 46 47 53; }
       html.light { --sheet: 255 255 255; }
       .sheet { background-color: rgb(var(--sheet)); }
+      .revision-removed {
+        color: #fca5a5;
+        background: rgba(239, 68, 68, 0.18);
+        text-decoration: line-through;
+        text-decoration-color: rgba(239, 68, 68, 0.7);
+        text-decoration-thickness: 1.5px;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        opacity: .9;
+      }
+      .revision-added {
+        color: #86efac;
+        background: rgba(34, 197, 94, 0.2);
+        text-decoration: none;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        box-shadow: inset 0 -1px 0 rgba(34, 197, 94, 0.35);
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+        animation: revision-arrival 1.5s ease-out;
+      }
+      html.light .revision-removed {
+        color: #991b1b;
+        background: rgba(239, 68, 68, 0.16);
+        text-decoration-color: #dc2626;
+      }
+      html.light .revision-added {
+        color: #15803d;
+        background: rgba(34, 197, 94, 0.2);
+        box-shadow: inset 0 -1px 0 rgba(22, 101, 52, 0.25);
+      }
+      .manuscript-changes > * + * { margin-top: 1rem; }
+      .revision-markdown { display: block; padding: .55rem .65rem; margin: 0; }
+      .revision-markdown + .revision-markdown { margin-top: .75rem; }
+      @keyframes revision-arrival {
+        from {
+          background-color: rgba(34, 197, 94, 0.45);
+          box-shadow: 0 0 14px rgba(34, 197, 94, 0.55);
+        }
+        to {
+          background-color: rgba(34, 197, 94, 0.2);
+          box-shadow: inset 0 -1px 0 rgba(34, 197, 94, 0.35);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .revision-added { animation: none; }
+      }
 
       /* Light falling across type, now carrying blue: the highlights stay near-white so the letters
          keep their contrast, while the body of the sweep runs through a saturated blue. Mirrored for
@@ -176,29 +224,103 @@
         margin-top: 0.75rem;
         margin-bottom: 0.25rem;
       }
+      .markdown-content.compact-plan h1,
+      .markdown-content.compact-plan h2,
+      .markdown-content.compact-plan h3,
+      .markdown-content.compact-plan h4,
+      .markdown-content.compact-plan h5,
+      .markdown-content.compact-plan h6 {
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+        margin-top: 1rem;
+        margin-bottom: 0.6rem;
+      }
+      .markdown-content.compact-plan h1 { font-size: 20px; }
+      .markdown-content.compact-plan h2 { font-size: 17px; }
+      .markdown-content.compact-plan h3 { font-size: 15px; }
+      .markdown-content.compact-plan h1:first-child { margin-top: 0; }
       .markdown-content p {
+        font-size: 16px;
         color: rgb(var(--z-300));
-        line-height: 32px;
-        margin-bottom: 16px;
+        line-height: 28px;
+        margin-bottom: 1.25rem;
         text-wrap: pretty;
+      }
+      /* Book Reader prose typography */
+      .markdown-content.text-prose h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        text-align: center;
+        letter-spacing: -0.02em;
+        margin-top: 0.5rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgb(var(--z-800));
+      }
+      .markdown-content.text-prose h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin-top: 2.5rem;
+        margin-bottom: 1rem;
+      }
+      .markdown-content.text-prose p,
+      .manuscript-changes p {
+        font-size: 16px;
+        line-height: 28px;
+        color: rgb(var(--z-200));
+        margin-bottom: 1.25rem;
       }
       .markdown-content.text-xs p,
       .text-xs .markdown-content p,
       .markdown-content.compact-outline p,
-      .compact-outline p {
+      .compact-outline p,
+      .markdown-content.compact-plan p {
         line-height: 1.45;
         margin-bottom: 6px;
       }
       .markdown-content.text-xs li,
       .text-xs .markdown-content li,
       .markdown-content.compact-outline li,
-      .compact-outline li {
+      .compact-outline li,
+      .markdown-content.compact-plan li {
         line-height: 1.45;
         margin-bottom: 3px;
+      }
+      /* The chapter plan and story outline panels: text takes the panel's size, not the reader's 16px. */
+      .markdown-content.compact-plan p,
+      .markdown-content.compact-plan li,
+      .markdown-content.compact-outline p,
+      .markdown-content.compact-outline li {
+        font-size: inherit;
       }
       .markdown-content p:last-child {
         margin-bottom: 0;
       }
+      /* The editorial chat: one size for all the assistant writes, in the panel's sans, not the reader's serif. */
+      .markdown-content.chat-text { font-size: 13px; line-height: 1.6; color: inherit; }
+      .markdown-content.chat-text p,
+      .markdown-content.chat-text li { font-size: 13px; line-height: 1.6; color: inherit; }
+      .markdown-content.chat-text p { margin-bottom: 10px; }
+      .markdown-content.chat-text li { margin-bottom: 4px; }
+      .markdown-content.chat-text ul,
+      .markdown-content.chat-text ol { margin: 4px 0 10px; color: inherit; }
+      .markdown-content.chat-text h1,
+      .markdown-content.chat-text h2,
+      .markdown-content.chat-text h3,
+      .markdown-content.chat-text h4,
+      .markdown-content.chat-text h5,
+      .markdown-content.chat-text h6 {
+        font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+        color: rgb(var(--z-100)); margin: 18px 0 6px; padding: 0; border: 0;
+      }
+      .markdown-content.chat-text > div > :first-child { margin-top: 0; }
+      .markdown-content.chat-text > div > :last-child { margin-bottom: 0; }
+      .markdown-content.chat-text code { font-size: 12px; border: 0; padding: 0.05rem 0.3rem; }
+      .markdown-content.chat-text pre { font-size: 12px; line-height: 1.5; border: 0; padding: 8px 10px; margin: 8px 0; background: rgb(var(--z-950) / 0.6); }
+      .markdown-content.chat-text blockquote { font-style: normal; background: none; border-left-width: 2px; padding: 0 0 0 10px; margin: 8px 0; }
+      .markdown-content.chat-text hr { margin: 12px 0; }
+      .markdown-content.chat-text table { font-size: 12px; }
       .markdown-content strong {
         font-weight: 600;
         color: rgb(var(--z-50));
@@ -279,6 +401,31 @@
         background: rgb(var(--z-900));
         color: rgb(var(--z-100));
         font-weight: 600;
+      }
+
+      /* Toolbars wrap between controls; their labels never split inside a fixed-height button. */
+      .app-toolbar { max-width: 100%; }
+      .app-toolbar > * { flex-shrink: 0; }
+      .app-toolbar button, .app-toolbar a, .app-toolbar label, .app-toolbar summary {
+        white-space: nowrap; min-height: 28px; height: auto;
+      }
+      .app-toolbar a, .app-toolbar label { display: inline-flex; align-items: center; }
+      .app-shell main, .app-shell header { min-width: 0; }
+      input, select, textarea { min-width: 0; max-width: 100%; }
+      .studio-layout p, .studio-layout pre, .markdown-content { overflow-wrap: anywhere; }
+      @media (max-width: 1023px) {
+        .studio-viewport { height: auto; max-height: none; min-height: 100dvh; overflow: visible; }
+        .studio-main, .studio-layout { height: auto; overflow: visible; flex: initial; }
+        .studio-grid { overflow: visible; flex: initial; grid-template-rows: auto auto auto; }
+        .studio-grid > .studio-side { height: 22rem; max-height: 22rem; padding-inline: 0; }
+        .studio-grid > .studio-manuscript { height: 65dvh; min-height: 24rem; border-inline: none; }
+        .studio-heading { width: 100%; }
+      }
+      @media (max-width: 479px) {
+        .app-shell { padding: 12px; }
+        .app-shell > header, .app-shell > main { padding-inline: 0; }
+        .studio-header .wordmark { font-size: 18px; }
+        .studio-manuscript .text-prose { font-size: 16px; }
       }
     </style>
   </head>

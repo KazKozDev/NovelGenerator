@@ -1,0 +1,394 @@
+import { describe, expect, it } from 'vitest';
+import {
+  findTargetChapter,
+  buildTargetedRepairPrompt,
+  parseRepairJson,
+  repairSingleFinding,
+  clusterEditorialFindings,
+  applySurgicalPatch,
+  locateTargetExcerpt,
+  buildSurgicalPatchPrompt,
+  repairSurgicalTask,
+  ClusteredEditorialTask,
+  EditorialFinding,
+} from '../utils/novel/targetedEditorial';
+
+describe('targetedEditorial', () => {
+  const chapters = [
+    { num: 1, content: 'Bruce was wearing a green coat. He walked to the car.' },
+    { num: 2, content: 'Clark held the log in his hands. He opened the drawer.' },
+    { num: 3, content: 'The rain fell on the roof. Clark spoke into the phone.' },
+  ];
+
+  it('finds target chapter from evidence_refs', () => {
+    const finding = {
+      description: 'The coat color changed inexplicably.',
+      evidence_refs: ['chapter-1: Bruce was wearing a green coat.'],
+    };
+    expect(findTargetChapter(finding, chapters)).toBe(1);
+  });
+
+  it('finds target chapter from description when evidence_refs is empty', () => {
+    const finding = {
+      description: 'In Chapter 2, Clark never explains where the log came from.',
+      evidence_refs: [],
+    };
+    expect(findTargetChapter(finding, chapters)).toBe(2);
+  });
+
+  it('picks the later chapter when two chapters contradict each other', () => {
+    const finding = {
+      description: 'Conflict between coat in chapter 1 and chapter 3.',
+      evidence_refs: ['chapter-1: green coat', 'chapter-3: blue coat'],
+    };
+    expect(findTargetChapter(finding, chapters)).toBe(3);
+  });
+
+  it('parses JSON responses with and without code fences', () => {
+    const direct = '{"changed": true, "explanation": "Fixed", "text": "New text"}';
+    expect(parseRepairJson(direct)).toEqual({ changed: true, explanation: 'Fixed', text: 'New text' });
+
+    const fenced = '```json\n{"changed": true, "explanation": "Fixed fenced", "text": "Fenced text"}\n```';
+    expect(parseRepairJson(fenced)).toEqual({ changed: true, explanation: 'Fixed fenced', text: 'Fenced text' });
+
+    const braced = 'Here is the fix: {"changed": false, "explanation": "Already good"} thanks';
+    expect(parseRepairJson(braced)).toEqual({ changed: false, explanation: 'Already good' });
+
+    expect(parseRepairJson('invalid json string')).toBeNull();
+  });
+
+  it('builds a focused prompt containing the finding and chapter prose', () => {
+    const finding = {
+      category: 'Causality',
+      severity: 'major',
+      description: 'The log is missing an origin.',
+      evidence_refs: ['chapter-2: Clark held the log'],
+    };
+    const { prompt, system } = buildTargetedRepairPrompt(finding, 2, chapters[1].content);
+    expect(prompt).toContain('EDITORIAL FINDING TO FIX:');
+    expect(prompt).toContain('The log is missing an origin.');
+    expect(prompt).toContain('chapter-2: Clark held the log');
+    expect(prompt).toContain('CURRENT CHAPTER 2 PROSE:');
+    expect(prompt).toContain(chapters[1].content);
+    expect(system).toContain('minimal, surgical edits');
+  });
+
+  it('repairs a single finding and updates the manuscript', async () => {
+    const manuscript = '# Test Novel\n\n## Chapter 1\n\n' + chapters[0].content + '\n\n## Chapter 2\n\n' + chapters[1].content;
+    const finding = {
+      description: 'Clark needs to look at the desk before opening the drawer.',
+      evidence_refs: ['chapter-2: Clark held the log in his hands.'],
+    };
+
+    const mockLlm = async (p: string) => {
+      expect(p).toContain('Clark needs to look at the desk');
+      return JSON.stringify({
+        changed: true,
+        explanation: 'Added gaze toward the desk first',
+        text: 'Clark looked at the desk, then held the log in his hands. He opened the drawer.',
+      });
+    };
+
+    const result = await repairSingleFinding(finding, manuscript, 'Test Novel', mockLlm);
+    expect(result.changed).toBe(true);
+    expect(result.chapterNumber).toBe(2);
+    expect(result.explanation).toBe('Added gaze toward the desk first');
+    expect(result.updatedManuscript).toContain('Clark looked at the desk, then held the log');
+    expect(result.updatedManuscript).toContain('Bruce was wearing a green coat');
+  });
+
+  it('parses author model tag from run_log or metadata', async () => {
+    const { parseModelConfigFromTag, formatModelDisplayLabel } = await import('../utils/novel/targetedEditorial');
+
+    const deepseekTag = 'author: ollama:deepseek-v4.1-flash:cloud · reader: huggingface:XiaomiMiMo/MiMo-V2.5-Pro';
+    const parsed = parseModelConfigFromTag(deepseekTag);
+    expect(parsed).toEqual({
+      provider: 'ollama',
+      ollamaModel: 'deepseek-v4.1-flash:cloud',
+      ollamaEndpoint: '/api/ollama',
+    });
+    expect(formatModelDisplayLabel(parsed!)).toBe('DeepSeek (deepseek-v4.1-flash:cloud)');
+
+    const anthropicTag = 'author: anthropic:claude-3-5-sonnet · reader: the author\'s own';
+    const parsedAnthropic = parseModelConfigFromTag(anthropicTag);
+    expect(parsedAnthropic).toEqual({
+      provider: 'anthropic',
+      anthropicModel: 'claude-3-5-sonnet',
+    });
+    expect(formatModelDisplayLabel(parsedAnthropic!)).toBe('Anthropic: claude-3-5-sonnet');
+  });
+
+  describe('Clustering & Hierarchy', () => {
+    it('clusters raw duplicate findings into prioritized tasks ordered High -> Medium -> Low', () => {
+      const rawFindings: EditorialFinding[] = [
+        // 3 duplicates for teleportation
+        { description: 'The log and key teleport from apartment to study.', category: 'causality', severity: 'major', evidence_refs: ['chapter-1: coat pocket'] },
+        { description: 'How did the log get here? Impossible relocation.', category: 'props', severity: 'major', evidence_refs: ['chapter-1: left the log in his coat'] },
+        { description: 'Relocation of log and key has no transition.', category: 'causality', severity: 'major', evidence_refs: ['chapter-1: elevator'] },
+        // 2 duplicates for wound logic
+        { description: 'Clark wound center holds open while edges heal without explanation.', category: 'specific craft defect', severity: 'major', evidence_refs: ['chapter-2: gash runs four inches'] },
+        { description: 'Suture needle left through skin and never cut or removed.', category: 'specific craft defect', severity: 'major', evidence_refs: ['chapter-2: thread stays where it is'] },
+        // 1 for crystal
+        { description: 'The luminous crystal on pillow has no payoff.', category: 'props', severity: 'major', evidence_refs: ['chapter-3: crystal on pillow'] },
+        // 1 for phone caller Lois
+        { description: 'Phone caller is Lois but name is hidden from reader.', category: 'props', severity: 'major', evidence_refs: ['chapter-3: name fills the glass'] },
+        // 1 for counting seconds
+        { description: 'Repeated tic of counting seconds out loud.', category: 'style', severity: 'minor', evidence_refs: ['chapter-1: counts it—one, two, three'] },
+      ];
+
+      const tasks = clusterEditorialFindings(rawFindings, chapters);
+
+      expect(tasks).toHaveLength(rawFindings.length);
+      expect(tasks.flatMap(t => t.rawFindingIndices).sort((a,b) => a-b)).toEqual(rawFindings.map((_,i) => i));
+      for (const task of tasks) {
+        expect(task.problemSummary).toBe(rawFindings[task.rawFindingIndices[0]].description);
+        expect(task.canonicalDirective).not.toMatch(/super-speed|kryptonite/);
+      }
+      expect(tasks.at(-1)?.priority).toBe('low');
+    });
+
+    it('preserves pacing observations for review without inventing authorial canon', () => {
+      const rawFindings: EditorialFinding[] = [
+        {
+          description: 'Cut first 250 words of atmospheric inventory and chair squaring for fast action.',
+          category: 'flaw',
+          severity: 'minor',
+          evidence_refs: ['chapter-1: straight-backed chair by the window'],
+        },
+      ];
+
+      const tasks = clusterEditorialFindings(rawFindings, chapters);
+      expect(tasks.length).toBe(1);
+      expect(tasks[0].problemSummary).toBe(rawFindings[0].description);
+      expect(tasks[0].isDismissed).not.toBe(true);
+    });
+  });
+
+  describe('Surgical Patching Engine (find -> replace)', () => {
+    const chapterProse = `He crossed the bare floor. The boards were pale and scuffed at the traffic lines.
+
+The gash ran four inches from wrist to elbow, shallow at both ends, deep in the middle where the rebar caught him. The edges drew together like ice on a pond, but the center held open. The thread stayed where it was through the skin, and he did not cut it.
+
+He walked to the heavy oak door.`;
+
+    it('applies exact find and replace leaving 99.5% of the text untouched', () => {
+      const findSnippet = 'The thread stayed where it was through the skin, and he did not cut it.';
+      const replaceSnippet =
+        'Bruce tied off the filament with a secure surgeon knot, snipped the excess thread, and pressed a clean gauze pad against the seal.';
+
+      const result = applySurgicalPatch(chapterProse, findSnippet, replaceSnippet);
+      expect(result.changed).toBe(true);
+      expect(result.method).toBe('exact');
+      expect(result.patchedText).toContain(replaceSnippet);
+      // Unrelated paragraphs remain completely unchanged
+      expect(result.patchedText).toContain('He crossed the bare floor. The boards were pale');
+      expect(result.patchedText).toContain('He walked to the heavy oak door.');
+      expect(result.patchedText).not.toContain(findSnippet);
+    });
+
+    it('handles normalized quotes and dashes in surgical patch', () => {
+      const findWithQuotes = 'The edges drew together “like ice on a pond”—but the center held open.';
+      const replaceSnippet = 'The edges drew together like ice on a pond, but residual trace dust held the center open.';
+
+      // Original has standard quotes and dashes
+      const result = applySurgicalPatch(chapterProse, findWithQuotes, replaceSnippet);
+      expect(result.changed).toBe(true);
+      expect(result.patchedText).toContain('residual trace dust held the center open.');
+      expect(result.patchedText).toContain('He walked to the heavy oak door.');
+    });
+
+    it('locates target excerpt and scene context from quotes', () => {
+      const quote = 'where the rebar caught him';
+      const { targetExcerpt, sceneContext } = locateTargetExcerpt(chapterProse, [quote]);
+      expect(targetExcerpt).toContain('The gash ran four inches');
+      expect(sceneContext).toContain('He crossed the bare floor');
+    });
+
+    it('executes repairSurgicalTask end-to-end with mock LLM', async () => {
+      const manuscript = `# The Gotham Protocol\n\n## Chapter 1\n\n${chapterProse}`;
+      const task: ClusteredEditorialTask = {
+        id: 'clark-wound-logic',
+        title: 'Логика заживления раны предплечья Кларка',
+        chapterNumber: 1,
+        priority: 'high',
+        category: 'Физическая логика мира',
+        problemSummary: 'Центр раны держится открытым без объяснения причин.',
+        canonicalDirective: 'Указать на микроскопическую криптонитовую пыль в бетоне.',
+        targetQuotes: ['The edges drew together like ice on a pond, but the center held open.'],
+        rawFindingIndices: [0],
+      };
+
+      const mockLlm = async (prompt: string) => {
+        expect(prompt).toContain('SURGICAL EDITORIAL TASK:');
+        expect(prompt).toContain('CANONICAL AUTHOR DIRECTIVE');
+        expect(prompt).toContain('микроскопическую криптонитовую пыль');
+
+        return JSON.stringify({
+          changed: true,
+          find: 'The edges drew together like ice on a pond, but the center held open.',
+          replace:
+            'The edges drew together like ice on a pond, but the center resisted: micro-particles of kryptonite dust from the collapsed dock concrete blocked cellular regeneration.',
+          explanation: 'Добавлено указание на криптонитовую пыль из доков',
+        });
+      };
+
+      const result = await repairSurgicalTask(task, manuscript, 'The Gotham Protocol', mockLlm);
+      expect(result.changed).toBe(true);
+      expect(result.chapterNumber).toBe(1);
+      expect(result.patchMethod).toBe('exact');
+      expect(result.updatedManuscript).toContain('micro-particles of kryptonite dust from the collapsed dock');
+      expect(result.updatedManuscript).toContain('He crossed the bare floor.');
+      expect(result.updatedManuscript).toContain('He walked to the heavy oak door.');
+    });
+  });
+
+  describe('3-Level Editorial Triage & State Ledger', () => {
+    const oxygenDebtChapters = [
+      {
+        num: 1,
+        content: `The seal on bulkhead four hissed as the pressure differential equalized. Vance tightened the straps on his combat boots, feeling the vibration of the auxiliary oxygen scrubbers humming through the grated steel catwalk.
+
+The primary scrubber displayed a declining gradient: eighteen percent and falling. He tapped the analog gauge with his gloved knuckles. A hairline fracture in his left wrist sent a sharp needle of pain up his forearm, but he kept his grip on the heavy wrench.
+
+* * *
+
+He moved down to the flooded sub-tier. The lower catwalk hung suspended over two feet of black hydraulic coolant. He unclipped the battery torch from his utility harness and swept the beam across the emergency intake valves.`,
+      },
+      {
+        num: 2,
+        content: `The auxiliary intake valve was frozen shut with mineral encrustation. Vance braced both heavy boots against the concrete abutment and leaned all his body weight into the wrench.
+
+Metal shrieked against metal. The seal fractured with a crack that echoed off the damp concrete walls.`,
+      },
+    ];
+
+    it('Level 0: rejects hallucinated findings referencing external drafts/entities not in the manuscript', async () => {
+      const { checkFindingGrounding, filterHallucinatedFindings } = await import('../utils/novel/targetedEditorial');
+
+      const hallucinatedFindings: EditorialFinding[] = [
+        {
+          description: 'Log and key relocation causality (Bleecker Street apartment, mansion study desk, rain).',
+          category: 'Plot Causality',
+          severity: 'major',
+          evidence_refs: ['chapter-1: coat pocket in Bleecker apartment'],
+        },
+        {
+          description: 'Meaning of the 41 log entries and Forty-two in the vigil diary.',
+          category: 'Thematic Meaning',
+          severity: 'medium',
+          evidence_refs: ['chapter-1: forty-one entries counted'],
+        },
+        {
+          description: 'Origin of Bruce left hand tremor from scaphoid fracture at Gotham docks.',
+          category: 'Character Detail',
+          severity: 'medium',
+          evidence_refs: ['chapter-1: scaphoid fracture sustained at Gotham docks'],
+        },
+      ];
+
+      for (const finding of hallucinatedFindings) {
+        const check = checkFindingGrounding(finding, oxygenDebtChapters);
+        expect(check.grounded).toBe(false);
+        expect(check.reason).toBeDefined();
+      }
+
+      const { groundedFindings, hallucinatedFindings: rejected } = filterHallucinatedFindings(
+        hallucinatedFindings,
+        oxygenDebtChapters
+      );
+      expect(groundedFindings.length).toBe(0);
+      expect(rejected.length).toBe(3);
+    });
+
+    it('Level 0: accepts grounded findings referencing actual elements in the manuscript', async () => {
+      const { checkFindingGrounding, filterHallucinatedFindings } = await import('../utils/novel/targetedEditorial');
+
+      const groundedFinding: EditorialFinding = {
+        description: 'The oxygen scrubbers pressure drop is cited without showing the intake valve failure.',
+        category: 'Plot Causality',
+        severity: 'major',
+        evidence_refs: ['chapter-1: eighteen percent and falling'],
+      };
+
+      const check = checkFindingGrounding(groundedFinding, oxygenDebtChapters);
+      expect(check.grounded).toBe(true);
+      expect(check.matchedQuotes).toContain('eighteen percent and falling');
+
+      const { groundedFindings, hallucinatedFindings } = filterHallucinatedFindings(
+        [groundedFinding],
+        oxygenDebtChapters
+      );
+      expect(groundedFindings.length).toBe(1);
+      expect(hallucinatedFindings.length).toBe(0);
+    });
+
+    it('State Ledger: extracts footwear, surfaces, props, and injuries from prose and formats constraints', async () => {
+      const { extractStateLedger, formatStateLedgerConstraint } = await import('../utils/novel/targetedEditorial');
+
+      const ledger = extractStateLedger(oxygenDebtChapters[0].content, 1);
+      expect(ledger.chapterNumber).toBe(1);
+      expect(ledger.invariants.footwear).toContain('boots');
+      expect(ledger.invariants.surfaces).toContain('catwalk');
+      expect(ledger.invariants.surfaces).toContain('sub-tier');
+      expect(ledger.invariants.inHandProps).toContain('wrench');
+      expect(ledger.invariants.inHandProps).toContain('torch');
+      expect(ledger.invariants.injuries).toContain('fracture');
+
+      const constraintBlock = formatStateLedgerConstraint(ledger);
+      expect(constraintBlock).toContain('STATE LEDGER PHYSICAL INVARIANTS');
+      expect(constraintBlock).toContain('boots');
+      expect(constraintBlock).toContain('catwalk');
+      expect(constraintBlock).toContain('wrench');
+      expect(constraintBlock).toContain('FORBIDDEN: Do not alter footwear');
+    });
+
+    it('Level 1: macro-edit dedup prunes duplicate scene openings and redundant paragraphs across seams', async () => {
+      const { applyMacroMergeAndDedup } = await import('../utils/novel/targetedEditorial');
+
+      const textWithDuplicateSceneOpening = `He activated the handheld scanner and swept the beam across the bulkhead. The readings fluctuated between ten and twelve millibars.
+
+He noted the anomaly on his pad.
+
+* * *
+
+He activated the handheld scanner and swept the beam across the bulkhead. He stepped onto the catwalk.`;
+
+      const result = applyMacroMergeAndDedup(textWithDuplicateSceneOpening);
+      expect(result.changed).toBe(true);
+      expect(result.prunedCount).toBeGreaterThanOrEqual(1);
+      expect(result.summary).toContain('Level 1 Macro-edit');
+      // The duplicated scanner sentence at the start of Scene 2 should be pruned
+      expect(result.mergedText).toContain('He stepped onto the catwalk.');
+    });
+
+    it('Universal Clusters: non-Gotham stories use universal directives rather than fanfiction lore', async () => {
+      const { resolveActiveClusters, clusterEditorialFindings, UNIVERSAL_EDITORIAL_CLUSTERS } = await import(
+        '../utils/novel/targetedEditorial'
+      );
+
+      const activeClusters = resolveActiveClusters(oxygenDebtChapters);
+      expect(activeClusters).toEqual(UNIVERSAL_EDITORIAL_CLUSTERS);
+
+      // Verify universal cluster directives do NOT mention Clark, Bruce, Bleecker, or Kryptonite
+      for (const cluster of activeClusters) {
+        expect(cluster.canonicalDirective).not.toContain('Bleecker');
+        expect(cluster.canonicalDirective).not.toContain('Clark');
+        expect(cluster.canonicalDirective).not.toContain('kryptonite');
+      }
+
+      const validFinding: EditorialFinding = {
+        description: 'Sudden relocation of the wrench between tiers has no movement beat.',
+        category: 'Plot Causality',
+        severity: 'major',
+        evidence_refs: ['chapter-1: heavy wrench'],
+      };
+
+      const tasks = clusterEditorialFindings([validFinding], oxygenDebtChapters);
+      expect(tasks.length).toBe(1);
+      expect(tasks[0].id).toMatch(/^finding-/);
+      expect(tasks[0].problemSummary).toBe(validFinding.description);
+      expect(tasks[0].canonicalDirective).not.toContain('Bleecker');
+    });
+  });
+});
+

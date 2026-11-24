@@ -1,427 +1,502 @@
 import React, { useState, useEffect } from 'react';
+import { agentSetupPrompt, NOVEL_REPO } from '../utils/agentPrompt';
 
-interface SystemManualModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+interface SystemManualModalProps { isOpen: boolean; onClose: () => void }
+
+const sections = [
+  {
+    id: 'start',
+    label: 'Getting started',
+    title: 'Define the book you want to write',
+    intro: 'The main form supplies the premise and style parameters. The Craft 2.0 engine drafts the dossier, projects the relational scene matrix, and enacts each scene under strict POV barriers.',
+    cards: [
+      {
+        title: 'Premise and story vision',
+        paragraphs: [
+          'Describe the central conflict, named characters, world setting, and desired resolution or thematic climax.',
+          'Genre, audience, narrative voice (e.g. Third-Limited, First-Person), tense (Past, Present), tone (Serious, Whimsical, Dark, Gritty), and style (Descriptive, Cinematic, Minimalist) are passed directly into the strategic prompt architecture as authorial constraints.'
+        ]
+      },
+      {
+        title: 'Chapter count and rough size',
+        paragraphs: [
+          'Choose between 3 and 100 chapters. Rough words per chapter provides flexible guidance (default: 4,000 words); scenes expand or compress according to dramatic necessity rather than arbitrary cutoffs.',
+          'The generation pipeline operates within a call and time budget that scales dynamically with chapter volume. Upon completion, the book transitions directly to the Author Desk with full editorial audits.'
+        ]
+      },
+      {
+        title: 'Author model and reader model',
+        paragraphs: [
+          'The Author model manages the strategic planning (world dossier, scene cards) and enacts the prose. You can select Google Gemini, local Ollama models (e.g. Qwen 2.5, Llama 3.3), Hugging Face, Anthropic, or any OpenAI-compatible API endpoint.',
+          'Enabling a dedicated Reader model assigns an independent LLM instance to the Observer, Blind Reader, and Dual Audits. If the Reader model experiences connectivity or token limits, the engine provides transparent fallback to the primary model.'
+        ]
+      },
+      {
+        title: 'Start, continue, or restore',
+        paragraphs: [
+          'Start Generation initializes a fresh book from the form. Resume Generation continues an interrupted run from the exact stage reached.',
+          'Load Project restores a previous project from a .project.json backup file. Changing premise or chapter count begins a new book, while style adjustments apply immediately to upcoming scenes.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'workspace',
+    label: 'Generation View',
+    title: 'Watch the novel develop across three live zones',
+    intro: 'During generation, the workspace organizes progress into three synchronized zones: navigation & logs, manuscript & craft tools, and real-time inspector metrics.',
+    cards: [
+      {
+        title: 'Left · Chapters and pipeline logs',
+        paragraphs: [
+          'Click any chapter to inspect its draft. The chapter status indicates Pending (not yet reached), Live (currently being drafted or checked), or Draft (prose written and ready).',
+          'Beneath the chapter list, the Live Pipeline Log records granular execution milestones: dossier synthesis, scene card projection, blind drafting, observer validation, and dual audits.'
+        ]
+      },
+      {
+        title: 'Center · Manuscript and Craft tabs',
+        paragraphs: [
+          'Clean text renders formatted reader prose; Raw shows markdown; Changes compares successive scene revisions with diff highlighting.',
+          'Above the reader are the Craft 2.0 Inspector tabs: Dossier (4 Layers of Truth), Scene Cards (Relational Projection Matrix), Observer (Sensory Receipts), Reader (Blind Hypotheses), and Reviews (Dual Audits). Click an active tab again to toggle back to the manuscript.'
+        ]
+      },
+      {
+        title: 'Right · Checks and Agent Inspector',
+        paragraphs: [
+          'Checks displays chapter-level signals: real-time word count, dialogue percentage, originality score, repeated motifs, and prose rhythm.',
+          'Agent Inspector tracks pipeline activity: active operation, elapsed time, total model calls, and cumulative input/output token usage (with ~ indicating local estimations).'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'studio',
+    label: 'Author Desk',
+    title: 'Review, edit, and style your completed book',
+    intro: 'Once all chapters are drafted, NovelGenerator transitions into the finished Author Desk—a focused three-zone publishing environment for editorial refinement and manuscript customization.',
+    cards: [
+      {
+        title: 'Column 1 · Editorial Review & Auto-Repair',
+        paragraphs: [
+          'The Editorial Review card surfaces overall manuscript health, continuity warnings, POV fidelity, and line-level recommendations.',
+          'Click Apply Review (or Run Review) to trigger an autonomous editorial revision pass: the engine re-evaluates flagged inconsistencies and enacts corrections directly across the manuscript.'
+        ]
+      },
+      {
+        title: 'Column 2 · Manuscript Reader & In-Place Editor',
+        paragraphs: [
+          'A distraction-free reading experience with chapter navigation, word count tracking, and instant copy-to-clipboard.',
+          'Click Edit text to switch the entire book into an in-place markdown editor. Use standard shortcuts: press Cmd+S or Ctrl+S to save changes instantly, or Esc/Cancel to discard edits.'
+        ]
+      },
+      {
+        title: 'Column 3 · Book Cover & Publishing Imprint',
+        paragraphs: [
+          'Book Cover Artwork: Upload high-resolution front cover images (PNG, JPEG, WebP) with drag-and-drop. Artwork is automatically stored in project data and seamlessly embedded in EPUB and PDF exports.',
+          'Author Attribution & Imprint: Specify author name, publication year, copyright holder, ISBN identifiers (eBook and Paperback), publisher name, and edition lines. All imprint fields are saved persistently and formatted into classic copyright pages.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'covers',
+    label: 'Cover Studio',
+    title: '4K Book Covers, YouTube Thumbnails & AI Realism',
+    intro: 'The Cover Studio turns a text prompt or custom artwork into 14 publication-ready formats in four steps, in order: the art, its effects and AI models, the typography, then review and export.',
+    cards: [
+      {
+        title: '1 · Art (concepts, prompt, master)',
+        paragraphs: [
+          'Concepts & Prompt: Three concepts from the book\'s outline (an object, a figure, a place); pick one or write your own prompt.',
+          'Master Generation & Upload: Gemini, ChatGPT in your browser or FLUX on this Mac draws a 2:3 4K master without lettering, or upload your own illustration; click the master to set the focal point for every crop.'
+        ]
+      },
+      {
+        title: '2 · Effects & AI models (Autopilot, De-Plasticizer, Depth-Anything-V2)',
+        paragraphs: [
+          'AI Autopilot: Runs every model in turn on the selected master (de-plastic, depth mask, auto-layout) and scores the selected format.',
+          'De-Plastic & Micro-Pores: Eliminates the synthetic plastic sheen of diffusion models. CodeFormer neural restoration (bluefoxcreation ONNX on Apple Silicon CoreML/MPS) restores facial skin pores, iris detail, and micro-relief with adjustable fidelity.',
+          '35mm Film Grain: Bilateral frequency separation and high-pass frequency synthesis inject dual-scale cinematic film grain and anti-waxy highlight compression. Use Compare Original to verify real texture before lettering.',
+          '3D Depth Mask: Depth-Anything-V2 extracts a depth mask so the title can sit behind foreground characters or objects while badges and the author name stay on top, with fine threshold tuning.'
+        ]
+      },
+      {
+        title: '3 · Typography (Art Director, lettering, YouTube composition)',
+        paragraphs: [
+          'Smart Art Director: Analyzes artwork luminosity, focal subjects, and negative space to automatically recommend genre typography, font pairing, and palette colors.',
+          'Lettering & Presets: Full control over book title, author, optional tagline, serif vs sans fonts, uppercase transforms, and backdrop shadow density.',
+          'YouTube 16:9 Composition: Specialized Editorial Left layout with pill badges ("FULL AUDIOBOOK", "ПРЕМЬЕРА") or Classic Centered layout.'
+        ]
+      },
+      {
+        title: '4 · Review & Export (Aesthetic Scorer, A/B/C Pack, book cover)',
+        paragraphs: [
+          'Aesthetic & CTR Scorer: Evaluates cover appeal using cafeai/cafe_aesthetic (0–10 score, contrast punch, and mobile legibility bars with actionable improvement tips).',
+          'YouTube Mobile Feed Simulator: Live interactive preview testing title visibility, contrast, and safe zones under real-world smartphone scale with timecode badges.',
+          'YouTube Studio A/B/C Pack: Generates 3 distinct high-CTR thumbnail archetypes (Amber, Crimson, Gold) for native 3-way rotation in YouTube Studio Test & Compare.',
+          'Universal Multi-Format Export: One-click download for any individual format or full .zip archive covering Amazon KDP eBook, ACX Audible, social feeds, and 300 DPI paperback print wraps.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'export',
+    label: 'Publishing & Export',
+    title: 'Professional industry-standard book exports',
+    intro: 'NovelGenerator produces publication-grade deliverables ready for distribution across digital readers, print-on-demand services, and archive backups.',
+    cards: [
+      {
+        title: 'EPUB 3.0 (eReaders & Tablets)',
+        paragraphs: [
+          'Generates a fully compliant EPUB 3.0 archive with embedded full-bleed cover artwork in the package manifest (properties="cover-image") and spine.',
+          'Includes a dedicated Cover page, formatted Title page, publishing Imprint colophon (imprint.xhtml) with zero-indent legal blocks, and a semantic Table of Contents (nav.xhtml) matching e-reader navigation standards.'
+        ]
+      },
+      {
+        title: 'Print-Ready PDF (A4 / Book Print)',
+        paragraphs: [
+          'Full-Bleed Cover: The uploaded cover image stretches edge-to-edge across the initial page with zero white borders.',
+          'Header & Footer Suppression: Eliminates browser-printed date/time headers and about:blank footers via strict print-engine page margins.',
+          'Classic Publishing Colophon: Positioned bottom-left with crisp 8.5pt typography, zero paragraph indentation, and clean legal disclaimers (copyright, rights, AI assistance disclosure, liability, and fiction notes).',
+          'Automatic Table of Contents: Generates a complete TOC with dotted leaders linking chapters to page numbers.',
+          'Repeating Spacer Margins: Uses table-based thead and tfoot print spacers (2.8cm) ensuring multi-page chapters never clip or touch paper edges.'
+        ]
+      },
+      {
+        title: 'Plain Text (.txt) & Markdown (.md)',
+        paragraphs: [
+          'Exports clean, standardized plain text or markdown files with formatted chapter headings and scene dividers (* * *), ideal for import into Scrivener, Google Docs, or text editors.'
+        ]
+      },
+      {
+        title: 'Project Backup (.project.json) & Audit Report',
+        paragraphs: [
+          'Save Draft / Save Book produces a full portable JSON backup containing story settings, dossier, scene matrix, chapter drafts, editorial findings, and embedded cover artwork.',
+          'Report (JSON) exports comprehensive quality metrics and observer audit receipts for transparency and technical review.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'metrics',
+    label: 'Metrics & Stats',
+    title: 'Understand every signal, metric, and indicator',
+    intro: 'NovelGenerator computes multi-dimensional prose analytics at both the chapter level and across the full novel.',
+    cards: [
+      {
+        title: 'Book Statistics Bar (Reading View)',
+        paragraphs: [
+          'Chapters: Total completed chapters and average words per chapter.',
+          'Words & Chars: Total word count and character count (without whitespace).',
+          'Read Time: Estimated reading time calculated at a standard average pace of 200 words per minute.',
+          'Dialogue %: Proportion of words spoken within dialogue quotes versus narrative exposition.',
+          'Avg Tension: Average emotional tension score across chapter narrative arcs (on a 1–10 scale).'
+        ]
+      },
+      {
+        title: 'Checks · Stylistic & Pacing Signals',
+        paragraphs: [
+          'Review: Manuscript verification state (Draft · not verified, Checks passed, Reviewed · warnings).',
+          'Originality: Percentage of distinct 4-word n-gram sequences after normalization. Higher scores indicate richer phrasing with minimal verbal crutches.',
+          'Motifs: Recurring 4-word phrases appearing across multiple sentences, identifying intentional leitmotifs or unintended echoes.',
+          'Rhythm: Sentence length variance between chapter opening and closing passages (Held vs. drifted medians).',
+          'Hook: Ten-point score assessing opening action, character agency, immediate conflict, and question planting.'
+        ]
+      },
+      {
+        title: 'Measured · Prose Texture',
+        paragraphs: [
+          'Words: Current chapter word count versus requested target.',
+          'Median paragraph: Median paragraph length in words. Blank lines separate paragraphs.',
+          'Comparisons/1k: Frequency of comparison markers (like, as if, as though) per thousand words to prevent simile overload.',
+          'Lines with a beat: Share of dialogue lines accompanied by active physical beats or character gestures.'
+        ]
+      },
+      {
+        title: 'Agent Inspector · Operations & Resource Telemetry',
+        paragraphs: [
+          'Events: Total logged agent operations.',
+          'Current operation: Active pipeline phase (Dossier, Scene Projection, Enactment, Observer, Audit).',
+          'Calls & Tokens: Total LLM requests, cumulative prompt input tokens, and generated output tokens (~ marks local model approximations).'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'process',
+    label: 'Craft 2.0 Engine',
+    title: 'Two Layers of Truth & Deterministic Pipeline',
+    intro: 'Craft 2.0 cleanly separates strategic causality from sensory physical enactment through five architectural pillars.',
+    cards: [
+      {
+        title: '1 · Deterministic Phased Pipeline',
+        paragraphs: [
+          'Strictly decoupled execution sequence: Dossier → Scene Cards → Preflight → Blind Write → Observer → Dual Review.',
+          'Each stage operates under explicit JSON schema contracts, preventing hallucination cascades and preserving maximum context purity.'
+        ]
+      },
+      {
+        title: '2 · Strict Relational Scene Matrix (packet.json)',
+        paragraphs: [
+          'Every chapter consists of 3 distinct scenes governed by the "Therefore / But" causal momentum law (every action forces a dilemma or complication).',
+          'Simultaneously tracks three layers of conflict (internal dilemma, interpersonal clash, external obstacle) and mandates value charge shifts (+ to - or - to +).'
+        ]
+      },
+      {
+        title: '3 · Strict POV Barrier',
+        paragraphs: [
+          'Scene prompts are strictly isolated from future narrative facts (povKnows, learnsAt < order).',
+          'Omniscience leaks and narrative spoilers are blocked at prompt synthesis, guaranteeing characters only act upon what they legitimately know in the moment.'
+        ]
+      },
+      {
+        title: '4 · Anti-Metaphorical Directive',
+        paragraphs: [
+          'Explicit prohibition against abstract clichés, purple prose, and pseudo-literary filler.',
+          'Demands concrete sensory grounding: physical character vectors, room acoustics, tangible props, and authentic dialogue beats.'
+        ]
+      },
+      {
+        title: '5 · Embedded Continuous Checks',
+        paragraphs: [
+          'A Blind Reader generates forward hypotheses and emotional anticipation before each scene with zero future knowledge.',
+          'Dual Reviewers (Developmental and Literary) verify continuity, setup/payoff symmetry, and thematic resolution across the entire arc.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'checks',
+    label: 'Quality & Audits',
+    title: 'Independent Validation & Dual Reviews',
+    intro: 'Every scene and chapter undergoes multi-perspective audit passes before being accepted into the final manuscript.',
+    cards: [
+      {
+        title: 'Observer Sensory Validation Receipts',
+        paragraphs: [
+          'The Observer examines enacted scenes against their Scene Card specifications, generating physical receipts that verify sensory details, prop tracking, character positions, and subtext.'
+        ]
+      },
+      {
+        title: 'Blind Reader Hypothesis Tracking',
+        paragraphs: [
+          'Simulates reader comprehension with zero future knowledge. It records expectations, emerging questions, and emotional investment to verify narrative suspense and clarity.'
+        ]
+      },
+      {
+        title: 'Dual Review: Developmental & Literary',
+        paragraphs: [
+          'Developmental Audit: Evaluates narrative causality, character arcs, payoff integrity, and premise fulfillment.',
+          'Literary Review: Inspects prose texture, voice consistency, sentence rhythm, and sensory immersion.'
+        ]
+      },
+      {
+        title: 'Causal Integrity & Repair Pass',
+        paragraphs: [
+          'If the Observer or Dual Reviewers flag severe continuity contradictions or POV breaches, the engine executes a targeted repair pass to resolve discrepancies before proceeding.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'saving',
+    label: 'Saving & Models',
+    title: 'Dual-persistence, model providers, and offline capability',
+    intro: 'NovelGenerator combines local repository backups, browser storage, and wide LLM provider support.',
+    cards: [
+      {
+        title: 'Atomic Dual-Persistence Autosave',
+        paragraphs: [
+          'Each book has its own folder in Documents/NovelGenerator: the project and its text are saved there automatically, and every Save button writes there too. The project is also mirrored to browser IndexedDB.',
+          'Replacing a book with a new one under the same title keeps a dated copy in its копии/ folder. Reloading the page or closing the tab preserves your work completely.'
+        ]
+      },
+      {
+        title: 'Portable Project Backup & Restoration',
+        paragraphs: [
+          'Export Project downloads an all-inclusive .project.json containing input premise, dossier, relational scene matrix, chapter drafts, editorial findings, and custom cover artwork.',
+          'Restore backup (.project.json) reloads any book into the workspace instantly, ready for further editing, review, or re-export.'
+        ]
+      },
+      {
+        title: 'Model Providers & Local Offline Execution',
+        paragraphs: [
+          'Google Gemini: High-speed cloud generation with Gemini 2.5 Flash / Pro.',
+          'Ollama (Local LLMs): Connects to local models (e.g. Qwen 2.5 32B/72B, Llama 3.3) for 100% offline, private, and free generation.',
+          'Hugging Face & Anthropic: Connects via server proxy to open-weights models and Claude.',
+          'API Compatible: Connects to any standard OpenAI-compatible Chat Completions endpoint (e.g. vLLM, LM Studio, OpenRouter, Groq).'
+        ]
+      },
+      {
+        title: 'Error Recovery & Resume Generation',
+        paragraphs: [
+          'If an external provider suffers network drops, timeouts, or rate limits, the run safely halts and displays detailed error context.',
+          'Click Resume Generation to continue writing from the exact validated scene reached without losing prior progress.'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'agents',
+    label: 'Agents',
+    title: 'Hand the book to an agent: Hermes, OpenClaw, Claude Code',
+    intro: 'Copy the message below and paste it into your agent\'s chat. The agent connects the NovelGenerator MCP server to itself and can then run every stage of this book.',
+    cards: [
+      {
+        title: 'What the agent can do',
+        paragraphs: [
+          'Start a book, build the writing style, plan the outline and chapter prompts, check and fix the prompts, write the story, and edit the manuscript, the same steps as the buttons here.',
+          'Stages that ask a model run in the background, one at a time; the agent waits for them with book_status and reports what changed.'
+        ]
+      },
+      {
+        title: 'The same book as the app',
+        paragraphs: [
+          'The agent works on the book in its folder in Documents/NovelGenerator. Reload this page to see what it did; it sees your edits on its next step.',
+          'Do not run a stage here while the agent runs one: the later save wins. The writer model is set in the agent\'s server settings (see docs/MCP.md); by default Claude Opus with the key from .env.local.'
+        ]
+      }
+    ]
+  }
+] as const;
+
+/** The message for an agent's chat, with a button that copies it. */
+function AgentPrompt() {
+  const text = agentSetupPrompt();
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copy = async () => {
+    // The copy command first, inside the click: the clipboard API can wait forever on a permission
+    // that is never asked (embedded browsers), and is only the fallback here.
+    const area = document.createElement('textarea');
+    area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select();
+    let done = false;
+    try { done = document.execCommand('copy'); } catch { done = false; }
+    area.remove();
+    if (!done) {
+      try { await Promise.race([navigator.clipboard.writeText(text), new Promise((_, reject) => setTimeout(reject, 1500))]); done = true; }
+      catch { done = false; }
+    }
+    setCopied(done ? 'copied' : 'failed');
+    setTimeout(() => setCopied('idle'), done ? 2000 : 5000);
+  };
+  return <section className="rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 overflow-hidden">
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 light:border-zinc-200">
+      <h4 className="font-semibold text-zinc-200 light:text-zinc-900">Message for the agent</h4>
+      <button type="button" onClick={copy} className="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white light:bg-zinc-900 light:text-white light:hover:bg-zinc-700">{copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Select and copy by hand' : 'Copy'}</button>
+    </div>
+    {!NOVEL_REPO && <p className="px-4 pt-3 text-xs text-amber-400 light:text-amber-700">This page does not know where NovelGenerator is on disk: replace &lt;path to NovelGenerator&gt; in the message with that folder.</p>}
+    <pre className="px-4 py-3 max-h-80 overflow-auto text-xs leading-relaxed whitespace-pre-wrap break-words font-mono text-zinc-300 light:text-zinc-800 select-all">{text}</pre>
+  </section>;
+}
+
+type GuideIconName = 'book' | 'layout' | 'chart' | 'layers' | 'check' | 'models' | 'save' | 'pen' | 'target' | 'play' | 'search' | 'clock' | 'file' | 'restore';
+
+const guideIconPaths: Record<GuideIconName, string> = {
+  book: 'M12 5.5C9 3.8 5.7 3.8 3 5v15c2.7-1.2 6-1.2 9 .5m0-15c3-1.7 6.3-1.7 9-.5v15c-2.7-1.2-6-1.2-9 .5V5.5',
+  layout: 'M3 4h18v16H3zM8 4v16M16 4v16',
+  chart: 'M4 4v16h17M8 16v-5M13 16V7M18 16v-8',
+  layers: 'm12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5',
+  check: 'M12 3 4 6v6c0 4 3 7 8 9 5-2 8-5 8-9V6l-8-3Zm-4 9 3 3 5-6',
+  models: 'M8 3v3m8-3v3M8 18v3m8-3v3M3 8h3m-3 8h3m12-8h3m-3 8h3M6 6h12v12H6zM10 10h4v4h-4z',
+  save: 'M4 3h13l4 4v14H3V3h1Zm3 0v6h10V3M7 21v-8h10v8',
+  pen: 'm15 4 5 5M4 20l1-6L16 3l5 5L10 19l-6 1Z',
+  target: 'M21 12a9 9 0 1 1-9-9M17 12a5 5 0 1 1-5-5m0 5 9-9m-5 0h5v5',
+  play: 'm9 6 9 6-9 6V6ZM4 4v16',
+  search: 'M15.5 15.5 21 21M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',
+  clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  file: 'M14 3H4v18h16V9l-6-6Zm0 0v6h6M8 13h8M8 17h5',
+  restore: 'M3 10a9 9 0 1 1 1 7m-1-7V4m0 6h6m3-3v5l3 2',
+};
+
+const sectionIcons: Record<string, GuideIconName> = {
+  start: 'book',
+  workspace: 'layout',
+  studio: 'pen',
+  covers: 'layout',
+  export: 'file',
+  metrics: 'chart',
+  process: 'layers',
+  checks: 'check',
+  saving: 'save',
+  agents: 'models',
+};
+
+function cardIcon(title: string): GuideIconName {
+  if (/chapter count|budget|target/i.test(title)) return 'target';
+  if (/start|continue|play/i.test(title)) return 'play';
+  if (/cover studio|de-plastic|codeformer|3d depth|aesthetic|thumbnail|feed/i.test(title)) return 'layout';
+  if (/premise|writing|manuscript|editor|author desk|cover|column 2|column 3/i.test(title)) return 'pen';
+  if (/left|matrix|pipeline|column 1|relational/i.test(title)) return 'layers';
+  if (/measured|checks ·|statistics|rhythm|metrics|signals|prose texture/i.test(title)) return 'chart';
+  if (/inspector|progress|limits|continuous|time|telemetry/i.test(title)) return 'clock';
+  if (/search|tools|evidence|observer|audit|receipt/i.test(title)) return 'search';
+  if (/recover|over|repair|revision|restore/i.test(title)) return 'restore';
+  if (/export|save draft|epub|pdf|formats|publish|plain text|backup/i.test(title)) return 'file';
+  if (/autosave|saving|persistence/i.test(title)) return 'save';
+  if (/model|gemini|local ml|ollama|provider/i.test(title)) return 'models';
+  if (/review|check|barrier|directive|quality|integrity/i.test(title)) return 'check';
+  return 'layers';
+}
+
+function GuideIcon({ name, className = 'w-4 h-4' }: { name: GuideIconName; className?: string }) {
+  return <svg className={`shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={guideIconPaths[name]} /></svg>;
 }
 
 export function SystemManualModal({ isOpen, onClose }: SystemManualModalProps) {
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'models' | 'canon' | 'memory'>('pipeline');
-
-  // Close on Escape key
+  const [activeTab, setActiveTab] = useState<string>('start');
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
-
   if (!isOpen) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-fadeIn"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-zinc-900 light:bg-white border border-zinc-800 light:border-zinc-200 rounded-xl shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800 light:bg-zinc-100 border border-zinc-700 light:border-zinc-300 text-zinc-300 light:text-zinc-800">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                NovelGenerator Architecture & System Guide
-              </h2>
-              <p className="text-xs text-zinc-400 light:text-zinc-500">
-                How a book is planned, written, checked and recorded — and what runs locally on your machine
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-800 hover:bg-zinc-800 light:hover:bg-zinc-200 rounded-md transition-colors"
-            title="Close (Esc)"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+  const section = sections.find(item => item.id === activeTab) || sections[0];
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-labelledby="guide-title" className="relative w-full max-w-[1200px] max-h-[94dvh] flex flex-col bg-zinc-900 light:bg-white border border-zinc-800 light:border-zinc-200 rounded-xl shadow-2xl overflow-hidden" onClick={event => event.stopPropagation()}>
+      <header className="flex items-start gap-3 justify-between px-5 py-4 border-b border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 shrink-0">
+        <div className="min-w-0">
+          <h2 id="guide-title" className="text-base font-semibold text-zinc-100 light:text-zinc-900">NovelGenerator Guide</h2>
+          <p className="mt-1 text-xs text-zinc-400 light:text-zinc-500">Craft 2.0 Engine · Author Desk & Publishing Studio</p>
         </div>
-
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-5 pt-3 pb-2 border-b border-zinc-800/80 light:border-zinc-200 bg-zinc-950/30 light:bg-zinc-100/50 shrink-0 text-xs overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('pipeline')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-              activeTab === 'pipeline'
-                ? 'bg-zinc-800 light:bg-white text-zinc-100 light:text-zinc-900 shadow-sm'
-                : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
-            }`}
-          >
-            Book Pipeline
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('models')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-              activeTab === 'models'
-                ? 'bg-zinc-800 light:bg-white text-zinc-100 light:text-zinc-900 shadow-sm'
-                : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
-            }`}
-          >
-            ML Models & WebGPU
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('canon')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-              activeTab === 'canon'
-                ? 'bg-zinc-800 light:bg-white text-zinc-100 light:text-zinc-900 shadow-sm'
-                : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
-            }`}
-          >
-            Story Canon
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('memory')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-all ${
-              activeTab === 'memory'
-                ? 'bg-zinc-800 light:bg-white text-zinc-100 light:text-zinc-900 shadow-sm'
-                : 'text-zinc-400 light:text-zinc-600 hover:text-zinc-200 light:hover:text-zinc-900 hover:bg-zinc-800/50'
-            }`}
-          >
-            Memory, GPU & Cache
-          </button>
-        </div>
-
-        {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm leading-relaxed text-zinc-300 light:text-zinc-800">
-          {activeTab === 'pipeline' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                Data Lineage: From Premise to Finished Manuscript
-              </h3>
-              <p className="text-xs text-zinc-400 light:text-zinc-600">
-                One rule runs the whole engine: code brings evidence, the model disposes it — and everything
-                happens before a prose token exists. Nothing rewrites prose on its own; nothing revisits a sealed chapter.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">1</span>
-                    Book Design (P01)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Premise becomes a compact construction: contract, cast, rules, causal map, ending, chapter map.
-                    Every person the premise names must be cast under that name; every concrete given (a warehouse,
-                    a check, a fiber) must earn a home in the construction. Code verifies both.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">2</span>
-                    Design Review (P02)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Up to 3 attempts to make the plan executable. Blocking issues fail the book loudly instead of
-                    producing prose on a broken plan. First-time majors on re-review soften so the loop converges;
-                    repeated flags keep full force. The kinetic test rejects outcomes that restate the setup.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">3</span>
-                    Chapter Plan + Pre-Write Gate (P03)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    One chapter planned from confirmed state, then checked before a word is written: the mechanism it
-                    draws from the book&apos;s ledger, the cost it takes from someone, the rung it occupies on the
-                    declared pressure curve, the staging it repeats, the ending it is running out of room to prepare.
-                    A blocking finding sends the plan back to the planner with the evidence — up to twice, because a
-                    plan costs a fiftieth of the chapter it describes. The local models add restaging and
-                    plan-vs-memory suspicions on top; the review disposes them, and hard verdicts become writer
-                    instructions stitched into the package.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">4</span>
-                    Scene Write (P04)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    The writer's package is confirmed memory only: exact name spellings on record, tired phrases to
-                    retire, the newest knowledge notes (memory keeps everything; attention decays). One scene, one take.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">5</span>
-                    Track & Fold (P05)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    Deltas enter memory with evidence or not at all. Missed names are recovered from the prose by code;
-                    near-twin drift (one letter off an established name) blocks the line: one rewrite with the exact spelling demanded,
-                    a second consecutive break fails loudly.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="flex items-center gap-2 font-medium text-zinc-300 light:text-zinc-800 text-xs uppercase tracking-wide mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-zinc-800 light:bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-200 light:text-zinc-800">6</span>
-                    Forward Seal (P06–P07)
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600">
-                    The plan is reconciled with what was actually written; next-chapter inputs carry forward. Accepted
-                    chapters lock permanently — future chapters can never rewrite the past. Final audit reports integrity
-                    with coverage, never edits silently.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'models' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                Active ML Models: Cloud + In-Browser WebGPU
-              </h3>
-              <p className="text-xs text-zinc-400 light:text-zinc-600">
-                The architecture leverages a dual-tier intelligence stack: large generative models for creative prose paired with specialized compact on-device neural networks.
-              </p>
-
-              {/* Cloud/Local LLM */}
-              <div className="p-4 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/50 light:bg-zinc-50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-sm text-zinc-200 light:text-zinc-900">
-                    Prose Generator & Story Architect (LLM)
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-zinc-800 light:bg-zinc-100 border border-zinc-700 light:border-zinc-300 text-zinc-300 light:text-zinc-800">
-                    Cloud / Local Ollama
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 light:text-zinc-600">
-                  <strong className="text-zinc-300 light:text-zinc-800">Gemini</strong> or local <strong className="text-zinc-300 light:text-zinc-800">Ollama</strong>, whichever model you name. Two routes: writer (prose, plans)
-                  and validator (reviews, extraction). Set a separate validator model — otherwise the author judges
-                  its own prose. Every run-log line carries the serving model, so after the fact you can see what
-                  actually fired.
-                </p>
-              </div>
-
-              {/* Local Models Table */}
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase text-zinc-500 tracking-wider">
-                  In-Browser Local Models (ONNX / WebGPU / Transformers.js)
-                </div>
-
-                <div className="border border-zinc-800 light:border-zinc-200 rounded-lg overflow-hidden divide-y divide-zinc-800 light:divide-zinc-200 text-xs">
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Cross-Encoder (Paraphrase Repetition)
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">onnx-community/bge-reranker-v2-m3-ONNX · ~544 MB</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Reads two passages together and scores how much one retells the other. It is the only check in
-                        the pipeline that catches a scene told a second time in different words, where no sequence of
-                        words repeats. Used twice: on each chapter plan against finished prose before writing, and on
-                        each finished scene against the accepted book. Its threshold was fitted over 525 cross-chapter
-                        pairs from real runs, not chosen.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
-                      Always on
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/40 light:bg-zinc-50 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-zinc-200 light:text-zinc-900">
-                        Natural Language Inference (Plan vs Memory)
-                      </div>
-                      <div className="text-zinc-500 font-mono text-[11px]">Xenova/nli-deberta-v3-base · ~233 MB</div>
-                      <p className="text-zinc-400 light:text-zinc-600 mt-1">
-                        Scores entailment and contradiction between a planned scene&apos;s claims and confirmed state —
-                        a plan that contradicts what the book already established, which no string check can see.
-                        Findings advise the plan review; they never block on their own.
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2 py-0.5 rounded text-[10px] bg-zinc-800 light:bg-zinc-100 text-zinc-300 light:text-zinc-800 border border-zinc-700 light:border-zinc-300">
-                      Always on
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-zinc-500 light:text-zinc-600">
-                  Two models, and no setting to reduce them. A third existed — a small sentence embedder scoring the
-                  same pairs by cosine — and it was removed: it ran, it wrote &quot;paraphrase restaging&quot; into the
-                  run log, and it let a scene be retold nearly beat for beat from one chapter to the next. A check that
-                  reports coverage it does not have is a check that stops anyone looking.
-                </p>
-
-                <p className="text-xs text-zinc-500 light:text-zinc-600">
-                  Weights load from the application itself when they have been staged there
-                  (<code className="px-1 py-0.5 rounded bg-zinc-800 light:bg-zinc-200 font-mono text-[11px]">npx vite-node scripts/warm-models.ts</code>),
-                  and from Hugging Face otherwise. Either way the browser caches them once and runs them on your
-                  machine; nothing of the manuscript leaves it. A model unused for five minutes is disposed and the
-                  worker gives its memory back.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'canon' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                Story Canon, and Why the Book Only Moves Forward
-              </h3>
-              <p className="text-xs text-zinc-400 light:text-zinc-600">
-                What the book records about itself, what it allocates before writing, and why a finished chapter is
-                never reopened.
-              </p>
-
-              <div className="space-y-3">
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-200 light:text-zinc-900 text-xs mb-1">
-                    What Constitutes Story Canon
-                  </div>
-                  <ul className="list-disc list-inside text-xs text-zinc-400 light:text-zinc-600 space-y-1">
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Canon Facts:</strong> Character states, spatial locations, recovered items, uncovered secrets.</li>
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Story Events:</strong> Irreversible choices made and their lasting consequences for the world.</li>
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Plot Promises:</strong> Guarantees that narrative seeds and setups receive earned payoffs before the conclusion.</li>
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Name Registry:</strong> Canonical spelling of every proper name, with aliases (a diminutive beside the full form).
-                      A near-twin with no declared referent (one letter off an established name) is a continuity break: one rewrite
-                      with the exact spelling, then loud failure.</li>
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Premise Givens:</strong> Every concrete premise element must earn a home in the construction.
-                      A coherent plan that declines to tell the promised story fails review like any broken one.</li>
-                    <li><strong className="text-zinc-300 light:text-zinc-800">Kinetic Rule:</strong> An outcome must move someone's position, possession, knowledge, or
-                      commitment past the setup. A prolonged posture in the same words is stasis, not an event.</li>
-                  </ul>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 text-xs mb-1">
-                    Finished Chapters Are Never Rewritten
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed">
-                    Let a continuity problem in Chapter 3 send the editor back to Chapter 1, and the fix changes the
-                    facts Chapters 2 and 3 were written against. There is no bottom to that.
-                  </p>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed mt-2">
-                    So the book only moves forward. A chapter&apos;s state is snapshotted when it finishes and becomes
-                    the resume point; the post-chapter reconciliation may change the chapters still ahead and never the
-                    ones behind. Everything that can be fixed is fixed earlier, where it is cheap — in the plan, before
-                    prose exists — and what is left is repaired within the scene that has it: a sentence duplicating
-                    earlier prose is replaced in place, carrying the same information, so no delta is recomputed and no
-                    later scene is disturbed. A full redraft happens only when a tracked change contradicts confirmed
-                    state, and only once.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 text-xs mb-1">
-                    Budgets, Allocated Before Anything Is Written
-                  </div>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed">
-                    The design declares what kind of book this is: the shape of its pressure curve, the repetitions it
-                    means as refrains, what paying a price consists of here, and the distinct ways its central obstacle
-                    can be met. Chapters draw from that ledger and spend what they draw.
-                  </p>
-                  <p className="text-xs text-zinc-400 light:text-zinc-600 leading-relaxed mt-2">
-                    A repetition you have to detect in the prose is a repetition you already paid to write. A middle act
-                    that circles instead of building is decided in the plan, and no amount of rewriting scene four turns
-                    four identical chapters into a rising book.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'memory' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold text-zinc-100 light:text-zinc-900">
-                Resource Management, GPU VRAM & Persistence
-              </h3>
-              <p className="text-xs text-zinc-400 light:text-zinc-600">
-                How the engine safeguards local hardware resources and protects your drafts:
-              </p>
-
-              <div className="space-y-3 text-xs">
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
-                    Automatic Idle GPU Unloading (Idle Release)
-                  </div>
-                  <p className="text-zinc-400 light:text-zinc-600">
-                    Local neural models (reranker, NLI) occupy between 200 MB and 600 MB of VRAM each. When a model remains unused for <strong className="text-zinc-300 light:text-zinc-800">5 minutes</strong>, the manager invokes <code className="px-1 py-0.5 rounded bg-zinc-800 font-mono text-[11px]">dispose()</code> to free GPU memory (logged as: <em>released an idle model after 300s</em>). This prevents browser tab crashes and memory leaks.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
-                    Local Weight Caching (Zero-Download Re-runs)
-                  </div>
-                  <p className="text-zinc-400 light:text-zinc-600">
-                    Model weights are saved directly into the browser's persistent Cache Storage / IndexedDB. A model is downloaded over the network <strong className="text-zinc-300 light:text-zinc-800">exactly once</strong>. Subsequent runs load weights instantly from local disk at zero network cost.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
-                    Writer-Package Decay (Attention, Not Amnesia)
-                  </div>
-                  <p className="text-zinc-400 light:text-zinc-600">
-                    Memory keeps every confirmed note; the writer's package carries the newest eight per participant.
-                    Reviewers always read the full state, so decay trims attention, never evidence. Old slots without
-                    a name shelf load fine — the registry starts accumulating from the next scene.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50">
-                  <div className="font-medium text-zinc-300 light:text-zinc-800 mb-1">
-                    Fault-Tolerant Persistence (BrowserRunStore)
-                  </div>
-                  <p className="text-zinc-400 light:text-zinc-600">
-                    Every generated scene, chapter revision, plan, and outline is automatically committed to IndexedDB. You can refresh the page, close the browser, or click <strong className="text-zinc-300 light:text-zinc-800">Resume Generation</strong> at any time without losing work.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-t border-zinc-800 light:border-zinc-200 bg-zinc-950/60 light:bg-zinc-50 shrink-0 text-xs text-zinc-500">
-          <span>NovelGenerator · Autonomous Novel Generation System</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 light:bg-zinc-200 light:hover:bg-zinc-300 text-zinc-200 light:text-zinc-800 rounded-md font-medium transition-colors"
-          >
-            Got it
-          </button>
-        </div>
+        <button type="button" onClick={onClose} aria-label="Close guide" title="Close (Esc)" className="shrink-0 p-1.5 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-800 hover:bg-zinc-800 light:hover:bg-zinc-200 rounded-md transition-colors">
+          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </header>
+      <nav aria-label="Guide sections" className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-1 px-5 py-3 border-b border-zinc-800 light:border-zinc-200 shrink-0">
+        {sections.map(item => <button key={item.id} type="button" aria-current={item.id === section.id ? 'page' : undefined} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-2 min-w-0 px-2.5 py-2 rounded-md text-xs font-medium text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 ${item.id === section.id ? 'bg-zinc-800 light:bg-zinc-100 text-zinc-100 light:text-zinc-900' : 'text-zinc-400 light:text-zinc-600 hover:bg-zinc-800/50 light:hover:bg-zinc-100'}`}><GuideIcon name={sectionIcons[item.id] || 'book'} /><span>{item.label}</span></button>)}
+      </nav>
+      <div key={section.id} className="min-h-0 overflow-y-auto px-5 py-5 sm:px-6 space-y-5 text-sm leading-relaxed text-zinc-300 light:text-zinc-800">
+        <div><h3 className="flex items-center gap-2.5 text-base font-semibold text-zinc-100 light:text-zinc-900"><GuideIcon name={sectionIcons[section.id] || 'book'} className="w-5 h-5 text-zinc-400 light:text-zinc-500" />{section.title}</h3><p className="mt-2 text-zinc-400 light:text-zinc-600">{section.intro}</p></div>
+        {section.id === 'agents' && <AgentPrompt />}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">{section.cards.map(card => <section key={card.title} className="p-4 rounded-lg border border-zinc-800 light:border-zinc-200 bg-zinc-950/40 light:bg-zinc-50 md:[&:last-child:nth-child(odd)]:col-span-2">
+          <h4 className="flex items-start gap-2.5 font-semibold text-zinc-200 light:text-zinc-900"><GuideIcon name={cardIcon(card.title)} className="w-[18px] h-[18px] mt-0.5 text-zinc-400 light:text-zinc-500" /><span>{card.title}</span></h4>
+          {card.paragraphs.map(paragraph => <p key={paragraph} className="mt-2 text-zinc-400 light:text-zinc-600">{section.id === 'metrics' && paragraph.includes(':') ? <><strong className="font-medium text-zinc-200 light:text-zinc-800">{paragraph.slice(0, paragraph.indexOf(':') + 1)}</strong>{paragraph.slice(paragraph.indexOf(':') + 1)}</> : paragraph}</p>)}
+        </section>)}</div>
       </div>
+      <footer className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-zinc-800 light:border-zinc-200 shrink-0 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>NovelGenerator · Craft 2.0 Engine</span>
+          <span className="text-zinc-600 light:text-zinc-400">·</span>
+          <span>
+            &copy; {new Date().getFullYear()}{' '}
+            <a
+              href="https://github.com/KazKozDev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 hover:text-zinc-200 light:text-zinc-600 light:hover:text-zinc-900 transition-colors underline decoration-dotted"
+            >
+              KazKozDev
+            </a>
+          </span>
+        </div>
+        <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 light:bg-zinc-200 light:hover:bg-zinc-300 text-zinc-200 light:text-zinc-800 rounded-md font-medium">Got it</button>
+      </footer>
     </div>
-  );
+  </div>;
 }
+
 
 /** The button component placed next to ThemeToggle */
 export function SystemManualToggle({ className = '' }: { className?: string }) {
@@ -432,12 +507,10 @@ export function SystemManualToggle({ className = '' }: { className?: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        title="System Architecture & Documentation Guide"
-        aria-label="Open System Architecture Guide"
+        title="NovelGenerator Guide"
+        aria-label="Open NovelGenerator Guide"
         className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 text-zinc-400 hover:text-zinc-200 light:text-zinc-500 light:hover:text-zinc-900 border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-zinc-700 light:border-zinc-300 light:border-zinc-200/80 light:bg-white light:hover:bg-zinc-100 shadow-sm ${className}`}
       >
-        {/* The ring is gone, so the mark carries the button on its own: drawn against the glyph's
-            bounds rather than the circle's, it fills the frame the circle used to occupy. */}
         <svg
           className="w-4 h-4 transition-transform duration-200 hover:scale-110"
           viewBox="7 4 10 16"

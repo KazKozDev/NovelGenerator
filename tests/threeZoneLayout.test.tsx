@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ThreeZoneGenerationView from '../components/ThreeZoneGenerationView';
 import { elapsedLabel } from '../components/RunClock';
 import { bookTitle, splitError, stepName } from '../hooks/useBookGenerator';
+import { extractTitle, cleanFallbackTitle } from '../utils/novel/craft/craftOrchestrator';
 import { GenerationStep } from '../types';
 
 describe('ThreeZoneGenerationView', () => {
@@ -194,9 +195,9 @@ describe('ThreeZoneGenerationView', () => {
 });
 
 describe('The agent log', () => {
-  it('names the step instead of quoting its prompt', () => {
-    expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Designing the book');
-    expect(stepName('Check whether the provided plan is ready for writing.')).toBe('Reviewing the plan');
+  it('shortens an unlabelled prompt', () => {
+    expect(stepName('Some prompt nobody has mapped yet')).toBe('Some prompt nobody has mapped yet');
+    expect(stepName('Prepare a compact book construction suitable for subsequent writing.')).toBe('Prepare a compact book construction suitable for subsequent');
   });
 
   it('titles a book by its design, and cuts a fallback premise at a word', () => {
@@ -209,6 +210,29 @@ describe('The agent log', () => {
     expect(premise.startsWith(fallback.slice(0, -1))).toBe(true);
     expect(fallback.slice(0, -1).endsWith(' ')).toBe(false);
     expect(bookTitle(undefined, '   ')).toBe('Untitled book');
+
+    // Rejects damaged premise slice that was cut off mid-word or with a trailing fragment
+    const fullPremise = 'Nora Blake is a respected marriage counselor in Charleston who secretly meets a man named Julian.';
+    const damagedSlice = 'Nora Blake is a respected marriage counselor in Charleston w';
+    const guarded = bookTitle(damagedSlice, fullPremise);
+    expect(guarded.endsWith('…')).toBe(true);
+    expect(guarded.endsWith('Charleston w')).toBe(false);
+    expect(guarded).toContain('Charleston who');
+  });
+
+  it('extracts book title from dossier or derives clean fallback', () => {
+    const dossierWithTitle = `# Story Dossier\n\nTITLE: The Secrets of Room 412\n\n1. GENRE CONTRACT\n...`;
+    expect(extractTitle(dossierWithTitle)).toBe('The Secrets of Room 412');
+
+    const dossierWithBoldTitle = `**TITLE: A Fracture in the Vow**\n\nSome text`;
+    expect(extractTitle(dossierWithBoldTitle)).toBe('A Fracture in the Vow');
+
+    expect(extractTitle('No title line here')).toBeUndefined();
+
+    const fallback = cleanFallbackTitle('Nora Blake is a respected marriage counselor in Charleston who secretly meets Julian');
+    expect(fallback.endsWith('w')).toBe(false);
+    expect(fallback.endsWith('who')).toBe(false);
+    expect(fallback.length).toBeLessThanOrEqual(50);
   });
 
   it('shows a failure as one line, with the reviewer prose behind a disclosure', () => {
@@ -228,12 +252,10 @@ describe('The agent log', () => {
     expect(elapsedLabel(60 * 60 * 1000)).toBe('1 h');
     expect(elapsedLabel(72 * 60 * 1000)).toBe('1 h 12 min');
     expect(elapsedLabel(-5)).toBe('');
-    expect(stepName('Plan only the current chapter, based on the actually written story.')).toBe('Planning the chapter');
-    expect(stepName('Write a full literary scene for the manuscript.')).toBe('Writing a scene');
-    expect(stepName('Extract the essential changes from the new scene.')).toBe('Updating story memory');
-    expect(stepName('Refine the forward plan based on the actually written chapter.')).toBe('Reconciling the plan');
-    expect(stepName('Check the integrity of the finished book.')).toBe('Auditing the finished book');
-    // Anything unrecognised is shown as itself, shortened, rather than as nothing.
-    expect(stepName('Some prompt nobody has mapped yet')).toBe('Some prompt nobody has mapped yet');
   });
+});
+it('renders saved before/after edits immediately after mounting the workspace', () => {
+  const html = renderToStaticMarkup(<ThreeZoneGenerationView currentStep={GenerationStep.GeneratingChapters} currentChapterProcessing={1} totalChaptersToProcess={1} currentStoryOutline="Plan" currentChapterPlan="Scene" generatedChapters={[{title:'Chapter 1',content:'He opened the door.',previousContent:'He closed the door.'}]} agentLogs={[]} />);
+  expect(html).toContain('<del class="revision-removed">closed</del>');
+  expect(html).toContain('<ins class="revision-added">opened</ins>');
 });

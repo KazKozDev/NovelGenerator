@@ -16,24 +16,18 @@ describe('Editor model configuration', () => {
     vi.stubGlobal('localStorage', memoryStorage());
   });
 
-  it('carries the chosen editor model and its thinking setting to the engine', async () => {
+  it('carries the chosen editor model to the engine, and no thinking setting with it', async () => {
     const { getStoredValidatorConfig, saveStoredValidatorConfig } = await import('../services/llmService');
-    saveStoredValidatorConfig({ enabled: true, provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'gemma4:31b-cloud', think: true });
-    expect(getStoredValidatorConfig()).toEqual({ provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'gemma4:31b-cloud', think: true });
+    saveStoredValidatorConfig({ enabled: true, provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'gemma4:31b-cloud' });
+    expect(getStoredValidatorConfig()).toEqual({ provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'gemma4:31b-cloud' });
   });
 
   it('reports no editor when the author has not chosen one, so the writer is not silently trusted as its own judge', async () => {
     const { getStoredValidatorConfig, saveStoredValidatorConfig } = await import('../services/llmService');
     expect(getStoredValidatorConfig()).toBeUndefined();
-    saveStoredValidatorConfig({ enabled: true, provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'granite4.2:8b', think: false });
+    saveStoredValidatorConfig({ enabled: true, provider: 'ollama', ollamaEndpoint: '/api/ollama', ollamaModel: 'granite4.2:8b' });
     saveStoredValidatorConfig(undefined);
     expect(getStoredValidatorConfig()).toBeUndefined();
-  });
-
-  it('never returns thinking as enabled unless it was stored that way', async () => {
-    const { getStoredValidatorConfig, saveStoredValidatorConfig } = await import('../services/llmService');
-    saveStoredValidatorConfig({ enabled: true, provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1' });
-    expect(getStoredValidatorConfig()?.think).toBe(false);
   });
 });
 
@@ -49,7 +43,7 @@ describe('Author-typed Gemini model', () => {
     saveStoredProviderConfig({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', geminiModel: 'gemini-2.0-pro' });
     expect(getStoredProviderConfig().geminiModel).toBe('gemini-2.0-pro');
     saveStoredValidatorConfig({ enabled: true, provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', geminiModel: 'gemini-2.5-pro' });
-    expect(getStoredValidatorConfig()).toEqual({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', think: false, geminiModel: 'gemini-2.5-pro' });
+    expect(getStoredValidatorConfig()).toEqual({ provider: 'gemini', ollamaEndpoint: '/api/ollama', ollamaModel: 'llama3.1', geminiModel: 'gemini-2.5-pro' });
   });
 
   it('keeps the exact stored shape when no Gemini model was typed', async () => {

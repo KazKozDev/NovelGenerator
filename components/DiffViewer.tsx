@@ -73,7 +73,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
     
     return (
       <div style={{
-        backgroundColor: '#09090b',
+        backgroundColor: 'rgb(var(--z-950))',
         padding: '12px',
         borderRadius: '6px',
         border: '1px solid #27272a',
@@ -132,7 +132,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
         <div>
           <div style={{
-            backgroundColor: '#18181b',
+            backgroundColor: 'rgb(var(--z-900))',
             padding: '6px 10px',
             borderRadius: '4px 4px 0 0',
             border: '1px solid #27272a',
@@ -145,7 +145,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
             Original Draft
           </div>
           <pre style={{
-            backgroundColor: '#09090b',
+            backgroundColor: 'rgb(var(--z-950))',
             padding: '12px',
             borderRadius: '0 0 4px 4px',
             border: '1px solid #27272a',
@@ -165,7 +165,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
         </div>
         <div>
           <div style={{
-            backgroundColor: '#18181b',
+            backgroundColor: 'rgb(var(--z-900))',
             padding: '6px 10px',
             borderRadius: '4px 4px 0 0',
             border: '1px solid #27272a',
@@ -178,7 +178,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
             Edited Draft
           </div>
           <pre style={{
-            backgroundColor: '#09090b',
+            backgroundColor: 'rgb(var(--z-950))',
             padding: '12px',
             borderRadius: '0 0 4px 4px',
             border: '1px solid #27272a',
@@ -204,7 +204,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ before, after, chapterNumber, s
     <div style={{
       marginTop: '10px',
       padding: '12px',
-      backgroundColor: '#18181b',
+      backgroundColor: 'rgb(var(--z-900))',
       borderRadius: '8px',
       border: '1px solid #27272a'
     }}>

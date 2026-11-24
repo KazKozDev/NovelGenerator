@@ -23,7 +23,7 @@ export interface Character {
   limits?: string[];
   /**
    * What this person hides, as a short noun phrase in the manuscript language
-   * ("делец синдиката", "сын короля"). Nobody speaks it aloud until
+   * ("syndicate dealer", "king's son"). Nobody speaks it aloud until
    * revealChapter; a book planned before the field existed exposes nothing.
    */
   secret?: string;
@@ -45,6 +45,8 @@ export enum ChapterGenerationStage {
 }
 
 export interface ChapterData {
+  revisionStatus?: string;
+  previousContent?: string;
   title?: string; 
   content: string;
   summary?: string;
@@ -278,14 +280,26 @@ export type ChapterMode = 'full' | 'scene';
 
 // Story settings for genre, tone, and narrative style
 export interface StorySettings {
-  tense?: 'past' | 'present';
-  ending?: 'closed' | 'open' | 'series';
+  sceneLayout?: 'classic-three-scenes' | 'flexible';
+  writingMethod?: 'outliner' | 'hybrid' | 'discovery';
+  storyStructure?: string;
+  seriesContext?: string;
+  comparableBooks?: string;
+  /** past or present — or the author's own words. */
+  tense?: string;
+  /** closed, open or series — or the author's own words for how the book should end. */
+  ending?: string;
   targetWordsPerChapter?: number;
   genre?: string;
   narrativeVoice?: string;
   tone?: string;
   targetAudience?: string;
   writingStyle?: string;
+  /** Preferences and reference excerpts used to build a shared prose-style profile. */
+  styleInstructions?: string;
+  proseSamples?: string;
+  /** How intimate scenes are written; passed to the writer verbatim. */
+  intimacy?: string;
   generationSpeedMode?: GenerationSpeedMode;
   chapterMode?: ChapterMode;
   skipEditing?: boolean;
@@ -299,13 +313,17 @@ export interface AgentLogEntry {
   type: 'decision' | 'execution' | 'evaluation' | 'iteration' | 'warning' | 'success' | 'diff';
   message: string;
   details?: any;
+  /** How the call ended: time taken, sizes, and the reason when it failed. */
+  outcome?: string;
+  finished?: boolean;
+  finishedAt?: number;
   // For diff visualization
   beforeText?: string;
   afterText?: string;
   strategy?: string;
 }
 
-export type LLMProviderType = 'gemini' | 'ollama';
+export type LLMProviderType = 'gemini' | 'ollama' | 'huggingface' | 'anthropic' | 'compatible';
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -313,10 +331,9 @@ export interface LLMProviderConfig {
   ollamaModel: string;
   /** Gemini model ID typed by the author (e.g. gemini-2.5-flash). Absent means the built-in default. */
   geminiModel?: string;
-  /**
-   * Reasoning trace for the prose writer only. Structured validator calls run
-   * under a tight output cap that reasoning would spend before the answer, so
-   * the generator forces thinking off on that route regardless of this flag.
-   */
-  think?: boolean;
+  /** Hugging Face Inference Providers model: org/name, optionally org/name:provider. */
+  hfModel?: string;
+  /** Anthropic model id (e.g. claude-opus-5-5). Absent means the server's default. */
+  anthropicModel?: string;
+  compatibleModel?: string;
 }

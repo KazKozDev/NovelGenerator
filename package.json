@@ -1,21 +1,25 @@
 {
   "name": "generator",
   "private": true,
-  "version": "4.2.0",
+  "version": "4.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "mcp": "vite-node mcp/server.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@google/generative-ai": "^0.24.1",
-    "@huggingface/transformers": "^4.2.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "jszip": "^3.10.1",
     "marked": "^18.0.11",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/jszip": "^3.4.1",

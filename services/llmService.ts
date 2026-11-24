@@ -6,8 +6,9 @@
 import { LLMProviderConfig } from '../types';
 import { generateGeminiText, generateGeminiTextStream } from './geminiService';
 import { generateOllamaText, generateOllamaTextStream, DEFAULT_OLLAMA_ENDPOINT, DEFAULT_OLLAMA_MODEL } from './ollamaService';
+import { generateHuggingFaceBrowserText, generateAnthropicBrowserText, type LiveText, gatewayText } from './hfBrowserService';
+import { providerTokenUsage, type TokenUsage } from '../utils/tokenUsage';
 import { logToTerminal } from '../utils/terminalLogger';
-import { readContinuityMode, type ContinuityMode } from '../utils/novel/v2/continuity';
 
 const LLM_STORAGE_KEY = 'novelGenerator_llm_config';
 
@@ -24,7 +25,10 @@ export function getStoredProviderConfig(): LLMProviderConfig {
     if (!raw) return DEFAULT_LLM_CONFIG;
     const parsed = JSON.parse(raw);
     return {
-      provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
+      ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
+      ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
       // Only present when the author typed one: stored configs keep their exact shape otherwise.
@@ -49,10 +53,12 @@ export function getStoredValidatorConfig(): LLMProviderConfig | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.enabled === false) return undefined;
     return {
-      provider: parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
+      ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
+      ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
       ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
       ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
-      think: Boolean(parsed.think),
       ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
     };
   } catch {
@@ -70,24 +76,40 @@ export function saveStoredValidatorConfig(config: (LLMProviderConfig & { enabled
   }
 }
 
-const CONTINUITY_STORAGE_KEY = 'novelGenerator_continuity_mode';
+const SECOND_WRITER_STORAGE_KEY = 'novelGenerator_second_writer_config';
 
-/** What a run does when a scene fails its checks twice. Unset means `warn`: finish the book and report. */
-export function getStoredContinuityMode(): ContinuityMode {
-  if (typeof window === 'undefined') return readContinuityMode(undefined);
+/**
+ * A second writer, when the author wants scenes drafted by two models and the better draft
+ * kept. Undefined means one writer, as before.
+ */
+export function getStoredSecondWriterConfig(): LLMProviderConfig | undefined {
+  if (typeof window === 'undefined') return undefined;
   try {
-    return readContinuityMode(localStorage.getItem(CONTINUITY_STORAGE_KEY));
+    const raw = localStorage.getItem(SECOND_WRITER_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.enabled === false) return undefined;
+    return {
+      provider: parsed.provider === 'compatible' ? 'compatible' : parsed.provider === 'anthropic' ? 'anthropic' : parsed.provider === 'huggingface' ? 'huggingface' : parsed.provider === 'ollama' ? 'ollama' : 'gemini',
+      ...(typeof parsed.compatibleModel === 'string' && parsed.compatibleModel.trim() ? { compatibleModel: parsed.compatibleModel.trim() } : {}),
+      ...(typeof parsed.hfModel === 'string' && parsed.hfModel.trim() ? { hfModel: parsed.hfModel.trim() } : {}),
+      ...(typeof parsed.anthropicModel === 'string' && parsed.anthropicModel.trim() ? { anthropicModel: parsed.anthropicModel.trim() } : {}),
+      ollamaEndpoint: parsed.ollamaEndpoint || DEFAULT_OLLAMA_ENDPOINT,
+      ollamaModel: parsed.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      ...(typeof parsed.geminiModel === 'string' && parsed.geminiModel.trim() ? { geminiModel: parsed.geminiModel.trim() } : {}),
+    };
   } catch {
-    return readContinuityMode(undefined);
+    return undefined;
   }
 }
 
-export function saveStoredContinuityMode(mode: ContinuityMode): void {
+export function saveStoredSecondWriterConfig(config: (LLMProviderConfig & { enabled: boolean }) | undefined): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(CONTINUITY_STORAGE_KEY, mode);
+    if (!config) localStorage.removeItem(SECOND_WRITER_STORAGE_KEY);
+    else localStorage.setItem(SECOND_WRITER_STORAGE_KEY, JSON.stringify(config));
   } catch (err) {
-    console.error('Failed to save continuity mode to localStorage:', err);
+    console.error('Failed to save second writer config to localStorage:', err);
   }
 }
 
@@ -112,10 +134,13 @@ export async function generateText(
   topK?: number,
   overrideConfig?: LLMProviderConfig,
   maxTokens?: number,
-  jsonOnly = false
+  jsonOnly = false,
+  deliberate = false,
+  onUsage?: (usage:TokenUsage) => void,
+  live: LiveText = {},
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}${config.think ? ' (thinking)' : ''}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -124,8 +149,22 @@ export async function generateText(
     'llm'
   );
 
+  let reported=false;
+  const recordUsage=(metadata:unknown)=>{
+    const usage=providerTokenUsage(config.provider,metadata);
+    if(usage.input===undefined&&usage.output===undefined)return;
+    reported=true;
+    onUsage?.({input:usage.input??Math.ceil((prompt.length+(systemInstruction?.length||0)+(schema?JSON.stringify(schema).length:0))/4),
+      output:usage.output??0,estimatedInput:usage.input===undefined,estimatedOutput:usage.output===undefined});
+  };
   let result: string;
-  if (config.provider === 'ollama') {
+  if (config.provider === 'compatible') {
+    result = await gatewayText('/api/compatible', 'Compatible API', { prompt, system: systemInstruction, maxTokens, model: config.compatibleModel, temperature, schema: schema || (jsonOnly ? { type: 'object' } : undefined) }, recordUsage, live);
+  } else if (config.provider === 'anthropic') {
+    result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
+  } else if (config.provider === 'huggingface') {
+    result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema || (jsonOnly ? {type:'object'} : undefined),recordUsage,live);
+  } else if (config.provider === 'ollama') {
     result = await generateOllamaText(
       prompt,
       systemInstruction,
@@ -136,11 +175,13 @@ export async function generateText(
       maxTokens,
       topP,
       topK,
-      config.think
+      live.onChunk, recordUsage
     );
   } else {
-    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly, config.geminiModel);
+    result = await generateGeminiText(prompt, systemInstruction, schema, temperature, topP, topK, maxTokens, jsonOnly, config.geminiModel, deliberate, recordUsage);
   }
+
+  if(!reported)onUsage?.({input:Math.ceil((prompt.length+(systemInstruction?.length||0)+(schema?JSON.stringify(schema).length:0))/4),output:Math.ceil(result.length/4),estimatedInput:true,estimatedOutput:true});
 
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
   const words = result.split(/\s+/).filter(Boolean).length;
@@ -166,7 +207,7 @@ export async function generateTextStream(
   maxTokens?: number,
 ): Promise<string> {
   const config = overrideConfig || getStoredProviderConfig();
-  const providerTag = config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
+  const providerTag = config.provider === 'compatible' ? `API:${config.compatibleModel || '?'}` : config.provider === 'anthropic' ? `Anthropic:${config.anthropicModel||'default'}` : config.provider === 'huggingface' ? `HF:${config.hfModel||'?'}` : config.provider === 'ollama' ? `Ollama:${config.ollamaModel}` : 'Gemini';
   const startTime = Date.now();
 
   logToTerminal(
@@ -182,7 +223,13 @@ export async function generateTextStream(
   };
 
   let result: string;
-  if (config.provider === 'ollama') {
+  if (config.provider === 'compatible') {
+    result = await gatewayText('/api/compatible', 'Compatible API', { prompt, system: systemInstruction, maxTokens, model: config.compatibleModel, temperature, schema }, undefined, { onChunk: wrappedOnChunk });
+  } else if (config.provider === 'anthropic') {
+    result = await generateAnthropicBrowserText(prompt, systemInstruction, maxTokens, config.anthropicModel, temperature, schema, undefined, { onChunk: wrappedOnChunk });
+  } else if (config.provider === 'huggingface') {
+    result = await generateHuggingFaceBrowserText(prompt, systemInstruction, maxTokens, config.hfModel, temperature, schema);
+  } else if (config.provider === 'ollama') {
     result = await generateOllamaTextStream(
       prompt,
       wrappedOnChunk,

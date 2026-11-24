@@ -94,6 +94,18 @@ describe('analytics detectors', () => {
     const findings = bestsellerAdvisory('It was a quiet morning. There was bread. In summary, they had a fine day.');
     expect(findings.map(finding => finding.id)).toContain('weak-opening-hook');
   });
+
+  it('detects bestbook flaws: page-one clichés, filter-word bloat, dialogue adverbs', () => {
+    const cliche = bestsellerAdvisory('He woke up from a dream when the alarm clock went off.');
+    expect(cliche.map(f => f.id)).toContain('page-one-cliche');
+
+    const filler = Array.from({ length: 10 }, () => 'She felt the cold wind. He saw the ship. She noticed the door. It seemed to her that someone watched as she heard footsteps. ').join(' ');
+    const filterReport = bestsellerAdvisory(filler);
+    expect(filterReport.map(f => f.id)).toContain('filter-word-bloat');
+
+    const dialogueAdverbs = bestsellerAdvisory('"No," he said angrily. "Yes," she whispered quietly.');
+    expect(dialogueAdverbs.map(f => f.id)).toContain('dialogue-adverb-bloat');
+  });
 });
 
 describe('wornPhrases', () => {

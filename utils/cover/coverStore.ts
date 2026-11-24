@@ -1,0 +1,75 @@
+/**
+ * The cover studio's state per book, kept in the browser's IndexedDB: master pictures are several
+ * megabytes each, too large for the project autosave or localStorage. The same state also goes to the
+ * book's обложки/ folder (coverFolder.ts), which restores it when this browser has none or an older one.
+ */
+import { DEFAULT_STYLE, type CoverStyle, type CoverText } from './formats';
+import type { CoverConcept } from './coverPrompt';
+
+export interface CoverMaster {
+  id: string;
+  blob: Blob;
+  prompt: string;
+  model: string;
+  createdAt: number;
+  /** The picture before it was enhanced, kept to compare and to go back to. */
+  original?: Blob;
+  /** The 3D depth mask that lets the lettering sit behind the foreground. */
+  depth?: Blob;
+}
+
+export interface CoverStudioState {
+  description: string;
+  model: string;
+  masters: CoverMaster[];
+  selected?: string;
+  focus: { x: number; y: number };
+  text: CoverText;
+  style: CoverStyle;
+  /** The format shown large in the studio. */
+  heroFormat?: string;
+  /** The concepts the art director offered from the book, and the one the prompt was made from. */
+  concepts?: CoverConcept[];
+  concept?: number;
+  /** When this state was last saved: the newer of the browser's and the book folder's copy wins on reload. */
+  savedAt?: number;
+}
+
+export const emptyStudio = (text: CoverText): CoverStudioState => ({
+  description: '', model: 'gemini-3-pro-image', masters: [], focus: { x: 0.5, y: 0.5 }, text, style: DEFAULT_STYLE,
+});
+
+const DB = 'novel-cover-studio';
+const STORE = 'studios';
+
+function open(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function loadStudio(key: string): Promise<CoverStudioState | undefined> {
+  try {
+    const db = await open();
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE).objectStore(STORE).get(key);
+      request.onsuccess = () => resolve(request.result as CoverStudioState | undefined);
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveStudio(key: string, state: CoverStudioState): Promise<void> {
+  const db = await open();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(state, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}

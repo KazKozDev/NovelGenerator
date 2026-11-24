@@ -1,31 +1,49 @@
+import PromptBookWorkspace from './components/PromptBookWorkspace';
+import ProjectLibrary, { LibraryBook } from './components/ProjectLibrary';
+import { canEditPromptStory, promptStoryContent, promptStoryMetadata } from './utils/novel/promptBook/editing';
 
 
 
 import React, { useEffect } from 'react';
+import { saveToBookFolder } from './utils/saveToBookFolder';
+import { dataUrlExt, restoreEdition } from './utils/bookEdition';
+import { assembleManuscript } from './utils/novel/manuscript';
+import { MIN_CHAPTERS, MAX_CHAPTERS } from './constants';
 import useBookGenerator, { splitError } from './hooks/useBookGenerator';
-import { RunClock } from './components/RunClock';
 import { GenerationStep } from './types';
 import UserInput from './components/UserInput';
 import ThemeToggle from './components/ThemeToggle';
 import SystemManualToggle from './components/SystemManualModal';
+import ApiKeysToggle from './components/ApiKeysModal';
 import BookDisplay from './components/BookDisplay';
+import { ImprintData } from './components/BookCoverUpload';
 import SaveBook from './components/SaveBook';
-import { LoadingSpinner } from './components/common/LoadingSpinner';
 
 import AgentActivityLog from './components/AgentActivityLog';
 import ThreeZoneGenerationView from './components/ThreeZoneGenerationView';
 import { installConsoleBridge, logToTerminal, watchMainThreadStalls } from './utils/terminalLogger';
 
 const App: React.FC = () => {
+  // Stage 0: the app opens on the library; a cover opens its book, the first tile the settings of a new one.
+  const [showLibrary, setShowLibrary] = React.useState(true);
+  // Where an open book's stage tabs sit: in the top row, beside the appearance and help buttons.
+  const [stageNavSlot, setStageNavSlot] = React.useState<HTMLDivElement | null>(null);
+  const [bookTitleSlot, setBookTitleSlot] = React.useState<HTMLDivElement | null>(null);
   const {
+    promptBook, updatePromptBlueprint, updateChapterPrompt, checkPrompts, fixPromptIssue, generatePromptStory, stopPromptOperation, updateWritingStyle, generateWritingStyle, changePromptStage, savePromptStory,
     storyPremise,
     setStoryPremise,
     numChapters,
     setNumChapters,
     storySettings,
     setStorySettings,
+    bookTitleInput,
+    setBookTitleInput,
     startGeneration,
     continueGeneration,
+    editBook,
+    isEditorialRunning,
+    updateManualManuscript,
     isLoading,
     currentStep,
     error,
@@ -38,9 +56,14 @@ const App: React.FC = () => {
     editSettings,
     currentStoryOutline,
     currentChapterPlan,
+    deskTools,
+    deskNow,
+    developmentLabel,
     isResumable,
     agentLogs,
-    lastSavedAt,
+    liveDraft,
+    tokenTotals,
+    lastSavedAt, autosaveStatus,
     exportProject,
     importProject,
     storeReady,
@@ -66,11 +89,11 @@ const App: React.FC = () => {
 
   const handleStartGeneration = () => {
     if (!storeReady) return;
-    if (storyPremise && numChapters >= 3) {
-      startGeneration(storyPremise, numChapters);
+    if (storyPremise && numChapters >= MIN_CHAPTERS && numChapters <= MAX_CHAPTERS) {
+      startGeneration(storyPremise, numChapters, bookTitleInput);
     } else {
       // Basic validation feedback, can be improved
-      alert("Please provide a story premise and at least 3 chapters.");
+      alert(`Please provide a story premise and between ${MIN_CHAPTERS} and ${MAX_CHAPTERS} chapters.`);
     }
   };
 
@@ -78,83 +101,222 @@ const App: React.FC = () => {
     continueGeneration();
   };
 
-  const handleReset = () => {
+  /** True when the person went ahead with the reset. */
+  const handleReset = (): boolean => {
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      const confirmed = window.confirm('Reset this project? The open book is closed; its files stay in Documents/NovelGenerator and it opens again from the Library.');
+      if (!confirmed) return false;
+    }
     resetGenerator();
+    return true;
   };
 
-  const showProgress = (isLoading || isResumable) && 
-                       currentStep !== GenerationStep.Idle && 
-                       currentStep !== GenerationStep.Done &&
-                       currentStep !== GenerationStep.Error &&
-                       currentStep !== GenerationStep.WaitingForOutlineApproval &&
-                       currentStep !== GenerationStep.GeneratingOutline;
+  const showProgress = !promptBook && ((isLoading && !isEditorialRunning) || (isResumable && currentStep !== GenerationStep.Done));
 
-  const isStudioLayout = showProgress;
+  const isStudioLayout = showProgress && !showLibrary;
+
+
+  const [authorName, setAuthorName] = React.useState<string>(() => {
+    try {
+      return localStorage.getItem('novel_author_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const handleAuthorChange = React.useCallback((newAuthor: string) => {
+    setAuthorName(newAuthor);
+    try {
+      localStorage.setItem('novel_author_name', newAuthor);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const [imprintData, setImprintData] = React.useState<ImprintData | undefined>(() => {
+    try {
+      const saved = localStorage.getItem('novel_imprint_global');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return undefined;
+  });
+
+  const [coverImageUrl, setCoverImageUrl] = React.useState<string | null>(() => {
+    try {
+      return localStorage.getItem('novel_cover_image') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  // The book's cover stays in this browser across reloads, as an uploaded one already does.
+  const handleCoverChange = React.useCallback((url: string | null) => {
+    setCoverImageUrl(url);
+    try {
+      if (url) localStorage.setItem('novel_cover_image', url);
+      else localStorage.removeItem('novel_cover_image');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleImprintChange = React.useCallback((newImprint: ImprintData) => {
+    setImprintData(newImprint);
+    try {
+      localStorage.setItem('novel_imprint_global', JSON.stringify(newImprint));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // The metadata document runs to hundreds of kilobytes on a finished book, and this parsed it on every
   // render — twice over, since BookDisplay parses it too and its memo missed on a string rebuilt each
   // time. Parsed once per document now.
   const savedMetadata = React.useMemo(() => {
-    try { return finalMetadataJson ? JSON.parse(finalMetadataJson) : {}; } catch { return {}; }
-  }, [finalMetadataJson]);
+    try {
+      const parsed = finalMetadataJson ? JSON.parse(finalMetadataJson) : {};
+      if (authorName.trim()) {
+        parsed.author = authorName.trim();
+      }
+      if (imprintData) {
+        parsed.imprint = imprintData;
+      }
+      if (coverImageUrl) {
+        parsed.coverImage = coverImageUrl;
+      }
+      return parsed;
+    } catch {
+      const base: Record<string, unknown> = {};
+      if (authorName.trim()) base.author = authorName.trim();
+      if (imprintData) base.imprint = imprintData;
+      if (coverImageUrl) base.coverImage = coverImageUrl;
+      return base;
+    }
+  }, [finalMetadataJson, authorName, imprintData, coverImageUrl]);
+
+  const promptManuscript = promptBook?.story?.chapters?.length ? promptStoryContent(promptBook) : '';
+  const promptMetadata = React.useMemo(() => {
+    if (!promptBook?.story?.chapters?.length) return null;
+    try {
+      const meta = promptStoryMetadata(promptBook) as Record<string, unknown>;
+      if (authorName.trim()) meta.author = authorName.trim();
+      if (imprintData) meta.imprint = imprintData;
+      if (coverImageUrl) meta.coverImage = coverImageUrl;
+      return meta;
+    } catch {
+      return savedMetadata;
+    }
+  }, [promptBook, authorName, imprintData, coverImageUrl, savedMetadata]);
+
+  // The book's cover and its publication details (author, imprint) live in this browser; a copy goes to the book's folder.
+  const folderTitle = promptBook?.blueprint?.title || promptBook?.story?.title || (typeof savedMetadata?.title === 'string' ? savedMetadata.title : '') || bookTitleInput || '';
+  // What this browser lacks comes back from the book folder once per book: the author, the imprint, the cover.
+  const [editionLoadedFor, setEditionLoadedFor] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!folderTitle) return;
+    let cancelled = false;
+    restoreEdition(folderTitle, { author: !!authorName.trim(), imprint: !!imprintData, cover: !!coverImageUrl }).then(found => {
+      if (cancelled) return;
+      if (found.author) handleAuthorChange(found.author);
+      if (found.imprint) handleImprintChange(found.imprint);
+      if (found.cover) handleCoverChange(found.cover);
+      setEditionLoadedFor(folderTitle);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderTitle]);
+  const editionReady = !!folderTitle && editionLoadedFor === folderTitle;
+
+  const hasProject = !!(promptBook || finalBookContent || generatedChapters.length || storyPremise.trim() || bookTitleInput.trim());
+  const openFromLibrary = async (book: LibraryBook) => {
+    if (!storeReady) return;
+    if (folderTitle && (book.title === folderTitle || book.folder === folderTitle)) { setShowLibrary(false); return; }
+    try {
+      const res = await fetch(`/api/books?${new URLSearchParams({ folder: book.folder })}`);
+      if (!res.ok) throw new Error('its autosave could not be read');
+      const snapshot = await res.blob();
+      // The cover belongs to the book: the one on screen must not reach the other book's folder.
+      handleCoverChange(null);
+      await importProject(snapshot);
+      setShowLibrary(false);
+    } catch (err) {
+      alert(`Could not open "${book.title}": ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  const loadFromLibrary = async (file: File) => {
+    if (!storeReady) return;
+    try {
+      handleCoverChange(null);
+      await importProject(file);
+      setShowLibrary(false);
+    } catch (err) {
+      alert(`Import failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  // The open book stays in its folder; the slot is cleared for the new one without asking.
+  const newFromLibrary = async () => {
+    if (!storeReady) return;
+    if (hasProject) {
+      await resetGenerator();
+      handleCoverChange(null);
+    }
+    setShowLibrary(false);
+  };
+
+  const coverFile = coverImageUrl?.startsWith('data:image/') ? `обложка книги.${dataUrlExt(coverImageUrl)}` : null;
+  React.useEffect(() => {
+    if (!editionReady || !coverImageUrl || !coverFile) return;
+    const timer = setTimeout(async () => {
+      const blob = await (await fetch(coverImageUrl)).blob();
+      await saveToBookFolder({ title: folderTitle, kind: 'covers', label: 'обложка книги', ext: dataUrlExt(coverImageUrl), content: blob, stamp: false, replace: true });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [coverImageUrl, folderTitle, editionReady]);
+  React.useEffect(() => {
+    if (!editionReady) return;
+    const timer = setTimeout(() => {
+      void saveToBookFolder({ title: folderTitle, kind: 'blueprints', label: 'издание', ext: 'json', content: JSON.stringify({ author: authorName.trim(), imprint: imprintData ?? null, cover: coverFile }, null, 2), stamp: false, replace: true });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [authorName, imprintData, coverFile, folderTitle, editionReady]);
+
   const saveControl = finalBookContent ? (
-    <SaveBook content={finalBookContent} metadata={savedMetadata} />
+    <SaveBook content={finalBookContent} metadata={savedMetadata} onExportProject={exportProject} />
+  ) : promptManuscript ? (
+    <SaveBook
+      draft={!canEditPromptStory(promptBook!)}
+      content={promptManuscript}
+      metadata={promptMetadata || savedMetadata}
+      onExportProject={exportProject}
+    />
   ) : generatedChapters.some(chapter => chapter.content.trim()) ? (
-    <SaveBook draft content={'# Manuscript — Draft\n\n' + generatedChapters.map((chapter, index) => chapter.content.trim() ? `## Chapter ${index + 1}: ${chapter.title}\n\n${chapter.content}` : '').filter(Boolean).join('\n\n')} />
+    <SaveBook draft content={assembleManuscript(generatedChapters.map((chapter, index) => ({ chapter: index + 1, text: chapter.content })).filter(c => c.text.trim()), 'Manuscript — Draft')} onExportProject={exportProject} />
   ) : null;
 
-  return (
-    <div className={`w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'h-screen max-h-screen overflow-hidden p-2 md:p-3' : 'min-h-screen p-4 md:p-8'}`}>
-      {!isStudioLayout && (
-      <header className="w-full max-w-4xl mb-6 px-4 md:px-8 transition-all duration-300">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-semibold wordmark">
-              NovelGenerator
-            </h1>
-            <span className="font-mono text-xs text-zinc-500">v4.2</span>
-          </div>
-          <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <SystemManualToggle />
-          {saveControl}
-          <button
-            type="button"
-            onClick={exportProject}
-            title="Download the whole project slot (§10): design, plans, scenes, memory, manuscript, report"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
-          >
-            Export project
-          </button>
-          <label
-            title="Restore a project from an exported .project.json file"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors cursor-pointer"
-          >
-            Import project
-            <input type="file" accept=".json,application/json" className="hidden" onChange={event => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (file) importProject(file).catch(err => alert(`Import failed: ${err instanceof Error ? err.message : err}`));
-            }} />
-          </label>
-          <button
-            type="button"
-            onClick={handleReset}
-            title="Wipe all temporary generation state and start from clean slate"
-            className="h-7 text-xs px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-300 rounded transition-colors"
-          >
-            Clean Slate
-          </button>
-          </div>
-        </div>
-        <p className="text-zinc-500 text-xs  text-left">
-          A finished story before your coffee gets cold.
-        </p>
-      </header>
-      )}
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) {
+      importProject(file).catch(err =>
+        alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+      );
+    }
+  };
 
-      <main className={`w-full ${isStudioLayout ? 'max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : 'max-w-4xl p-4 md:p-8'} animate-fade-in transition-all duration-300`}>
-        {error && (
+  const libraryButton = (
+    <button
+      type="button"
+      onClick={() => setShowLibrary(true)}
+      title="All books in Documents/NovelGenerator"
+      className="inline-flex shrink-0 items-center justify-center h-7 text-xs px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-zinc-100 rounded transition-colors"
+    >
+      Library
+    </button>
+  );
+
+  const errorPanel = error ? (
           <div className="mb-4 p-4 bg-red-950/40 border border-red-900/60 text-red-300 rounded text-sm">
             <p className="font-semibold mb-1">Error:</p>
             <p className="whitespace-pre-wrap">{splitError(error).headline}</p>
@@ -165,7 +327,9 @@ const App: React.FC = () => {
               </details>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
+              {(!isStudioLayout || !isResumable) && (
+                <button onClick={handleContinue} disabled={isLoading} className="underline">Continue where it stopped, with current models</button>
+              )}
               {/* A refused design is usually fixed by changing the premise or the
                   editor model. Without this, reaching the form again costs the
                   author everything they typed. */}
@@ -184,68 +348,149 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
-        )}
+        ) : null;
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && isResumable && (
-          <div className="border border-zinc-800 rounded p-4 md:p-5 text-sm text-zinc-300">
-            <p className="font-medium">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
-            <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
-            <div className="mt-3 flex gap-3">
-              <button onClick={handleContinue} disabled={isLoading} className="px-3 py-1 bg-zinc-200 text-zinc-900 rounded text-xs font-medium">Continue writing</button>
-              <button onClick={handleReset} className="px-3 py-1 border border-zinc-700 rounded text-xs">Discard and start new</button>
+  const isMainPage = showLibrary || (currentStep === GenerationStep.Idle && !finalBookContent && !promptBook);
+  const isWorkspace = !showLibrary && !!(finalBookContent || promptBook);
+
+  return (
+    <div className={`app-shell w-full bg-zinc-950 text-zinc-300 flex flex-col items-center selection:bg-zinc-700 selection:text-white ${isStudioLayout ? 'studio-viewport h-screen max-h-screen overflow-hidden p-2 md:p-3' : isWorkspace ? 'min-h-screen p-2 md:p-4' : 'min-h-screen p-4 md:p-8'}`}>
+      {!isStudioLayout && (
+      <header className={`w-full ${isWorkspace ? 'max-w-[1700px] mb-2 px-2 md:px-4' : 'max-w-4xl mb-6 px-4 md:px-8'} transition-all duration-300`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-5">
+            <div className="flex shrink-0 flex-col">
+              <h1 className="text-xl font-semibold wordmark">
+                NovelGenerator
+              </h1>
+              {isMainPage && (
+                <p className="text-xs text-zinc-500 mt-1">
+                  Write a novel before your coffee gets cold
+                </p>
+              )}
+            </div>
+            {promptBook && !showLibrary && <div ref={setBookTitleSlot} className="min-w-0" />}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 ml-auto" aria-label="Project and appearance controls">
+            {!showLibrary && !promptBook && libraryButton}
+            {!promptBook && saveControl}
+            {promptBook && !showLibrary && <div ref={setStageNavSlot} className="flex flex-wrap items-center gap-2" />}
+
+            {((!showLibrary && !promptBook) || (!promptBook && saveControl) || (promptBook && !showLibrary)) && <span className="w-px h-4 bg-zinc-800 mx-1 hidden sm:inline-block" aria-hidden="true" />}
+
+            <div className="flex shrink-0 items-center gap-1.5" aria-label="Appearance and help">
+              <ThemeToggle />
+              <ApiKeysToggle />
+              <SystemManualToggle />
+            </div>
+          </div>
+        </div>
+      </header>
+      )}
+
+      <main className={`w-full ${isStudioLayout ? 'studio-main max-w-[1920px] flex-1 min-h-0 flex flex-col p-3 md:p-4 overflow-hidden' : (isWorkspace ? 'max-w-[1700px] px-2 md:px-4 py-1' : 'max-w-4xl p-4 md:p-8')} animate-fade-in transition-all duration-300`}>
+
+        {showLibrary ? (
+          <ProjectLibrary currentTitle={hasProject ? folderTitle : undefined} busy={isLoading} onOpen={openFromLibrary} onNew={() => void newFromLibrary()} onLoad={loadFromLibrary} onReset={hasProject ? () => { if (handleReset()) handleCoverChange(null); } : undefined} />
+        ) : (<>
+        {!showProgress && !promptBook && errorPanel}
+
+        {promptBook && <PromptBookWorkspace value={promptBook} busy={isLoading} label={developmentLabel} error={error} onContinue={handleContinue} onSaveBlueprint={updatePromptBlueprint} onSavePrompt={updateChapterPrompt} onCheck={checkPrompts} onFix={fixPromptIssue} onStageChange={changePromptStage} publication={{author:authorName,onAuthorChange:handleAuthorChange,imprint:imprintData,onImprintChange:handleImprintChange,coverImage:coverImageUrl,onCoverChange:handleCoverChange}} onSaveStory={savePromptStory} agentLogs={agentLogs} tokenTotals={tokenTotals} lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus} onReset={handleReset} onLibrary={() => setShowLibrary(true)} navSlot={stageNavSlot} titleSlot={bookTitleSlot} onSaveStyle={updateWritingStyle} onGenerateStyle={generateWritingStyle} onGenerateStory={generatePromptStory} onStop={stopPromptOperation} writingChapter={currentChapterProcessing} liveText={liveDraft?.text} onExport={exportProject} onSettings={editSettings} saveStatus={autosaveStatus?.state} />}
+
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && isResumable && !showProgress && (
+          <div className="border border-zinc-800 bg-zinc-900/40 rounded p-4 md:p-5 text-sm text-zinc-300 space-y-3">
+            <div>
+              <p className="font-medium text-zinc-200">Unfinished book found: {generatedChapters.length} of {totalChaptersToProcess} chapters written.</p>
+              <p className="text-xs text-zinc-500 mt-1">Finished chapters keep their manuscript and memory; the run continues where it stopped.</p>
+            </div>
+            <label className="block text-xs font-medium text-zinc-300">Target words per chapter
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={storySettings.targetWordsPerChapter || 4000}
+                onChange={event => {
+                  const value = Number(event.target.value);
+                  if (Number.isSafeInteger(value) && value > 0) {
+                    setStorySettings({ ...storySettings, targetWordsPerChapter: value });
+                  }
+                }}
+                className="block mt-1.5 h-9 px-3 rounded border border-zinc-800 bg-zinc-950 text-xs text-zinc-200 hover:border-zinc-700 focus:border-zinc-500 focus:outline-none transition-colors"
+              />
+            </label>
+            <div className="pt-1 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={handleContinue}
+                disabled={isLoading}
+                className="h-8 px-3.5 bg-zinc-100 hover:bg-white text-zinc-900 rounded text-xs font-medium transition-colors disabled:opacity-50"
+              >
+                Continue writing
+              </button>
+              <button
+                onClick={handleReset}
+                className="h-8 px-3.5 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 rounded text-xs text-zinc-300 transition-colors"
+              >
+                Discard and start new
+              </button>
+              <label className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300 transition-colors ml-auto">
+                Restore backup (.project.json)
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={handleFileImport}
+                />
+              </label>
             </div>
           </div>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !storeReady && (
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && !storeReady && (
           <p className="text-zinc-500 text-xs">Opening project storage…</p>
         )}
 
-        {currentStep === GenerationStep.Idle && !finalBookContent && !isResumable && storeReady && (
-          <>
-            <UserInput
-              storyPremise={storyPremise}
-              setStoryPremise={setStoryPremise}
-              numChapters={numChapters}
-              setNumChapters={setNumChapters}
-              genre={storySettings.genre || 'fantasy'}
-              setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
-              storySettings={storySettings}
-              setStorySettings={setStorySettings}
-              onSubmit={handleStartGeneration}
-              isLoading={isLoading}
-            />
-
-          </>
+        {currentStep === GenerationStep.Idle && !finalBookContent && !promptBook && !isResumable && storeReady && (
+          <UserInput
+            planningOnly
+            bookTitle={bookTitleInput}
+            setBookTitle={setBookTitleInput}
+            storyPremise={storyPremise}
+            setStoryPremise={setStoryPremise}
+            numChapters={numChapters}
+            setNumChapters={setNumChapters}
+            genre={storySettings.genre || 'fantasy'}
+            setGenre={(genre) => setStorySettings({ ...storySettings, genre })}
+            storySettings={storySettings}
+            setStorySettings={setStorySettings}
+            onSubmit={handleStartGeneration}
+            isLoading={isLoading}
+          />
         )}
         
-        {currentStep === GenerationStep.GeneratingOutline && (
-          <div className="text-center py-12">
-            <LoadingSpinner />
-            <p className="mt-4 text-zinc-300 text-sm font-medium">Designing the book...</p>
-            <p className="mt-1 text-zinc-500 text-xs">Causal map, characters, chapter plan and construction review</p>
-            {/* The longest single wait in a run, and the one with no chapter
-                view to show progress in. Without a clock it reads as hung. */}
-            <p className="mt-3 text-xs"><RunClock agentLogs={agentLogs} isLoading={isLoading} /></p>
-          </div>
-        )}
 
 
         {showProgress && (
           <ThreeZoneGenerationView
+            targetWordsPerChapter={storySettings.targetWordsPerChapter}
+            inspectorContent={errorPanel}
             currentStep={currentStep}
             currentChapterProcessing={currentChapterProcessing}
             totalChaptersToProcess={totalChaptersToProcess}
             currentStoryOutline={currentStoryOutline}
             currentChapterPlan={currentChapterPlan}
+            tools={deskTools}
+            toolFocus={deskNow}
+            developmentLabel={developmentLabel}
             generatedChapters={generatedChapters}
             agentLogs={agentLogs}
-            lastSavedAt={lastSavedAt}
+            liveDraft={liveDraft}
+            tokenTotals={tokenTotals}
+            lastSavedAt={lastSavedAt} autosaveStatus={autosaveStatus}
             isResumable={isResumable}
             isLoading={isLoading}
-            onResumeGeneration={handleStartGeneration}
-            headerActions={saveControl}
-            version="v4.2"
+            onResumeGeneration={handleContinue}
+            headerActions={<>{libraryButton}{saveControl}</>}
             onReset={handleReset}
           />
         )}
@@ -257,31 +502,23 @@ const App: React.FC = () => {
               bookContent={finalBookContent}
               metadataJson={finalMetadataJson}
               onReset={handleReset}
+              onEdit={editBook}
+              isEditorialRunning={isEditorialRunning}
+              editorialStatus={developmentLabel}
+              onManualSave={updateManualManuscript}
+              author={authorName}
+              onAuthorChange={handleAuthorChange}
+              imprint={imprintData}
+              onImprintChange={handleImprintChange}
+              coverImage={coverImageUrl}
+              onCoverChange={handleCoverChange}
+              onExportProject={exportProject}
             />
-            
-            {/* Show agent logs after completion too */}
-            {agentLogs.length > 0 && (
-              <AgentActivityLog logs={agentLogs} />
-            )}
           </>
         )}
 
+        </>)}
       </main>
-      <footer className={`w-full ${isStudioLayout ? 'max-w-[1920px] mt-1 shrink-0 py-0.5' : 'max-w-4xl mt-8'} transition-all duration-300`}>
-        <div className="text-center text-zinc-500 text-xs">
-          <p>
-            &copy; {new Date().getFullYear()}{' '}
-            <a 
-              href="https://github.com/KazKozDev" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-zinc-400 hover:text-zinc-300 transition-colors duration-200 underline decoration-dotted"
-            >
-              KazKozDev
-            </a>
-          </p>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -16,6 +16,8 @@ node_modules
 dist
 dist-ssr
 *.local
+__pycache__/
+*.pyc
 
 # Editor directories and files
 .vscode/*
@@ -38,3 +40,17 @@ runs/
 # scripts/warm-models.ts, never committed: a repository is not a CDN, and these
 # files are byte-identical to what Hugging Face already serves.
 public/models/
+
+# Local automatic project backups
+autosaves/
+
+# Section 5, the audio studio (Drama 3): local only, not published. The app loads it when these files are here.
+components/AudioStudio.tsx
+services/audioDevPlugin.ts
+utils/audio/
+scripts/drama3_*.py
+scripts/audio_cleanup.py
+scripts/build_app.sh
+DramaStudio.spec
+
+scratch/

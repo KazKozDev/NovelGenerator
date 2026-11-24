@@ -1,441 +1,73 @@
-# Novel pipeline
+# Architecture
 
-The production path is `App → useBookGenerator → utils/novel/v2/orchestrator.ts`.
-React renders committed snapshots; it does not calculate memory or sequence model calls.
+## Main-page workflow: book plan and chapter prompts
 
-## Model roles
+New projects use `generation_mode: prompts`: `App → useBookGenerator → utils/novel/promptBook`. The selected author model first designs one shared blueprint, then expands chapter briefs in batches of four against that blueprint. Four chapters require two successful model calls. This stage never writes manuscript prose or invokes scene observers, readers or editors.
 
-Two roles, configured independently: the **writer** produces prose, the **editor** plans,
-reviews, extracts memory and audits the book. `NovelLLM` carries
-`route: 'writer' | 'validator'` and the caller resolves it to the prose or validation
-provider. Without an editor the writer judges its own prose, and a model that grades
-itself is the configuration this pipeline exists to avoid.
+The original `ProjectInput` and complete `StorySettings` are kept separately from model additions. `AuthorDraft.promptPlanning` holds the blueprint, revision and chapter prompts, so normal project autosave, import/export and recovery preserve progress. Structural validation rejects missing chapters, invalid dependencies and misplaced revelation IDs; it does not guarantee literary or semantic consistency. A failed batch leaves earlier valid batches available to resume. Editing the blueprint increments its revision and marks all old prompts stale until regenerated; manual prompt changes are explicitly marked and preserved until that regeneration. The workspace exposes the plan, individual prompts and downloads. Planned starting states will need reconciliation with actual prior prose when chapter writing is implemented.
 
-Thinking never reaches the manuscript. `stripThinking` removes a `<think>` block and
-refuses a response that ended inside one; a response with no complete JSON object is an
-error, never an empty success.
+## Legacy Craft 2.0 engine
 
-Neither does what a writer says around a scene. `stripApparatus` cuts the lines that stand
-alone above or below the prose and speak about the task — "I'll write the opening scene…",
-a heading, "Word count: 500", a closing note on what the scene establishes, an offer of
-changes — and reports each cut as a chapter warning. It is cut rather than sent back: a
-rewrite to remove a sentence outside the scene costs a writing call and returns a different
-scene. Only the edges are read. Commentary inside the prose is narration to code and stays
-the editor's to judge.
+A book is crafted using the 2-layer Craft Engine (`utils/novel/craft/craftOrchestrator.ts`).
 
-## Prompts are files
+## Workflow
 
-The pipeline prompts and the shared system contract live under `prompts/`, one per
-file. Application code never hand-builds them: it names a prompt and supplies its
-variables through `renderPrompt`, and `fillTemplate` throws on any `{{hole}}` left
-unfilled. `promptVariables` reports what a template declares, so a test can hold code and
-prompt to the same contract — `tests/prompts.test.ts`.
-
-| Prompt | Stage |
-| --- | --- |
-| `P01_BOOK_DESIGN` | one compact construction: contract, cast, rules, causal map, ending, chapter map |
-| `P02_PLAN_REVIEW` | construction review, and later each scene's readiness |
-| `P03_CHAPTER_PLAN` | one chapter, from confirmed memory |
-| `P03_SCENE_REBASE` | rebase the next scene on the accepted scene handoff |
-| `P04_SCENE_WRITE` | one scene, from a verified package |
-| `P05_STATE_UPDATE` | what the written scene changed, against paragraph evidence |
-| `P06_FORWARD_UPDATE` | reconcile the remaining plan with what was written |
-| `P07_FINAL_AUDIT` | check the finished book and report |
-
-## The order of work
-
-The orchestrator owns the order, the budgets and the record. One design call, one
-construction review with bounded fixes, then chapters in order through the injected
-chapter pipeline, then the audit. Nothing else decides what runs next.
-
-**A design is not trusted because it is coherent.** `settleReview` computes `ready` in
-code — only an empty blocking/major list passes, never the model's own verdict. Two
-charges are appended by code every round, because cast fidelity is not something a
-reviewer can be trusted with: a premise name nobody answers to (`premiseNameGaps`) and a
-premise given the construction never places (`premiseGivenGaps`). A plan can be perfectly
-coherent by simply declining to tell the promised story.
-
-## What kind of book this is
-
-**The design declares a profile, and code enforces it.** P01 returns a `profile` beside
-the contract: the shape of the pressure curve (`rising`, `oscillating`, `investigative`,
-`flat`, `descending`), the refrains this book means to repeat with a budget for each, what
-a cost is made of here, and three ordinal ranks — dialogue weight, staging variety,
-mechanism reuse. The division of labour is the point. A model asked for "dialogue share
-0.35" invents a decimal it has no access to; a model asked for low/medium/high answers the
-question it can actually answer. `profile.ts` owns the table that turns a rank into a
-numeric band, so recalibrating the pipeline after twenty finished books is an edit to one
-table, not to a prompt, and books already written reproduce exactly.
-
-**One machine, different constants.** The same checks run for every genre; only their
-thresholds move. A locked-room horror declares `staging_variety: low` and the
-repeated-staging check relaxes to match, because flagging a book for having the form it
-declared is the fastest way to teach a reader to ignore the warnings. A procedural
-declares `mechanism_reuse: high` and is allowed to repeat its method, which is its genre
-rather than its defect. A mystery declares an `investigative` curve and is checked for
-accumulating information rather than for climbing threat. Nothing here is a genre table
-the repo has to maintain: the model declares, code enforces.
-
-**The budgets are allocated, not detected.** The profile's `mechanism_ledger` holds the
-distinct ways this book meets its central obstacle, and each chapter draws one and spends
-it. Every chapter also states what it takes from someone and which rung it occupies.
-`designBudgetGaps` checks the allocation before a chapter is planned — a ledger too short
-for the chapter count, chapters that cost nothing, rungs that do not trace the declared
-curve — and the findings go back through the design review as `major` charges. A
-repetition you have to detect in prose is a repetition you already paid to write.
-
-## Inside a chapter
-
-**The plan is checked before it is written, and rejected cheaply.** `checkChapterPlan`
-reads the plan against the design's allocation and the craft ledger, with no model call:
-a mechanism already spent to its allowance, a chapter that declares no cost, a missing
-rung or one that breaks the declared curve, scenes that repeat a staging past this book's
-tolerance, four scenes running on one class of outcome, and an ending whose remaining
-requirements outnumber the chapters left to prepare them.
-
-Promises age here too. The thread ledger records what the book has promised and, since a
-payoff can be cited by id, what it has kept — but recording was never the problem. The
-planner was shown the open list and nothing obliged it to act, so a promise made on the page
-in so many words ("I will return in three days with the terms in writing") could be recorded,
-displayed, ignored, and recorded again as still open for the whole length of a book, three
-books running. A thread standing through two further chapters untouched is now raised, and
-blocked once the chapters left to keep it in have run out.
-
-A blocking finding sends the plan back to the planner with the evidence attached, up to twice. A chapter plan costs one
-or two percent of the tokens of the chapter it describes, so three attempts here are
-cheaper than one prose rewrite — and a prose rewrite cannot fix what is wrong at this
-altitude anyway: no amount of re-writing scene four turns four identical chapters into a
-rising book. When the attempts run out the findings become warnings and travel into the
-writer's package as requirements, the same way an unresolved design objection already
-does. A book that says what is wrong with it beats a book that refuses to exist.
-
-**`needs_replan` is not argued with.** The gate refusing a plan and the planner refusing
-the chapter map are different failures. The first is answered with a better plan; the
-second is the planner's own judgement about the book, and it ends the chapter.
-
-**The plan is made from confirmed memory, not from the design alone.** `planChapter`
-receives the current state, the previous chapter's own tail (600 characters of real
-prose, which survives reload), the open threads, the ending's required setup and the word
-budget still ahead. A plan that cannot be written returns `needs_replan` and stops the
-chapter rather than writing against it.
-
-**The ending's requirements shrink as the book establishes them.** After each chapter P06
-reports which of the design's `required_setup` items the accepted text has established,
-which still stand, and whether the chapters left can carry them. That reading is persisted
-(`ending_readiness`) and the next chapter is planned against what remains, not against the
-full list; a capacity problem — three preparations, two chapters — is raised as a warning
-while there is still budget to spend on it, instead of surfacing in the final audit.
-
-**Code brings doubts; the model disposes them.** Before prose exists,
-`buildSceneContext` raises structural problems by name — `pov-absent`, `empty-task`,
-`location-mismatch`, `missing-fact`, `missing-source`, `repeated-staging`, `static-outcome`, `unknown-participant`,
-`restaging-suspect` — and an optional local semantic gate adds two more kinds of
-evidence. Nothing there blocks on its own: the doubts go to a P02 readiness review, and a
-blocking verdict becomes a `continuity_requirements` instruction inside the writer's
-package. The transition gets shown on the page instead of stopping the book.
-
-**Weights are served, not downloaded.** A browser cannot read `node_modules` — it has no
-filesystem, only a sandbox keyed to the page's origin — so transformers.js there fetches
-weights over the network and caches them in Cache Storage, while the same library in Node
-writes plain files into its own package directory. Two caches, because two runtimes, and
-warming one does nothing for the other. `scripts/warm-models.ts` loads all three models once
-in Node and copies what lands in the package cache under `public/models/`, which Vite serves;
-`modelSource.ts` sets `allowLocalModels` and `localModelPath` so the page loads about 780MB from
-localhost instead of from Hugging Face. Remote stays allowed, so a checkout without the local
-copy still works — slower, not broken. `public/models/` is git-ignored: a repository is not a
-CDN. The onnxruntime WASM itself still comes from a CDN; only the model weights are staged.
-
-**The local models run outside the browser too.** The reranker, the embedder and the NLI
-head all fall back to loading transformers.js in-process when there is no worker, so the only
-thing that kept a terminal run on string checks alone was having nowhere to record the
-choice: the mode was read from browser storage, and a script has none. `setGateModeOverride`
-supplies one, and `run-book.ts` takes `--gate off|light|full`. It stays off by default there,
-because nobody in a script can consent to a 600MB download.
-
-**The semantic pre-write gate is advisory, local, and not optional.** A cross-encoder scores
-each planned scene against finished paragraphs (paraphrase restaging) and an NLI head scores
-the scene's claims against confirmed state (plan-vs-memory clashes). There is no setting in
-the application and no flag on the runner. There used to be three modes; the middle one ran a
-small embedder, wrote "paraphrase restaging" into the run log, and let a scene be retold
-nearly beat for beat from one chapter to the next — a check that reports coverage it does not
-have is a check that stops anyone looking. `off` survives it only as a runtime fact, for the
-places with nowhere to record a choice and nobody to consent to 780MB: a test suite, which
-must never reach for the network, and any script that has not called `setGateModeOverride`.
-A stored value from when the switch existed is ignored, so nobody is quietly held below the
-full check for every book they write afterwards.
-
-**A scene is written once, from its own package.** The writer gets the scene, the
-previous scene's tail and one short excerpt per earlier scene — not the book's outline.
-
-**Every scene is folded into memory before the next one is written.** `trackScene` reads
-the scene with numbered paragraph ids and returns proper names, events, state changes,
-knowledge, beliefs, disclosures, threads, contradictions and uncertainties. Each record
-cites paragraph ids, and `validateDelta` rejects a citation that points nowhere — with
-one correction pass that names the dangling refs, so the retry answers a concrete
-question. Only `events` is a list the answer cannot leave out: any other list that is
-absent is read as empty and named in the run log, because a model that drops an empty key
-has said what a model writing `[]` says, and refusing the whole answer over it ended books. P05 states what a ref is; code enforcing a rule the prompt never stated is how
-a run dies citing a scene id it had every reason to think was valid.
-
-**Every accepted scene also emits a persisted semantic handoff.** It names what the
-reader already knows, what just changed, current conditions, still-open questions,
-active intentions, the previous outcome, the next required outcome, and meanings that
-must not be explained again. Before the next scene, `P03_SCENE_REBASE` updates that
-scene's causal plan against this handoff; P04 receives the same object when writing.
-The last scene's handoff is enriched by P06 and becomes the next chapter's input.
-
-**The handoff carries the recent stretch, not the book.** It is a writing contract, and
-it was built like the ledger: every event and disclosure since page one, twice — once as
-what the reader knows and once, accumulated, as what must not be restated. Measured on a
-finished four-chapter book it grew about 4KB a scene, to 70KB and 237 prohibitions by the
-sixteenth, in front of the chapter plan, the rebase and the scene itself. A local model's
-window fills long before a long book ends, and Ollama drops the *start* of a prompt that
-does not fit — the task and the scene plan — leaving the writer the tail of the previous
-scene and nothing to do but write it again. Facts travel whole; events and disclosures are
-the same recent stretch `stateDigest` gives every other call; restatements and open
-questions keep their newest twenty-four (`HANDOFF_LIMITS`, judgements, not measurements);
-and a trimmed handoff says so in `history_note`. The full record stays in the store, where
-retrieval and the cross-encoder read it. `compactHandoff` brings a handoff stored before
-the limits inside them when a book resumes.
-
-**A relationship is current state, not a fixed card.** Character cards hold who two
-people were to each other when the book was designed; what they are to each other now
-lives in `conditions` under a directed key (`C01->C02.trust`), in words, and travels into
-the writer's package ahead of the card. P05 records such a move only from a deed the scene
-showed, with the paragraph cited — a character declaring trust is a belief, and memory
-keeps it as one. A relationship change that cites nothing, or that no deed in the scene
-supports, is not folded: it comes back as a `refused` note, warned on the chapter and
-written to the run log, so an interpretation of the scene never becomes a fact about the
-world by default.
-
-**Repetition is measured by shape, not only by phrase.** Every accepted scene leaves a
-staging — who was present, where, through whose eyes — and `recentShapes` hands the last
-six to the chapter planner so a chapter is planned against what the book just did. The
-same measurement runs before each scene: a third consecutive scene in the same staging, or
-a staging owning half the recent window, becomes a `repeated-staging` doubt for the
-readiness review. Nothing is banned and no word list grows; code says the shape repeats and
-the model decides whether that is stalling or the point.
-
-**A callback travels as the paragraph it calls back to.** A scene plan's
-`required_source_refs` name earlier text by paragraph (`CH02_S01#p3`) or by the id of a
-recorded fact or event, and `resolveSourceRefs` hands the writer those paragraphs verbatim
-under their references — the chapter tails follow as continuity of voice, not of fact. A
-reference no stored paragraph answers becomes a `missing-source` doubt for the readiness
-review: either the callback rests on nothing written, or the reference is wrong, and both
-are decided before the scene leans on it.
-
-**A finished scene is read against what already happened, not only against its plan.**
-Every check before prose reads the plan, and a writer handed a sound plan can still write
-the scene the book already has — the same confrontation, the same discovery, in sentences
-that share no word run with the first. P05 is the one call that reads the finished scene
-against the record, so it also reports `restaged_beats`: a beat staged again, with the id
-of the recorded event or fact it repeats. A charge that names nothing on record is not
-acted on and comes back as a `refused` note; one that does travels the contradiction path
-below, with the writer told exactly what it repeated.
-
-**A contradiction the model marks `blocks_continuation` buys one rewrite, not a dead
-book.** The writer sees exactly what broke and rewrites against it. What a second
-consecutive break does is the run's continuity mode (`continuity.ts`): `strict` ends the
-book there, `warn` — the default — keeps the rewritten scene and records the objection,
-`off` rewrites nothing for it. The same mode decides two failures that used to be final
-although nothing depended on them: a readiness review that could not be had (the scene is
-written with its doubts unanswered) and a forward reconciliation that failed after its
-chapter was already saved (the next chapter is planned against the map as it stood). An
-editor's verdict is a judgement, and a finished manuscript with a list of what it got
-wrong can be fixed where a run that stopped overnight cannot. A planner that refuses the
-chapter map and a scene nothing could be extracted from still stop the run in every mode. A name variant is the same path: the model, reading both
-the prose and the registry, judges whether a near-identical spelling is drift, and code only
-carries the verdict. Code never decides by string similarity.
-
-**Open questions are settled from the text, not carried as silent gaps.** Uncertainties
-relevant to the next scene and non-blocking contradictions go to one bounded call. If that
-call dies, memory keeps what the delta proved and the questions travel on as an explicit
-warning and remain in the persisted handoff — never as answers.
-
-**Scenes are joined in code**, separated by `***`. No model stitches a chapter together.
-
-**After the chapter, the plan ahead is reconciled with what was written.** P06 returns
-plan updates for the chapters that follow; accepted prose outranks the old plan, and only
-affected chapters change. Skipped updates and unresolved blockers become chapter warnings.
-
-### What a chapter actually costs
-
-Every structured call declares its route explicitly, or takes the default `structuredResponse`
-falls back to (`'validator'`); `writeSceneV2` is the one call that bypasses that wrapper —
-it wants raw prose, not JSON — so it declares its own route too, the same way. Nothing in
-the pipeline reaches a model without one of the two roles named at the call site.
-
-| Call | Route | When | Per chapter |
-| --- | --- | --- | --- |
-| Chapter plan (P03) | writer | Once, unless a saved plan is reused on resume; up to twice more if the plan gate rejects it before prose | 1–3 |
-| Scene readiness (P02) | validator | Only when code raised a structural doubt (`pov-absent`, `location-mismatch`, a restaging match, …) | 0–1 per scene |
-| Write the scene (P04) | writer | Every scene; one retry only if the answer is empty or came back as JSON instead of prose | 1 per scene |
-| Track the scene (P05) | validator | Every scene, against the prose just written; one correction pass if a citation points nowhere | 1 per scene |
-| Span repair (P08) | writer | Only when the scene repeats earlier prose verbatim; carries the duplicated sentences, not the scene | 0–1 per scene |
-| Rewrite on contradiction | writer + validator | Only when the tracked delta blocks continuation — one full redraft, not a repair | 0–1 pair per scene |
-| Resolve open questions | validator | Only when the scene left an uncertainty or a non-blocking contradiction for the next scene | 0–1 per scene |
-| Forward reconciliation (P06) | validator | Once, after the last scene | 1 |
-
-A chapter of four scenes with no contradictions and half its scenes flagged for readiness
-lands at 1 + 4×(0.5 + 1 + 1 + 1) + 1 ≈ 16 calls — the range a live run actually shows. The
-writer only ever sees P03 and P04: the plan and the prose. Every other call is the editor
-reading what already exists and reporting on it in a few hundred tokens, never generating
-the manuscript itself — a large model earns its cost by judging, not by drafting.
-
-## The craft ledger
-
-`StoryState` is the ledger of the world — what happened, who knows it, where everyone
-stands. `ledger.ts` is the ledger of the form: which mechanisms are spent, which rungs are
-taken, which classes of change the scenes keep producing, which phrasing is worn through,
-and how the measured texture is drifting from what the book declared. It is written by
-code at scene acceptance, never by a model and never from a plan.
-
-**The ban list is enumerated, not advised.** `wornLedger` reads the whole accepted
-manuscript rather than a window — a tic that started in chapter two is exactly the one
-nobody can see by chapter seven — subtracts the profile's declared refrains up to their
-budgets, and hands the writer exact strings it may not write. A model told to vary its
-language varies nothing; a model handed fourteen exact strings does not write them. A
-declaration buys permission, not immunity: past its budget a refrain is counted again.
-
-**Declared against measured is itself a signal.** `textureDrift` compares the book's
-measured dialogue share against the band its declared weight resolves to, and reports it
-per chapter rather than at the final audit. A book that declared itself dialogue-forward
-and is writing four percent dialogue has not been written badly; it has failed to execute
-its own intent, which is a different problem with a different fix. Alongside it,
-`signatureTics` reports what a reviewer reading for events structurally cannot see — the
-"it was not X, it was Y" construction at a rate, sentences that all open on one word,
-prose running at a single speed — and `numericContradictions` catches a town founded in
-one year on page one and another on page thirty, which no state tracker sees because the
-number was never an event.
-
-**The manuscript is written in English.** The system contract says so, no call carries a
-language parameter, and the prose checks are built for one typography: English stop words,
-English quotation marks, the "it was not X, it was Y" construction. That is a deliberate
-narrowing — a check that has to hedge about which convention it is reading is a check
-nobody trusts.
-
-## Which numbers are measured and which are judgements
-
-The pipeline decides things with thresholds, and they are not all worth the same.
-
-**Measured.** The cross-encoder's repetition line (4.5) was fitted over 525 cross-chapter
-pairs from finished runs, and the run length that counts a word sequence as duplicated (8)
-was fitted the same way: two books from the same writer, different stories, share 140 runs
-of four words, 40 of five, 12 of six, 7 of seven, 3 of eight — the four-to-six band is idiom
-and chance, and at eight the hits are the premise's own nouns or the model's own habit.
-
-**Judgements.** Every band in `profile.ts` — dialogue share per rank, staging tolerance,
-mechanism reuse — and every rate in `signatureTics`. They are labelled as such in the code
-rather than left to look like the measured ones. They cannot honestly be fitted on this
-pipeline's own output: a corpus of books it generated would calibrate the checks to the
-habits they exist to catch. Fitting them needs published prose of each kind, or generated
-books a person has marked good and bad.
-
-**Neither.** Where a signal can be had without a threshold at all, it is preferred.
-`textureDrift` reports the dialogue share of each chapter and says when every chapter gives
-less to speech than the one before — that needs only the book's own numbers, and it caught a
-run falling 7.4% to 5.2% to 3.8% while the band said the same thing three times over.
-
-## Repair is a sentence, not a scene
-
-When a scene turns out to repeat prose the book already wrote, the expensive answer is to
-write the scene again: a full writing call, a full tracking call, and a different scene
-whose delta, handoff and tail differ from the one the following scenes were planned
-against. One repetition becomes a cascade.
-
-Two detectors feed it, and they see different things. `repeatedSpans` returns exact word
-runs and costs nothing. `retoldParagraphs` puts the cross-encoder — the same model and the
-same fitted threshold the pre-write gate uses on scene plans — over this scene's paragraphs
-against the accepted book, and catches the paragraph retold in fresh words, which no string
-match reaches. It runs only when the local models are switched on, and with them off the
-repair is exactly what it was. `duplicatedSentences` maps every hit to the sentences holding
-it, and only those sentences travel to P08 and come back. The result is spliced
-by exact string replacement, so a replacement that does not apply cleanly does not apply
-at all — the scene is never left in a state nobody chose. The rule that makes this safe is
-in the prompt and in the shape of the call: a replacement carries the same information as
-the sentence it replaces. Nothing happens that did not happen, so the repair runs before
-the scene is ever tracked and memory is untouched. A failed repair leaves a repetition in
-the book, which is a blemish; a half-applied one leaves a scene nobody wrote.
-
-Full scene rewriting stays where it was: a tracked delta that contradicts confirmed state.
-
-## Memory and evidence
-
-`StoryState` holds facts, events, conditions, per-character knowledge and beliefs, reader
-disclosures and the name registry. Conditions are keyed `entity.field`; events are keyed
-by scene so a replayed scene cannot double them. Character names enter the registry from
-the design before any prose exists, so the first scene's writer already sees the canonical
-spellings.
-
-The audit reads the whole manuscript against the contract, the dramatic core, the causal
-map and the ending, plus final state and threads. One finding is measured rather than
-asked: `wornPhrases` counts two- and three-word content phrases across the finished book
-and reports the ones that return at a rate. A reviewer reading for what happens cannot see
-a tic — one somatic beat seven times is not an event — and capitalized spans are
-skipped, because a book repeating its own device by name is repeating its subject. It never rewrites: the manuscript it
-checked is the manuscript that ships. `settleAuditStatus` computes the status in code —
-findings mean `COMPLETE_WITH_WARNINGS`, an unfinished book means `PARTIAL`.
-
-## Budgets, retries, failure
-
-Every model call passes through `counted`: calls, elapsed time and estimated tokens
-(characters/4, since providers report no usage) against `budgetFor(chapters)` — forty calls
-and an hour for every chapter, never less than two hundred calls and one hour. Neither is
-capped: the count is what stops a runaway, and it is proportional to the book, while the
-clock measures the hardware rather than the book and is sized for a model on the author's
-own machine. Exhaustion throws, the run ends `FAILED` with the reason in the log, and
-Continue keeps the chapters written and starts both again.
-
-`structuredResponse` retries once on a malformed answer and tells the model what failed.
-It does not retry what a retry cannot answer — an exhausted quota, a rejected key, a
-disabled service, an output budget already spent — because resending the same prompt under
-the same cap fails identically while doubling the wait, and the real reason then arrives
-disguised as a model problem. A repeated answer is retried hotter, not colder: a model told
-it said the same thing twice and then given less room to vary says it a third time. First
-attempts that failed are drained into the run log with their reasons.
-
-## Persistence and resume
-
-`PersistentProjectStore` keeps memory as the synchronous source of truth and schedules a
-debounced snapshot into IndexedDB on every mutation; a localStorage book from the previous
-version migrates once. Resume is exact rather than approximate: a stored design for the
-same premise and chapter count skips to the first unfinished chapter, finished chapters
-keep their manuscript and memory, an interrupted chapter restarts from the previous
-chapter's state snapshot, and scenes whose delta was already folded replay from the stored
-draft with no model calls. Only a scene that died before its delta is regenerated. A saved
-plan is reused whenever scenes already exist against it — the planner is not deterministic,
-and a fresh plan would orphan every stored scene.
-
-## Transport
-
-Ollama uses streaming NDJSON, and thinking is off unless the provider role turns it on —
-`think: params.think ?? false`, with the anti-reasoning line dropped from the system prompt
-when a role does enable it, since suppressing it in words would defeat the setting.
-`/api/generate` is reserved for an unsupported `/api/chat`, not as a retry after a timeout. Successful completion requires the terminal `done` record: broken streams, reported errors and
-token-limit endings are rejected rather than accepted as short answers. Structured output
-and editorial validation stay mandatory regardless, because a model with thinking disabled
-can still leak commentary into content.
-
-## Verification
-
-Run `npm test`, `npx tsc --noEmit`, and `npm run build`.
-
-`tests/v2.test.ts` and `tests/v2pipeline.test.ts` drive the orchestrator and the chapter
-pipeline with deterministic model fixtures; `tests/prompts.test.ts` holds the prompt files
-to their declared variables; `tests/semanticGate.test.ts` covers the advisory gate,
-including its unavailable path; `tests/ollamaStreaming.test.ts` checks partial and terminal
-transport records; `tests/vexport.test.ts` covers snapshot and restore. These tests prove
-control flow and contracts, not model literary performance.
-
-For a live run outside the browser, `scripts/run-book.ts` drives the same pipeline from a
-terminal against real Ollama models and logs every call:
-
-```bash
-npx vite-node scripts/run-book.ts --writer deepseek-v4.1-flash:cloud \
-  --editor mistral-large-3:675b-cloud --chapters 3 \
-  --premise "..." --out runs/manual-test
+```
+App → useBookGenerator → utils/novel/v2/orchestrator.ts → utils/novel/craft/craftOrchestrator.ts
 ```
 
-It writes `manuscript.md`, `snapshot.json` and `run.log` under `--out`. Record the
-provider and models, the snapshot, the audit report and any unresolved warnings. Do not
-infer ongoing generation from an old log line or a saved stage alone.
+The generation pipeline consists of two decoupled, robust layers:
+
+1. **Strategic Layer (The Master Blueprint & Projection Matrix)**
+   - **Dossier Generation**: Establishes 4 Layers of Truth (World Rules, Hidden Mechanics, Character Desires/Flaws, The Climax Principle).
+   - **Projection Matrix & Scene Cards**: Deconstructs chapters into structured Scene Cards based on Swain's Scene-and-Sequel pulse (Goal → Conflict → Disaster; Emotion → Dilemma → Decision), Value Charges, Stakes, and Prop Anchors.
+
+2. **Execution Layer (Scene Enactment, Micro-Pacing, Observer & Blind Reader)**
+   - **Scene Enactment**: The Writer model executes scenes beat-by-beat according to the Scene Card specifications.
+   - **Observer Review**: Post-enactment sensory and grounding validation verifying physical causality, dialogue subtext, and prop continuity.
+   - **Blind Reader**: Simulates real reader expectation and hypothesis tracking after each chapter without knowledge of future secrets.
+   - **Dual Audit**: Developmental review and literary pass evaluating whole-manuscript dramatic tension, voice consistency, and premise fidelity.
+
+## Storage and Persistence
+
+- `utils/novel/v2/store.ts`: In-memory and persistent project stores.
+- `utils/novel/v2/persistent.ts`: IndexedDB local state persistence.
+- `utils/novel/author.ts`: Holds shared author types (`AuthorDraft`, `DeskState`, `cleanChapter`, `wornPhrases`).
+- `utils/novel/deskTabs.ts`: Formats the five inspector panels (`Dossier`, `Scene Cards`, `Observer`, `Reader`, `Reviews`).
+- `utils/novel/similar.ts`: Fallback similarity and embedding configurations.
+
+## Bestbook revision and final delivery
+
+`craft/editorial.ts` runs focused manuscript reviews with verbatim chapter evidence. Architecture, reader promises, genre, opening and actual word-based structure precede line editing, copyediting and proofreading. A focus may apply one coordinated replacement sweep, followed by rechecking. Unresolved architecture stops prose polishing. A final read-only sweep checks all focuses on the last saved text. `runCraftEditorial` edits existing chapters and archives their source; it does not invoke dossier generation or scene drafting. Automatic post-draft editing uses this same path. Its persisted active marker sends an interrupted run back to editing through Continue, preserving the original source archive.
+
+`craft/projection.ts` batches large projections, validates scene ordering and knowledge dependencies, and repairs/rechecks preflight findings before drafting. Uncertain semantic objections are advisory; demonstrated contradictions and unavailable preflight reviews stop drafting with the latest valid packet preserved. Repairs may coordinate scenes, facts, initial character knowledge and dossier clarifications. Continue reuses a saved pre-draft packet instead of generating a different plan. `craft/observer.ts` validates source IDs against the scene version being reviewed and makes factual findings, unchanged polarity, repetition and large word-count drift eligible for local repair. The second observer call is built from the replacement prose.
+
+`craft/metrics.ts` records intended question/prop timelines, actual chapter word positions and the opening sample. Final reader maps and turning points are independently extracted from manuscript excerpts, checked for source validity and order, and saved with the reviews. These are model interpretations with code-verified provenance.
+
+`craft/readerTools.ts` provides optional series planning, three blind simulated reader perspectives and comparisons against supplied source notes. `ReaderTools.tsx` provides browser read-aloud. No human feedback or approval step is used. Saving EPUB/PDF uses existing author metadata without an extra confirmation dialog.
+
+Final status comes from unresolved findings, unavailable checks, manuscript completeness and actual length. Full findings and check failures appear in the final screen. Review history and original sources remain in portable project exports. The detailed scope and verification boundaries are in `BESTBOOK_ROADMAP.md`.
+
+Observer responses use a compact source-reference schema and one fixed-budget protocol recovery. A truncated or invalid response never becomes a passing receipt: after two failures generation stops with the scene saved and its observation still pending for Continue. Scene prose and pending/completed observation checkpoints are saved before validation; Continue reuses these scene files, preserving completed scenes and retrying pending observations without regenerating their prose.
+
+`novel/manuscript.ts` owns chapter-body normalization and canonical assembly. Duplicate numbered labels are removed from chapter bodies without deduplicating fictional paragraphs. Restoration migrates existing manuscripts with a preserved source/report backup. EPUB/PDF parse the same canonical chapter headings, with or without subtitles, and do not infer chapter count from embedded model labels.
+
+Original Craft 2.0 developmental and literary audit checklists and result fields are restored in `craft/baselineReviews.ts`. They supplement the new editorial focuses before repairs and in the final exact-manuscript audit. Grounded findings enter the same repair/report path; raw assessments are retained. The old unconditional passed flags are not used as evidence of successful checks.
+
+The restored fixed layout is three chronological scenes per chapter, with scalable word budgets. `craft/blindContext.ts` isolates writer input through a field allowlist: no global premise/dossier/preflight review or future-reader fields. An independent blind reader receives committed prose before each scene; the original after-chapter reader remains additional. Model-authored initial knowledge and current-scene directives remain semantic assertions and are subject to review. Invalid causal links, missing conflict layers, missing polarity turns, future fact references and incorrect chapter slots are rejected before drafting. Existing incompatible manuscripts are preserved without replanning.
+
+## Sequential author engine (implementation in progress)
+
+New projects use `craft/planning.ts`: contract, form, logline, concept, objective events, character engines, independent opposition, beats, promises, reverse-engineered setups, revelations, pacing, and a causal scene graph. `packet.json` is a compatibility projection of this authored architecture. The full guide is no longer loaded into model prompts; `craftRules.ts` supplies operation-specific instructions.
+
+`craft/state.ts` persists versioned operations, input/recipe/output SHA-256 bindings, atomic operation receipts, historical artifacts and dependency invalidation through the existing project store. `runtime.ts` prepares present-scene execution from enacted consequences, reader adaptation, world constraints and character-specific knowledge, then commits evidence-backed outcomes. Hybrid and discovery modes may revise unwritten connective routes while preserving committed history and protected tentpoles.
+
+`revision.ts` creates one structural plan for all affected scenes and stages replacements before `ProjectStore.commitRevision` applies a complete book revision. Existing-book recovery distinguishes quoted observations from unknown mechanisms and proposed repairs. Long books use chapter evidence digests, batched structural planning and incremental blind-reader memory. Their summaries remain fallible interpretations, not proof of literary correctness.
+
+The implementation and live-run limitations are recorded in `BESTBOOK_ENGINE_PROGRESS.md`. The user goal remains incomplete until a real full draft has been generated, read and audited against the entire plan.
+
+### Scene continuation integrity
+
+Scene seams are finalized before observation and enacted-state extraction, including after a repair. Checkpoints bind the observation and finalized prose to their text revision and the preceding scene revision; Continue reuses an unchanged seam and rechecks old unbound observations. Raw writer output is saved before seam editing so interruption does not require regeneration. No prose mutation occurs after the scene observation and state commit.
+
+The author writer receives the full committed prefix of its current chapter (the preceding two scenes at a chapter boundary), plus source-bound prior events, resource changes and relationship changes. The execution planner reconciles the current card with evidenced history. Completed milestones come from committed event quotes, or observed paragraph sources in legacy mode, never directly from planned card actions. Resources and relationships require the same prose-evidence validation as events and acquisitions. These checks establish provenance and revision consistency; model judgments still determine whether an event or consequence is semantically correct.

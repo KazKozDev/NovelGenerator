@@ -1,0 +1,4 @@
+torch>=2.6
+transformers>=4.48,<6
+networkx>=3.4
+sentencepiece>=0.2

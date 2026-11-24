@@ -1,83 +1,50 @@
+import { authorKey } from '../author';
+import { runCraftBook, runCraftEditorial, AUDIT_CALLS, AUDIT_STAGES } from '../craft/craftOrchestrator';
 import { drainRetryNotices, type NovelLLM } from './llm';
-import { auditBook } from './auditor';
-import { designReviewedBook } from './reviewer';
-import { validateBookDesign } from './designer';
-import { emptyState, MemoryProjectStore, type ProjectStore } from './store';
-import type { BookDesign, FinalReport, PlanReview, ProjectInput } from './types';
+import { MemoryProjectStore, type ProjectStore } from './store';
+import type { FinalReport, ProjectInput } from './types';
 
-/**
- * Orchestrator: owns the order of work, the versions, the budgets and the
- * record. One design call, one construction review (plus bounded fixes), then
- * chapters in order through the injected chapter pipeline, then the audit.
- *
- * The chapter pipeline (planner, writer, tracker, forward update) and the final
- * auditor arrive as the next modules; the orchestrator defines their shape so
- * the order of work is fixed before they exist.
- */
+/** The run's allowance. The desk counts its own steps; this stops a run that has left that count behind. */
 export interface CallBudget {
   maxCalls: number;
   maxTimeMs: number;
-  /** Estimated-token ceiling; measured as characters/4 since providers report no usage. */
   maxTokens?: number;
 }
 
-export interface ChapterOutcome {
-  warnings: string[];
-}
-
-export interface ChapterPipeline {
-  writeChapter(design: BookDesign, chapter: number, store: ProjectStore, llm: NovelLLM): Promise<ChapterOutcome>;
-}
-
 export type BookStatus = 'COMPLETE' | 'COMPLETE_WITH_WARNINGS' | 'PARTIAL' | 'FAILED';
-
 export type ProgressStage = 'design' | 'chapter' | 'audit' | 'done';
+
+export interface StageUsage {
+  stage: string;
+  calls: number;
+  sent: number;
+  received: number;
+}
+
+export function describeUsage(usage: StageUsage[], manuscriptChars: number): string[] {
+  const sent = usage.reduce((sum, item) => sum + item.sent, 0);
+  const received = usage.reduce((sum, item) => sum + item.received, 0);
+  const calls = usage.reduce((sum, item) => sum + item.calls, 0);
+  const ratio = (value: number): string => (manuscriptChars ? `${(value / manuscriptChars).toFixed(1)}x the manuscript` : 'no manuscript');
+  return [
+    ...usage.slice().sort((first, second) => second.sent - first.sent)
+      .map(item => `${item.stage}: ${item.calls} call(s), sent ${item.sent}, received ${item.received}`),
+    `total: ${calls} call(s), sent ${sent} (${ratio(sent)}), received ${received} (${ratio(received)}), manuscript ${manuscriptChars}`,
+  ];
+}
 
 export interface BookResult {
   status: BookStatus;
-  design: BookDesign | null;
-  review: PlanReview | null;
   report: FinalReport | null;
   callsUsed: number;
   tokensUsed: number;
   stoppedReason: string | null;
+  usage?: StageUsage[];
 }
 
-/**
- * It was a wall-clock hour and two hundred calls, for any book of any length.
- *
- * The hour was set when a chapter was a plan, a scene, and an extraction. A
- * chapter now also carries a cross-encoder over its plan and its prose, an NLI
- * pass over its claims, and up to two replans when the gate refuses it — and a
- * planning call against a long book's accumulated state is minutes on its own.
- * Four chapters no longer fit in an hour, and the run died at the wall with
- * three of them written.
- *
- * So the budget is what a book of this length costs, not a constant. Calls
- * scale with the chapters — a chapter is a plan, a rebase, a scene package and a
- * tracking pass per scene, a repair where one is needed, and a reconciliation,
- * which a live run shows at twenty to twenty-five and forty leaves room for.
- *
- * Both used to be capped, at six hundred calls and four hours, so that a
- * runaway would stop. The caps stopped books instead. Twenty chapters at forty
- * calls is eight hundred, and four hours across twenty chapters is twelve
- * minutes each — a pace a cloud model keeps and a model on the author's own
- * machine does not come near, so every long local run ended at the wall however
- * well it was going, with nobody there to press Continue.
- *
- * What stops a runaway is the count, and the count is proportional: a book
- * cannot spend more than forty calls a chapter whatever it does. The clock
- * measures the hardware rather than the book, so it is set to what a slow
- * machine needs — an hour a chapter — and exists to end a run that has stopped
- * making progress, not to pace one that has not. Each call still has its own
- * deadline in the transport.
- */
 export function budgetFor(chapters: number): CallBudget {
-  const perChapter = Math.max(1, chapters);
-  return {
-    maxCalls: Math.max(200, perChapter * 40),
-    maxTimeMs: Math.max(60, perChapter * 60) * 60 * 1000,
-  };
+  const count = Math.max(1, chapters);
+  return { maxCalls: Math.max(250, count * 65), maxTimeMs: count * 60 * 60 * 1000 };
 }
 
 export const DEFAULT_BUDGET: CallBudget = budgetFor(3);
@@ -86,33 +53,37 @@ export class Orchestrator {
   private callsUsed = 0;
   private tokensUsed = 0;
   private startedAt = 0;
+  private stages = new Map<string, StageUsage>();
 
   constructor(
     private readonly store: ProjectStore = new MemoryProjectStore(),
     private readonly budget: CallBudget = DEFAULT_BUDGET,
-    private readonly pipeline: ChapterPipeline | null = null,
     private readonly onProgress: (stage: ProgressStage, chapter?: number) => void = () => {},
   ) {}
 
-  /** First-attempt failures go to the run log with their reasons. */
   private flushRetries(): void {
-    for (const notice of drainRetryNotices()) {
-      this.store.log('retry', `${notice.keys.join('+')} attempt ${notice.attempt} rejected: ${notice.error}`);
-    }
+    for (const notice of drainRetryNotices()) this.store.log('retry', `${notice.keys.join('+')} attempt ${notice.attempt} rejected: ${notice.error}`);
   }
 
-  /** Every model call passes through here: counted, capped, and logged. */
   private counted(llm: NovelLLM): NovelLLM {
     return async (prompt, system, options) => {
-      this.callsUsed++;
-      if (this.callsUsed > this.budget.maxCalls) {
+      if (!AUDIT_STAGES.has(options?.stage || '') && this.callsUsed >= Math.max(0, this.budget.maxCalls - AUDIT_CALLS)) {
+        throw new Error('Writing call budget exhausted; remaining calls are reserved for final book checks.');
+      }
+      if (this.callsUsed >= this.budget.maxCalls) {
         throw new Error(`Call budget of ${this.budget.maxCalls} calls exhausted with ${this.store.manuscript().length} chapter(s) written. Continuing keeps them and starts the count again.`);
       }
       if (Date.now() - this.startedAt > this.budget.maxTimeMs) {
-        const finished = this.store.manuscript().length;
-        throw new Error(`Time budget of ${Math.round(this.budget.maxTimeMs / 60000)} minutes exhausted with ${finished} chapter(s) written. Continuing keeps them and starts the clock again.`);
+        throw new Error(`Time budget of ${Math.round(this.budget.maxTimeMs / 60000)} minutes exhausted with ${this.store.manuscript().length} chapter(s) written. Continuing keeps them and starts the clock again.`);
       }
+      this.callsUsed++;
+      const stage = options?.stage || 'unlabelled';
+      const tally = this.stages.get(stage) || { stage, calls: 0, sent: 0, received: 0 };
+      tally.calls++;
+      tally.sent += prompt.length + system.length;
+      this.stages.set(stage, tally);
       const result = await llm(prompt, system, options);
+      tally.received += result.length;
       this.tokensUsed += Math.ceil((prompt.length + system.length + result.length) / 4);
       if (this.budget.maxTokens !== undefined && this.tokensUsed > this.budget.maxTokens) {
         throw new Error(`Token budget exhausted after ~${this.tokensUsed} estimated tokens.`);
@@ -122,110 +93,46 @@ export class Orchestrator {
   }
 
   async runBook(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
+    const result = await this.run(input, llm);
+    const usage = [...this.stages.values()];
+    const manuscript = this.store.manuscript().reduce((sum, item) => sum + item.text.length, 0);
+    for (const line of describeUsage(usage, manuscript)) this.store.log('usage', line);
+    return { ...result, usage };
+  }
+
+  async runEditorial(input: ProjectInput, llm: NovelLLM): Promise<BookResult> {
+    const result = await this.run(input, llm, true);
+    return { ...result, usage: [...this.stages.values()] };
+  }
+
+  private async run(input: ProjectInput, llm: NovelLLM, editorial = false): Promise<BookResult> {
     this.callsUsed = 0;
     this.tokensUsed = 0;
+    this.stages = new Map();
     this.startedAt = Date.now();
-    const call = this.counted(llm);
-    this.store.saveInput(input);
-    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}.`);
+    const authored = this.store.loadAuthor();
+    if (authored && authored.input_key !== authorKey(input)) {
+      return { status: 'FAILED', report: null, callsUsed: 0, tokensUsed: 0, stoppedReason: 'The saved draft belongs to a different book. Start a fresh project before changing its input.' };
+    }
+    const existingReport = this.store.loadReport();
+    if (!editorial && authored?.completed && !authored.desk?.editorial?.active && existingReport) {
+      return { status: existingReport.status, report: existingReport, callsUsed: 0, tokensUsed: 0, stoppedReason: existingReport.status === 'COMPLETE' ? null : existingReport.summary };
+    }
+    this.store.saveInput({ ...input, generation_mode: input.generation_mode || (authored?.desk?.files['packet.json'] && !authored.desk.files['engine-state.json'] ? 'craft' : 'author') });
+    this.store.log('start', `Premise accepted: ${input.chapter_count} chapters, genre ${input.genre}. 2-layer craft engine active.`);
     try {
-      // Resume: a stored design for the same book skips straight to the first
-      // unfinished chapter; finished chapters keep their manuscript and memory.
-      const storedInput = this.store.loadInput();
-      const storedDesign = this.store.loadDesign();
-      // A stored design is resumed only if it still validates. One that does not
-      // was written against an older schema, and continuing it would mean
-      // planning every remaining chapter against budgets it never declared.
-      const resumable = (() => {
-        if (!storedDesign) return false;
-        try {
-          validateBookDesign(storedDesign, input.chapter_count);
-          return true;
-        } catch {
-          this.store.log('resume', 'The stored design does not meet the current schema; designing the book again.');
-          return false;
-        }
-      })();
-      const sameBook = !!storedInput && resumable
-        && storedInput.premise === input.premise
-        && storedInput.chapter_count === input.chapter_count;
-      let design: BookDesign;
-      let review: PlanReview | null;
-      // A design the review never fully cleared still writes, with the
-      // objections carried into the contract — the reader is told which ones.
-      const designWarnings: string[] = [];
-      if (sameBook && storedDesign) {
-        design = storedDesign;
-        review = null;
-        this.store.log('resume', `Continuing "${input.premise.slice(0, 60)}" from stored state.`);
-      } else {
-        this.onProgress('design');
-        const fresh = await designReviewedBook(input, call);
-        this.flushRetries();
-        design = fresh.design;
-        review = fresh.review;
-        this.store.saveDesign(design);
-        this.store.saveStyleContract(design.style_contract);
-        this.store.checkpoint('design');
-        this.store.log('design', `Book designed and reviewed: ${design.characters.length} characters, ${design.causal_map.length} causal events.`);
-        if (!review.ready) {
-          const unresolved = review.issues.filter(item => item?.severity === 'blocking' || item?.severity === 'major');
-          for (const item of unresolved) {
-            designWarnings.push(`The design review still objects to ${item.target_ref}: ${item.problem} It travels as a requirement the chapters must meet.`);
-          }
-          this.store.log('design', `Review unresolved on ${unresolved.length} point(s); carried into the contract.`);
-        }
-      }
-
-      if (!this.pipeline) {
-        return { status: 'PARTIAL', design, review, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: 'Chapter pipeline not attached yet.' };
-      }
-      const finished = new Set(this.store.manuscript().map(item => item.chapter));
-      const warnings: string[] = [...designWarnings];
-      for (let chapter = 1; chapter <= input.chapter_count; chapter++) {
-        this.onProgress('chapter', chapter);
-        if (finished.has(chapter)) {
-          this.store.log('skip', `Chapter ${chapter} already finished; manuscript and memory kept.`);
-          continue;
-        }
-        // An interrupted chapter restarts from the previous chapter's snapshot,
-        // so no delta is ever applied twice. Scenes with a folded delta stay:
-        // the pipeline replays them without model calls. Only a partial scene
-        // (the run died before its delta) is dropped and regenerated.
-        const kept = this.store.chapterScenes(chapter).filter(scene => scene.delta);
-        this.store.clearChapterScenes(chapter);
-        for (const scene of kept) this.store.saveScene(scene);
-        if (chapter === 1) {
-          this.store.saveState(emptyState());
-          this.store.saveThreads([]);
-        } else {
-          const snapshot = this.store.loadStateSnapshot(chapter - 1);
-          if (snapshot) this.store.saveState(snapshot);
-        }
-        const outcome = await this.pipeline.writeChapter(design, chapter, this.store, call);
-        warnings.push(...outcome.warnings);
-        this.store.checkpoint(`chapter-${chapter}`);
-      }
-      this.onProgress('audit');
+      if (editorial || authored?.desk?.editorial?.active) await runCraftEditorial(input, this.store, this.counted(llm), this.onProgress);
+      else await runCraftBook(input, this.store, this.counted(llm), this.onProgress);
       this.flushRetries();
-      const report = await auditBook({
-        design: this.store.loadDesign() || design,
-        manuscript: this.store.manuscript(),
-        finalState: this.store.loadState(),
-        threads: this.store.loadThreads(),
-        coverage: `Full manuscript, ${this.store.manuscript().length} chapters.`,
-      }, true, call);
-      this.flushRetries();
-      this.store.saveReport(report);
-      this.store.log('audit', `Final audit: ${report.status}. ${report.summary}`);
-      const status: BookStatus = report.status === 'COMPLETE' && !warnings.length ? 'COMPLETE' : 'COMPLETE_WITH_WARNINGS';
-      const stoppedReason = [...warnings, ...(report.status !== 'COMPLETE' ? [report.summary] : [])].join('; ') || null;
-      this.onProgress('done');
-      return { status, design, review, report, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason };
+      const report = this.store.loadReport()!;
+      this.store.log('audit', report.summary);
+      return { status: report.status, report, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: report.status === 'COMPLETE' ? null : report.summary };
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      this.store.log('failed', reason);
-      return { status: 'FAILED', design: this.store.loadDesign(), review: null, report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: reason };
+      this.flushRetries();
+      const message = error instanceof Error ? error.message : String(error);
+      this.store.log('stopped', message);
+      return { status: 'FAILED', report: null, callsUsed: this.callsUsed, tokensUsed: this.tokensUsed, stoppedReason: message };
     }
   }
 }
+
