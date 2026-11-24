@@ -80,7 +80,7 @@ export default function PublishStudio({ title, studioKey, content, metadata, dra
   const language = savedLanguage || guessLanguage(content);
   const [art, setArt] = React.useState<CoverArt | null | undefined>();
   // The stores' cover: drawn from the Cover studio's master at 1600 × 2560, or the book cover when there is no studio.
-  const [storeCover, setStoreCover] = React.useState<{ dataUrl: string; width: number; height: number } | null | undefined>();
+  const [storeCover, setStoreCover] = React.useState<{ dataUrl: string; width: number; height: number; revision: string } | null | undefined>();
   const [master, setMaster] = React.useState<AudioMaster | null>(null);
   const [own, setOwn] = React.useState<{ busy?: OwnFormat; saved?: string; error?: string }>({});
   const [open, setOpen] = React.useState<Set<string>>(new Set());

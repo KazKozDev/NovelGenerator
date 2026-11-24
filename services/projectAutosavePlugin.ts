@@ -43,6 +43,7 @@ export function projectAutosavePlugin(root = process.cwd()): Plugin {
       res.setHeader('Cache-Control', 'no-store');
       const finish = (code: number, value: unknown) => { res.statusCode = code; res.end(JSON.stringify(value)); };
 
+      if (!localSameOrigin(req)) { finish(403, { error: 'Local same-origin requests only' }); return; }
       if (req.method !== 'POST') { finish(405, { error: 'POST required' }); return; }
 
       const chunks: Buffer[] = [];

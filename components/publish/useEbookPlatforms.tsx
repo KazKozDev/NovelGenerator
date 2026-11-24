@@ -17,14 +17,14 @@ const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9а-яё]+/gi,
 /** The ebook stores: an EPUB 3 and an upload cover each, built here and checked by EPUBCheck as the stores check them. */
 export function useEbookPlatforms(book: {
   title: string; author: string; language: string; content: string; metadata: Record<string, unknown>; imprint?: ImprintData;
-  cover: { dataUrl: string; width: number; height: number } | null | undefined; disclosure: DisclosureFacts;
+  cover: { dataUrl: string; width: number; height: number; revision: string } | null | undefined; disclosure: DisclosureFacts;
 }): PublishPlatform[] {
   const { title, author, language, content, metadata, imprint, cover, disclosure } = book;
   const isbnEbook = imprint?.isbnEbook || '';
   const [runs, setRuns] = React.useState<Partial<Record<EbookStore['id'], Run>>>({});
   const setRun = (id: EbookStore['id'], run: Run) => setRuns(prev => ({ ...prev, [id]: run }));
-  // The cover counts by its kind and size: a redraw of the same cover gives slightly different bytes on every load.
-  const source = fingerprint(content, title, author, language, isbnEbook, imprint?.edition, cover && `${cover.width}x${cover.height}`);
+  // The cover counts by its revision and size, not its bytes: a redraw of the same cover gives slightly different bytes on every load.
+  const source = fingerprint(content, title, author, language, isbnEbook, imprint?.edition, cover && `${cover.revision}:${cover.width}x${cover.height}`);
   const facts = { title, author, language, hasText: !!content.trim(), cover: cover ? { width: cover.width, height: cover.height } : undefined, isbnEbook };
 
   return EBOOK_STORES.map(store => {

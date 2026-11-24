@@ -121,5 +121,12 @@ describe('saveDocument API endpoint', () => {
     const coversDir = path.join(root, 'Documents', 'NovelGenerator', 'Пикник на обочине', 'обложки');
     const coverFiles = await readdir(coversDir);
     expect(coverFiles).toContain(dataCover.fileName);
+
+    const crossOrigin = await fetch(`${url}/api/save-document`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', origin: 'http://evil.example' },
+      body: JSON.stringify({ title: bookTitle, category: 'covers', label: 'обложка', content: 'x', ext: 'txt', replace: true }),
+    });
+    expect(crossOrigin.status).toBe(403);
   });
 });

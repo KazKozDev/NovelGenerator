@@ -40,8 +40,9 @@ export function usePrintPlatforms(book: {
   const hasText = !!content.trim();
   const setRun = (id: PrintTargetId, run: Run) => setRuns(prev => ({ ...prev, [id]: run }));
 
-  // A change of text, trim or language makes earlier layouts stale.
-  React.useEffect(() => { interiors.current.clear(); }, [content, trimId, language, title, author]);
+  // A change of text, trim, language or imprint (the copyright page) makes earlier layouts stale.
+  const imprintKey = JSON.stringify(imprint ?? null);
+  React.useEffect(() => { interiors.current.clear(); }, [content, trimId, language, title, author, imprintKey]);
 
   const pagesFor = (target: PrintTarget) => spines?.[`${target.id}:${trim.id}`]?.pages;
   const spineFor = (target: PrintTarget, pages: number) => target.spineFromPages ? spineFromPages(pages, paper) : templates?.[target.id]?.spine ?? spineFromPages(pages, paper);

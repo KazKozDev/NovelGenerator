@@ -1,6 +1,7 @@
 import { loadStudio } from '../cover/coverStore';
 import { loadStudioFromFolder, newerStudio } from '../cover/coverFolder';
 import { COVER_FORMATS, DEFAULT_STYLE, renderCover, type CoverStyle, type CoverText } from '../cover/formats';
+import { fingerprint } from './publishStatus';
 
 type Picture = CanvasImageSource & { width: number; height: number };
 
@@ -14,6 +15,8 @@ export interface CoverArt {
   focus: { x: number; y: number };
   /** Where it came from, for the author to see. */
   source: 'studio' | 'book cover';
+  /** Which cover this is, stable across loads: a redraw gives different bytes, a different design a different revision. */
+  revision: string;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -33,25 +36,26 @@ export async function loadCoverArt(studioKey: string, title: string, author: str
   const studio = newerStudio(await loadStudio(studioKey), await loadStudioFromFolder(title));
   const master = studio?.masters.find(m => m.id === studio.selected) || studio?.masters[0];
   if (studio && master) {
-    return { master: await createImageBitmap(master.blob), frontArt: null, text: { ...studio.text, author: studio.text.author || author }, style: studio.style, focus: studio.focus, source: 'studio' };
+    const text = { ...studio.text, author: studio.text.author || author };
+    return { master: await createImageBitmap(master.blob), frontArt: null, text, style: studio.style, focus: studio.focus, source: 'studio', revision: fingerprint('studio', master.id, text, studio.style, studio.focus) };
   }
   if (coverImage) {
     const image = await loadImage(coverImage);
-    return { master: image, frontArt: image, text: { title, author, tagline: '' }, style: DEFAULT_STYLE, focus: { x: 0.5, y: 0.5 }, source: 'book cover' };
+    return { master: image, frontArt: image, text: { title, author, tagline: '' }, style: DEFAULT_STYLE, focus: { x: 0.5, y: 0.5 }, source: 'book cover', revision: fingerprint('book cover', coverImage) };
   }
   return null;
 }
 
 /** The ebook cover, 1600 × 2560: lettered from the studio's master, or the book cover as it is. */
-export async function ebookCover(art: CoverArt): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function ebookCover(art: CoverArt): Promise<{ dataUrl: string; width: number; height: number; revision: string }> {
   if (art.frontArt) {
     const canvas = document.createElement('canvas');
     canvas.width = art.frontArt.width;
     canvas.height = art.frontArt.height;
     canvas.getContext('2d')!.drawImage(art.frontArt, 0, 0);
-    return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height };
+    return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height, revision: art.revision };
   }
   const format = COVER_FORMATS.find(f => f.id === 'ebook')!;
   const canvas = renderCover(art.master, format, art.text, art.style, art.focus);
-  return { dataUrl: canvas.toDataURL('image/png'), width: format.width, height: format.height };
+  return { dataUrl: canvas.toDataURL('image/png'), width: format.width, height: format.height, revision: art.revision };
 }

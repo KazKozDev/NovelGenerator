@@ -622,6 +622,7 @@ export default function useBookGenerator() {
     inputRef.current = null;
     setPromptBook(null);
     setStoryPremise('');
+    setBookTitleInput('');
     setNumChapters(3);
     setAgentLogs([]);
     setError(null);
